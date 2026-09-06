@@ -1,0 +1,34 @@
+<%
+/**
+ * Placeholder del lienzo (el reparto por días). La pantalla de verdad llega
+ * más adelante; esto evita que el botón del pie lleve a un 404.
+ */
+%>
+<%- include('parciales/cabecera', {
+      viaje: null, pasoActual: null, titulo: 'El lienzo del viaje', extraCabeza: ''
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> /
+        <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a>
+      </p>
+      <h1 class="ruta-cabecera__titulo">El lienzo del viaje</h1>
+    </header>
+
+    <div class="caja vacio aireado">
+      <i class="ti ti-tools" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+      <p style="margin-top:10px"><strong>En construcción</strong></p>
+      <p class="secundario" style="margin-top:4px">
+        Aquí se repartirán por días las cosas que hayas elegido en cada parada.
+      </p>
+      <a class="boton boton--secundario" href="/viaje/<%= viaje.id %>/ruta">
+        <i class="ti ti-arrow-left" aria-hidden="true"></i> Volver a mi ruta
+      </a>
+    </div>
+  </div>
+</main>
+
+<%- include('parciales/pie') %>

@@ -1,0 +1,221 @@
+<%# SIN LA CABECERA DEL WIZARD.
+    Ya no hay wizard: no hay "Tu viaje · Destino · Avisos" que recorrer, y esa
+    tira de pasos de arriba llevaba meses prometiendo un camino que no existe.
+    Con `pasoActual: null` la cabecera pinta solo el <head>, y la pantalla
+    empieza donde tiene que empezar: en "Configura tu viaje". %>
+<%- include('parciales/cabecera', { viaje: null, pasoActual: null, titulo: 'Configura tu viaje' }) %>
+
+<%
+/**
+ * Pantalla 1: tres preguntas grandes, no un formulario de configuración.
+ * Cada bloque es una tarjeta blanca con su icono y su título corto.
+ *
+ * Absorbió lo que antes estaba repartido:
+ *   - las fechas (antigua pantalla 1)
+ *   - el tipo de viaje (antigua pantalla 4, que ya no existe)
+ *   - el presupuesto (que estaba con las fechas y ahora va en "Más opciones")
+ */
+const ICONOS_TIPO = {
+  cultural: 'ti-building-monument',
+  gastronomico: 'ti-tools-kitchen-2',
+  naturaleza: 'ti-trees',
+  relax: 'ti-beach',
+  mixto: 'ti-sparkles',
+};
+
+const ICONOS_RITMO = { tranquilo: 'ti-armchair', normal: 'ti-walk', intenso: 'ti-run' };
+const NOMBRES_RITMO = { tranquilo: 'Tranquilo', normal: 'Normal', intenso: 'Intenso' };
+
+const adultos = viaje.adultos ?? 2;
+const ninos = viaje.ninos ?? 0;
+const edades = viaje.edadesNinos ?? [];
+const ritmoActual = viaje.ritmo || 'normal';
+
+// El plegado se abre solo si ya hay algo dentro que enseñar.
+const abrirMas = Boolean(viaje.presupuesto) || (ritmoActual && ritmoActual !== 'normal');
+
+/** ¿El error apunta a este campo? */
+const errorDe = (campo) => (error && error.campo === campo ? error.mensaje : null);
+%>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a>
+        <% if (!esNuevo) { %> / <a href="<%= urlVolver %>">Mi ruta</a><% } %>
+        / Configuración
+      </p>
+      <h1 class="ruta-cabecera__titulo">Configura tu viaje</h1>
+      <p class="secundario" style="margin:6px 0 0">
+        Tres cosas y listo. Podrás cambiarlas después.
+      </p>
+    </header>
+
+    <form method="POST" action="/viajes/<%= viaje.id %>/paso/1" id="form-configuracion">
+
+      <%# ============ A · ¿Cuándo viajas? ============ %>
+      <section class="bloque">
+        <div class="bloque__cabecera">
+          <i class="ti ti-calendar" aria-hidden="true"></i>
+          <h2 class="bloque__titulo">¿Cuándo viajas?</h2>
+        </div>
+
+        <div class="fila-campos">
+          <div class="campo">
+            <label for="fecha_inicio">Ida</label>
+            <input type="date" id="fecha_inicio" name="fecha_inicio"
+                   value="<%= viaje.fecha_inicio || '' %>"
+                   <%= errorDe('fecha_inicio') ? 'aria-invalid="true"' : '' %> required>
+            <% if (errorDe('fecha_inicio')) { %>
+              <div class="campo__error"><i class="ti ti-alert-circle"></i> <%= errorDe('fecha_inicio') %></div>
+            <% } %>
+          </div>
+          <div class="campo">
+            <label for="fecha_fin">Vuelta</label>
+            <input type="date" id="fecha_fin" name="fecha_fin"
+                   value="<%= viaje.fecha_fin || '' %>"
+                   <%= errorDe('fecha_fin') ? 'aria-invalid="true"' : '' %> required>
+            <% if (errorDe('fecha_fin')) { %>
+              <div class="campo__error"><i class="ti ti-alert-circle"></i> <%= errorDe('fecha_fin') %></div>
+            <% } %>
+          </div>
+        </div>
+
+        <%# Lo calcula el JS en vivo al cambiar cualquiera de las dos fechas %>
+        <p class="bloque__nota" id="noches-nota"></p>
+      </section>
+
+      <%# ============ B · ¿Quiénes viajáis? ============ %>
+      <section class="bloque">
+        <div class="bloque__cabecera">
+          <i class="ti ti-users" aria-hidden="true"></i>
+          <h2 class="bloque__titulo">¿Quiénes viajáis?</h2>
+        </div>
+
+        <div class="contador">
+          <div class="contador__etiqueta">
+            <span class="contador__nombre">Adultos</span>
+            <span class="contador__pista">A partir de 18 años</span>
+          </div>
+          <div class="stepper" data-stepper="adultos" data-min="1" data-max="9">
+            <button class="stepper__boton" type="button" data-delta="-1" aria-label="Quitar un adulto">
+              <i class="ti ti-minus" aria-hidden="true"></i>
+            </button>
+            <span class="stepper__valor" data-valor="adultos"><%= adultos %></span>
+            <button class="stepper__boton" type="button" data-delta="1" aria-label="Añadir un adulto">
+              <i class="ti ti-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+          <input type="hidden" name="adultos" id="campo-adultos" value="<%= adultos %>">
+        </div>
+
+        <div class="contador">
+          <div class="contador__etiqueta">
+            <span class="contador__nombre">Niños</span>
+            <span class="contador__pista">De 0 a 17 años</span>
+          </div>
+          <div class="stepper" data-stepper="ninos" data-min="0" data-max="6">
+            <button class="stepper__boton" type="button" data-delta="-1" aria-label="Quitar un niño">
+              <i class="ti ti-minus" aria-hidden="true"></i>
+            </button>
+            <span class="stepper__valor" data-valor="ninos"><%= ninos %></span>
+            <button class="stepper__boton" type="button" data-delta="1" aria-label="Añadir un niño">
+              <i class="ti ti-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+          <input type="hidden" name="ninos" id="campo-ninos" value="<%= ninos %>">
+        </div>
+
+        <%# Una edad por niño. El JS añade y quita según sube o baja el contador.
+            Las aerolíneas y los hoteles cobran distinto según la edad, por eso
+            no basta con saber cuántos son. %>
+        <div class="edades <%= ninos ? '' : 'oculto' %>" id="edades-ninos">
+          <div class="edades__titulo">Edad de cada niño al viajar</div>
+          <div class="edades__lista" id="edades-lista">
+            <% for (let i = 0; i < ninos; i++) { %>
+              <label class="edad">
+                <span class="edad__num">Niño <%= i + 1 %></span>
+                <select name="edades_ninos">
+                  <% for (let e = 0; e <= 17; e++) { %>
+                    <option value="<%= e %>" <%= (edades[i] ?? 0) === e ? 'selected' : '' %>><%= e %></option>
+                  <% } %>
+                </select>
+              </label>
+            <% } %>
+          </div>
+        </div>
+      </section>
+
+      <%# ============ C · ¿Qué tipo de viaje os apetece? ============ %>
+      <section class="bloque">
+        <div class="bloque__cabecera">
+          <i class="ti ti-compass" aria-hidden="true"></i>
+          <h2 class="bloque__titulo">¿Qué tipo de viaje os apetece?</h2>
+        </div>
+        <p class="bloque__nota" style="margin-top:0">Puedes elegir varios.</p>
+
+        <div class="chips chips--grandes">
+          <% tipos.forEach(t => { %>
+            <button class="chip chip--grande" type="button"
+                    aria-pressed="<%= seleccionados.includes(t.valor) %>"
+                    data-chip="<%= t.valor %>">
+              <i class="ti <%= ICONOS_TIPO[t.valor] || 'ti-tag' %>" aria-hidden="true"></i>
+              <%= t.etiqueta %>
+            </button>
+          <% }) %>
+        </div>
+        <input type="hidden" name="tipo_viaje" id="tipo_viaje" value="<%= seleccionados.join(',') %>">
+      </section>
+
+      <%# ============ Más opciones (plegado, cerrado por defecto) ============ %>
+      <div class="plegable">
+        <button class="plegable__disparador" type="button"
+                aria-expanded="<%= abrirMas %>" aria-controls="mas-opciones">
+          <i class="ti ti-chevron-down" aria-hidden="true"></i> Más opciones
+        </button>
+
+        <div class="plegable__cuerpo <%= abrirMas ? '' : 'oculto' %>" id="mas-opciones">
+          <div class="bloque" style="margin-top:12px">
+            <div class="campo">
+              <label for="presupuesto">Presupuesto total aproximado</label>
+              <div class="campo-euro">
+                <input type="number" id="presupuesto" name="presupuesto" min="0" step="50"
+                       placeholder="900" value="<%= viaje.presupuesto || '' %>">
+                <span class="campo-euro__simbolo">€</span>
+              </div>
+              <div class="ayuda">Opcional. Para el viaje entero, no por persona.</div>
+            </div>
+
+            <div class="campo" style="margin-bottom:0">
+              <label>Ritmo del viaje</label>
+              <div class="chips">
+                <% ritmos.forEach(r => { %>
+                  <button class="chip" type="button"
+                          aria-pressed="<%= ritmoActual === r %>"
+                          data-ritmo="<%= r %>">
+                    <i class="ti <%= ICONOS_RITMO[r] %>" aria-hidden="true"></i>
+                    <%= NOMBRES_RITMO[r] %>
+                  </button>
+                <% }) %>
+              </div>
+              <input type="hidden" name="ritmo" id="campo-ritmo" value="<%= ritmoActual %>">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <%# El campo dice a donde volver al guardar. En un viaje nuevo no hay
+          "donde estabas": se sigue al mapamundi a elegir destino, que es el
+          paso natural. %>
+      <input type="hidden" name="volverA" value="<%= urlVolver %>">
+
+      <%- include('parciales/barra', {
+            urlAtras: esNuevo ? '/' : urlVolver,
+            textoSiguiente: esNuevo ? 'Continuar' : 'Guardar',
+          }) %>
+    </form>
+  </div>
+</main>
+
+<%- include('parciales/pie') %>

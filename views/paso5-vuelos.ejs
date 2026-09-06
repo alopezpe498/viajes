@@ -1,0 +1,188 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 5, titulo: 'Vuelos' }) %>
+
+<%
+/**
+ * Pantalla 5: vuelos REALES de Kayak, por la cola de trabajos.
+ *
+ * MODELO COMBINADO: cada tarjeta NO es un vuelo suelto, es una OPCIÓN de ida y
+ * vuelta con un único precio (y a veces con aerolínea distinta en cada tramo,
+ * que es justo la gracia de un metabuscador). Por eso hay UNA sola lista y se
+ * elige una opción entera de un clic, no una ida y luego una vuelta.
+ */
+const ORDENES = [
+  { valor: 'precio',   etiqueta: 'Precio',      icono: 'ti-coin' },
+  { valor: 'duracion', etiqueta: 'Más rápidos', icono: 'ti-clock-bolt' },
+];
+
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+/** "2026-10-12" -> "12 oct" (mismo estilo que la tarjeta de embarque). */
+function fechaCorta(iso) {
+  if (!iso) return '';
+  const [, m, d] = iso.split('-').map(Number);
+  return `${d} ${MESES[m - 1]}`;
+}
+
+// El panel se abre solo cuando aún no se ha buscado (para que elijas antes de
+// gastar una búsqueda) o cuando ya hay filtros puestos.
+const abrirFiltros = estado === 'sin_buscar' || resumenDeFiltros !== 'sin filtros';
+
+// Insignias: a la más barata y a la de menor duración total.
+let idBarata = null;
+let idRapida = null;
+if (estado === 'hecho' && vuelos.length) {
+  const conPrecio = vuelos.filter((v) => v.precio != null);
+  if (conPrecio.length) idBarata = conPrecio.reduce((a, b) => (b.precio < a.precio ? b : a)).id;
+  const conDuracion = vuelos.filter((v) => v.extra.minutosTotales != null);
+  if (conDuracion.length) {
+    idRapida = conDuracion.reduce((a, b) => (b.extra.minutosTotales < a.extra.minutosTotales ? b : a)).id;
+  }
+}
+%>
+
+<main class="envoltorio">
+  <div class="contenido">
+    <div class="titulo-con-accion">
+      <div>
+        <h1>Vuelos</h1>
+        <p class="secundario" style="margin:0">
+          <% if (estado === 'hecho' && vuelos.length) { %>
+            <%= vuelos.length %> opciones de ida y vuelta desde <%= vuelos[0].extra.origen %>.
+            Cada precio es del viaje completo.
+          <% } else { %>
+            Vuelos de ida y vuelta a <%= viaje.destino || 'tu destino' %>.
+          <% } %>
+        </p>
+        <p class="filtros-resumen">
+          <i class="ti ti-filter" aria-hidden="true"></i> <%= resumenDeFiltros %>
+          <% if (ocultosPorFiltros) { %>
+            <span class="secundario">· <%= ocultosPorFiltros %> ocultos por filtros</span>
+          <% } %>
+        </p>
+      </div>
+
+      <% if (estado === 'hecho') { %>
+        <form method="POST" action="/viajes/<%= viaje.id %>/vuelos/actualizar">
+          <button class="boton-discreto" type="submit" title="Vuelve a buscar en Kayak. Lo que tengas marcado se conserva.">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Actualizar datos
+          </button>
+        </form>
+      <% } %>
+    </div>
+
+
+    <%# ================= PANEL DE FILTROS =================
+        El mismo formulario que usa cada tramo en la pestaña "Cómo llegar":
+        vive en parciales/filtros-vuelo.ejs. Aquí es ida y vuelta (los dos
+        horarios de salida) y con resultados en pantalla, así que los filtros
+        locales se notan al momento. %>
+    <%- include('parciales/filtros-vuelo', {
+          filtros,
+          accion: `/viajes/${viaje.id}/vuelos/filtros`,
+          idPanel: 'panel-filtros-vuelo',
+          abierto: abrirFiltros,
+          textoBoton: 'Buscar con estos filtros',
+          pax: (viaje.adultos || 1) + (viaje.ninos || 0),
+          soloIda: false,
+          urlLocal: `/viajes/${viaje.id}/vuelos/filtros-locales`,
+        }) %>
+
+    <% if (estado === 'sin_datos_viaje') { %>
+      <div class="caja vacio aireado">
+        <i class="ti ti-calendar-off" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">Para buscar vuelos hacen falta el destino y las fechas.</p>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/1">Ir a la configuración</a>
+      </div>
+
+    <% } else if (estado === 'sin_buscar') { %>
+      <%# Primera vez: no buscamos solos. Elige filtros y pulsa el botón. %>
+      <div class="caja vacio aireado">
+        <i class="ti ti-plane-departure" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">
+          Todavía no hemos buscado vuelos para este viaje.<br>
+          <span class="secundario">Elige arriba cómo quieres volar y pulsa <strong>Buscar con estos filtros</strong>.</span>
+        </p>
+      </div>
+
+    <% } else if (estado === 'buscando') { %>
+      <div class="buscando aireado" id="buscando-vuelos"
+           data-estado-url="/viajes/<%= viaje.id %>/vuelos/estado">
+        <i class="ti ti-plane buscando__avion" aria-hidden="true"></i>
+        <div class="buscando__titulo">Buscando vuelos en Kayak…</div>
+        <p class="buscando__nota">
+          Comparamos todas las aerolíneas. Se abrirá una ventana de Chrome en el
+          servidor: <strong>no la cierres</strong>.
+        </p>
+        <div class="buscando__pista secundario" id="buscando-pista">Comprobando cada 5 segundos…</div>
+      </div>
+
+    <% } else if (estado === 'error') { %>
+      <div class="aviso aviso--alerta aireado">
+        <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+        <div>
+          <div class="aviso__titulo">No se pudieron traer los vuelos</div>
+          <p class="aviso__texto"><%= trabajo && trabajo.mensaje_error ? trabajo.mensaje_error : 'Error desconocido.' %></p>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <form method="POST" action="/viajes/<%= viaje.id %>/vuelos/reintentar">
+          <button class="boton boton--primario" type="submit">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+          </button>
+        </form>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/2">Cambiar el destino</a>
+      </div>
+
+    <% } else { %>
+      <div class="chips aireado <%= vuelos.length ? '' : 'oculto' %>">
+        <% ORDENES.forEach(o => { %>
+          <a class="chip <%= orden === o.valor ? 'chip--activo' : '' %>"
+             href="/viajes/<%= viaje.id %>/paso/5?orden=<%= o.valor %>">
+            <i class="ti <%= o.icono %>" aria-hidden="true"></i> <%= o.etiqueta %>
+          </a>
+        <% }) %>
+      </div>
+
+      <%# Ojo: hay vuelos, pero los filtros locales no dejan pasar ninguno.
+          Es muy distinto de "no hay vuelos" y merece otro mensaje.
+          Se pinta siempre (oculto) para que el filtrado instantáneo del
+          navegador pueda mostrarlo sin recargar. %>
+      <% if (totalSinFiltrosLocales) { %>
+        <div class="aviso aviso--precaucion aireado <%= vuelos.length ? 'oculto' : '' %>"
+             id="aviso-sin-resultados-locales">
+          <i class="ti ti-filter-off" aria-hidden="true"></i>
+          <div>
+            <div class="aviso__titulo">Ningún vuelo cumple los filtros</div>
+            <p class="aviso__texto">
+              Hay <%= totalSinFiltrosLocales %> opciones buscadas, pero ninguna encaja con
+              los horarios o el precio que has puesto. Afloja alguno, o pulsa
+              «Actualizar datos» para buscar de nuevo.
+            </p>
+          </div>
+        </div>
+      <% } %>
+
+      <div class="rejilla rejilla--una aireado" style="gap:10px">
+        <% vuelos.forEach(v => { %>
+          <%- include('parciales/vuelo', {
+                v, idBarata, idRapida,
+                fechaIda: fechaCorta(viaje.fecha_inicio),
+                fechaVuelta: fechaCorta(viaje.fecha_fin),
+                urlMarcar: `/viajes/${viaje.id}/candidatos/${v.id}/marcar`
+              }) %>
+        <% }) %>
+      </div>
+    <% } %>
+
+    <%- include('parciales/barra', {
+          urlAtras: `/viajes/${viaje.id}/paso/4`,
+          urlSiguiente: `/viajes/${viaje.id}/paso/6`,
+          textoSiguiente: 'Continuar',
+          seleccion
+        }) %>
+  </div>
+
+  <%- include('parciales/lateral', { seleccion }) %>
+</main>
+
+<%- include('parciales/pie') %>

@@ -1,0 +1,35 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 2, titulo: 'Destino' }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+    <h1>¿A dónde vas?</h1>
+
+    <form method="POST" action="/viajes/<%= viaje.id %>/paso/2" class="aireado">
+      <div class="caja">
+        <div class="campo" style="margin-bottom:0">
+          <label for="destino">Ya sé dónde voy</label>
+          <input type="text" id="destino" name="destino" placeholder="París"
+                 value="<%= viaje.destino || '' %>" required>
+          <div class="ayuda">Ciudad o zona. Es lo que se le pasará a los buscadores.</div>
+        </div>
+      </div>
+
+      <div class="caja aireado" style="text-align:center">
+        <i class="ti ti-compass" style="font-size:26px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p class="secundario" style="margin:8px 0 14px">¿Todavía no lo tienes claro?</p>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/destino/ayuda">Ayúdame a elegir</a>
+      </div>
+
+      <% if (error) { %>
+        <div class="aviso aviso--alerta aireado">
+          <i class="ti ti-alert-circle" aria-hidden="true"></i>
+          <div><p class="aviso__texto"><%= error %></p></div>
+        </div>
+      <% } %>
+
+      <%- include('parciales/barra', { urlAtras: `/viajes/${viaje.id}/paso/1`, textoSiguiente: 'Continuar' }) %>
+    </form>
+  </div>
+</main>
+
+<%- include('parciales/pie') %>

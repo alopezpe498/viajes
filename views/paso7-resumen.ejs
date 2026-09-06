@@ -1,0 +1,90 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 7, titulo: 'Resumen' }) %>
+
+<%
+const ETIQUETAS = { actividad: 'Actividades', vuelo: 'Vuelos', hotel: 'Alojamiento', sitio: 'Sitios' };
+const ICONOS    = { actividad: 'ti-map-pin', vuelo: 'ti-plane-departure', hotel: 'ti-bed', sitio: 'ti-flag' };
+%>
+
+<main class="envoltorio">
+  <div class="contenido">
+    <h1>Tu viaje a <%= viaje.destino || '' %></h1>
+    <p class="secundario">
+      <%= viaje.fecha_inicio || '' %> → <%= viaje.fecha_fin || '' %>
+      <% if (viaje.presupuesto) { %> · presupuesto <%= viaje.presupuesto %> €<% } %>
+    </p>
+
+    <% if (!seleccion.total) { %>
+      <div class="vacio caja aireado">
+        <i class="ti ti-clipboard-off" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">No has marcado nada todavía.</p>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/4">Ir al catálogo</a>
+      </div>
+    <% } else { %>
+      <% for (const [tipo, items] of Object.entries(seleccion.porTipo)) { %>
+        <% if (items.length) { %>
+          <h3 class="aireado">
+            <i class="ti <%= ICONOS[tipo] %>" aria-hidden="true"></i>
+            <%= ETIQUETAS[tipo] || tipo %> (<%= items.length %>)
+          </h3>
+          <div class="caja">
+            <% items.forEach(it => { %>
+              <div class="linea-resumen">
+                <span class="linea-resumen__nombre"><%= it.titulo %></span>
+                <span class="secundario"><%= it.duracion || '' %></span>
+                <% if (it.precio === 0) { %>
+                  <span class="pildora-verde">Gratis</span>
+                <% } else { %>
+                  <strong><%= it.precio != null ? it.precio + ' €' : '—' %></strong>
+                <% } %>
+              </div>
+            <% }) %>
+          </div>
+        <% } %>
+      <% } %>
+
+      <div class="caja aireado" style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Coste estimado</strong>
+        <strong style="font-size:22px"><%= Math.round(seleccion.costeTotal) %> €</strong>
+      </div>
+
+      <% if (viaje.presupuesto && seleccion.costeTotal > viaje.presupuesto) { %>
+        <div class="aviso aviso--precaucion aireado">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          <div>
+            <div class="aviso__titulo">Te pasas del presupuesto</div>
+            <p class="aviso__texto">
+              Llevas <%= Math.round(seleccion.costeTotal - viaje.presupuesto) %> € por encima de los
+              <%= viaje.presupuesto %> € que pusiste.
+            </p>
+          </div>
+        </div>
+      <% } %>
+    <% } %>
+
+    <div class="proximamente aireado">
+      <i class="ti ti-calendar-event" aria-hidden="true"></i>
+      <strong>Próximamente: reparto automático por días</strong>
+      <p class="secundario" style="margin:6px 0 0">
+        Lo marcado se repartirá en un itinerario día a día, con horarios y tiempos de desplazamiento.
+      </p>
+    </div>
+
+    <div class="caja aireado" style="text-align:center">
+      <button class="boton boton--primario" disabled>
+        <i class="ti ti-file-description" aria-hidden="true"></i> Generar dosier
+      </button>
+      <p class="secundario" style="margin:12px 0 0">Fase final: todavía no está disponible.</p>
+    </div>
+
+    <%- include('parciales/barra', {
+          urlAtras: `/viajes/${viaje.id}/paso/6`,
+          urlSiguiente: '/',
+          textoSiguiente: 'Guardar y salir',
+          seleccion
+        }) %>
+  </div>
+
+  <%- include('parciales/lateral', { seleccion }) %>
+</main>
+
+<%- include('parciales/pie') %>

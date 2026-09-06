@@ -1,0 +1,21 @@
+{
+  "name": "creador-viajes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generador de viajes personal - PoC de scraping con receta",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning app.js",
+    "test:vueling": "node test-vueling.js",
+    "test:civitatis": "node test-civitatis.js",
+    "test:booking": "node test-booking.js",
+    "test:kayak": "node --disable-warning=ExperimentalWarning test-kayak.js"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0",
+    "ejs": "^6.0.1",
+    "express": "^5.2.1",
+    "playwright": "^1.49.0"
+  },
+  "main": "app.js"
+}

@@ -1,0 +1,139 @@
+<%
+/**
+ * FICHA DE UN SITIO dentro de una etapa.
+ *
+ * Es la misma tarjeta cuadrada de la pantalla del mapa (`.tarjeta-punto`), no
+ * una parecida: foto grande arriba, nombre, descripción corta y sus acciones.
+ * La etapa las pintaba como barras horizontales de una línea, y en una barra no
+ * cabe una foto ni se lee una descripción.
+ *
+ * EL DETALLE NO SE PIERDE. Lo que se generó al ampliar la ficha —el párrafo del
+ * "por qué", el "cómo moverse" y los lugares de dentro— está en el CATÁLOGO, y
+ * aquí se enseña igual que en el mapa. Una ficha ampliada una vez queda
+ * ampliada para siempre, se mire desde donde se mire.
+ *
+ * Espera: s (el sitio, tal y como lo devuelve queVerDeEtapa), viaje, etapa,
+ *         colocaciones, diasDeLaEtapa.
+ */
+const puesto = s.apuntado && s.candidatoId ? colocaciones.get(s.candidatoId) : null;
+
+const enElMapa = (lat, lon) =>
+  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+
+// ¿Hay algo más que la descripción corta? Si no, el desplegable no pinta nada.
+const hayDetalle = Boolean(s.porQue || s.comoMoverse || s.dentro.length || s.wikipedia_url || s.lat != null);
+%>
+<article class="tarjeta-punto tarjeta-punto--ficha <%= s.apuntado ? 'tarjeta-punto--apuntada' : '' %>"
+         data-sitio="<%= s.id %>" data-origen="<%= s.origen %>">
+
+  <div class="tarjeta-punto__foto">
+    <% if (s.imagen_url) { %>
+      <img src="<%= s.imagen_url %>" alt="" loading="lazy">
+    <% } else { %>
+      <div class="tarjeta-punto__hueco">
+        <i class="ti ti-building-arch" aria-hidden="true"></i>
+      </div>
+    <% } %>
+    <% if (s.dentro.length) { %>
+      <span class="tarjeta-punto__categoria">
+        <i class="ti ti-list-details" aria-hidden="true"></i>
+        <%= s.dentro.length %> <%= s.dentro.length === 1 ? 'lugar' : 'lugares' %>
+      </span>
+    <% } %>
+  </div>
+
+  <div class="tarjeta-punto__cuerpo">
+    <div class="tarjeta-punto__cabecera">
+      <h3 class="tarjeta-punto__nombre"><%= s.nombre %></h3>
+    </div>
+
+    <% if (s.descripcion) { %>
+      <p class="tarjeta-punto__texto"><%= s.descripcion %></p>
+    <% } %>
+
+    <div class="tarjeta-punto__acciones">
+      <button class="apuntar <%= s.apuntado ? 'apuntar--si' : '' %>" type="button"
+              data-apuntar="<%= s.origen %>" data-id="<%= s.id %>">
+        <i class="ti <%= s.apuntado ? 'ti-check' : 'ti-bookmark' %>" aria-hidden="true"></i>
+        <span><%= s.apuntado ? 'Apuntado' : 'Me lo apunto' %></span>
+      </button>
+
+      <% if (hayDetalle) { %>
+        <button class="apuntar" type="button"
+                data-detalle-sitio="<%= s.id %>"
+                aria-expanded="false" aria-controls="detalle-<%= s.origen %>-<%= s.id %>">
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+          <span>Ver detalle</span>
+        </button>
+      <% } %>
+    </div>
+
+    <%# Solo tiene sentido colocar lo que ya está apuntado. %>
+    <% if (s.apuntado && s.candidatoId) { %>
+      <% if (puesto) { %>
+        <a class="colocado colocado--ancho" href="/viaje/<%= viaje.id %>/lienzo?etapa=<%= etapa.id %>"
+           title="Verlo en el lienzo">
+          <i class="ti ti-calendar-check" aria-hidden="true"></i> <%= puesto.etiqueta %>
+        </a>
+      <% } else if (diasDeLaEtapa.length) { %>
+        <button class="apuntar apuntar--ancho" type="button" data-poner="<%= s.candidatoId %>">
+          <i class="ti ti-calendar-plus" aria-hidden="true"></i> Ponerlo en un día
+        </button>
+      <% } %>
+    <% } %>
+  </div>
+
+  <% if (hayDetalle) { %>
+    <div class="ficha-sitio__detalle" id="detalle-<%= s.origen %>-<%= s.id %>" hidden>
+      <% if (s.porQue) { %>
+        <h4 class="ficha-excursion__titulo">
+          <i class="ti ti-sparkles" aria-hidden="true"></i> Por qué merece la pena
+        </h4>
+        <p class="ficha-excursion__parrafo"><%= s.porQue %></p>
+      <% } %>
+
+      <% if (s.dentro.length) { %>
+        <h4 class="ficha-excursion__titulo">
+          <i class="ti ti-map-pin" aria-hidden="true"></i> Qué hay dentro
+        </h4>
+        <ul class="ficha-excursion__lista">
+          <% s.dentro.forEach(d => { %>
+            <li>
+              <strong><%= d.nombre %></strong><% if (d.descripcion) { %> — <%= d.descripcion %><% } %>
+            </li>
+          <% }) %>
+        </ul>
+      <% } %>
+
+      <% if (s.comoMoverse) { %>
+        <h4 class="ficha-excursion__titulo">
+          <i class="ti ti-walk" aria-hidden="true"></i> Cómo moverse
+        </h4>
+        <p class="ficha-excursion__parrafo"><%= s.comoMoverse %></p>
+      <% } %>
+
+      <div class="mini__enlaces">
+        <% if (s.wikipedia_url) { %>
+          <a href="<%= s.wikipedia_url %>" target="_blank" rel="noopener noreferrer">
+            <i class="ti ti-brand-wikipedia" aria-hidden="true"></i> Wikipedia
+          </a>
+        <% } %>
+        <% if (s.lat != null && s.lon != null) { %>
+          <a href="<%= enElMapa(s.lat, s.lon) %>" target="_blank" rel="noopener noreferrer">
+            <i class="ti ti-map-2" aria-hidden="true"></i> Ver en mapa
+          </a>
+        <% } %>
+      </div>
+
+      <%# Ampliar la ficha solo tiene sentido en un punto del catálogo que no la
+          tenga: los lugares de dentro de una ficha ya son el detalle. %>
+      <% if (s.origen === 'punto' && !s.ampliada) { %>
+        <button class="boton boton--secundario" type="button"
+                data-ampliar="<%= s.id %>" <%= s.ampliando ? 'disabled' : '' %>>
+          <i class="ti <%= s.ampliando ? 'ti-loader-2' : 'ti-sparkles' %>" aria-hidden="true"></i>
+          <%= s.ampliando ? 'Ampliando…' : 'Ampliar la ficha' %>
+        </button>
+      <% } %>
+    </div>
+  <% } %>
+</article>

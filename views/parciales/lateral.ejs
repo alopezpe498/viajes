@@ -1,0 +1,31 @@
+<%
+/**
+ * Panel lateral con la selección. Solo visible en escritorio (>=900px).
+ * IMPORTANTE: public/js/app.js repinta este panel entero por innerHTML usando
+ * las clases lateral__grupo / lateral__etiqueta / lateral__item / lateral__total.
+ * Si cambias esos nombres aquí, hay que cambiarlos también allí (y allí no se toca).
+ */
+const ETIQUETAS = { actividad: 'Actividades', vuelo: 'Vuelos', hotel: 'Hotel', sitio: 'Sitios' };
+%>
+<aside class="lateral" id="panel-lateral">
+  <h3>Tu selección</h3>
+
+  <% if (!seleccion.total) { %>
+    <p class="secundario" style="margin:0">Aún no has marcado nada. Toca el círculo de una tarjeta.</p>
+  <% } else { %>
+    <% for (const [tipo, items] of Object.entries(seleccion.porTipo)) { %>
+      <% if (items.length) { %>
+        <div class="lateral__grupo">
+          <div class="lateral__etiqueta"><%= ETIQUETAS[tipo] || tipo %> (<%= items.length %>)</div>
+          <% items.forEach(it => { %>
+            <div class="lateral__item"><%= it.titulo %></div>
+          <% }) %>
+        </div>
+      <% } %>
+    <% } %>
+    <div class="lateral__total">
+      <span>Total</span>
+      <span><%= Math.round(seleccion.costeTotal) %> €</span>
+    </div>
+  <% } %>
+</aside>

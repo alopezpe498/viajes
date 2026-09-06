@@ -1,0 +1,124 @@
+<%
+/**
+ * Cabecera. En el wizard es una TARJETA DE EMBARQUE; en la home, solo el título.
+ * Espera: viaje (o null) y pasoActual (1..8).
+ *
+ * Presentación pura: los enlaces de los pasos completados apuntan a las rutas
+ * que ya existían, aquí solo se visten.
+ */
+const TOTAL_PASOS = 7;
+
+// Los 7 pasos del wizard con su icono de Tabler.
+// El antiguo paso "Tipo de viaje" ya no existe: su contenido vive ahora dentro
+// de la pantalla 1 ("Tu viaje"), junto a las fechas y los viajeros.
+const PASOS = [
+  { n: 1, etiqueta: 'Tu viaje', icono: 'ti-adjustments-horizontal' },
+  { n: 2, etiqueta: 'Destino',  icono: 'ti-world' },
+  { n: 3, etiqueta: 'Avisos',   icono: 'ti-alert-triangle' },
+  { n: 4, etiqueta: 'Qué ver',  icono: 'ti-map-pin' },
+  { n: 5, etiqueta: 'Vuelos',   icono: 'ti-plane-departure' },
+  { n: 6, etiqueta: 'Hotel',    icono: 'ti-bed' },
+  { n: 7, etiqueta: 'Dosier',   icono: 'ti-file-description' },
+];
+
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+/** "2026-09-14" + "2026-09-17" -> "14–17 sep" (o "14 sep – 3 oct" si cambia de mes) */
+function rangoFechas(desde, hasta) {
+  if (!desde) return '';
+  const [a1, m1, d1] = desde.split('-').map(Number);
+  if (!hasta) return `${d1} ${MESES[m1 - 1]}`;
+  const [a2, m2, d2] = hasta.split('-').map(Number);
+  return (m1 === m2 && a1 === a2)
+    ? `${d1}–${d2} ${MESES[m1 - 1]}`
+    : `${d1} ${MESES[m1 - 1]} – ${d2} ${MESES[m2 - 1]}`;
+}
+
+// Posición del avión sobre la línea de progreso.
+const avionPct = typeof pasoActual !== 'undefined' && pasoActual
+  ? ((pasoActual - 1) / (TOTAL_PASOS - 1)) * 100
+  : 0;
+%>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= typeof titulo !== 'undefined' ? titulo : 'Generador de viajes' %></title>
+  <%# Iconos Tabler como webfont. Necesita conexión: si no hay, el resto se ve igual. %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/estilo.css">
+  <%# Hueco para las pantallas que necesitan algo más en la cabeza (Leaflet, p.ej.) %>
+  <%- typeof extraCabeza !== 'undefined' && extraCabeza ? extraCabeza : '' %>
+</head>
+<body>
+
+<% if (typeof pasoActual !== 'undefined' && pasoActual && typeof viaje !== 'undefined' && viaje) { %>
+  <%# ---------- TARJETA DE EMBARQUE ---------- %>
+  <div class="envoltorio-embarque">
+    <div class="embarque">
+
+      <%# Banda superior azul %>
+      <div class="embarque__banda">
+        <span class="embarque__marca">Tu viaje</span>
+        <span class="embarque__viaje">
+          <%= viaje.destino || viaje.nombre %><%
+            const rango = rangoFechas(viaje.fecha_inicio, viaje.fecha_fin);
+            if (rango) { %> · <%= rango %><% }
+          %>
+        </span>
+
+        <%# Atajo a la ruta: es la pantalla desde la que se monta el viaje, y
+            conviene tenerla a mano desde cualquier paso. %>
+        <a class="embarque__ruta" href="/viaje/<%= viaje.id %>/ruta">
+          <i class="ti ti-route" aria-hidden="true"></i> Mi ruta
+        </a>
+      </div>
+
+      <%# Cuerpo: INICIO ——✈—— DOSIER %>
+      <div class="embarque__cuerpo">
+        <div class="embarque__punto">
+          <span class="embarque__codigo">Inicio</span>
+          <span class="embarque__subcodigo">paso 1</span>
+        </div>
+
+        <div class="embarque__linea">
+          <div class="embarque__recorrido" style="width: <%= avionPct %>%"></div>
+          <div class="embarque__pendiente" style="left: <%= avionPct %>%"></div>
+          <i class="ti ti-plane embarque__avion" style="left: <%= avionPct %>%" aria-hidden="true"></i>
+        </div>
+
+        <div class="embarque__punto embarque__punto--fin <%= pasoActual < TOTAL_PASOS ? 'embarque__punto--pendiente' : '' %>">
+          <span class="embarque__codigo">Dosier</span>
+          <span class="embarque__subcodigo">paso <%= TOTAL_PASOS %></span>
+        </div>
+      </div>
+
+      <%# Perforado, como los billetes de verdad %>
+      <div class="embarque__perforada"></div>
+
+      <%# Fila de pasos: los completados llevan al paso, el actual va en píldora %>
+      <nav class="embarque__pasos" aria-label="Pasos del viaje">
+        <% PASOS.forEach(p => { %>
+          <% if (p.n < pasoActual) { %>
+            <a class="paso paso--hecho" href="/viajes/<%= viaje.id %>/paso/<%= p.n %>">
+              <i class="ti <%= p.icono %>" aria-hidden="true"></i>
+              <span class="paso__etiqueta"><%= p.etiqueta %></span>
+            </a>
+          <% } else if (p.n === pasoActual) { %>
+            <span class="paso paso--actual" aria-current="step">
+              <i class="ti <%= p.icono %>" aria-hidden="true"></i>
+              <span class="paso__etiqueta"><%= p.etiqueta %></span>
+            </span>
+          <% } else { %>
+            <span class="paso paso--pendiente">
+              <i class="ti <%= p.icono %>" aria-hidden="true"></i>
+              <span class="paso__etiqueta"><%= p.etiqueta %></span>
+            </span>
+          <% } %>
+        <% }) %>
+      </nav>
+
+    </div>
+  </div>
+<% } %>

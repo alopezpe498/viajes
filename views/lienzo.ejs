@@ -1,0 +1,59 @@
+<%
+/**
+ * EL LIENZO: los días del viaje y lo que hay puesto en cada uno.
+ *
+ * La pantalla se pinta ENTERA desde el cliente, con el mismo objeto que
+ * devuelve la API tras cada cambio. Aquí solo va el armazón y los datos de
+ * partida: si el marcado estuviera en dos sitios, arrastrar una tarjeta
+ * repintaría algo distinto de lo que había.
+ *
+ * Espera: lienzo, opinion, pensando.
+ */
+const pieExtra = '<script src="/js/lienzo.js"></script><script src="/js/dosier.js"></script>';
+const { viaje } = lienzo;
+%>
+<%- include('parciales/cabecera', {
+      viaje: null, pasoActual: null, titulo: `Lienzo · ${viaje.nombre}`, extraCabeza: ''
+    }) %>
+
+<div class="lienzo-pantalla" data-viaje="<%= viaje.id %>" data-pensando="<%= pensando ? '1' : '' %>">
+
+  <%# ======================= CABECERA ======================= %>
+  <header class="lienzo-cabecera">
+    <a class="pill pill--volver" href="/viaje/<%= viaje.id %>/ruta" title="Volver a la ruta">
+      <i class="ti ti-arrow-left" aria-hidden="true"></i>
+    </a>
+    <h1 class="lienzo-cabecera__titulo">Lienzo del viaje</h1>
+
+    <div class="lienzo-filtros" id="filtros-ciudad"></div>
+
+    <%# El mismo control del dosier que en "Mi ruta", en una línea. %>
+    <%- include('parciales/panel-dosier', { viajeId: viaje.id, dosier }) %>
+
+    <button class="btn-ia" type="button" id="boton-ia">
+      <i class="ti ti-sparkles" aria-hidden="true"></i> Pedir opinión a la IA
+    </button>
+  </header>
+
+  <%# El resultado de la IA aterriza aquí. Se rellena desde el JS. %>
+  <div class="opinion" id="opinion" hidden></div>
+
+
+  <%# ======================= CUERPO ======================= %>
+  <div class="lienzo-cuerpo" id="cuerpo">
+    <aside class="mochila" id="mochila">
+      <h2 class="mochila__titulo">La mochila</h2>
+      <p class="mochila__sub">Lo apuntado, aún sin día. Arrastra a un día — o de vuelta aquí.</p>
+      <div class="tipos" id="filtros-tipo"></div>
+      <div id="mochila-contenido"></div>
+    </aside>
+
+    <div class="lienzo-dias" id="lienzo-dias"></div>
+  </div>
+</div>
+
+<%# Los datos de partida viajan en el HTML: la pantalla se pinta ya llena. %>
+<script type="application/json" id="datos-lienzo"><%- JSON.stringify(lienzo) %></script>
+<script type="application/json" id="datos-opinion"><%- JSON.stringify({ opinion, pensando }) %></script>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

@@ -1,0 +1,99 @@
+<%
+/**
+ * EL CONTROL DEL DOSIER: una sola línea en la cabecera.
+ *
+ * Antes esto era una caja con el interruptor, los indicadores desplegados y el
+ * aviso de "ha cambiado" en un rectángulo ámbar. Ocupaba más que el contador de
+ * noches para algo que se toca al final del viaje y una vez.
+ *
+ * Ahora: interruptor pequeño, un ⚠ que solo aparece si falta algo, y el botón
+ * Dosier con un puntito si se ha quedado viejo. Todo lo demás —la fecha, Ver,
+ * Descargar, Compartir, Regenerar— vive dentro del menú, que es donde se va
+ * cuando se quiere hacer algo con él.
+ *
+ * Va igual en "Mi ruta" y en el lienzo, que son las dos pantallas desde las que
+ * se mira el viaje entero.
+ *
+ * Espera: viajeId y dosier (lo que devuelve estadoDelDosier).
+ */
+const f = dosier.falta;
+
+// Lo que falta, en una frase. Es lo que va en el tooltip del ⚠.
+const pendientes = [];
+if (f.tramosSinResolver) {
+  pendientes.push(`${f.tramosSinResolver} ${f.tramosSinResolver === 1 ? 'tramo de transporte sin resolver' : 'tramos de transporte sin resolver'}`);
+}
+if (f.etapasSinHotel) pendientes.push(`sin hotel en ${f.nombresSinHotel.join(', ')}`);
+const textoFalta = pendientes.length
+  ? `Falta ${pendientes.join(' y ')}. Puedes marcarlo listo igualmente.`
+  : '';
+%>
+<span class="dosier-linea" data-viaje="<%= viajeId %>">
+
+  <%# El interruptor. Pequeño, pero sigue diciendo su estado en voz alta. %>
+  <button class="interruptor <%= dosier.listo ? 'interruptor--si' : '' %>" type="button"
+          id="check-listo" aria-pressed="<%= dosier.listo %>"
+          title="Lo marcas tú: el dosier solo se genera cuando dices que el viaje está listo">
+    <span class="interruptor__caja" aria-hidden="true"><i class="ti ti-check"></i></span>
+    <span class="interruptor__texto">Viaje listo</span>
+  </button>
+
+  <%# El ⚠ solo si falta algo. Informa; nunca impide marcar el viaje listo. %>
+  <button class="dosier-alerta <%= textoFalta ? '' : 'oculto' %>" type="button"
+          id="dosier-falta" data-nota="<%= textoFalta %>"
+          title="<%= textoFalta %>" aria-label="<%= textoFalta || 'Todo resuelto' %>">
+    <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+  </button>
+
+  <%# El botón y su menú. %>
+  <span class="dosier-menu">
+    <button class="boton boton--secundario dosier-boton" type="button" id="generar-dosier"
+            aria-expanded="false" aria-haspopup="true"
+            <%= dosier.listo ? '' : 'disabled' %>
+            title="<%= dosier.listo
+                  ? 'Ver, descargar o compartir el dosier del viaje'
+                  : 'Marca el viaje como listo para poder generar el dosier' %>">
+      <i class="ti ti-file-text" aria-hidden="true"></i>
+      <span id="generar-texto">Dosier</span>
+      <%# El puntito de "se ha quedado viejo". Su explicación, en el tooltip. %>
+      <span class="dosier-punto <%= dosier.viejo ? '' : 'oculto' %>" id="dosier-punto"
+            title="El viaje ha cambiado desde el último dosier — vuelve a generarlo"
+            aria-hidden="true"></span>
+    </button>
+
+    <div class="dosier-desplegable" id="dosier-desplegable" hidden role="menu">
+      <p class="dosier-desplegable__fecha" id="dosier-fecha">
+        <% if (dosier.hay) { %>
+          Generado el <%= dosier.generadoEnLargo %>.
+        <% } else { %>
+          Todavía no lo has generado.
+        <% } %>
+      </p>
+
+      <p class="dosier-desplegable__viejo <%= dosier.viejo ? '' : 'oculto' %>" id="dosier-viejo">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        El viaje ha cambiado desde el último dosier.
+      </p>
+
+      <div class="dosier-desplegable__acciones" id="dosier-acciones">
+        <button type="button" role="menuitem" id="dosier-regenerar">
+          <i class="ti ti-refresh" aria-hidden="true"></i>
+          <span id="regenerar-texto"><%= dosier.hay ? 'Regenerar' : 'Generar' %></span>
+        </button>
+
+        <%# Los tres solo tienen sentido si hay archivo. %>
+        <span class="dosier-desplegable__hay <%= dosier.hay ? '' : 'oculto' %>" id="dosier-hay">
+          <a role="menuitem" href="/viaje/<%= viajeId %>/dosier" target="_blank" rel="noopener">
+            <i class="ti ti-eye" aria-hidden="true"></i> Ver
+          </a>
+          <a role="menuitem" href="/viaje/<%= viajeId %>/dosier/descargar" id="dosier-descargar">
+            <i class="ti ti-download" aria-hidden="true"></i> Descargar
+          </a>
+          <button type="button" role="menuitem" id="dosier-compartir">
+            <i class="ti ti-share" aria-hidden="true"></i> Compartir
+          </button>
+        </span>
+      </div>
+    </div>
+  </span>
+</span>

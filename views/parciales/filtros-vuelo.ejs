@@ -1,0 +1,133 @@
+<%
+/**
+ * PANEL DE FILTROS DE VUELO.
+ *
+ * Salió del paso 5 sin tocarle el aspecto, para poder usarlo también dentro de
+ * la tarjeta de CADA TRAMO. Y ahí está la gracia: en una etapa hay dos tramos
+ * (la ida y la vuelta) y cada uno tiene los suyos, así que en una misma página
+ * puede haber varios de estos paneles a la vez. Por eso no queda ni un id
+ * global: los chips buscan su campo por `name` DENTRO de su formulario.
+ *
+ * Espera:
+ *   filtros    los valores actuales (normalizados por normalizarFiltrosVuelos)
+ *   accion     a dónde va el POST
+ *   idPanel    id del cuerpo plegable (único en la página)
+ *   abierto    true para nacer desplegado
+ *   textoBoton lo que dice el botón de enviar
+ *   pax        cuántos pagan billete, para explicar el precio por persona
+ *   soloIda    true en un tramo: no hay "salida de la vuelta" que elegir
+ *   ocultos    (opcional) pares [nombre, valor] de campos ocultos extra
+ *
+ * SOBRE LOS DOS TIPOS DE FILTRO: escalas y duración los aplica KAYAK en la
+ * búsqueda (viajan en la URL), así que obligan a buscar de nuevo. Las franjas
+ * horarias y el precio los aplicamos NOSOTROS sobre lo ya guardado. En el paso
+ * 5, donde ya hay resultados en pantalla, esos se notan al momento; en un tramo
+ * que todavía no ha buscado nada no habría nada que notar, así que viajan con
+ * el formulario como los demás.
+ */
+const franjas = [['','Cualquiera',null],['manana','Mañana','ti-sunrise'],['tarde','Tarde','ti-sun'],['noche','Noche','ti-moon']];
+const viajeros = pax;
+const instantaneos = typeof urlLocal !== 'undefined' && urlLocal;
+%>
+<div class="plegable aireado">
+  <button class="plegable__disparador" type="button"
+          aria-expanded="<%= abierto %>" aria-controls="<%= idPanel %>">
+    <i class="ti ti-adjustments" aria-hidden="true"></i>
+    Filtros de búsqueda
+    <i class="ti ti-chevron-down" aria-hidden="true"></i>
+  </button>
+
+  <div class="plegable__cuerpo <%= abierto ? '' : 'oculto' %>" id="<%= idPanel %>">
+    <form method="POST" action="<%= accion %>" class="bloque" data-filtros="vuelo"
+          <% if (instantaneos) { %>data-url-local="<%= urlLocal %>"<% } %>
+          data-pax="<%= viajeros %>">
+
+      <%# ---------- Los que aplica Kayak ---------- %>
+      <div class="grupo-filtro">
+        <div class="grupo-filtro__titulo">Cómo quieres volar</div>
+
+        <div class="campo">
+          <label>Escalas</label>
+          <div class="chips">
+            <% [['','Cualquiera',null],['directos','Solo directos','ti-plane'],['max1','Máx. 1 escala','ti-arrows-split']].forEach(([valor, etiqueta, icono]) => { %>
+              <button class="chip" type="button"
+                      aria-pressed="<%= (filtros.escalas || '') === valor %>"
+                      data-grupo="escalas" data-valor="<%= valor %>">
+                <% if (icono) { %><i class="ti <%= icono %>" aria-hidden="true"></i><% } %> <%= etiqueta %>
+              </button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="escalas" value="<%= filtros.escalas || '' %>">
+        </div>
+
+        <div class="campo" style="margin-bottom:0">
+          <label>Duración máxima por trayecto</label>
+          <div class="chips">
+            <% [[null,'Cualquiera'],[4,'< 4 h'],[8,'< 8 h'],[12,'< 12 h']].forEach(([valor, etiqueta]) => { %>
+              <button class="chip" type="button"
+                      aria-pressed="<%= (filtros.duracionMax || null) === valor %>"
+                      data-grupo="duracionMax" data-valor="<%= valor === null ? '' : valor %>">
+                <% if (valor !== null) { %><i class="ti ti-clock" aria-hidden="true"></i><% } %> <%= etiqueta %>
+              </button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="duracionMax" value="<%= filtros.duracionMax || '' %>">
+        </div>
+      </div>
+
+      <%# ---------- Los que aplicamos nosotros ---------- %>
+      <div class="grupo-filtro" style="border-bottom:0;padding-bottom:0;margin-bottom:0">
+        <div class="grupo-filtro__titulo">
+          Horarios y precio
+          <% if (instantaneos) { %>
+            <span class="etiqueta-instantanea"><i class="ti ti-bolt" aria-hidden="true"></i> se aplican al momento</span>
+          <% } %>
+        </div>
+
+        <%# En un tramo solo se vuela en un sentido: no hay vuelta que filtrar. %>
+        <% const campos = soloIda
+             ? [['salidaIda', 'Hora de salida']]
+             : [['salidaIda', 'Salida de la ida'], ['salidaVuelta', 'Salida de la vuelta']]; %>
+
+        <% campos.forEach(([clave, etiqueta]) => { %>
+          <div class="campo">
+            <label><%= etiqueta %></label>
+            <div class="chips">
+              <% franjas.forEach(([valor, txt, icono]) => { %>
+                <button class="chip" type="button"
+                        aria-pressed="<%= (filtros[clave] || '') === valor %>"
+                        <% if (instantaneos) { %>data-local="<%= clave %>"<% } %>
+                        data-grupo="<%= clave %>" data-valor="<%= valor %>">
+                  <% if (icono) { %><i class="ti <%= icono %>" aria-hidden="true"></i><% } %> <%= txt %>
+                </button>
+              <% }) %>
+            </div>
+            <input type="hidden" name="<%= clave %>" value="<%= filtros[clave] || '' %>">
+          </div>
+        <% }) %>
+
+        <div class="campo" style="margin-bottom:0">
+          <label for="precio-<%= idPanel %>">Precio máximo por persona</label>
+          <div class="campo-euro" style="max-width:200px">
+            <input type="number" id="precio-<%= idPanel %>" name="precioMaxPersona" min="0" step="10"
+                   placeholder="sin tope" value="<%= filtros.precioMaxPersona || '' %>"
+                   <% if (instantaneos) { %>data-local-precio<% } %>>
+            <span class="campo-euro__simbolo">€</span>
+          </div>
+          <div class="ayuda">
+            Del precio repartido entre los <%= viajeros %>
+            <%= viajeros === 1 ? 'viajero que paga billete' : 'viajeros que pagan billete' %>.
+          </div>
+        </div>
+      </div>
+
+      <% (typeof ocultos !== 'undefined' ? ocultos : []).forEach(([nombre, valor]) => { %>
+        <input type="hidden" name="<%= nombre %>" value="<%= valor %>">
+      <% }) %>
+
+      <button class="boton boton--primario" type="submit" style="margin-top:18px">
+        <i class="ti ti-search" aria-hidden="true"></i> <%= textoBoton %>
+      </button>
+    </form>
+  </div>
+</div>

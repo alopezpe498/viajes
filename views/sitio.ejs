@@ -1,0 +1,291 @@
+<%
+/**
+ * FICHA PROFUNDA de una ciudad o un sitio.
+ *
+ * Espera: punto, destino, sitios, excursiones, parrafoPorQue, comoMoverse,
+ *         estado, mensajeError, enRuta, viaje (o null).
+ *
+ * Tres pestañas, y solo se ve la activa. No es un acordeón: cada pestaña es un
+ * modo de mirar el sitio, y verlas a la vez sería una parrafada.
+ */
+const pieExtra = '<script src="/js/sitio.js"></script>';
+
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+/** "Investigada hoy" / "hace 3 días" / "el 4 de marzo". */
+function cuando(fecha) {
+  if (!fecha) return 'sin investigar';
+  const d = new Date(fecha.replace(' ', 'T') + 'Z');
+  const dias = Math.floor((Date.now() - d) / 86400000);
+  if (dias <= 0) return 'hoy';
+  if (dias === 1) return 'ayer';
+  if (dias < 30) return `hace ${dias} días`;
+  return `el ${d.getDate()} de ${MESES[d.getMonth()]}`;
+}
+
+/** "2-3 días" / "1 día", o null si la IA no lo dijo. */
+const min = punto.dias_recomendados_min;
+const max = punto.dias_recomendados_max;
+const dias = (!min && !max) ? null
+  : (!max || max === min) ? `${min} ${min === 1 ? 'día' : 'días'}`
+  : `${min || 1}-${max} días`;
+
+/** Primera frase de una descripción, para la línea plegada de la mini-ficha. */
+function primeraFrase(texto) {
+  if (!texto) return '';
+  const corte = texto.slice(0, 160);
+  const fin = corte.search(/\.\s/);   // ojo: 'punto' ya es el punto de interés
+  return fin > 40 ? corte.slice(0, fin + 1) : (texto.length > 120 ? corte.trim() + '…' : texto);
+}
+
+/** OpenStreetMap centrado en unas coordenadas, con marcador. */
+const enElMapa = (lat, lon) =>
+  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+
+const volverAlMapa = destino
+  ? `/descubrir/${destino.id}` + (viaje ? `?viaje=${viaje.id}` : '')
+  : '/';
+
+const esCiudad = punto.categoria === 'ciudad';
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: punto.nombre,
+      extraCabeza: ''
+    }) %>
+
+<main class="ficha">
+
+  <%# ======================= CABECERA CON FOTO ======================= %>
+  <header class="ficha__cabecera">
+    <% if (punto.imagen_url) { %>
+      <img class="ficha__foto" src="<%= punto.imagen_url %>" alt="">
+    <% } else { %>
+      <div class="ficha__foto ficha__foto--hueco">
+        <i class="ti <%= esCiudad ? 'ti-building-arch' : 'ti-mountain' %>" aria-hidden="true"></i>
+      </div>
+    <% } %>
+
+    <a class="ficha__volver" href="<%= volverAlMapa %>" title="Volver al mapa">
+      <i class="ti ti-arrow-left" aria-hidden="true"></i>
+      <span>Al mapa</span>
+    </a>
+
+    <%# Mismo atajo a la ruta que en el mapa: desde aquí también hay que poder ir. %>
+    <% if (viaje) { %>
+      <a class="ficha__ruta" href="/viaje/<%= viaje.id %>/ruta">
+        <i class="ti ti-route" aria-hidden="true"></i>
+        Mi ruta
+        <span class="pill__cuenta pill__cuenta--ruta" id="cuenta-ruta"><%= etapasEnRuta %></span>
+      </a>
+    <% } %>
+
+    <div class="ficha__titular">
+      <span class="ficha__categoria">
+        <i class="ti <%= esCiudad ? 'ti-building' : 'ti-map-pin' %>" aria-hidden="true"></i>
+        <%= esCiudad ? 'Ciudad' : 'Sitio' %>
+        <% if (!esCiudad && punto.ciudad_base) { %> · desde <%= punto.ciudad_base %><% } %>
+      </span>
+
+      <h1 class="ficha__nombre"><%= punto.nombre %></h1>
+
+      <p class="ficha__meta">
+        <% if (dias) { %>Recomendado: <strong><%= dias %></strong> · <% } %>
+        Investigada <%= cuando(punto.investigado_en) %>
+      </p>
+    </div>
+
+    <% if (viaje) { %>
+      <button class="boton <%= enRuta ? 'boton--hecho' : 'boton--primario' %> ficha__accion"
+              type="button" id="boton-a-mi-ruta"
+              data-url="/sitio/<%= punto.id %>/a-mi-ruta?viaje=<%= viaje.id %>"
+              <%= enRuta ? 'disabled' : '' %>>
+        <%# Mismo criterio que en el mapa: de una ciudad esto se APUNTA dentro
+            de su parada, no se convierte en parada. %>
+        <% if (esCiudad) { %>
+          <% if (enRuta) { %>
+            <i class="ti ti-check" aria-hidden="true"></i> Apuntado
+          <% } else { %>
+            <i class="ti ti-bookmark" aria-hidden="true"></i> Me lo apunto
+          <% } %>
+        <% } else { %>
+          <% if (enRuta) { %>
+            <i class="ti ti-check" aria-hidden="true"></i> En tu ruta
+          <% } else { %>
+            <i class="ti ti-route" aria-hidden="true"></i> Añadir a mi ruta
+          <% } %>
+        <% } %>
+      </button>
+    <% } %>
+  </header>
+
+  <div class="ficha__cuerpo">
+
+    <%# ======================= FRANJA DE ESTADO ======================= %>
+    <% if (estado === 'completando') { %>
+      <div class="franja franja--trabajando" id="ficha-completando"
+           data-estado-url="/sitio/<%= punto.id %>/estado<%= viaje ? `?viaje=${viaje.id}` : '' %>">
+        <span class="rueda" aria-hidden="true"></span>
+        <span>Completando la ficha…</span>
+        <span class="franja__pista secundario" id="franja-pista">Se recarga sola cuando esté.</span>
+      </div>
+
+    <% } else if (estado === 'error') { %>
+      <div class="franja franja--mala">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <span><%= mensajeError || 'No se pudo completar la ficha.' %></span>
+        <% if (viaje) { %>
+          <form method="POST" action="/sitio/<%= punto.id %>/investigar?viaje=<%= viaje.id %>">
+            <button class="boton-discreto" type="submit">
+              <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+            </button>
+          </form>
+        <% } %>
+      </div>
+
+    <% } else if (estado === 'sin_investigar') { %>
+      <div class="franja">
+        <i class="ti ti-sparkles" aria-hidden="true"></i>
+        <span>Esta ficha todavía no se ha investigado.</span>
+        <% if (viaje) { %>
+          <form method="POST" action="/sitio/<%= punto.id %>/investigar?viaje=<%= viaje.id %>">
+            <button class="boton-discreto" type="submit">
+              <i class="ti ti-sparkles" aria-hidden="true"></i> Investigar ahora
+            </button>
+          </form>
+        <% } %>
+      </div>
+    <% } %>
+
+    <%# ======================= PESTAÑAS ======================= %>
+    <div class="pestanas" role="tablist" id="pestanas">
+      <button class="pestana pestana--activa" type="button" role="tab"
+              aria-selected="true" data-panel="panel-resumen">Resumen</button>
+      <button class="pestana" type="button" role="tab"
+              aria-selected="false" data-panel="panel-quever">
+        Qué ver <span class="pestana__n"><%= sitios.length %></span>
+      </button>
+      <% if (esCiudad) { %>
+        <button class="pestana" type="button" role="tab"
+                aria-selected="false" data-panel="panel-excursiones">
+          Excursiones <span class="pestana__n"><%= excursiones.length %></span>
+        </button>
+      <% } %>
+    </div>
+
+    <%# ---------------------- RESUMEN ---------------------- %>
+    <section class="panel" id="panel-resumen" role="tabpanel">
+      <% if (parrafoPorQue || punto.por_que) { %>
+        <article class="caja caja--porque">
+          <h2 class="caja__titulo"><i class="ti ti-heart" aria-hidden="true"></i> Por qué merece la pena</h2>
+          <p><%= parrafoPorQue || punto.por_que %></p>
+        </article>
+      <% } %>
+
+      <% if (punto.descripcion_corta) { %>
+        <p class="ficha__intro"><%= punto.descripcion_corta %></p>
+      <% } %>
+
+      <div class="datos">
+        <div class="dato">
+          <i class="ti ti-calendar" aria-hidden="true"></i>
+          <span class="dato__valor"><%= dias || '—' %></span>
+          <span class="dato__etiqueta">Días recomendados</span>
+        </div>
+        <div class="dato">
+          <i class="ti ti-route" aria-hidden="true"></i>
+          <span class="dato__valor dato__valor--texto"><%= comoMoverse || '—' %></span>
+          <span class="dato__etiqueta">Cómo moverse</span>
+        </div>
+        <div class="dato">
+          <i class="ti ti-map-pin" aria-hidden="true"></i>
+          <span class="dato__valor"><%= sitios.length %></span>
+          <span class="dato__etiqueta"><%= sitios.length === 1 ? 'Sitio que ver' : 'Sitios que ver' %></span>
+        </div>
+        <% if (esCiudad) { %>
+          <div class="dato">
+            <i class="ti ti-ticket" aria-hidden="true"></i>
+            <span class="dato__valor"><%= excursiones.length %></span>
+            <span class="dato__etiqueta"><%= excursiones.length === 1 ? 'Excursión' : 'Excursiones' %></span>
+          </div>
+        <% } %>
+      </div>
+
+      <% if (punto.wikipedia_url) { %>
+        <a class="enlace-fuera" href="<%= punto.wikipedia_url %>" target="_blank" rel="noopener noreferrer">
+          <i class="ti ti-brand-wikipedia" aria-hidden="true"></i> Leer en Wikipedia
+        </a>
+      <% } %>
+    </section>
+
+    <%# ---------------------- QUÉ VER ---------------------- %>
+    <section class="panel" id="panel-quever" role="tabpanel" hidden>
+      <% if (!sitios.length) { %>
+        <p class="secundario">
+          <%= estado === 'completando' ? 'La IA está en ello…' : 'Todavía no hay lugares en esta ficha.' %>
+        </p>
+      <% } %>
+
+      <% sitios.forEach(s => { %>
+        <details class="mini">
+          <summary class="mini__cabecera">
+            <% if (s.imagen_url) { %>
+              <img class="mini__foto" src="<%= s.imagen_url %>" alt="" loading="lazy">
+            <% } else { %>
+              <span class="mini__foto mini__foto--hueco"><i class="ti ti-photo-off" aria-hidden="true"></i></span>
+            <% } %>
+            <span class="mini__texto">
+              <span class="mini__nombre"><%= s.nombre %></span>
+              <span class="mini__resumen"><%= primeraFrase(s.descripcion) %></span>
+            </span>
+            <i class="ti ti-chevron-down mini__flecha" aria-hidden="true"></i>
+          </summary>
+
+          <div class="mini__detalle">
+            <% if (s.descripcion) { %><p><%= s.descripcion %></p><% } %>
+            <div class="mini__enlaces">
+              <% if (s.wikipedia_url) { %>
+                <a href="<%= s.wikipedia_url %>" target="_blank" rel="noopener noreferrer">
+                  <i class="ti ti-brand-wikipedia" aria-hidden="true"></i> Wikipedia
+                </a>
+              <% } %>
+              <% if (s.lat != null && s.lon != null) { %>
+                <a href="<%= enElMapa(s.lat, s.lon) %>" target="_blank" rel="noopener noreferrer">
+                  <i class="ti ti-map-2" aria-hidden="true"></i> Ver en mapa
+                </a>
+              <% } %>
+            </div>
+          </div>
+        </details>
+      <% }) %>
+    </section>
+
+    <%# ---------------------- EXCURSIONES ---------------------- %>
+    <% if (esCiudad) { %>
+      <section class="panel" id="panel-excursiones" role="tabpanel" hidden>
+        <p class="secundario">
+          Del catálogo de Civitatis de <%= punto.nombre %>. Son de la ciudad, no de un viaje
+          concreto: aquí solo se miran.
+        </p>
+
+        <% if (!excursiones.length) { %>
+          <p class="secundario">
+            <%= estado === 'completando' ? 'Buscándolas…' : 'Todavía no hay excursiones guardadas de esta ciudad.' %>
+          </p>
+        <% } %>
+
+        <div class="rejilla aireado">
+          <% excursiones.forEach(c => { %>
+            <div>
+              <%- include('parciales/tarjeta', { c, viaje, icono: 'ti-ticket', soloLectura: true }) %>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
+
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

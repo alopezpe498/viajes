@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lienzo del viaje — Maqueta v2</title>
+<style>
+  :root {
+    --fondo: #F4F8FA;
+    --superficie: #FFFFFF;
+    --borde: #E2ECF1;
+    --acento: #1B7FA6;
+    --acento-hover: #16688A;
+    --acento-tinte: #D3E8F0;
+    --texto: #12303E;
+    --secundario: #5E7A87;
+    --pendiente: #8FA9B4;
+    --verde-fondo: #E1F2E7;
+    --verde-texto: #1E6B3C;
+    --ambar-fondo: #FBEED6;
+    --ambar-texto: #8A5A16;
+    --rojo: #C0563B;
+    --rojo-fondo: #F9E3DC;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .cabecera {
+    padding: 16px 20px 12px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .cabecera h1 { font-size: 20px; font-weight: 700; margin-right: auto; }
+  .filtros { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filtro {
+    border: 1px solid var(--borde);
+    background: var(--superficie);
+    color: var(--secundario);
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .filtro.activo { background: var(--acento); border-color: var(--acento); color: white; }
+  .btn-ia {
+    border: 1px solid var(--borde);
+    background: var(--superficie);
+    color: var(--acento);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-ia:hover { background: var(--acento-tinte); }
+
+  .cuerpo { flex: 1; display: flex; overflow: hidden; }
+
+  .mochila {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--superficie);
+    border-right: 1px solid var(--borde);
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .mochila h2 {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pendiente);
+  }
+  .mochila .sub { font-size: 12px; color: var(--pendiente); margin: 4px 0 10px; }
+  .tipos { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tipo-chip {
+    border: 1px solid var(--borde);
+    background: var(--fondo);
+    color: var(--secundario);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tipo-chip.activo { background: var(--acento-tinte); border-color: var(--acento); color: var(--acento); }
+  .mochila .grupo { margin-bottom: 14px; }
+  .mochila .grupo-titulo {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--secundario);
+    margin-bottom: 6px;
+  }
+  .mochila .vacia {
+    font-size: 13px;
+    color: var(--verde-texto);
+    background: var(--verde-fondo);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+
+  .item {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    margin-bottom: 6px;
+    cursor: grab;
+    line-height: 1.35;
+  }
+  .item:active { cursor: grabbing; }
+  .item.arrastrando { opacity: 0.4; }
+  .item .fila { display: flex; align-items: flex-start; gap: 6px; }
+  .item .meta { color: var(--secundario); font-size: 12px; margin-top: 2px; }
+  .item .meta .hora { font-weight: 700; color: var(--texto); }
+  .item.actividad { border-left: 3px solid var(--acento); }
+  .item.sitio { border-left: 3px solid var(--pendiente); }
+  .item.comer { border-left: 3px solid #C98A2B; }
+  .item.manual { border-left: 3px solid var(--verde-texto); }
+  .item .quitar {
+    margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--pendiente);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 2px;
+  }
+  .item .quitar:hover { color: var(--rojo); }
+  .item.conflicto { border-color: var(--rojo); background: var(--rojo-fondo); }
+  .item.conflicto .meta .hora { color: var(--rojo); }
+
+  .lienzo {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .dia {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .dia-cabecera {
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--borde);
+  }
+  .dia-cabecera .num { font-size: 14px; font-weight: 700; }
+  .dia-cabecera .fecha { font-size: 12px; color: var(--secundario); }
+  .chip-ciudad {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 2px 9px;
+    margin-top: 4px;
+  }
+  .franja { padding: 8px 10px 6px; min-height: 58px; }
+  .franja + .franja { border-top: 1px dashed var(--borde); }
+  .franja-cab {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .franja-titulo {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pendiente);
+  }
+  .franja-titulo .horas { font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .btn-mano {
+    border: none;
+    background: none;
+    color: var(--pendiente);
+    font-size: 15px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .btn-mano:hover { color: var(--acento); }
+  .franja.sobre { background: var(--acento-tinte); border-radius: 8px; }
+
+  .fijo {
+    background: var(--ambar-fondo);
+    color: var(--ambar-texto);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.35;
+  }
+  .aviso-dia {
+    background: var(--rojo-fondo);
+    color: var(--rojo);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 8px 10px 0;
+    line-height: 1.35;
+  }
+</style>
+</head>
+<body>
+
+<div class="cabecera">
+  <h1>Lienzo del viaje</h1>
+  <div class="filtros" id="filtros"></div>
+  <button class="btn-ia" onclick="alert('Aquí la IA revisaría el reparto y daría su opinión: ritmos, olvidos, órdenes mejores. Solo cuando tú se lo pides.')">✦ Pedir opinión a la IA</button>
+</div>
+
+<div class="cuerpo">
+  <div class="mochila">
+    <h2>La mochila</h2>
+    <div class="sub">Lo apuntado, aún sin día. Arrastra a un día — o de vuelta aquí.</div>
+    <div class="tipos" id="tipos"></div>
+    <div id="mochila-contenido"></div>
+  </div>
+
+  <div class="lienzo" id="lienzo"></div>
+</div>
+
+<script>
+  const CIUDADES = {
+    'Tokio': { color: '#D3E8F0', texto: '#12507A' },
+    'Kioto': { color: '#E1F2E7', texto: '#1E6B3C' },
+    'Osaka': { color: '#FBEED6', texto: '#8A5A16' }
+  };
+
+  const DIAS = [
+    { n: 1,  fecha: '12 abr', ciudad: 'Tokio' },
+    { n: 2,  fecha: '13 abr', ciudad: 'Tokio' },
+    { n: 3,  fecha: '14 abr', ciudad: 'Tokio' },
+    { n: 4,  fecha: '15 abr', ciudad: 'Kioto' },
+    { n: 5,  fecha: '16 abr', ciudad: 'Kioto' },
+    { n: 6,  fecha: '17 abr', ciudad: 'Kioto' },
+    { n: 7,  fecha: '18 abr', ciudad: 'Osaka' },
+    { n: 8,  fecha: '19 abr', ciudad: 'Osaka' },
+    { n: 9,  fecha: '20 abr', ciudad: 'Osaka' },
+    { n: 10, fecha: '21 abr', ciudad: 'Osaka' }
+  ];
+
+  const FIJOS = [
+    { dia: 1, franja: 'tarde',  texto: '✈ Llegada a Tokio 17:35' },
+    { dia: 4, franja: 'manana', texto: '🚄 Shinkansen Tokio → Kioto · 2h15' },
+    { dia: 7, franja: 'manana', texto: '🚄 Tren Kioto → Osaka · 30 min' },
+    { dia: 10, franja: 'tarde', texto: '✈ Vuelo Osaka → BCN 15:20' }
+  ];
+
+  // Franjas con sus horas orientativas. La hora de un item decide su franja "natural".
+  const FRANJAS = [
+    ['manana',  'Mañana',   'hasta 13h'],
+    ['mediodia','Mediodía', '13–16h'],
+    ['tarde',   'Tarde',    '16–20h'],
+    ['noche',   'Noche',    'desde 20h']
+  ];
+  function franjaNatural(hora) {
+    if (!hora) return null;
+    const h = parseInt(hora.split(':')[0]);
+    if (h < 13) return 'manana';
+    if (h < 16) return 'mediodia';
+    if (h < 20) return 'tarde';
+    return 'noche';
+  }
+
+  const TIPOS = [
+    ['todo', 'Todo'],
+    ['sitio', '📍 Sitios'],
+    ['actividad', '🎟 Excursiones'],
+    ['comer', '🍜 Comer']
+  ];
+
+  let items = [
+    { id: 1, nombre: 'Templo Senso-ji', tipo: 'sitio', ciudad: 'Tokio', dia: null, franja: null },
+    { id: 2, nombre: 'Mercado Tsukiji', tipo: 'sitio', ciudad: 'Tokio', dia: 2, franja: 'manana' },
+    { id: 3, nombre: 'Tour Monte Fuji', tipo: 'actividad', precio: '89 €', hora: '8:45', dur: '10 h', ciudad: 'Tokio', dia: 3, franja: 'manana' },
+    { id: 4, nombre: 'Cruce de Shibuya', tipo: 'sitio', ciudad: 'Tokio', dia: 1, franja: 'manana' },
+    { id: 5, nombre: 'Fushimi Inari', tipo: 'sitio', ciudad: 'Kioto', dia: null, franja: null },
+    { id: 6, nombre: 'Bosque de bambú de Arashiyama', tipo: 'sitio', ciudad: 'Kioto', dia: null, franja: null },
+    { id: 7, nombre: 'Ceremonia del té', tipo: 'actividad', precio: '45 €', hora: '17:00', dur: '1h30', ciudad: 'Kioto', dia: 5, franja: 'manana' },
+    { id: 8, nombre: 'Ichiran Ramen (Dotonbori)', tipo: 'comer', ciudad: 'Osaka', dia: null, franja: null },
+    { id: 9, nombre: 'Bar de jazz en Golden Gai', tipo: 'comer', ciudad: 'Tokio', dia: null, franja: null },
+    { id: 10, nombre: 'Castillo de Osaka', tipo: 'sitio', ciudad: 'Osaka', dia: null, franja: null },
+    { id: 11, nombre: 'Dotonbori de noche', tipo: 'sitio', ciudad: 'Osaka', dia: 8, franja: 'noche' },
+    { id: 12, nombre: 'Comprar JR Pass en la estación', tipo: 'manual', ciudad: 'Tokio', dia: 2, franja: 'tarde' }
+  ];
+  let nextId = 100;
+
+  let filtro = 'Todo';
+  let filtroTipo = 'todo';
+
+  // ¿Esta tarjeta tiene un conflicto de horario donde está colocada?
+  function conflictoHorario(i) {
+    if (i.dia === null || !i.hora) return null;
+    const nat = franjaNatural(i.hora);
+    if (nat && nat !== i.franja) {
+      const nombreFranja = FRANJAS.find(f => f[0] === nat)[1].toLowerCase();
+      return `${i.nombre} empieza a las ${i.hora} (${nombreFranja})`;
+    }
+    return null;
+  }
+
+  function render() {
+    const f = document.getElementById('filtros');
+    f.innerHTML = '';
+    ['Todo', ...Object.keys(CIUDADES)].forEach(nombre => {
+      const b = document.createElement('button');
+      b.className = 'filtro' + (filtro === nombre ? ' activo' : '');
+      b.textContent = nombre === 'Todo' ? 'Todo el viaje' : nombre;
+      b.onclick = () => { filtro = nombre; render(); };
+      f.appendChild(b);
+    });
+
+    const t = document.getElementById('tipos');
+    t.innerHTML = '';
+    TIPOS.forEach(([clave, etiqueta]) => {
+      const b = document.createElement('button');
+      b.className = 'tipo-chip' + (filtroTipo === clave ? ' activo' : '');
+      b.textContent = etiqueta;
+      b.onclick = () => { filtroTipo = clave; render(); };
+      t.appendChild(b);
+    });
+
+    const m = document.getElementById('mochila-contenido');
+    m.innerHTML = '';
+    const enMochila = items.filter(i =>
+      i.dia === null &&
+      (filtro === 'Todo' || i.ciudad === filtro) &&
+      (filtroTipo === 'todo' || i.tipo === filtroTipo));
+    if (!enMochila.length) {
+      m.innerHTML = '<div class="vacia">Nada aquí: todo repartido ✓</div>';
+    } else {
+      const porCiudad = {};
+      enMochila.forEach(i => { (porCiudad[i.ciudad] = porCiudad[i.ciudad] || []).push(i); });
+      Object.entries(porCiudad).forEach(([ciudad, lista]) => {
+        const g = document.createElement('div');
+        g.className = 'grupo';
+        g.innerHTML = `<div class="grupo-titulo">${ciudad}</div>`;
+        lista.forEach(i => g.appendChild(tarjeta(i)));
+        m.appendChild(g);
+      });
+    }
+    m.parentElement.ondragover = e => e.preventDefault();
+    m.parentElement.ondrop = e => {
+      e.preventDefault();
+      const id = parseInt(e.dataTransfer.getData('text/plain'));
+      const it = items.find(x => x.id === id);
+      if (it.tipo === 'manual') { items = items.filter(x => x.id !== id); }
+      else { it.dia = null; it.franja = null; }
+      render();
+    };
+
+    const l = document.getElementById('lienzo');
+    l.innerHTML = '';
+    DIAS.forEach(d => {
+      if (filtro !== 'Todo' && d.ciudad !== filtro) return;
+      const c = CIUDADES[d.ciudad];
+      const col = document.createElement('div');
+      col.className = 'dia';
+      col.innerHTML = `
+        <div class="dia-cabecera">
+          <span class="num">Día ${d.n}</span> <span class="fecha">· ${d.fecha}</span><br>
+          <span class="chip-ciudad" style="background:${c.color};color:${c.texto}">${d.ciudad}</span>
+        </div>`;
+
+      // Avisos del día: llegada tarde con cosas antes + conflictos de horario
+      const avisos = [];
+      const fijosDia = FIJOS.filter(x => x.dia === d.n);
+      const llegadaTarde = fijosDia.find(x => x.texto.includes('Llegada') && x.franja === 'tarde');
+      const colocadosAntes = items.filter(i => i.dia === d.n && (i.franja === 'manana' || i.franja === 'mediodia'));
+      if (llegadaTarde && colocadosAntes.length) {
+        avisos.push(`Llegas a las 17:35 — tienes ${colocadosAntes.length} cosa${colocadosAntes.length > 1 ? 's' : ''} antes de llegar`);
+      }
+      items.filter(i => i.dia === d.n).forEach(i => {
+        const conf = conflictoHorario(i);
+        if (conf) avisos.push(conf);
+      });
+      avisos.forEach(texto => {
+        const av = document.createElement('div');
+        av.className = 'aviso-dia';
+        av.textContent = '⚠ ' + texto;
+        col.appendChild(av);
+      });
+
+      FRANJAS.forEach(([clave, titulo, horas]) => {
+        const fr = document.createElement('div');
+        fr.className = 'franja';
+        fr.innerHTML = `
+          <div class="franja-cab">
+            <span class="franja-titulo">${titulo} <span class="horas">· ${horas}</span></span>
+            <button class="btn-mano" title="Añadir algo a mano">＋</button>
+          </div>`;
+        fr.querySelector('.btn-mano').onclick = () => {
+          const texto = prompt(`Añadir a mano en ${titulo.toLowerCase()} del día ${d.n}:`);
+          if (texto && texto.trim()) {
+            items.push({ id: nextId++, nombre: texto.trim(), tipo: 'manual', ciudad: d.ciudad, dia: d.n, franja: clave });
+            render();
+          }
+        };
+
+        fijosDia.filter(x => x.franja === clave).forEach(x => {
+          const b = document.createElement('div');
+          b.className = 'fijo';
+          b.textContent = x.texto;
+          fr.appendChild(b);
+        });
+
+        items.filter(i => i.dia === d.n && i.franja === clave).forEach(i => {
+          fr.appendChild(tarjeta(i, llegadaTarde && (clave === 'manana' || clave === 'mediodia')));
+        });
+
+        fr.ondragover = e => { e.preventDefault(); fr.classList.add('sobre'); };
+        fr.ondragleave = () => fr.classList.remove('sobre');
+        fr.ondrop = e => {
+          e.preventDefault();
+          fr.classList.remove('sobre');
+          const id = parseInt(e.dataTransfer.getData('text/plain'));
+          const it = items.find(x => x.id === id);
+          it.dia = d.n; it.franja = clave;
+          render();
+        };
+        col.appendChild(fr);
+      });
+      l.appendChild(col);
+    });
+  }
+
+  function tarjeta(i, conflictoLlegada) {
+    const confHorario = conflictoHorario(i);
+    const div = document.createElement('div');
+    div.className = `item ${i.tipo}` + ((conflictoLlegada || confHorario) ? ' conflicto' : '');
+    div.draggable = true;
+    const iconos = { actividad: '🎟', sitio: '📍', comer: '🍜', manual: '✏️' };
+    let meta = [];
+    if (i.hora) meta.push(`<span class="hora">${i.hora}</span>`);
+    if (i.dur) meta.push(i.dur);
+    if (i.precio) meta.push(i.precio);
+    div.innerHTML = `
+      <div class="fila">
+        <span>${iconos[i.tipo]}</span>
+        <span>${i.nombre}</span>
+        ${i.dia !== null ? `<button class="quitar" title="${i.tipo === 'manual' ? 'Borrar' : 'Devolver a la mochila'}">✕</button>` : ''}
+      </div>
+      ${meta.length ? `<div class="meta">${meta.join(' · ')}</div>` : ''}`;
+    div.ondragstart = e => { e.dataTransfer.setData('text/plain', i.id); div.classList.add('arrastrando'); };
+    div.ondragend = () => div.classList.remove('arrastrando');
+    const btn = div.querySelector('.quitar');
+    if (btn) btn.onclick = () => {
+      if (i.tipo === 'manual') { items = items.filter(x => x.id !== i.id); }
+      else { i.dia = null; i.franja = null; }
+      render();
+    };
+    return div;
+  }
+
+  render();
+</script>
+</body>
+</html>

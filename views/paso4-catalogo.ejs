@@ -1,0 +1,99 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 4, titulo: 'Qué ver y hacer' }) %>
+
+<main class="envoltorio">
+  <div class="contenido">
+    <div class="titulo-con-accion">
+      <div>
+        <h1>Qué ver y hacer</h1>
+        <p class="secundario" style="margin:0">
+          <% if (estado === 'hecho') { %>
+            <%= actividades.length %> actividades de Civitatis en <%= viaje.destino %>.
+            Marca lo que te interese con el círculo de la derecha.
+          <% } else { %>
+            Actividades de Civitatis en <%= viaje.destino || 'tu destino' %>.
+          <% } %>
+        </p>
+      </div>
+
+      <%# Botón discreto: rehace la búsqueda sin tocar lo que ya has marcado %>
+      <% if (estado === 'hecho') { %>
+        <form method="POST" action="/viajes/<%= viaje.id %>/actividades/actualizar">
+          <button class="boton-discreto" type="submit" title="Vuelve a buscar en Civitatis. Lo que tengas marcado se conserva.">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Actualizar datos
+          </button>
+        </form>
+      <% } %>
+    </div>
+
+    <% if (estado === 'sin_destino') { %>
+      <%# ---------- Falta el destino ---------- %>
+      <div class="caja vacio aireado">
+        <i class="ti ti-world-off" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">Este viaje no tiene destino todavía.</p>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/2">Elegir destino</a>
+      </div>
+
+    <% } else if (estado === 'buscando') { %>
+      <%# ---------- Buscando: el JS sondea cada 5 s y recarga al terminar ---------- %>
+      <div class="buscando aireado" id="buscando-actividades"
+           data-estado-url="/viajes/<%= viaje.id %>/actividades/estado">
+        <i class="ti ti-plane buscando__avion" aria-hidden="true"></i>
+        <div class="buscando__titulo">Buscando actividades en Civitatis…</div>
+        <p class="buscando__nota">
+          Esto tarda medio minuto. Se abrirá una ventana de Chrome en el servidor:
+          <strong>no la cierres</strong>.
+        </p>
+        <div class="buscando__pista secundario" id="buscando-pista">Comprobando cada 5 segundos…</div>
+      </div>
+
+    <% } else if (estado === 'error') { %>
+      <%# ---------- Error: mensaje legible + reintentar ---------- %>
+      <div class="aviso aviso--alerta aireado">
+        <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+        <div>
+          <div class="aviso__titulo">No se pudieron traer las actividades</div>
+          <p class="aviso__texto"><%= trabajo && trabajo.mensaje_error ? trabajo.mensaje_error : 'Error desconocido.' %></p>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <form method="POST" action="/viajes/<%= viaje.id %>/actividades/reintentar">
+          <button class="boton boton--primario" type="submit">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+          </button>
+        </form>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/2">Cambiar el destino</a>
+      </div>
+
+    <% } else { %>
+      <%# ---------- Hecho: el catálogo de siempre ---------- %>
+      <div class="chips aireado" id="filtros">
+        <button class="chip chip--activo" type="button" data-filtro="todas">Todas</button>
+        <button class="chip" type="button" data-filtro="gratis">
+          <i class="ti ti-gift" aria-hidden="true"></i> Gratis
+        </button>
+        <button class="chip" type="button" data-filtro="top">
+          <i class="ti ti-star" aria-hidden="true"></i> Mejor valoradas
+        </button>
+      </div>
+
+      <div class="rejilla aireado" id="rejilla-actividades">
+        <% actividades.forEach(c => { %>
+          <div data-precio="<%= c.precio %>" data-valoracion="<%= c.valoracion || 0 %>">
+            <%- include('parciales/tarjeta', { c, viaje, icono: 'ti-map-pin' }) %>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+
+    <%- include('parciales/barra', {
+          urlAtras: `/viajes/${viaje.id}/paso/3`,
+          urlSiguiente: `/viajes/${viaje.id}/paso/5`,
+          textoSiguiente: 'Continuar',
+          seleccion
+        }) %>
+  </div>
+
+  <%- include('parciales/lateral', { seleccion }) %>
+</main>
+
+<%- include('parciales/pie') %>

@@ -1,0 +1,57 @@
+<%
+/**
+ * Tarjeta de candidato con círculo de marcar (catálogo).
+ * Espera: c (candidato), viaje, icono (clase Tabler para el marcador de imagen)
+ *
+ * Modo SOLO LECTURA (soloLectura: true): la misma caja, pero en vez del círculo
+ * de marcar lleva un enlace a la actividad. Se usa en la ficha de una ciudad,
+ * donde las excursiones vienen del CATÁLOGO y no son candidatas de ningún
+ * viaje: no hay nada que marcar todavía porque no cuelgan de una etapa.
+ */
+const marcable = typeof soloLectura === 'undefined' || !soloLectura;
+%>
+<article class="tarjeta">
+  <%# La foto de la excursión, que el catálogo ya guardaba y no se estaba
+      enseñando. Si esta no tiene, se queda el icono de siempre: no hay hueco
+      gris ni imagen rota. %>
+  <div class="tarjeta__img <%= c.imagen_url ? 'tarjeta__img--foto' : '' %>" aria-hidden="true">
+    <% if (c.imagen_url) { %>
+      <img class="tarjeta__foto" src="<%= c.imagen_url %>" alt="" loading="lazy">
+    <% } else { %>
+      <i class="ti <%= typeof icono !== 'undefined' ? icono : 'ti-map-pin' %>"></i>
+    <% } %>
+  </div>
+  <div class="tarjeta__cuerpo">
+    <div class="tarjeta__texto">
+      <div class="tarjeta__titulo"><%= c.titulo %></div>
+      <div class="metadatos">
+        <% if (c.valoracion != null) { %>
+          <span><i class="ti ti-star-filled"></i> <%= c.valoracion %><% if (c.num_opiniones) { %>
+            <span class="secundario">(<%= c.num_opiniones.toLocaleString('es-ES') %>)</span><% } %></span>
+        <% } %>
+        <% if (c.duracion) { %><span><i class="ti ti-clock"></i> <%= c.duracion %></span><% } %>
+        <% if (c.precio === 0) { %>
+          <span class="pildora-verde">Gratis</span>
+        <% } else if (c.precio != null) { %>
+          <span class="metadatos__precio"><%= c.precio %> <%= c.moneda || '€' %></span>
+        <% } %>
+      </div>
+    </div>
+
+    <% if (marcable) { %>
+      <%# Círculo: vacío (borde) / marcado (azul con check) %>
+      <button class="marca"
+              type="button"
+              aria-pressed="<%= c.marcado %>"
+              aria-label="<%= c.marcado ? 'Quitar de la selección' : 'Añadir a la selección' %>"
+              data-marcar="/viajes/<%= viaje.id %>/candidatos/<%= c.id %>/marcar">
+        <svg viewBox="0 0 20 20"><polyline points="4,10 8,14 16,6"></polyline></svg>
+      </button>
+    <% } else if (c.url) { %>
+      <a class="marca marca--enlace" href="<%= c.url %>" target="_blank" rel="noopener noreferrer"
+         aria-label="Ver esta excursión en Civitatis" title="Ver en Civitatis">
+        <i class="ti ti-external-link" aria-hidden="true"></i>
+      </a>
+    <% } %>
+  </div>
+</article>

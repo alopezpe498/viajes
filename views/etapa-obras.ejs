@@ -1,0 +1,46 @@
+<%
+/**
+ * Placeholder de la pantalla de etapa. La de verdad llega en el siguiente
+ * prompt; esto existe para que el botón "Abrir etapa" no lleve a un 404 y para
+ * que se vea de qué etapa se estaba hablando.
+ */
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const dia = (iso) => {
+  if (!iso) return null;
+  const [, m, d] = iso.split('-').map(Number);
+  return `${d} ${MESES[m - 1]}`;
+};
+const rango = etapa.fecha_inicio ? `${dia(etapa.fecha_inicio)} → ${dia(etapa.fecha_fin)}` : null;
+%>
+<%- include('parciales/cabecera', {
+      viaje: null, pasoActual: null, titulo: etapa.nombre_ciudad, extraCabeza: ''
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> /
+        <a href="/viaje/<%= etapa.viaje_id %>/ruta">Mi ruta</a>
+      </p>
+      <h1 class="ruta-cabecera__titulo">
+        <%= etapa.nombre_ciudad %>
+        <span class="chip-ambito"><%= etapa.noches %> <%= etapa.noches === 1 ? 'noche' : 'noches' %></span>
+      </h1>
+      <% if (rango) { %><p class="secundario" style="margin:4px 0 0"><%= rango %></p><% } %>
+    </header>
+
+    <div class="caja vacio aireado">
+      <i class="ti ti-tools" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+      <p style="margin-top:10px"><strong>En construcción</strong></p>
+      <p class="secundario" style="margin-top:4px">
+        Aquí irán las cosas de esta parada: qué ver, dónde dormir y cómo llegar.
+      </p>
+      <a class="boton boton--secundario" href="/viaje/<%= etapa.viaje_id %>/ruta">
+        <i class="ti ti-arrow-left" aria-hidden="true"></i> Volver a mi ruta
+      </a>
+    </div>
+  </div>
+</main>
+
+<%- include('parciales/pie') %>

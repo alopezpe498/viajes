@@ -1,0 +1,3695 @@
+/* =============================================================================
+   estilo.css — "Mediterránea fresca"
+   -----------------------------------------------------------------------------
+   MOBILE FIRST: todo lo de arriba es el móvil. Abajo hay dos puntos de ruptura:
+     600px  → la tarjeta de embarque deja de ser compacta (aparecen etiquetas)
+     900px  → rejilla de 3 columnas + panel lateral de selección
+   Una sola app que se adapta, no dos versiones.
+
+   OJO al tocar clases: public/js/app.js depende de estos ganchos y NO se toca:
+     .marca[aria-pressed]  .barra__resumen  #panel-lateral  .lateral__grupo
+     .lateral__etiqueta    .lateral__item   .lateral__total .chip--activo
+     .oculto               #rejilla-actividades
+   ============================================================================= */
+
+/* --- Paleta --------------------------------------------------------------- */
+:root {
+  --acento: #1B7FA6;          /* azul mar: único color con personalidad */
+  --acento-hover: #16688A;
+  --tinte: #D3E8F0;           /* fondo suave del acento */
+  --tinte-texto: #12303E;
+
+  --fondo: #F4F8FA;           /* fondo general */
+  --superficie: #FFFFFF;      /* tarjetas */
+  --borde: #E2ECF1;
+  --borde-fuerte: #C7DAE3;    /* bordes de botón secundario y perforado */
+
+  --texto: #12303E;
+  --texto-2: #5E7A87;         /* secundario */
+  --texto-3: #8FA9B4;         /* deshabilitado / pendiente */
+
+  /* Verde SOLO para "Gratis" y confirmaciones */
+  --verde-bg: #E1F2E7;
+  --verde-tx: #1E6B3C;
+
+  /* Avisos (pantalla 3) */
+  --info-bg: #D3E8F0;   --info-tx: #12303E;
+  --prec-bg: #FAEEDA;   --prec-tx: #854F0B;
+  --alerta-bg: #FCEBEB; --alerta-tx: #A32D2D;
+
+  --radio: 16px;
+  --radio-sm: 14px;
+  --lateral: 220px;
+  --barra-alto: 78px;         /* hueco para la barra fija del móvil */
+}
+
+/* --- Reset ligero --------------------------------------------------------- */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--texto);
+  background: var(--fondo);
+  -webkit-text-size-adjust: 100%;
+}
+
+h1, h2, h3 { margin: 0 0 8px; line-height: 1.25; }
+h1 { font-size: 24px; font-weight: 650; letter-spacing: -.01em; }
+h2 { font-size: 22px; font-weight: 650; }
+h3 { font-size: 17px; font-weight: 600; }
+p  { margin: 0 0 12px; }
+a  { color: var(--acento); }
+
+.secundario { color: var(--texto-2); font-size: 13px; }
+.aireado    { margin-top: 24px; }
+
+/* =============================================================================
+   TARJETA DE EMBARQUE (cabecera del wizard)
+   ============================================================================= */
+/* Contenedor propio: así la tarjeta ocupa todo el ancho y no hereda ni el
+   padding inferior ni la rejilla de dos columnas del .envoltorio de la página. */
+.envoltorio-embarque {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 16px 0;
+}
+
+.embarque {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+/* Banda superior azul */
+.embarque__banda {
+  background: var(--acento);
+  color: #FFF;
+  padding: 11px 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.embarque__marca {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--tinte);
+  flex: 0 0 auto;
+}
+.embarque__viaje {
+  margin-left: auto;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  color: #FFF;
+  min-width: 0;
+}
+
+/* Cuerpo: INICIO ---avión--- DOSIER */
+.embarque__cuerpo {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.embarque__punto { flex: 0 0 auto; }
+.embarque__punto--fin { text-align: right; }
+
+/* Tipografía "código de aeropuerto" */
+.embarque__codigo {
+  display: block;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1.1;
+  color: var(--acento);
+}
+.embarque__subcodigo {
+  display: block;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--texto-2);
+  margin-top: 2px;
+}
+/* El lado al que aún no has llegado, apagado */
+.embarque__punto--pendiente .embarque__codigo,
+.embarque__punto--pendiente .embarque__subcodigo { color: var(--texto-3); }
+
+/* Línea de progreso con el avión posado encima */
+.embarque__linea { position: relative; height: 22px; }
+
+.embarque__recorrido,
+.embarque__pendiente {
+  position: absolute;
+  top: 50%;
+  height: 0;
+}
+.embarque__recorrido {
+  left: 0;
+  border-top: 3px solid var(--acento);
+  border-radius: 2px;
+}
+.embarque__pendiente {
+  right: 0;
+  border-top: 3px dashed #A8C6D3;
+}
+
+.embarque__avion {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  color: var(--acento);
+  font-size: 21px;
+  line-height: 1;
+  /* Círculo del color del papel para que la línea no le pase por encima:
+     al rotar 45º un círculo sigue siendo un círculo, así que no se deforma. */
+  background: var(--superficie);
+  border-radius: 50%;
+  padding: 2px;
+}
+
+/* Perforado, como los billetes de verdad */
+.embarque__perforada {
+  border-top: 1px dashed var(--borde-fuerte);
+  margin: 0 16px;
+}
+
+/* Fila de pasos */
+.embarque__pasos {
+  display: flex;
+  padding: 10px 8px;
+  gap: 2px;
+}
+
+.paso {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--texto-3);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+}
+.paso i { font-size: 19px; }
+
+.paso--hecho     { color: var(--acento); }
+.paso--hecho:hover { background: var(--fondo); }
+.paso--actual    { background: var(--tinte); color: var(--tinte-texto); font-weight: 500; }
+.paso--pendiente { color: var(--texto-3); }
+
+/* En móvil (<600px) solo iconos: las etiquetas no caben */
+.paso__etiqueta { display: none; }
+
+/* =============================================================================
+   ESTRUCTURA DE PÁGINA
+   ============================================================================= */
+.envoltorio {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 16px calc(var(--barra-alto) + 24px);
+}
+.contenido { min-width: 0; }
+
+/* =============================================================================
+   TARJETAS
+   ============================================================================= */
+.rejilla { display: grid; grid-template-columns: 1fr; gap: 14px; }
+
+.tarjeta {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Zona de imagen: marcador de posición de color suave con icono */
+.tarjeta__img {
+  aspect-ratio: 16 / 9;
+  background: var(--tinte);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--acento);
+  font-size: 30px;
+  opacity: .85;
+}
+
+.tarjeta__cuerpo {
+  padding: 13px 15px 15px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 1;
+}
+.tarjeta__texto  { flex: 1; min-width: 0; }
+.tarjeta__titulo { font-size: 16px; font-weight: 600; margin-bottom: 7px; }
+
+/* Fila de metadatos: ★ nota · duración · precio */
+.metadatos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.metadatos i { font-size: 14px; vertical-align: -1px; }
+.metadatos__precio { color: var(--texto); font-weight: 650; }
+
+/* "Gratis" en píldora verde */
+.pildora-verde {
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+/* --- Círculo de marcar ---------------------------------------------------- */
+.marca {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--borde-fuerte);
+  background: var(--superficie);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s, border-color .12s;
+}
+.marca svg { width: 15px; height: 15px; stroke: #FFF; stroke-width: 3; fill: none; opacity: 0; }
+.marca[aria-pressed="true"] { background: var(--acento); border-color: var(--acento); }
+.marca[aria-pressed="true"] svg { opacity: 1; }
+/* Área de toque cómoda sin agrandar el círculo visual */
+.marca::before { content: ""; position: absolute; inset: -9px; }
+
+/* =============================================================================
+   SEGMENTOS DE BILLETE (vuelos y hoteles)
+   ============================================================================= */
+.segmento {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* Seleccionado: borde azul de 2px y fondo tinte muy suave */
+.segmento--elegido {
+  border: 2px solid var(--acento);
+  background: #F2F9FC;
+  padding: 13px 15px;   /* compensa el borde extra para que no salte */
+}
+
+.segmento__izq   { flex: 0 0 auto; }
+.segmento__centro{ flex: 1; min-width: 0; }
+.segmento__der   { flex: 0 0 auto; text-align: right; display: flex; align-items: center; gap: 12px; }
+
+.segmento__hora {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.segmento__hora i { color: var(--texto-3); font-size: 16px; }
+.segmento__nombre { font-size: 16px; font-weight: 600; }
+.segmento__precio { font-size: 18px; font-weight: 700; white-space: nowrap; }
+
+/* =============================================================================
+   CHIPS
+   ============================================================================= */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.chip {
+  border: 1px solid var(--borde-fuerte);
+  background: var(--superficie);
+  color: var(--texto);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.chip i { font-size: 16px; }
+.chip[aria-pressed="true"], .chip--activo {
+  background: var(--tinte);
+  border-color: var(--acento);
+  color: var(--tinte-texto);
+  font-weight: 600;
+}
+
+/* =============================================================================
+   BOTONES — píldora
+   ============================================================================= */
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+}
+.boton--primario { background: var(--acento); color: #FFF; }
+.boton--primario:hover { background: var(--acento-hover); }
+.boton--secundario {
+  background: var(--superficie);
+  color: var(--acento);
+  border-color: var(--borde-fuerte);
+}
+.boton--secundario:hover { background: var(--fondo); }
+.boton[disabled], .boton--desactivado { opacity: .45; cursor: not-allowed; pointer-events: none; }
+.boton--ancho { width: 100%; }
+
+/* =============================================================================
+   BARRA DE ACCIONES (fija abajo en móvil)
+   ============================================================================= */
+.barra {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  background: var(--superficie);
+  border-top: 1px solid var(--borde);
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.barra__resumen { font-size: 13px; color: var(--texto-2); flex: 1; min-width: 0; }
+.barra__resumen strong { color: var(--texto); font-size: 15px; }
+.barra .boton { flex: 0 0 auto; }
+
+/* =============================================================================
+   PANEL LATERAL (solo escritorio)
+   ============================================================================= */
+.lateral { display: none; }
+
+/* =============================================================================
+   FORMULARIOS
+   ============================================================================= */
+.campo { margin-bottom: 16px; }
+.campo label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.campo input, .campo select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 16px;              /* 16px evita el zoom automático en iOS */
+  font-family: inherit;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde-fuerte);
+  border-radius: var(--radio-sm);
+}
+.campo input:focus, .campo select:focus {
+  outline: 2px solid var(--acento);
+  outline-offset: -1px;
+  border-color: var(--acento);
+}
+.campo .ayuda { font-size: 12px; color: var(--texto-2); margin-top: 5px; }
+.fila-campos { display: grid; grid-template-columns: 1fr; gap: 0 16px; }
+
+/* =============================================================================
+   AVISOS (pantalla 3) — icono a la izquierda
+   ============================================================================= */
+.aviso {
+  border-radius: var(--radio);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+}
+.aviso i { font-size: 21px; flex: 0 0 auto; line-height: 1.2; }
+.aviso__titulo { font-weight: 650; font-size: 15px; margin-bottom: 2px; }
+.aviso__texto  { font-size: 14px; margin: 0; opacity: .9; }
+
+.aviso--info       { background: var(--info-bg);   color: var(--info-tx); }
+.aviso--precaucion { background: var(--prec-bg);   color: var(--prec-tx); }
+.aviso--alerta     { background: var(--alerta-bg); color: var(--alerta-tx); }
+
+/* =============================================================================
+   PÍLDORAS DE ESTADO
+   ============================================================================= */
+.insignia {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  color: var(--texto-2);
+}
+.insignia--borrador    { background: var(--tinte);    border-color: var(--tinte);    color: var(--tinte-texto); }
+.insignia--planificado { background: var(--verde-bg); border-color: var(--verde-bg); color: var(--verde-tx); }
+
+/* =============================================================================
+   HOME — mini tarjeta de embarque por viaje
+   ============================================================================= */
+.viaje-tarjeta {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 18px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.viaje-tarjeta__banda {
+  background: var(--acento);
+  color: #FFF;
+  padding: 10px 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.viaje-tarjeta__marca {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--tinte);
+}
+.viaje-tarjeta__cuerpo { padding: 14px 16px 16px; }
+.viaje-tarjeta__destino { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.viaje-tarjeta__fechas  { font-size: 13px; color: var(--texto-2); margin-top: 2px; }
+.viaje-tarjeta__pie {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* =============================================================================
+   VARIOS
+   ============================================================================= */
+.caja {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 18px;
+}
+.proximamente {
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: var(--radio);
+  background: var(--superficie);
+  padding: 20px;
+  text-align: center;
+  color: var(--texto-2);
+}
+.proximamente i { font-size: 24px; color: var(--texto-3); display: block; margin-bottom: 8px; }
+.proximamente strong { color: var(--texto); }
+
+.vacio { text-align: center; color: var(--texto-2); padding: 34px 16px; }
+.oculto { display: none !important; }
+.pila > * + * { margin-top: 10px; }
+
+.linea-resumen {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.linea-resumen:last-child { border-bottom: 0; }
+.linea-resumen__nombre { flex: 1; min-width: 0; }
+
+/* =============================================================================
+   ≥600px — la tarjeta de embarque se despliega (aparecen las etiquetas)
+   ============================================================================= */
+@media (min-width: 600px) {
+  .paso__etiqueta { display: block; }
+  .embarque__cuerpo { padding: 18px 22px; gap: 18px; }
+  .embarque__banda  { padding: 12px 22px; }
+  .embarque__perforada { margin: 0 22px; }
+  .embarque__pasos  { padding: 12px 14px; gap: 4px; }
+  .embarque__codigo { font-size: 22px; }
+}
+
+/* =============================================================================
+   ≥900px — rejilla de 3 columnas + panel lateral
+   ============================================================================= */
+@media (min-width: 900px) {
+  .envoltorio {
+    display: grid;
+    grid-template-columns: 1fr var(--lateral);
+    gap: 24px;
+    align-items: start;
+    padding: 24px 24px 44px;
+  }
+  .envoltorio--simple { grid-template-columns: 1fr; }
+  .envoltorio-embarque { padding: 24px 24px 0; }
+
+  .rejilla { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .rejilla--dos { grid-template-columns: repeat(2, 1fr); }
+  .rejilla--una { grid-template-columns: 1fr; }
+
+  .fila-campos { grid-template-columns: 1fr 1fr; }
+
+  .lateral {
+    display: block;
+    position: sticky;
+    top: 24px;
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 16px;
+  }
+  .lateral h3 { font-size: 14px; margin-bottom: 12px; }
+  .lateral__grupo { margin-bottom: 13px; }
+  .lateral__etiqueta {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--texto-2);
+    margin-bottom: 5px;
+  }
+  .lateral__item {
+    font-size: 13px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--fondo);
+  }
+  .lateral__total {
+    border-top: 1px solid var(--borde);
+    margin-top: 11px;
+    padding-top: 11px;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* La barra deja de estar pegada abajo y se integra en el flujo */
+  .barra {
+    position: static;
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    margin-top: 24px;
+    padding: 14px 18px;
+    justify-content: flex-end;
+  }
+  .barra__resumen { display: none; }
+}
+
+/* =============================================================================
+   ESTADO "BUSCANDO" del catálogo (fase de conexión con Civitatis)
+   ============================================================================= */
+.titulo-con-accion {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Botón discreto: acción secundaria que no debe competir con "Continuar" */
+.boton-discreto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--borde-fuerte);
+  color: var(--texto-2);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 36px;
+}
+.boton-discreto:hover { background: var(--superficie); color: var(--acento); border-color: var(--acento); }
+
+.buscando {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 40px 24px;
+  text-align: center;
+}
+.buscando__avion {
+  font-size: 34px;
+  color: var(--acento);
+  display: block;
+  /* El avión "vuela" de lado a lado mientras se espera. Movimiento suave y
+     lento: es un indicador de paciencia, no una animación que distraiga. */
+  animation: vuela 2.6s ease-in-out infinite;
+}
+@keyframes vuela {
+  0%, 100% { transform: translateX(-26px) rotate(45deg); opacity: .55; }
+  50%      { transform: translateX(26px)  rotate(45deg); opacity: 1; }
+}
+/* Si has pedido menos movimiento en el sistema, el avión se queda quieto. */
+@media (prefers-reduced-motion: reduce) {
+  .buscando__avion { animation: none; transform: rotate(45deg); }
+}
+
+.buscando__titulo { font-size: 18px; font-weight: 650; margin-top: 16px; }
+.buscando__nota   { font-size: 14px; color: var(--texto-2); max-width: 420px; margin: 8px auto 0; }
+.buscando__pista  { margin-top: 14px; }
+
+/* =============================================================================
+   PANTALLA 1 · "CONFIGURA TU VIAJE"
+   -----------------------------------------------------------------------------
+   Criterio: que no parezca un formulario de ajustes, sino tres preguntas
+   grandes. De ahí las tarjetas separadas con aire, los títulos cortos y los
+   controles gordos y tocables (nada de escribir números a mano).
+   ============================================================================= */
+.bloque {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 18px;   /* el aire entre preguntas es parte del diseño */
+}
+
+.bloque__cabecera {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 18px;
+}
+.bloque__cabecera i { font-size: 24px; color: var(--acento); }
+.bloque__titulo { font-size: 19px; font-weight: 650; margin: 0; }
+.bloque__nota { font-size: 14px; color: var(--texto-2); margin: 12px 0 0; }
+
+/* Error bajo el campo, nunca un alert del navegador */
+.campo__error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--alerta-tx);
+  margin-top: 6px;
+}
+.campo input[aria-invalid="true"] { border-color: var(--alerta-tx); }
+
+/* --- Contador con stepper ------------------------------------------------- */
+.contador {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.contador:last-of-type { border-bottom: 0; }
+.contador__etiqueta { flex: 1; min-width: 0; }
+.contador__nombre { display: block; font-size: 16px; font-weight: 600; }
+.contador__pista  { display: block; font-size: 13px; color: var(--texto-2); }
+
+.stepper { display: flex; align-items: center; gap: 6px; }
+
+.stepper__boton {
+  width: 44px;
+  height: 44px;          /* área táctil cómoda de verdad */
+  border-radius: 50%;
+  border: 1px solid var(--borde-fuerte);
+  background: var(--superficie);
+  color: var(--acento);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.stepper__boton:hover:not(:disabled) { background: var(--tinte); border-color: var(--acento); }
+.stepper__boton:disabled { opacity: .35; cursor: not-allowed; }
+
+.stepper__valor {
+  min-width: 42px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;  /* que no baile al cambiar de cifra */
+}
+
+/* --- Edades de los niños -------------------------------------------------- */
+.edades {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--borde);
+}
+.edades__titulo { font-size: 13px; font-weight: 600; color: var(--texto-2); margin-bottom: 10px; }
+.edades__lista { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.edad { display: flex; flex-direction: column; gap: 4px; }
+.edad__num { font-size: 12px; color: var(--texto-2); }
+.edad select {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde-fuerte);
+  border-radius: var(--radio-sm);
+}
+
+/* --- Chips grandes del tipo de viaje -------------------------------------- */
+.chips--grandes { gap: 10px; }
+.chip--grande {
+  padding: 13px 20px;
+  min-height: 50px;
+  font-size: 15px;
+}
+.chip--grande i { font-size: 19px; }
+/* Seleccionada: fondo azul, texto blanco (más rotundo que el chip normal) */
+.chip--grande[aria-pressed="true"] {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #FFF;
+}
+
+/* --- Plegable "Más opciones" ---------------------------------------------- */
+.plegable { margin-bottom: 4px; }
+.plegable__disparador {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--acento);
+  cursor: pointer;
+}
+.plegable__disparador i { transition: transform .15s; }
+.plegable__disparador[aria-expanded="true"] i { transform: rotate(180deg); }
+
+/* --- Campo con símbolo de euro -------------------------------------------- */
+.campo-euro { position: relative; }
+.campo-euro input { padding-right: 38px; }
+.campo-euro__simbolo {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--texto-2);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+/* =============================================================================
+   PANTALLA 6 · HOTELES (datos reales de Booking)
+   ============================================================================= */
+.hotel__titulo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.hotel__estrellas { color: #E8B21A; font-size: 12px; letter-spacing: -1px; white-space: nowrap; }
+.hotel__insignias { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.hotel__insignias:empty { margin-top: 0; }
+
+/* Píldora azul, hermana de .pildora-verde ("Gratis" / "Mejor precio") */
+.pildora-azul {
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+/* Nota en badge azul con el nº de opiniones debajo */
+.nota {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+.nota__badge {
+  background: var(--acento);
+  color: #FFF;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 5px 9px;
+  border-radius: 10px 10px 10px 2px;   /* guiño al badge de Booking */
+  min-width: 40px;
+}
+.nota__opiniones { font-size: 11px; color: var(--texto-2); white-space: nowrap; }
+
+/* En móvil la tarjeta de hotel se apila para que quepa todo */
+@media (max-width: 599px) {
+  .segmento { flex-wrap: wrap; }
+  .nota { order: 3; flex-direction: row; align-items: center; gap: 7px; }
+  .segmento__der { order: 4; margin-left: auto; }
+}
+
+/* =============================================================================
+   PANTALLA 5 · VUELOS (opciones combinadas de Kayak)
+   -----------------------------------------------------------------------------
+   Cada tarjeta lleva los DOS tramos apilados. La rejilla los alinea en columnas
+   para que ida y vuelta se puedan comparar de un vistazo.
+   ============================================================================= */
+.segmento--vuelo { align-items: stretch; }
+
+.tramo {
+  display: grid;
+  grid-template-columns: auto auto auto auto 1fr;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 5px 0;
+}
+.tramo + .tramo { border-top: 1px dashed var(--borde); }
+
+.tramo__etiqueta {
+  font-size: 12px;
+  color: var(--texto-2);
+  white-space: nowrap;
+  min-width: 62px;
+}
+.tramo__etiqueta i { color: var(--acento); font-size: 14px; vertical-align: -2px; }
+
+.tramo__horas {
+  font-size: 17px;
+  font-weight: 650;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tramo__diasup { font-size: 11px; color: var(--acento); font-weight: 600; }
+.tramo__ruta { white-space: nowrap; }
+.tramo__dato { white-space: nowrap; }
+
+.vuelo__pie {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--borde);
+}
+.vuelo__aerolineas { font-size: 13px; font-weight: 600; color: var(--texto); }
+
+/* En móvil el grid de tramos se apila para que no se salga */
+@media (max-width: 599px) {
+  .tramo { grid-template-columns: 1fr auto; gap: 2px 10px; }
+  .tramo__etiqueta { grid-column: 1 / -1; }
+  .tramo__ruta, .tramo__dato { font-size: 12px; }
+}
+
+/* =============================================================================
+   PANEL DE FILTROS DE HOTELES
+   ============================================================================= */
+.filtros-resumen {
+  font-size: 12px;
+  color: var(--acento);
+  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.filtros-resumen i { font-size: 14px; }
+
+/* Los dos campos de € en línea, con su guion en medio */
+.filtro-precio { display: flex; align-items: center; gap: 10px; }
+.filtro-precio .campo-euro { flex: 1; min-width: 0; }
+.filtro-precio__guion { color: var(--texto-2); flex: 0 0 auto; }
+
+/* --- Grupos dentro del panel de filtros ----------------------------------- */
+.grupo-filtro {
+  border-bottom: 1px solid var(--borde);
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+}
+.grupo-filtro__titulo {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--texto-2);
+  margin-bottom: 12px;
+}
+
+/* Marca de "esto no vuelve a buscar, se nota ya" */
+.etiqueta-instantanea {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--acento);
+  background: var(--tinte);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+.etiqueta-instantanea i { font-size: 12px; vertical-align: -1px; }
+
+/* ---------------------------------------------------------------------------
+   Avisos del destino agrupados por categoría (pantalla 3).
+   Cada grupo es clima / seguridad / festivos, con su icono de encabezado.
+   --------------------------------------------------------------------------- */
+.avisos-grupo { margin-bottom: 22px; }
+.avisos-grupo:last-child { margin-bottom: 0; }
+
+.avisos-grupo__titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--texto-3);
+  margin: 0 0 10px;
+}
+.avisos-grupo__titulo i { font-size: 17px; color: var(--acento); }
+
+/* Los avisos de un mismo grupo van pegaditos, sin el aire de una lista suelta. */
+.avisos-grupo .aviso + .aviso { margin-top: 8px; }
+
+.aviso__enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;          /* hereda el color de la severidad: se lee siempre */
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.aviso__enlace i { font-size: 14px; }
+.aviso__enlace:hover { opacity: .75; }
+
+/* ===========================================================================
+   PANTALLA "DESCUBRIR": el mapa es el fondo y todo lo demás flota encima.
+   =========================================================================== */
+.descubrir {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.descubrir__mapa {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--fondo);
+}
+
+/* Leaflet trae su propia tipografía y su propio azul: los alineamos al tema. */
+.leaflet-container { font-family: inherit; background: var(--fondo); }
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, .82) !important;
+  font-size: 11px;
+  color: var(--texto-2);
+}
+.leaflet-control-attribution a { color: var(--acento); }
+.leaflet-bar a {
+  color: var(--texto) !important;
+  border-color: var(--borde) !important;
+}
+.leaflet-bar a:hover { background: var(--tinte) !important; }
+
+/* --- Pills flotantes de arriba ------------------------------------------- */
+.descubrir__superior {
+  position: absolute;
+  top: 14px; left: 14px; right: 62px;   /* hueco para el zoom de la derecha */
+  z-index: 500;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  pointer-events: none;                 /* el mapa se sigue pudiendo arrastrar */
+}
+.descubrir__superior > * { pointer-events: auto; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  box-shadow: 0 2px 10px rgba(18, 48, 62, .10);
+  font-size: 14px;
+  color: var(--texto);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pill i { font-size: 17px; color: var(--acento); }
+.pill--volver { padding: 9px 11px; }
+.pill--volver:hover { background: var(--tinte); }
+.pill--titulo strong { font-weight: 700; }
+.pill__cuenta {
+  color: var(--texto-2);
+  font-size: 13px;
+  padding-left: 7px;
+  border-left: 1px solid var(--borde);
+}
+.pill--frescura { color: var(--texto-2); font-size: 13px; }
+.pill--frescura i { color: var(--texto-3); font-size: 15px; }
+.pill--frescura form { display: inline-flex; margin-left: 2px; }
+
+.pill__accion {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: none;
+  padding: 2px 3px;
+  cursor: pointer;
+  color: var(--texto-3);
+  border-radius: 999px;
+}
+.pill__accion i { font-size: 15px; color: inherit; }
+.pill__accion:hover { color: var(--acento); background: var(--tinte); }
+
+/* --- Marcadores ----------------------------------------------------------
+   Nada de la chincheta azul de Leaflet: son puntos con los colores del tema,
+   y el estado se ve de un vistazo desde lejos.                              */
+.marcador {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; height: 20px;
+  margin: 3px;
+  border-radius: 50%;
+  background: var(--superficie);
+  border: 2px solid var(--borde-fuerte);
+  box-shadow: 0 1px 5px rgba(18, 48, 62, .28);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.marcador i { font-size: 12px; line-height: 1; color: var(--acento); }
+
+/* Sin investigar: punto blanco con borde gris, que es el de arriba tal cual. */
+
+/* Investigandose: borde azul y un aro discontinuo dando vueltas. */
+.marcador--investigando {
+  border-color: var(--acento);
+  position: relative;
+}
+.marcador--investigando::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px dashed var(--acento);
+  animation: marcador-gira 2.4s linear infinite;
+}
+@keyframes marcador-gira { to { transform: rotate(360deg); } }
+
+/* Investigada: relleno con el tinte del acento y su tic. */
+.marcador--investigada {
+  background: var(--tinte);
+  border-color: var(--acento);
+}
+
+/* La que se esta mirando ahora: mas grande y con halo. */
+.marcador--activo {
+  transform: scale(1.45);
+  border-color: var(--acento);
+  box-shadow: 0 0 0 5px rgba(27, 127, 166, .22), 0 2px 8px rgba(18, 48, 62, .3);
+  z-index: 1000;
+}
+
+/* --- El carrusel de abajo ------------------------------------------------- */
+.carrusel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 500;
+  display: flex;
+  gap: 12px;
+  padding: 14px 14px 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;             /* la barra afea y ya hay flechas */
+  /* Se desvanece hacia arriba para que el mapa no acabe en un corte seco. */
+  background: linear-gradient(to top, rgba(244, 248, 250, .96) 62%, rgba(244, 248, 250, 0));
+}
+.carrusel::-webkit-scrollbar { display: none; }
+
+.tarjeta-punto {
+  scroll-snap-align: center;
+  flex: 0 0 auto;
+  width: min(84vw, 340px);
+  display: flex;
+  flex-direction: column;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  overflow: hidden;
+  box-shadow: 0 3px 14px rgba(18, 48, 62, .12);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+/* La seleccionada tiene que cantar a la primera: borde grueso, fondo con
+   tinte y un pelín más grande. Antes solo cambiaba el borde y a un metro de
+   la pantalla no se distinguía de las demás. */
+/* Va con el padre delante (`.carrusel`) a propósito, para que gane sin
+   discusión: con el mismo peso que `.tarjeta-punto` el borde y la escala se
+   quedaban sin aplicar y solo cambiaba el fondo. */
+.carrusel .tarjeta-punto--activa {
+  border: 2px solid var(--acento);
+  background: #EDF6FA;                 /* el tinte, pero muy flojo */
+  box-shadow: 0 6px 20px rgba(27, 127, 166, .22);
+  transform: scale(1.03);
+  /* Con 2px de borde la tarjeta crecería 1px por lado y daría un saltito. */
+  margin: -1px;
+}
+
+.tarjeta-punto__foto {
+  position: relative;
+  height: 116px;
+  background: var(--tinte);
+}
+.tarjeta-punto__foto img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* Sin foto de Wikipedia: color del tema y el icono de su categoria. */
+.tarjeta-punto__hueco {
+  width: 100%; height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--tinte), #EAF4F8);
+}
+.tarjeta-punto__hueco i { font-size: 34px; color: var(--acento); opacity: .55; }
+
+.tarjeta-punto__categoria {
+  position: absolute;
+  top: 8px; left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .92);
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.tarjeta-punto__categoria i { font-size: 13px; color: var(--acento); }
+
+.tarjeta-punto__cuerpo {
+  padding: 11px 13px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+.tarjeta-punto__cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tarjeta-punto__nombre {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.chip-dias {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.chip-dias i { font-size: 13px; }
+
+.tarjeta-punto__base {
+  margin: 0;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+
+/* Exactamente dos lineas: las tarjetas del carrusel tienen que medir igual. */
+.tarjeta-punto__texto {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--texto-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tarjeta-punto__acciones {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.tarjeta-punto__acciones .boton {
+  flex: 1;
+  justify-content: center;
+  padding: 9px 10px;
+  font-size: 13px;
+}
+
+.boton--hecho {
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+  border: 1px solid transparent;
+  cursor: default;
+}
+.boton--esperando { cursor: default; opacity: .85; }
+
+/* Ruedecita del boton "Investigando..." */
+.rueda {
+  width: 13px; height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  animation: rueda-gira .8s linear infinite;
+}
+@keyframes rueda-gira { to { transform: rotate(360deg); } }
+
+/* --- El velo de carga / error, por encima del mapa ------------------------ */
+.descubrir__velo {
+  position: absolute;
+  inset: 0;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(244, 248, 250, .82);
+  backdrop-filter: blur(3px);
+}
+.velo__caja {
+  max-width: 460px;
+  text-align: center;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 26px 24px;
+  box-shadow: 0 8px 30px rgba(18, 48, 62, .14);
+}
+.velo__icono { font-size: 32px; color: var(--acento); }
+.velo__icono--malo { color: var(--alerta-tx); }
+.velo__titulo { font-size: 17px; font-weight: 700; margin: 10px 0 6px; }
+.velo__nota { font-size: 14px; color: var(--texto-2); margin: 0 0 8px; line-height: 1.5; }
+.velo__nota code {
+  background: var(--fondo);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+.velo__pista { font-size: 13px; margin-top: 10px; }
+.velo__botones {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+/* Aviso corto que aparece abajo y se va solo. */
+.nota-flotante {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 2000;
+  background: var(--texto);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(18, 48, 62, .3);
+}
+
+@media (min-width: 900px) {
+  .tarjeta-punto { width: 320px; }
+  .carrusel { padding: 16px 20px 20px; }
+  .descubrir__superior { top: 18px; left: 20px; }
+}
+
+/* ===========================================================================
+   FICHA PROFUNDA de una ciudad o un sitio (/sitio/:id)
+   =========================================================================== */
+.ficha { padding-bottom: 40px; }
+
+/* --- Cabecera con foto grande --------------------------------------------- */
+.ficha__cabecera {
+  position: relative;
+  min-height: 230px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 18px 16px;
+  overflow: hidden;
+  background: var(--tinte);
+}
+
+.ficha__foto {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 0;                 /* el fondo del todo */
+}
+.ficha__foto--hueco {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--tinte), #EAF4F8);
+}
+.ficha__foto--hueco i { font-size: 64px; color: var(--acento); opacity: .5; }
+
+/* Un velo oscuro: sin el, el texto blanco se pierde sobre una foto clara.
+   Va fuerte a proposito. Muchas fotos de Wikipedia son montajes con bandas
+   blancas (la de Kioto, sin ir mas lejos) y con un velo suave el chip de
+   "CIUDAD" desaparecia justo encima de una de esas bandas. Aqui la foto es
+   ambiente; lo que hay que poder leer siempre es el titulo. */
+.ficha__cabecera::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(to top,
+    rgba(8, 28, 38, .92) 0%,
+    rgba(8, 28, 38, .78) 30%,
+    rgba(8, 28, 38, .50) 62%,
+    rgba(8, 28, 38, .34) 100%);
+}
+/* Nada de reglas del tipo ".ficha__cabecera > *": aquí dentro conviven cosas
+   con position distinto (la foto y el botón de volver son absolute, el titular
+   no) y una regla que las abarque a todas le pisa el position a alguna. Pasó
+   dos veces: primero la foto salió a tamaño natural comiéndose la pantalla, y
+   luego el botón "Al mapa" se estiró de lado a lado como una banda blanca.
+   Cada pieza lleva su z-index y ya está. */
+
+.ficha__volver {
+  position: absolute;
+  z-index: 2;
+  top: 14px; left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .92);
+  color: var(--texto);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(18, 48, 62, .2);
+}
+.ficha__volver:hover { background: #fff; }
+.ficha__volver i { font-size: 16px; color: var(--acento); }
+
+.ficha__titular { position: relative; z-index: 2; color: #fff; }
+
+.ficha__categoria {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  opacity: .92;
+}
+.ficha__categoria i { font-size: 14px; }
+
+.ficha__nombre {
+  margin: 5px 0 4px;
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #fff;
+}
+.ficha__meta { margin: 0; font-size: 14px; opacity: .93; }
+.ficha__meta strong { font-weight: 700; }
+
+.ficha__accion {
+  position: relative;
+  z-index: 2;
+  align-self: flex-start;
+  margin-top: 14px;
+}
+
+/* --- Cuerpo --------------------------------------------------------------- */
+.ficha__cuerpo {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* --- Franja de estado ----------------------------------------------------- */
+.franja {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radio-sm);
+  background: var(--info-bg);
+  color: var(--info-tx);
+  font-size: 14px;
+}
+.franja i { font-size: 18px; }
+.franja form { margin-left: auto; }
+.franja__pista { margin-left: auto; font-size: 12px; }
+.franja--trabajando { background: var(--tinte); }
+.franja--mala { background: var(--alerta-bg); color: var(--alerta-tx); }
+.franja--mala .boton-discreto { color: var(--alerta-tx); border-color: currentColor; }
+
+/* --- Pestañas tipo píldora ------------------------------------------------ */
+.pestanas {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 18px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pestanas::-webkit-scrollbar { display: none; }
+
+.pestana {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 9px 15px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-2);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.pestana:hover { color: var(--acento); }
+.pestana--activa {
+  background: var(--acento);
+  color: #fff;
+}
+.pestana--activa:hover { color: #fff; }
+
+.pestana__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 12px;
+  font-weight: 700;
+}
+.pestana--activa .pestana__n { background: rgba(255, 255, 255, .28); color: #fff; }
+
+/* --- Panel RESUMEN -------------------------------------------------------- */
+.caja--porque {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-left: 4px solid var(--acento);
+  border-radius: var(--radio-sm);
+  padding: 15px 17px;
+  margin-bottom: 16px;
+}
+.caja__titulo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--texto-3);
+}
+.caja__titulo i { font-size: 16px; color: var(--acento); }
+.caja--porque p { margin: 0; font-size: 15px; line-height: 1.6; }
+
+.ficha__intro {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--texto-2);
+  margin: 0 0 16px;
+}
+
+.datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.dato {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 14px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+.dato i { font-size: 19px; color: var(--acento); }
+.dato__valor { font-size: 18px; font-weight: 700; line-height: 1.25; }
+/* "Cómo moverse" es una frase, no un número: no puede ir a 18px. */
+.dato__valor--texto { font-size: 13px; font-weight: 500; line-height: 1.45; }
+.dato__etiqueta { font-size: 12px; color: var(--texto-3); }
+
+.enlace-fuera {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--acento);
+  text-decoration: none;
+}
+.enlace-fuera:hover { text-decoration: underline; }
+.enlace-fuera i { font-size: 17px; }
+
+/* --- Panel QUÉ VER: mini-fichas expandibles ------------------------------- */
+.mini {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.mini[open] { border-color: var(--borde-fuerte); }
+
+.mini__cabecera {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.mini__cabecera::-webkit-details-marker { display: none; }
+.mini__cabecera:hover { background: var(--fondo); }
+
+.mini__foto {
+  flex: 0 0 auto;
+  width: 56px; height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--tinte);
+}
+.mini__foto--hueco {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mini__foto--hueco i { font-size: 20px; color: var(--acento); opacity: .5; }
+
+.mini__texto { flex: 1; min-width: 0; }
+.mini__nombre { display: block; font-size: 15px; font-weight: 650; }
+.mini__resumen {
+  display: block;
+  font-size: 13px;
+  color: var(--texto-2);
+  line-height: 1.4;
+  /* Una línea y punto: la cabecera plegada tiene que medir siempre igual. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini__flecha {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: var(--texto-3);
+  transition: transform .18s ease;
+}
+.mini[open] .mini__flecha { transform: rotate(180deg); }
+
+.mini__detalle {
+  padding: 2px 12px 13px 79px;   /* alineado con el texto, no con la foto */
+  border-top: 1px solid var(--borde);
+  margin-top: 2px;
+}
+.mini__detalle p {
+  margin: 10px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--texto-2);
+}
+.mini__enlaces { display: flex; gap: 14px; flex-wrap: wrap; }
+.mini__enlaces a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--acento);
+  text-decoration: none;
+}
+.mini__enlaces a:hover { text-decoration: underline; }
+.mini__enlaces i { font-size: 15px; }
+
+@media (max-width: 480px) {
+  .mini__detalle { padding-left: 12px; }
+}
+
+/* La tarjeta de excursión en modo solo lectura: mismo hueco, enlace en vez
+   del círculo de marcar. */
+.marca--enlace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--texto-3);
+}
+.marca--enlace:hover { color: var(--acento); border-color: var(--acento); }
+.marca--enlace i { font-size: 16px; }
+
+@media (min-width: 900px) {
+  .ficha__cabecera { min-height: 300px; padding: 26px 30px; }
+  .ficha__nombre { font-size: 34px; }
+  .ficha__cuerpo { padding: 22px 16px; }
+}
+
+/* Globo de Leaflet con el atajo a la ficha, vestido como el resto. */
+.leaflet-popup-content-wrapper { border-radius: var(--radio-sm); }
+.leaflet-popup-content { margin: 11px 14px; font-size: 14px; line-height: 1.4; }
+.popup__enlace { color: var(--acento); font-weight: 600; text-decoration: none; }
+.popup__enlace:hover { text-decoration: underline; }
+
+/* ===========================================================================
+   ELEGIR DESTINO: el mapamundi (/elegir-destino/:viajeId)
+   =========================================================================== */
+.mundo {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.mundo__mapa {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--fondo);
+}
+
+/* Las teselas de HOT llevan bastante verde oliva en el terreno y a media
+   distancia se comen la pantalla. Un punto menos de saturación y un pelo más
+   de luz las acercan al resto de la app sin que dejen de leerse. Va SOLO sobre
+   las teselas: si cayera sobre el mapa entero, se llevaría por delante el azul
+   del marcador y el de los controles. */
+.mundo__mapa .leaflet-tile-pane {
+  filter: saturate(.82) brightness(1.04);
+}
+
+/* --- Cabecera flotante ---------------------------------------------------- */
+.mundo__cabecera {
+  position: absolute;
+  top: 16px; left: 16px; right: 16px;
+  z-index: 500;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  /* El mapa se sigue pudiendo arrastrar por los huecos entre las piezas. */
+  pointer-events: none;
+}
+.mundo__cabecera > * { pointer-events: auto; }
+
+.pill--pregunta { font-size: 15px; }
+.pill--pregunta strong { font-weight: 700; }
+
+/* La pista es más discreta que las demás: es un consejo, no un dato. */
+.pill--pista {
+  background: rgba(255, 255, 255, .78);
+  color: var(--texto-2);
+  font-size: 13px;
+  padding: 7px 13px;
+  box-shadow: none;
+}
+.pill--pista i { color: var(--texto-3); font-size: 15px; }
+
+/* --- Buscador ------------------------------------------------------------- */
+.buscador {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 5px 4px 14px;
+  width: min(420px, 100%);
+  border-radius: 999px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  box-shadow: 0 2px 10px rgba(18, 48, 62, .10);
+}
+.buscador:focus-within { border-color: var(--acento); }
+.buscador__lupa { font-size: 17px; color: var(--texto-3); flex: 0 0 auto; }
+
+.buscador__campo {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 8px 0;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--texto);
+}
+.buscador__campo:focus { outline: none; }
+.buscador__campo::placeholder { color: var(--texto-3); }
+/* La crucecita que Chrome le pone a los input[type=search] rompe la píldora. */
+.buscador__campo::-webkit-search-cancel-button { display: none; }
+
+.buscador__boton {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 17px;
+  background: var(--acento);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.buscador__boton:hover { background: var(--acento-hover); }
+.buscador--buscando .buscador__boton { opacity: .6; pointer-events: none; }
+
+/* --- El marcador: una gota, no una chincheta ------------------------------ */
+.gota {
+  display: block;
+  width: 26px; height: 26px;
+  background: var(--acento);
+  border: 3px solid #fff;
+  /* Redonda arriba y en punta abajo: la forma de toda la vida, girada 45º. */
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 6px rgba(18, 48, 62, .35);
+}
+
+/* --- Controles de zoom de Leaflet, vestidos como la app ------------------- */
+.leaflet-control-zoom {
+  border: 0 !important;
+  box-shadow: 0 2px 10px rgba(18, 48, 62, .12) !important;
+  border-radius: var(--radio-sm) !important;
+  overflow: hidden;
+}
+.leaflet-control-zoom a {
+  width: 34px; height: 34px;
+  line-height: 34px;
+  background: var(--superficie);
+  color: var(--texto) !important;
+  border-bottom: 1px solid var(--borde) !important;
+  font-weight: 500;
+}
+.leaflet-control-zoom a:last-child { border-bottom: 0 !important; }
+.leaflet-control-zoom a:hover { background: var(--tinte); color: var(--acento) !important; }
+
+/* --- La bandeja que sube de abajo ----------------------------------------- */
+.bandeja {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 600;
+  width: min(460px, calc(100% - 24px));
+  padding: 10px 20px 20px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -4px 22px rgba(18, 48, 62, .13);
+  /* Escondida abajo del todo; sube al ponerle la clase. El translateX del 50%
+     va aquí también, o el centrado se pierde durante la animación. */
+  transform: translate(-50%, 105%);
+  transition: transform .35s cubic-bezier(.22, .8, .28, 1);
+}
+.bandeja--abierta { transform: translate(-50%, 0); }
+
+/* El asa de las bandejas de móvil: dice "esto sube y baja" sin explicarlo. */
+.bandeja__asa {
+  width: 38px; height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: var(--borde-fuerte);
+}
+
+.bandeja__cargando {
+  margin: 6px 0 8px;
+  font-size: 15px;
+  color: var(--texto-2);
+}
+
+.bandeja__miga {
+  margin: 0 0 3px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--texto-2);
+}
+.bandeja__miga[hidden] { display: none; }
+
+.bandeja__titular {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.bandeja__nombre {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.chip-tipo {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bandeja__texto {
+  margin: 9px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--texto-2);
+}
+
+.bandeja__botones {
+  display: flex;
+  gap: 9px;
+  margin-top: 16px;
+}
+.bandeja__botones .boton { flex: 1; justify-content: center; }
+
+/* Los tres puntitos de "Identificando el lugar…". */
+.puntitos { display: inline-flex; gap: 5px; }
+.puntitos span {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--acento);
+  opacity: .35;
+  animation: puntito 1.1s ease-in-out infinite;
+}
+.puntitos span:nth-child(2) { animation-delay: .18s; }
+.puntitos span:nth-child(3) { animation-delay: .36s; }
+@keyframes puntito {
+  0%, 100% { opacity: .3; transform: translateY(0); }
+  40%      { opacity: 1;  transform: translateY(-4px); }
+}
+
+@media (min-width: 900px) {
+  .mundo__cabecera { top: 20px; }
+  .bandeja { bottom: 20px; border-radius: 18px; border-bottom: 1px solid var(--borde); }
+  .bandeja { transform: translate(-50%, calc(100% + 30px)); }
+  .bandeja--abierta { transform: translate(-50%, 0); }
+  .bandeja__asa { display: none; }
+}
+
+/* ===========================================================================
+   MI RUTA (/viaje/:viajeId/ruta)
+   Sigue la maqueta aprobada; los colores salen de las variables del tema.
+   =========================================================================== */
+.contenido--ruta { max-width: 720px; }
+.contenido--esperando { opacity: .6; pointer-events: none; }
+
+/* --- Cabecera ------------------------------------------------------------- */
+.ruta-cabecera { margin-bottom: 22px; }
+.ruta-cabecera__miga {
+  font-size: 13px;
+  color: var(--texto-3);
+  margin: 0 0 6px;
+}
+.ruta-cabecera__miga a { color: inherit; text-decoration: none; }
+.ruta-cabecera__miga a:hover { color: var(--acento); text-decoration: underline; }
+
+.ruta-cabecera__titulo {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chip-ambito {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--acento);
+  background: var(--tinte);
+  border-radius: 999px;
+  padding: 5px 14px;
+}
+
+/* --- Contador de noches --------------------------------------------------- */
+.ruta-contador {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 26px;
+}
+.ruta-contador__fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ruta-contador__texto { font-size: 15px; font-weight: 600; }
+.ruta-contador__fechas { font-size: 13px; color: var(--texto-2); }
+
+.ruta-barra {
+  height: 8px;
+  background: var(--fondo);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ruta-barra__lleno {
+  height: 100%;
+  background: var(--acento);
+  border-radius: 999px;
+  transition: width .3s ease;
+}
+.ruta-barra__lleno--exceso { background: #C0563B; }
+
+.ruta-contador__aviso {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.ruta-contador__aviso a { color: var(--acento); font-weight: 600; }
+.ruta-contador__aviso--exceso { color: #C0563B; font-weight: 600; }
+.ruta-contador__aviso--exacto { color: var(--verde-tx); font-weight: 600; }
+.ruta-contador__aviso--exacto i { font-size: 15px; vertical-align: -2px; }
+
+/* --- Títulos de sección --------------------------------------------------- */
+.seccion-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--texto-3);
+  margin: 26px 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seccion-titulo__num {
+  background: var(--tinte);
+  color: var(--acento);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 9px;
+}
+
+/* --- Candidatos ----------------------------------------------------------- */
+.candidatos {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.candidato {
+  background: var(--superficie);
+  /* Discontinuo: todavía no está decidido que entre en la ruta. */
+  border: 1px dashed var(--texto-3);
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.candidato__nombre { font-weight: 600; font-size: 15px; }
+.candidato__botones { display: flex; gap: 6px; }
+
+.btn-mini {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-mini--confirmar { background: var(--acento); color: #fff; }
+.btn-mini--confirmar:hover { background: var(--acento-hover); }
+.btn-mini--quitar { background: var(--fondo); color: var(--texto-2); }
+.btn-mini--quitar:hover { background: var(--borde); }
+
+.candidatos__vacio {
+  font-size: 14px;
+  color: var(--texto-3);
+  padding: 8px 4px;
+  margin: 0;
+}
+
+/* --- La ruta -------------------------------------------------------------- */
+.ruta-lista { position: relative; }
+
+.extremo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  font-size: 14px;
+  color: var(--texto-2);
+}
+.extremo__icono {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--texto-3);
+}
+
+/* El ruta-tramo lleva la línea vertical que enhebra toda la ruta. */
+.ruta-tramo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 4px 26px;
+  position: relative;
+}
+.ruta-tramo::before {
+  content: '';
+  position: absolute;
+  left: 12px; top: -6px; bottom: -6px;
+  width: 2px;
+  background: var(--borde);
+}
+
+.chip-transporte {
+  font-size: 13px;
+  border-radius: 999px;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  text-decoration: none;
+}
+.chip-transporte i { font-size: 15px; }
+.chip-transporte--pendiente { background: #FBEED6; color: #8A5A16; }
+.chip-transporte--resuelto  { background: var(--verde-bg); color: var(--verde-tx); }
+.chip-transporte:hover { border-color: currentColor; }
+
+/* --- Cada parada ---------------------------------------------------------- */
+.etapa {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: grab;
+}
+.etapa--arrastrando { opacity: .4; }
+.etapa--encima { border-color: var(--acento); box-shadow: 0 0 0 3px var(--tinte); }
+
+.etapa__asa {
+  color: var(--texto-3);
+  font-size: 18px;
+  cursor: grab;
+  user-select: none;
+  line-height: 1;
+}
+.etapa__orden {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--acento);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.etapa__info { flex: 1; min-width: 0; }
+.etapa__nombre { display: block; font-weight: 700; font-size: 16px; }
+.etapa__fechas { display: block; font-size: 13px; color: var(--texto-2); margin-top: 2px; }
+
+.etapa__noches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--fondo);
+  border-radius: 999px;
+  padding: 5px 8px;
+}
+.etapa__noches button {
+  width: 26px; height: 26px;
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+  background: var(--superficie);
+  color: var(--texto);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.etapa__noches button:hover:not(:disabled) { background: var(--tinte); }
+.etapa__noches button:disabled { color: var(--texto-3); cursor: default; opacity: .55; }
+.etapa__valor { font-size: 14px; font-weight: 700; min-width: 62px; text-align: center; }
+
+.etapa__abrir {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  color: var(--acento);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.etapa__abrir:hover { background: var(--tinte); }
+
+.etapa__quitar {
+  border: 0;
+  background: none;
+  color: var(--texto-3);
+  padding: 4px;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+}
+.etapa__quitar i { font-size: 17px; }
+.etapa__quitar:hover { color: #C0563B; background: var(--fondo); }
+
+/* --- Pie ------------------------------------------------------------------ */
+.ruta-pie {
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+}
+.boton-lienzo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  color: var(--texto-2);
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.boton-lienzo:hover { color: var(--acento); border-color: var(--acento); }
+
+/* --- Modal de confirmación ------------------------------------------------ */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal[hidden] { display: none; }
+.modal__fondo {
+  position: absolute;
+  inset: 0;
+  background: rgba(18, 48, 62, .38);
+}
+.modal__caja {
+  position: relative;
+  width: min(420px, 100%);
+  background: var(--superficie);
+  border-radius: var(--radio);
+  padding: 22px 24px;
+  box-shadow: 0 10px 34px rgba(18, 48, 62, .22);
+}
+.modal__titulo { margin: 0 0 8px; font-size: 18px; font-weight: 700; }
+.modal__texto { margin: 0; font-size: 14px; line-height: 1.55; color: var(--texto-2); }
+.modal__botones {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.boton--peligro {
+  background: #C0563B;
+  color: #fff;
+  border: 1px solid transparent;
+}
+.boton--peligro:hover { background: #A8452C; }
+
+@media (max-width: 560px) {
+  .etapa { flex-wrap: wrap; }
+  .etapa__abrir { flex: 1; text-align: center; }
+  .etapa__info { flex-basis: calc(100% - 90px); }
+}
+
+/* Atajo a "Mi ruta" en la banda de la tarjeta de embarque. */
+.embarque__ruta {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.embarque__ruta:hover { background: rgba(255, 255, 255, .3); }
+.embarque__ruta i { font-size: 14px; }
+
+/* El aviso flotante cuando lleva enlace: el enlace tiene que verse sobre el
+   fondo oscuro, así que va subrayado y en blanco, no en el azul del tema. */
+.nota-flotante--con-enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  bottom: 96px;   /* por encima del carrusel de la pantalla de descubrir */
+}
+.nota-flotante--con-enlace a {
+  color: #fff;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+/* ===========================================================================
+   LA ETAPA (/etapa/:etapaId)
+   Reaprovecha casi todo de la ficha de ciudad y de la ruta; aquí solo va lo
+   que es propio de esta pantalla.
+   =========================================================================== */
+.contenido--etapa { max-width: 760px; }
+
+.etapa-titular {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chip-ambito--pendiente {
+  background: #FBEED6;
+  color: #8A5A16;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chip-ambito--pendiente i { font-size: 14px; }
+
+.etapa-fechas {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--texto-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.etapa-fechas i { font-size: 16px; color: var(--acento); }
+
+/* --- Notas plegables ------------------------------------------------------ */
+.notas {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  margin: 16px 0;
+  overflow: hidden;
+}
+.notas__resumen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--texto-2);
+}
+.notas__resumen::-webkit-details-marker { display: none; }
+.notas__resumen:hover { color: var(--acento); }
+.notas__mas { font-size: 16px; transition: transform .18s ease; }
+.notas[open] .notas__mas { transform: rotate(45deg); }
+.notas__icono { display: none; }
+.notas__estado { margin-left: auto; font-size: 12px; color: var(--texto-3); font-weight: 500; }
+
+.notas__campo {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--borde);
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--texto);
+  background: none;
+  resize: vertical;
+}
+.notas__campo:focus { outline: none; background: var(--fondo); }
+
+/* --- "Me lo apunto" ------------------------------------------------------- */
+.etapa-resumen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 11px 14px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  border-radius: var(--radio-sm);
+  font-size: 14px;
+}
+.etapa-resumen i { font-size: 17px; }
+
+.apuntar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 999px;
+  background: var(--superficie);
+  color: var(--texto-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.apuntar i { font-size: 14px; }
+.apuntar:hover { border-color: var(--acento); color: var(--acento); }
+.apuntar--si {
+  background: var(--tinte);
+  border-color: var(--acento);
+  color: var(--tinte-texto);
+}
+.apuntar--ancho { width: 100%; justify-content: center; margin-top: 8px; }
+
+/* Lo apuntado se ve de lejos: el tinte del tema y ya. */
+.mini--apuntada { border-color: var(--acento); background: var(--tinte); }
+.mini--apuntada .mini__cabecera:hover { background: transparent; }
+.excursion--apuntada .tarjeta { border-color: var(--acento); background: var(--tinte); }
+
+/* La caja de la excursión y su botón "Me lo apunto" debajo. La tarjeta estira
+   para que el botón quede siempre abajo del todo: sin esto, cada tarjeta lo
+   dejaba a una altura distinta según lo largo que fuera su título. */
+.excursion { display: flex; flex-direction: column; }
+.excursion .tarjeta { flex: 1; }
+
+/* --- El hotel elegido, destacado ------------------------------------------ */
+.elegido {
+  background: var(--verde-bg);
+  border: 1px solid var(--verde-tx);
+  border-radius: var(--radio);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.elegido__marca {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--verde-tx);
+}
+.elegido__marca i { font-size: 15px; }
+.elegido__nombre { font-size: 17px; font-weight: 700; margin-top: 5px; }
+.elegido__pie {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.elegido__precio { font-size: 16px; font-weight: 700; color: var(--verde-tx); }
+.elegido__enlace {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--verde-tx);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.elegido__pie .boton-discreto { margin-left: auto; }
+
+/* --- Los tramos ----------------------------------------------------------- */
+.tramo-caja {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 15px 17px;
+  margin-bottom: 12px;
+}
+.tramo-caja--resuelta { border-color: var(--verde-tx); }
+
+.tramo-caja__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tramo-caja__ruta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.tramo-caja__ruta i { font-size: 18px; color: var(--acento); }
+
+.tramo-caja__estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #FBEED6;
+  color: #8A5A16;
+  font-size: 12px;
+  font-weight: 700;
+}
+.tramo-caja__estado i { font-size: 14px; }
+.tramo-caja__estado--ok { background: var(--verde-bg); color: var(--verde-tx); }
+
+.tramo-caja__datos {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.tramo-caja__datos i { font-size: 15px; }
+/* La distancia es una referencia, no un dato del viaje: se dice bajito. */
+.tramo-caja__referencia { color: var(--texto-3); }
+
+.tramo-caja__resuelto {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+  border-radius: var(--radio-sm);
+  font-size: 14px;
+}
+.tramo-caja__resuelto .secundario { color: inherit; opacity: .85; }
+
+.tramo-caja__acciones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+.tramo-caja__acciones .boton { padding: 8px 14px; font-size: 13px; }
+
+/* --- El formulario de apuntar a mano -------------------------------------- */
+.manual {
+  margin-top: 12px;
+  padding: 13px 14px;
+  background: var(--fondo);
+  border-radius: var(--radio-sm);
+}
+.manual[hidden] { display: none; }
+.manual__fila { display: flex; gap: 10px; flex-wrap: wrap; }
+.manual__campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 130px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--texto-2);
+  margin-bottom: 10px;
+}
+.manual__campo--precio { flex: 0 0 130px; }
+.manual__campo select,
+.manual__campo input {
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--texto);
+  background: var(--superficie);
+}
+.manual__campo select:focus,
+.manual__campo input:focus { outline: none; border-color: var(--acento); }
+.manual__botones { display: flex; gap: 8px; }
+.manual__botones .boton { padding: 8px 16px; font-size: 13px; }
+
+.vuelos-tramo { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.vuelos-tramo[hidden] { display: none; }
+.vuelos-tramo .rueda { vertical-align: -2px; margin-right: 6px; }
+
+/* --- Navegación entre etapas ---------------------------------------------- */
+.etapa-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borde);
+}
+
+@media (max-width: 560px) {
+  .etapa-nav { justify-content: center; }
+  .manual__campo--precio { flex: 1; }
+}
+
+/* ===========================================================================
+   EL LIENZO (/viaje/:viajeId/lienzo)
+   Sigue la maqueta v2. Ocupa la pantalla entera: los dias se desplazan en
+   horizontal y la mochila se queda fija a la izquierda.
+
+   Ojo con los nombres: `filtro` y `franja` ya estaban cogidos (los paneles de
+   hoteles/vuelos y la pantalla de etapa), asi que aqui son `lienzo-filtro` y
+   `lienzo-franja`.
+   =========================================================================== */
+.lienzo-pantalla {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--fondo);
+  overflow: hidden;
+}
+.lienzo-pantalla--esperando { opacity: .65; pointer-events: none; }
+
+/* --- Cabecera ------------------------------------------------------------- */
+.lienzo-cabecera {
+  padding: 14px 18px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.lienzo-cabecera__titulo {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 auto 0 0;
+}
+
+.lienzo-filtros { display: flex; gap: 6px; flex-wrap: wrap; }
+.lienzo-filtro {
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--texto-2);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lienzo-filtro:hover { border-color: var(--acento); color: var(--acento); }
+.lienzo-filtro--activo { background: var(--acento); border-color: var(--acento); color: #fff; }
+.lienzo-filtro--activo:hover { color: #fff; }
+
+.btn-ia {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--acento);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-ia:hover { background: var(--tinte); }
+.btn-ia i { font-size: 16px; }
+
+/* --- El hueco de la opinion ----------------------------------------------- */
+.opinion {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 18px 10px;
+  padding: 12px 15px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  border-radius: var(--radio-sm);
+  font-size: 14px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.opinion[hidden] { display: none; }
+.opinion__icono { font-size: 18px; color: var(--acento); flex-shrink: 0; }
+.opinion__texto { flex: 1; }
+.opinion__cerrar {
+  border: 0;
+  background: none;
+  color: inherit;
+  opacity: .6;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.opinion__cerrar:hover { opacity: 1; }
+.opinion--pensando { color: var(--texto-2); background: var(--superficie); border: 1px solid var(--borde); }
+.opinion--mala { background: var(--alerta-bg); color: var(--alerta-tx); }
+
+/* --- Cuerpo: mochila + dias ----------------------------------------------- */
+.lienzo-cuerpo { flex: 1; display: flex; overflow: hidden; }
+
+.mochila {
+  width: 250px;
+  flex-shrink: 0;
+  background: var(--superficie);
+  border-right: 1px solid var(--borde);
+  padding: 14px;
+  overflow-y: auto;
+}
+/* Soltar aqui devuelve la tarjeta a la mochila: se avisa con el tinte. */
+.mochila--sobre { background: var(--tinte); }
+
+.mochila__titulo {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--texto-3);
+  margin: 0;
+}
+.mochila__sub { font-size: 12px; color: var(--texto-3); margin: 4px 0 10px; }
+
+.mochila__vacia {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--verde-tx);
+  background: var(--verde-bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.mochila__aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #8A5A16;
+  background: #FBEED6;
+  border-radius: 10px;
+  padding: 9px 11px;
+  margin: 0 0 10px;
+}
+
+.tipos { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+.tipo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--borde);
+  background: var(--fondo);
+  color: var(--texto-2);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tipo-chip i { font-size: 13px; }
+.tipo-chip--activo { background: var(--tinte); border-color: var(--acento); color: var(--acento); }
+
+.grupo { margin-bottom: 14px; }
+.grupo__titulo {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--texto-2);
+  margin-bottom: 6px;
+}
+
+/* --- Las tarjetas --------------------------------------------------------- */
+.item {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 6px;
+  cursor: grab;
+  line-height: 1.35;
+}
+.item:active { cursor: grabbing; }
+.item--arrastrando { opacity: .4; }
+
+.item__fila { display: flex; align-items: flex-start; gap: 6px; }
+.item__fila > i { font-size: 15px; color: var(--texto-3); flex-shrink: 0; margin-top: 1px; }
+.item__nombre { flex: 1; min-width: 0; }
+.item__meta { color: var(--texto-2); font-size: 12px; margin-top: 2px; }
+.item__hora { font-weight: 700; color: var(--texto); }
+
+/* Una raya de color a la izquierda dice de que tipo es sin leer nada. */
+.item--actividad { border-left: 3px solid var(--acento); }
+.item--sitio     { border-left: 3px solid var(--texto-3); }
+.item--comer     { border-left: 3px solid #C98A2B; }
+.item--manual    { border-left: 3px solid var(--verde-tx); }
+.item--manual .item__fila > i { color: var(--verde-tx); }
+
+.item__quitar {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.item__quitar i { font-size: 14px; }
+.item__quitar:hover { color: #C0563B; }
+
+.item--conflicto { border-color: #C0563B; background: #F9E3DC; }
+.item--conflicto .item__hora { color: #C0563B; }
+.item--recolocar { border-style: dashed; border-color: #8A5A16; }
+
+/* --- Los dias ------------------------------------------------------------- */
+.lienzo-dias {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.dia {
+  width: 230px;
+  flex-shrink: 0;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.dia__cabecera { padding: 10px 12px 8px; border-bottom: 1px solid var(--borde); }
+.dia__num { font-size: 14px; font-weight: 700; }
+.dia__fecha { font-size: 12px; color: var(--texto-2); }
+
+.chip-ciudad {
+  display: block;
+  width: fit-content;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-top: 4px;
+}
+
+.aviso-dia {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  background: #F9E3DC;
+  color: #C0563B;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 8px 10px 0;
+  line-height: 1.35;
+}
+.aviso-dia i { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+
+/* --- Las franjas ---------------------------------------------------------- */
+.lienzo-franja { padding: 8px 10px 6px; min-height: 58px; }
+.lienzo-franja + .lienzo-franja { border-top: 1px dashed var(--borde); }
+.lienzo-franja--sobre { background: var(--tinte); border-radius: 8px; }
+
+.lienzo-franja__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.lienzo-franja__titulo {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--texto-3);
+}
+.lienzo-franja__horas { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+.btn-mano {
+  border: 0;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+}
+.btn-mano i { font-size: 15px; }
+.btn-mano:hover { color: var(--acento); }
+
+/* Los bloques de transporte: fijos, no se arrastran. */
+.fijo {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  background: #FBEED6;
+  color: #8A5A16;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+.fijo i { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
+/* --- Anadir a mano -------------------------------------------------------- */
+.manual-rapido {
+  background: var(--fondo);
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 6px;
+}
+.manual-rapido__texto {
+  width: 100%;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--superficie);
+}
+.manual-rapido__texto:focus,
+.manual-rapido__hora:focus { outline: none; border-color: var(--acento); }
+
+.manual-rapido__fila { display: flex; gap: 5px; margin-top: 6px; align-items: center; }
+.manual-rapido__hora {
+  width: 92px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 6px 7px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--texto);
+  background: var(--superficie);
+}
+.manual-rapido__ok,
+.manual-rapido__no {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.manual-rapido__ok { background: var(--acento); color: #fff; }
+.manual-rapido__ok:hover { background: var(--acento-hover); }
+.manual-rapido__no { background: none; color: var(--texto-2); }
+
+/* --- Sin dias todavia ----------------------------------------------------- */
+.lienzo-vacio {
+  margin: 30px auto;
+  max-width: 420px;
+  text-align: center;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 28px 24px;
+}
+.lienzo-vacio > i { font-size: 30px; color: var(--texto-3); }
+.lienzo-vacio p { margin: 10px 0 0; }
+.lienzo-vacio .boton { margin-top: 16px; }
+
+@media (max-width: 700px) {
+  /* En movil la mochila se pone arriba: 250px de ancho fijo no caben. */
+  .lienzo-cuerpo { flex-direction: column; }
+  .mochila {
+    width: auto;
+    max-height: 38vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--borde);
+  }
+}
+
+/* Acciones de una cosa apuntada en la pantalla de etapa, y su mini-selector
+   de "Ponerlo en un día". */
+.etapa-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.acciones-apuntado {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.colocado {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.colocado i { font-size: 14px; }
+.colocado:hover { text-decoration: underline; }
+.colocado--ancho { width: 100%; justify-content: center; margin-top: 6px; }
+
+.poner-en-dia {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  gap: 5px;
+  padding: 8px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  box-shadow: 0 6px 20px rgba(18, 48, 62, .16);
+}
+.poner-en-dia select {
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--texto);
+  background: var(--fondo);
+}
+.poner-en-dia button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 13px;
+  background: var(--acento);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.poner-en-dia button:hover { background: var(--acento-hover); }
+/* --- Flechas del carrusel de descubrir ------------------------------------
+   Solo aparecen si hay algo por ese lado; el JS las esconde en los extremos. */
+.flecha-carrusel {
+  position: absolute;
+  bottom: 108px;
+  z-index: 520;
+  width: 38px; height: 38px;
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+  background: var(--superficie);
+  color: var(--texto-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(18, 48, 62, .16);
+}
+.flecha-carrusel[hidden] { display: none; }
+.flecha-carrusel i { font-size: 20px; }
+.flecha-carrusel:hover { color: var(--acento); border-color: var(--acento); }
+.flecha-carrusel--izq { left: 10px; }
+.flecha-carrusel--der { right: 10px; }
+
+/* Mientras se arrastra con el ratón: el cursor lo dice y no se selecciona texto. */
+.carrusel--agarrado { cursor: grabbing; user-select: none; }
+.carrusel--agarrado .tarjeta-punto { pointer-events: none; }
+
+/* --- El atajo permanente a "Mi ruta" -------------------------------------- */
+.pill--ruta {
+  color: var(--acento);
+  font-weight: 650;
+}
+.pill--ruta:hover { background: var(--tinte); }
+
+.pill__cuenta--ruta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--acento);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Un pulso corto al subir el contador: si no, se pierde el cambio de un número. */
+@keyframes pulso-cuenta {
+  0%   { transform: scale(1);    background: var(--acento); }
+  35%  { transform: scale(1.45); background: var(--verde-tx); }
+  100% { transform: scale(1);    background: var(--acento); }
+}
+.pill__cuenta--pulso { animation: pulso-cuenta .55s ease; }
+
+/* El mismo atajo en la ficha de lugar, sobre la foto de la cabecera. */
+.ficha__ruta {
+  position: absolute;
+  z-index: 2;
+  top: 14px; right: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .92);
+  color: var(--acento);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: 0 2px 10px rgba(18, 48, 62, .2);
+}
+.ficha__ruta:hover { background: #fff; }
+.ficha__ruta i { font-size: 16px; }
+
+/* =============================================================================
+   FOTO DE LA EXCURSIÓN
+   El catálogo ya guardaba la imagen de cada excursión de Civitatis y la tarjeta
+   pintaba un icono de ticket sobre fondo azul. Cuando hay foto, manda la foto;
+   cuando no, se queda el icono de siempre.
+   ========================================================================== */
+.tarjeta__img--foto { background: var(--borde); opacity: 1; padding: 0; }
+.tarjeta__foto {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;      /* recorta, no deforma */
+  display: block;
+  border-radius: 0;
+}
+
+/* =============================================================================
+   SUBPESTAÑAS  (Sitios · Excursiones · lo que venga)
+   Mismo lenguaje que las pestañas grandes pero más discretas: sin píldora de
+   fondo y con subrayado en la activa, para que se vea a la primera cuál manda.
+   ========================================================================== */
+.subpestanas {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--borde);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.subpestanas::-webkit-scrollbar { display: none; }
+
+.subpestana {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 8px 14px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--texto-2);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.subpestana:hover { color: var(--acento); }
+.subpestana--activa {
+  color: var(--acento);
+  border-bottom-color: var(--acento);
+}
+
+.subpestana__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 11px;
+  font-weight: 700;
+}
+.subpestana--activa .subpestana__n { background: var(--acento); color: #fff; }
+
+/* =============================================================================
+   LAS EXCURSIONES, EN VERTICAL
+   Antes iban en un carrusel horizontal larguísimo donde no se veía lo que
+   había. Ahora se ven todas bajando con la página, que es como se mira una
+   lista.
+   ========================================================================== */
+.excursion__acciones {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.excursion__acciones .apuntar { flex: 1; justify-content: center; }
+
+.excursion__buscando {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+
+.excursion__error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--alerta-tx);
+}
+
+/* Cuando se despliega una ficha, la tarjeta ocupa la fila entera: una ficha
+   completa no cabe en una columna de un tercio. */
+.excursion:has(.ficha-excursion:not([hidden])) { grid-column: 1 / -1; }
+
+/* =============================================================================
+   LA FICHA COMPLETA DE UNA EXCURSIÓN
+   ========================================================================== */
+.ficha-excursion {
+  margin-top: 10px;
+  padding: 14px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--acento);
+  border-radius: var(--radio-sm);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.ficha-excursion__datos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--borde);
+}
+.ficha-dato { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ficha-dato i { color: var(--acento); }
+.ficha-dato__etiqueta { color: var(--texto-2); }
+.ficha-dato__valor { font-weight: 600; }
+
+.ficha-excursion__bloque { margin-bottom: 14px; }
+.ficha-excursion__bloque:last-of-type { margin-bottom: 0; }
+
+.ficha-excursion__titulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.ficha-excursion__titulo i { color: var(--verde-tx); }
+.ficha-excursion__titulo--no i { color: var(--texto-3); }
+
+.ficha-excursion__parrafo { margin: 0 0 8px; }
+.ficha-excursion__parrafo:last-child { margin-bottom: 0; }
+
+.ficha-excursion__lista { margin: 0; padding-left: 20px; }
+.ficha-excursion__lista li { margin-bottom: 3px; }
+
+.ficha-excursion__columnas {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+@media (min-width: 620px) {
+  .ficha-excursion__columnas { grid-template-columns: 1fr 1fr; }
+}
+
+.ficha-excursion__otros {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--borde);
+  font-size: 13px;
+}
+.ficha-excursion__otros dt { font-weight: 600; color: var(--texto-2); }
+.ficha-excursion__otros dd { margin: 0; }
+
+.ficha-excursion__pie {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--borde);
+  font-size: 12px;
+}
+
+/* =============================================================================
+   BOTÓN CON PINTA DE ENLACE
+   El "Cambiar filtros" del resumen. Es un botón de verdad porque no lleva a
+   ninguna parte: despliega el formulario que tiene al lado. Antes era un
+   enlace, y por eso te sacaba de la pantalla.
+   ========================================================================== */
+.enlace-boton {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--acento);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.enlace-boton:hover { text-decoration: none; }
+
+/* El icono de "cargando" de los botones, girando. */
+.apuntar .ti-loader-2 { animation: girar 1s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+
+/* =============================================================================
+   REJILLA DE FICHAS (etapa: sitios y excursiones)
+   Tres por fila en escritorio, dos en pantalla media, una en móvil. Todo se ve
+   bajando con la página: ni un carrusel horizontal más.
+   ========================================================================== */
+.rejilla-fichas {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (min-width: 760px) {
+  .rejilla-fichas { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1180px) {
+  .rejilla-fichas { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* La misma tarjeta cuadrada del mapa, pero dentro de una rejilla: ahí no hay
+   carrusel al que engancharse ni ancho fijo que respetar. */
+.tarjeta-punto--ficha {
+  width: auto;
+  flex: initial;
+  scroll-snap-align: none;
+  box-shadow: none;
+}
+.tarjeta-punto--ficha:hover { border-color: var(--borde-fuerte); }
+
+.tarjeta-punto--apuntada {
+  border-color: var(--acento);
+  background: var(--tinte);
+}
+.tarjeta-punto--apuntada .tarjeta-punto__texto { color: var(--tinte-texto); }
+
+/* Dentro de la etapa las acciones son botones de apuntar, no los del mapa. */
+.tarjeta-punto--ficha .tarjeta-punto__acciones .apuntar {
+  flex: 1;
+  justify-content: center;
+}
+.tarjeta-punto--ficha .colocado--ancho,
+.tarjeta-punto--ficha .apuntar--ancho { margin-top: 8px; }
+
+/* La descripción no se recorta a dos líneas cuando hay sitio de sobra. */
+.tarjeta-punto--ficha .tarjeta-punto__texto {
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+
+/* Al desplegar el detalle, la ficha ocupa la fila entera: el "por qué" y los
+   lugares de dentro no caben en una columna de un tercio. */
+.tarjeta-punto--ficha:has(.ficha-sitio__detalle:not([hidden])) { grid-column: 1 / -1; }
+
+/* =============================================================================
+   EL DETALLE DE UNA FICHA DE SITIO
+   Lo que se generó al ampliarla: el "por qué", los lugares de dentro y el
+   "cómo moverse". Vive en el catálogo, así que se ve aquí y en el mapa.
+   ========================================================================== */
+.ficha-sitio__detalle {
+  padding: 14px 16px;
+  border-top: 1px solid var(--borde);
+  background: var(--fondo);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.ficha-sitio__detalle .ficha-excursion__titulo { margin-top: 12px; }
+.ficha-sitio__detalle .ficha-excursion__titulo:first-child { margin-top: 0; }
+.ficha-sitio__detalle .mini__enlaces { margin-top: 12px; }
+.ficha-sitio__detalle .boton { margin-top: 12px; }
+.ficha-sitio__detalle .ti-loader-2 { animation: girar 1s linear infinite; }
+
+/* =============================================================================
+   ESPERANDO EN EL MAPA
+   Cuando el destino es una ciudad no hay pantalla de fichas: el mapa se queda
+   contando lo que se busca y entra solo en la parada al terminar.
+   ========================================================================== */
+.preparando__linea {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Los dos controles de una tarjeta de hotel: abrir en Booking y elegirlo. */
+.segmento__controles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* =============================================================================
+   LA LÍNEA DEL DOSIER
+   Una sola línea en la cabecera: interruptor, un ⚠ si falta algo y el botón con
+   su menú. Antes era una caja que ocupaba más que el contador de noches para
+   algo que se toca al final del viaje y una vez.
+   ========================================================================== */
+.dosier-linea {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* El interruptor, en pequeño. Sigue diciendo su estado en voz alta. */
+.interruptor {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 5px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 999px;
+  background: var(--superficie);
+  color: var(--texto-2);
+  font: 600 13px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.interruptor:hover { border-color: var(--acento); }
+
+.interruptor__caja {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--borde-fuerte);
+  background: var(--superficie);
+  color: transparent;
+  font-size: 12px;
+}
+.interruptor--si {
+  background: var(--verde-bg);
+  border-color: var(--verde-tx);
+  color: var(--verde-tx);
+}
+.interruptor--si .interruptor__caja {
+  background: var(--verde-tx);
+  border-color: var(--verde-tx);
+  color: #fff;
+}
+
+/* El ⚠ de lo que falta. Informa; nunca impide marcar el viaje listo. */
+.dosier-alerta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 16px;
+  cursor: help;
+}
+.dosier-alerta:hover { background: #F5E2C4; }
+
+/* El botón y su puntito de "se ha quedado viejo". */
+.dosier-menu { position: relative; display: inline-flex; }
+.dosier-boton { position: relative; padding: 7px 14px; font-size: 13px; }
+.dosier-boton[disabled] { opacity: .5; cursor: not-allowed; }
+
+.dosier-punto {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--prec-tx);
+  border: 2px solid var(--superficie);
+  cursor: help;
+}
+
+.dosier-desplegable {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 230px;
+  padding: 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  box-shadow: 0 8px 26px rgba(18, 48, 62, .16);
+  text-align: left;
+}
+.dosier-desplegable__fecha {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.dosier-desplegable__viejo {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dosier-desplegable__acciones { display: flex; flex-direction: column; gap: 2px; }
+.dosier-desplegable__hay { display: flex; flex-direction: column; gap: 2px; }
+
+.dosier-desplegable__acciones button,
+.dosier-desplegable__acciones a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--texto);
+  font: 600 14px/1 inherit;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.dosier-desplegable__acciones button:hover,
+.dosier-desplegable__acciones a:hover { background: var(--tinte); color: var(--tinte-texto); }
+.dosier-desplegable__acciones i { color: var(--acento); font-size: 16px; }
+.dosier-desplegable__acciones button[disabled] { opacity: .5; cursor: default; }
+
+.girando { animation: girar 1s linear infinite; }
+
+/* =============================================================================
+   EL CAJÓN DE ADJUNTOS
+   Discreto y plegado: en una tarjeta ya llena de datos, una zona de subida
+   siempre abierta sería lo que más ocupa y lo que menos se usa.
+   ========================================================================== */
+.adjuntos { margin-top: 10px; }
+
+.adjuntos__disparador {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--superficie);
+  color: var(--texto-2);
+  font: 600 13px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.adjuntos__disparador:hover { border-color: var(--acento); color: var(--acento); }
+.adjuntos__disparador[aria-expanded="true"] .adjuntos__flecha { transform: rotate(180deg); }
+.adjuntos__flecha { transition: transform .15s ease; font-size: 14px; }
+
+.adjuntos__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--acento);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.adjuntos__n--cero { background: var(--borde); color: var(--texto-3); }
+
+.adjuntos__cuerpo {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+
+.adjuntos__lista { list-style: none; margin: 0; padding: 0; }
+.adjuntos__lista:empty { display: none; }
+
+.adjunto {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  font-size: 14px;
+}
+.adjunto > i { color: var(--acento); font-size: 18px; flex: 0 0 auto; }
+.adjunto__nombre {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adjunto__peso { flex: 0 0 auto; color: var(--texto-3); font-size: 12px; }
+
+.adjunto__accion {
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  color: var(--acento);
+  font: 600 13px/1 inherit;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.adjunto__accion:hover { text-decoration: underline; }
+.adjunto__accion--peligro { color: var(--alerta-tx); }
+
+/* La zona de soltar es también la de pulsar: el mismo sitio hace las dos cosas. */
+.soltar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 16px 12px;
+  border: 2px dashed var(--borde-fuerte);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+  color: var(--texto-2);
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+.soltar:hover { border-color: var(--acento); color: var(--acento); }
+.soltar > i { font-size: 22px; color: var(--texto-3); }
+.soltar:hover > i { color: var(--acento); }
+.soltar__texto { font-weight: 600; }
+.soltar__pista { font-size: 12px; }
+
+.soltar--encima {
+  border-color: var(--acento);
+  background: var(--tinte);
+  color: var(--tinte-texto);
+}
+.soltar--trabajando { opacity: .6; pointer-events: none; }
+
+.adjuntos__aviso {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--verde-tx);
+}
+.adjuntos__aviso--error { color: var(--alerta-tx); }

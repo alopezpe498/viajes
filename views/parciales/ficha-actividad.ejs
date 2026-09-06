@@ -1,0 +1,110 @@
+<%
+/**
+ * La ficha completa de una excursión, tal y como la trajo Civitatis.
+ *
+ * LO QUE NO EXISTE NO SE PINTA. Una entrada de museo no tiene punto de
+ * encuentro y casi ninguna ficha publica horarios de salida: en esos casos no
+ * hay ni epígrafe vacío ni "no disponible". Simplemente no está.
+ *
+ * Espera: f (lo que devuelve fichaDeActividad / fichaDeFila).
+ */
+
+/** Los textos de Civitatis vienen con saltos de línea que son una lista. */
+const comoLista = (texto) =>
+  String(texto || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+// Los datos cortos van arriba en una fila de etiquetas; los largos, debajo.
+const datos = [
+  ['ti-clock', 'Duración', f.duracion],
+  ['ti-calendar-time', 'Horarios', f.horarios],
+  ['ti-language', 'Idiomas', f.idiomas],
+].filter(([, , v]) => v);
+%>
+
+<% if (datos.length) { %>
+  <div class="ficha-excursion__datos">
+    <% datos.forEach(([icono, etiqueta, valor]) => { %>
+      <span class="ficha-dato">
+        <i class="ti <%= icono %>" aria-hidden="true"></i>
+        <span class="ficha-dato__etiqueta"><%= etiqueta %></span>
+        <span class="ficha-dato__valor"><%= valor %></span>
+      </span>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (f.descripcion) { %>
+  <div class="ficha-excursion__bloque">
+    <% comoLista(f.descripcion).forEach(parrafo => { %>
+      <p class="ficha-excursion__parrafo"><%= parrafo %></p>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (f.incluye || f.noIncluye) { %>
+  <div class="ficha-excursion__columnas">
+    <% if (f.incluye) { %>
+      <div class="ficha-excursion__bloque">
+        <h4 class="ficha-excursion__titulo">
+          <i class="ti ti-check" aria-hidden="true"></i> Incluye
+        </h4>
+        <ul class="ficha-excursion__lista">
+          <% comoLista(f.incluye).forEach(x => { %><li><%= x %></li><% }) %>
+        </ul>
+      </div>
+    <% } %>
+
+    <% if (f.noIncluye) { %>
+      <div class="ficha-excursion__bloque">
+        <h4 class="ficha-excursion__titulo ficha-excursion__titulo--no">
+          <i class="ti ti-x" aria-hidden="true"></i> No incluye
+        </h4>
+        <ul class="ficha-excursion__lista">
+          <% comoLista(f.noIncluye).forEach(x => { %><li><%= x %></li><% }) %>
+        </ul>
+      </div>
+    <% } %>
+  </div>
+<% } %>
+
+<% if (f.puntoEncuentro) { %>
+  <div class="ficha-excursion__bloque">
+    <h4 class="ficha-excursion__titulo">
+      <i class="ti ti-map-pin" aria-hidden="true"></i> Punto de encuentro
+    </h4>
+    <% comoLista(f.puntoEncuentro).forEach(l => { %>
+      <p class="ficha-excursion__parrafo"><%= l %></p>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (f.cancelacion) { %>
+  <div class="ficha-excursion__bloque">
+    <h4 class="ficha-excursion__titulo">
+      <i class="ti ti-calendar-x" aria-hidden="true"></i> Cancelación
+    </h4>
+    <% comoLista(f.cancelacion).forEach(l => { %>
+      <p class="ficha-excursion__parrafo"><%= l %></p>
+    <% }) %>
+  </div>
+<% } %>
+
+<% if (f.extra && Object.keys(f.extra).length) { %>
+  <%# El resto de filas de "Detalles" que trae la ficha y para las que no hay un
+      hueco propio: justificante, accesibilidad, mascotas… Se enseñan tal cual
+      en vez de tirarlas. %>
+  <dl class="ficha-excursion__otros">
+    <% Object.entries(f.extra).forEach(([clave, valor]) => { %>
+      <dt><%= clave %></dt>
+      <dd><%= valor %></dd>
+    <% }) %>
+  </dl>
+<% } %>
+
+<p class="ficha-excursion__pie secundario">
+  Datos de la ficha de Civitatis.
+  <% if (f.buscadaEn) { %>Guardados el <%= String(f.buscadaEn).slice(0, 10).split('-').reverse().join('/') %>.<% } %>
+</p>

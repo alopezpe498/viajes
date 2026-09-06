@@ -1,0 +1,286 @@
+<%
+/**
+ * Pantalla DESCUBRIR: el mapa manda.
+ *
+ * No lleva la tarjeta de embarque del wizard a propósito. Aquí no se está
+ * rellenando un paso de un formulario: se está mirando un sitio. El mapa ocupa
+ * todo y lo demás flota encima.
+ *
+ * Espera: destino, puntos, viaje (o null), estado, mensajeError, hayIA.
+ */
+const LEAFLET = '1.9.4';
+
+const cabezaExtra =
+  `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">`;
+const pieExtra =
+  `<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.js"></script>` +
+  '<script src="/js/descubrir.js"></script>';
+
+/** "hace cuánto" en cristiano, a partir de un datetime de SQLite. */
+function frescura(cuando) {
+  if (!cuando) return 'Sin investigar';
+  const dias = Math.floor((Date.now() - new Date(cuando.replace(' ', 'T') + 'Z')) / 86400000);
+  if (dias <= 0) return 'Investigado hoy';
+  if (dias === 1) return 'Investigado ayer';
+  if (dias < 30) return `Investigado hace ${dias} días`;
+  const meses = Math.round(dias / 30);
+  return `Investigado hace ${meses} ${meses === 1 ? 'mes' : 'meses'}`;
+}
+
+/** "2-3 días" / "1 día", o nada si la IA no lo dijo. */
+function chipDias(p) {
+  const min = p.dias_recomendados_min;
+  const max = p.dias_recomendados_max;
+  if (!min && !max) return null;
+  if (!max || max === min) return `${min} ${min === 1 ? 'día' : 'días'}`;
+  return `${min || 1}-${max} días`;
+}
+
+// Solo los que tienen coordenadas salen en el mapa; en el carrusel salen todos.
+const conCoordenadas = puntos.filter((p) => p.lat != null && p.lon != null);
+
+// El JS necesita los datos de los marcadores. Van como JSON en un data-*, que
+// es más simple que montar un endpoint solo para esto.
+const datosMapa = JSON.stringify({
+  centro: destino.lat != null && destino.lon != null ? [destino.lat, destino.lon] : null,
+  puntos: conCoordenadas.map((p) => ({
+    id: p.id,
+    nombre: p.nombre,
+    lat: p.lat,
+    lon: p.lon,
+    estado: p.estado,
+    // Solo los ya investigados tienen ficha que enseñar: al resto no se les
+    // pone globo, que sería una promesa vacía.
+    ficha: p.estado === 'investigada'
+      ? `/sitio/${p.id}` + (viaje ? `?viaje=${viaje.id}` : '')
+      : null,
+  })),
+});
+
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Descubrir ${destino.nombre}`,
+      extraCabeza: cabezaExtra
+    }) %>
+
+<main class="descubrir">
+
+  <%# ---------- EL MAPA, que es el fondo de todo ---------- %>
+  <div id="mapa" class="descubrir__mapa" data-mapa='<%= datosMapa %>'></div>
+
+  <%# ---------- Pills flotantes de arriba ---------- %>
+  <div class="descubrir__superior">
+    <a class="pill pill--volver" href="<%= viaje ? `/viajes/${viaje.id}/paso/2` : '/' %>" title="Volver">
+      <i class="ti ti-arrow-left" aria-hidden="true"></i>
+    </a>
+
+    <span class="pill pill--titulo">
+      <i class="ti ti-world" aria-hidden="true"></i>
+      <strong><%= destino.nombre %></strong>
+      <% if (puntos.length) { %>
+        <span class="pill__cuenta"><%= puntos.length %> sitios</span>
+      <% } %>
+    </span>
+
+    <%# El atajo a la ruta, siempre a la vista: antes solo se llegaba por el
+        avisito que salía al añadir algo, y eso se va solo a los seis segundos. %>
+    <% if (viaje) { %>
+      <a class="pill pill--ruta" href="/viaje/<%= viaje.id %>/ruta" id="pill-ruta">
+        <i class="ti ti-route" aria-hidden="true"></i>
+        Mi ruta
+        <span class="pill__cuenta pill__cuenta--ruta" id="cuenta-ruta"><%= etapasEnRuta %></span>
+      </a>
+    <% } %>
+
+    <span class="pill pill--frescura" id="pill-frescura">
+      <i class="ti ti-clock" aria-hidden="true"></i>
+      <%= frescura(destino.investigado_en) %>
+      <% if (viaje) { %>
+        <form method="POST" action="/descubrir/<%= destino.id %>/actualizar?viaje=<%= viaje.id %>">
+          <button class="pill__accion" type="submit" title="Refrescar: actualiza lo que hay sin borrarlo">
+            <i class="ti ti-refresh" aria-hidden="true"></i>
+          </button>
+        </form>
+        <%# Reinvestigar SÍ borra: es para limpiar un destino que salió mezclado. %>
+        <form method="POST" action="/descubrir/<%= destino.id %>/reinvestigar?viaje=<%= viaje.id %>">
+          <button class="pill__accion" type="submit"
+                  title="Reinvestigar: borra lo que hay y vuelve a preguntar desde cero">
+            <i class="ti ti-refresh-alert" aria-hidden="true"></i>
+          </button>
+        </form>
+      <% } %>
+    </span>
+  </div>
+
+  <% if (estado === 'buscando' || estado === 'actualizando') { %>
+    <%# ---------- La IA está pensando ---------- %>
+    <div class="descubrir__velo" id="buscando-descubrir"
+         data-estado-url="/descubrir/<%= destino.id %>/estado<%= viaje ? `?viaje=${viaje.id}` : '' %>"
+         data-intervalo="5000">
+      <div class="velo__caja">
+        <i class="ti ti-sparkles velo__icono" aria-hidden="true"></i>
+        <div class="velo__titulo">
+          <%= estado === 'actualizando' ? 'Actualizando' : 'Buscando' %> lo imprescindible de <%= destino.nombre %>…
+        </div>
+        <p class="velo__nota">
+          Primero le pregunto a la IA qué hay que ver, y luego busco cada sitio en
+          Wikipedia para ponerle cara. Suele tardar menos de un minuto.
+        </p>
+        <div class="velo__pista secundario" id="buscando-pista">Comprobando cada 5 segundos…</div>
+      </div>
+    </div>
+
+  <% } else if (estado === 'error') { %>
+    <%# ---------- Se rompió algo ---------- %>
+    <div class="descubrir__velo">
+      <div class="velo__caja">
+        <i class="ti ti-alert-octagon velo__icono velo__icono--malo" aria-hidden="true"></i>
+        <div class="velo__titulo">No se pudo investigar <%= destino.nombre %></div>
+        <p class="velo__nota"><%= mensajeError || 'Error desconocido.' %></p>
+
+        <% if (!hayIA) { %>
+          <p class="velo__nota">
+            Copia <code>.env.ejemplo</code> a <code>.env</code>, pon ahí tu
+            <code>ANTHROPIC_API_KEY</code> y reinicia el servidor.
+          </p>
+        <% } %>
+
+        <div class="velo__botones">
+          <% if (viaje) { %>
+            <form method="POST" action="/descubrir/<%= destino.id %>/actualizar?viaje=<%= viaje.id %>">
+              <button class="boton boton--primario" type="submit">
+                <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+              </button>
+            </form>
+            <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/2">Cambiar el destino</a>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+  <% } else if (estado === 'sin_datos') { %>
+    <%# ---------- Ni investigado ni investigándose ---------- %>
+    <div class="descubrir__velo">
+      <div class="velo__caja">
+        <i class="ti ti-map-search velo__icono" aria-hidden="true"></i>
+        <div class="velo__titulo">Todavía no sabemos nada de <%= destino.nombre %></div>
+        <p class="velo__nota">Lánzale la investigación y en un minuto tienes los imprescindibles en el mapa.</p>
+        <div class="velo__botones">
+          <% if (viaje) { %>
+            <form method="POST" action="/descubrir/<%= destino.id %>/actualizar?viaje=<%= viaje.id %>">
+              <button class="boton boton--primario" type="submit">
+                <i class="ti ti-sparkles" aria-hidden="true"></i> Investigar destino
+              </button>
+            </form>
+          <% } else { %>
+            <p class="velo__nota">Entra desde un viaje para poder investigarlo.</p>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+  <% } else { %>
+    <%# ---------- HECHO: el carrusel de tarjetas ---------- %>
+    <button class="flecha-carrusel flecha-carrusel--izq" type="button" id="flecha-izq"
+            aria-label="Ver los anteriores" hidden>
+      <i class="ti ti-chevron-left" aria-hidden="true"></i>
+    </button>
+    <button class="flecha-carrusel flecha-carrusel--der" type="button" id="flecha-der"
+            aria-label="Ver los siguientes" hidden>
+      <i class="ti ti-chevron-right" aria-hidden="true"></i>
+    </button>
+
+    <div class="carrusel" id="carrusel"
+         data-estado-url="/descubrir/<%= destino.id %>/estado<%= viaje ? `?viaje=${viaje.id}` : '' %>"
+         data-url-base="/descubrir/<%= destino.id %>"
+         data-viaje="<%= viaje ? viaje.id : '' %>"
+         data-ciudad="<%= esCiudad ? '1' : '' %>">
+
+      <% puntos.forEach(p => { const dias = chipDias(p); %>
+        <article class="tarjeta-punto" data-punto-id="<%= p.id %>" data-estado="<%= p.estado %>">
+
+          <div class="tarjeta-punto__foto">
+            <% if (p.imagen_url) { %>
+              <img src="<%= p.imagen_url %>" alt="" loading="lazy">
+            <% } else { %>
+              <%# Sin foto de Wikipedia: placeholder de color con el icono que toque %>
+              <div class="tarjeta-punto__hueco">
+                <i class="ti <%= p.categoria === 'sitio' ? 'ti-mountain' : 'ti-building-arch' %>" aria-hidden="true"></i>
+              </div>
+            <% } %>
+
+            <span class="tarjeta-punto__categoria">
+              <i class="ti <%= p.categoria === 'sitio' ? 'ti-map-pin' : 'ti-building' %>" aria-hidden="true"></i>
+              <%= p.categoria === 'sitio' ? 'Sitio' : 'Ciudad' %>
+            </span>
+          </div>
+
+          <div class="tarjeta-punto__cuerpo">
+            <div class="tarjeta-punto__cabecera">
+              <h2 class="tarjeta-punto__nombre"><%= p.nombre %></h2>
+              <% if (dias) { %>
+                <span class="chip-dias"><i class="ti ti-calendar" aria-hidden="true"></i> <%= dias %></span>
+              <% } %>
+            </div>
+
+            <% if (p.categoria === 'sitio' && p.ciudad_base) { %>
+              <p class="tarjeta-punto__base">Se visita desde <%= p.ciudad_base %></p>
+            <% } %>
+
+            <p class="tarjeta-punto__texto"><%= p.descripcion_corta || p.por_que || '' %></p>
+
+            <div class="tarjeta-punto__acciones">
+              <%# Acción de investigar: cambia según el estado del punto %>
+              <% if (p.estado === 'investigando') { %>
+                <span class="boton boton--secundario boton--esperando" data-accion="investigando">
+                  <span class="rueda" aria-hidden="true"></span> Investigando…
+                </span>
+              <% } else if (p.estado === 'investigada') { %>
+                <%# A la ficha profunda, que es lo que se acaba de generar. %>
+                <a class="boton boton--secundario"
+                   href="/sitio/<%= p.id %><%= viaje ? `?viaje=${viaje.id}` : '' %>"
+                   data-accion="ver-ficha">
+                  <i class="ti ti-file-text" aria-hidden="true"></i> Ver ficha
+                </a>
+              <% } else { %>
+                <button class="boton boton--secundario" type="button" data-accion="investigar">
+                  <i class="ti ti-sparkles" aria-hidden="true"></i> Investigar
+                </button>
+              <% } %>
+
+              <%# Y esta SIEMPRE está, se haya investigado o no %>
+              <%# El botón depende del NIVEL del destino, no del punto.
+                  De un país, cada resultado es una parada: "A mi ruta".
+                  De una ciudad, cada resultado es algo que ver dentro de ella:
+                  "Me lo apunto", y va como candidato a la etapa de la ciudad. %>
+              <% if (viaje) { %>
+                <button class="boton <%= p.enRuta ? 'boton--hecho' : 'boton--primario' %>"
+                        type="button" data-accion="a-mi-ruta"
+                        <%= p.enRuta ? 'disabled' : '' %>>
+                  <% if (esCiudad) { %>
+                    <% if (p.enRuta) { %>
+                      <i class="ti ti-check" aria-hidden="true"></i> Apuntado
+                    <% } else { %>
+                      <i class="ti ti-bookmark" aria-hidden="true"></i> Me lo apunto
+                    <% } %>
+                  <% } else { %>
+                    <% if (p.enRuta) { %>
+                      <i class="ti ti-check" aria-hidden="true"></i> En tu ruta
+                    <% } else { %>
+                      <i class="ti ti-route" aria-hidden="true"></i> A mi ruta
+                    <% } %>
+                  <% } %>
+                </button>
+              <% } %>
+            </div>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

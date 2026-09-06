@@ -1,0 +1,172 @@
+<%
+/**
+ * PANEL DE FILTROS DE HOTEL.
+ *
+ * Salió del paso 6 tal cual, sin tocarle el aspecto, para poder usarlo también
+ * DENTRO de la pestaña "Dónde dormir" de una etapa. Antes, el botón "Filtros"
+ * de la etapa te echaba a la pantalla del wizard: se buscaba en un sitio y se
+ * filtraba en otro. Ahora el formulario vive donde se usa.
+ *
+ * Espera:
+ *   filtros    los valores actuales (ya normalizados por filtrosHotelesDe)
+ *   accion     a dónde va el POST
+ *   idPanel    id del cuerpo plegable (único en la página)
+ *   abierto    true para nacer desplegado
+ *   textoBoton lo que dice el botón de enviar
+ *   urlDistancia (opcional) para el filtro instantáneo de distancia al centro;
+ *              sin ella, ese filtro viaja con el formulario como los demás
+ *
+ * Los chips son botones y sus valores viajan en campos ocultos. Todo eso lo
+ * maneja el bloque genérico de public/js/app.js, que trabaja SIEMPRE dentro del
+ * formulario y busca los campos por `name`: por eso puede haber varios paneles
+ * en la misma página sin pisarse.
+ */
+const idCuerpo = idPanel;
+const conDistanciaInstantanea = typeof urlDistancia !== 'undefined' && urlDistancia;
+%>
+<div class="plegable aireado">
+  <button class="plegable__disparador" type="button"
+          aria-expanded="<%= abierto %>" aria-controls="<%= idCuerpo %>">
+    <i class="ti ti-adjustments" aria-hidden="true"></i>
+    Filtros de búsqueda
+    <i class="ti ti-chevron-down" aria-hidden="true"></i>
+  </button>
+
+  <div class="plegable__cuerpo <%= abierto ? '' : 'oculto' %>" id="<%= idCuerpo %>">
+    <form method="POST" action="<%= accion %>" class="bloque" data-filtros="hotel">
+
+      <%# ---------- Bloque 1: precio y calidad ---------- %>
+      <div class="grupo-filtro">
+        <div class="grupo-filtro__titulo">Precio y calidad</div>
+
+        <div class="campo">
+          <label>Precio por noche</label>
+          <div class="filtro-precio">
+            <div class="campo-euro">
+              <input type="number" name="precioMin" min="0" step="10" placeholder="desde"
+                     value="<%= filtros.precioMin || '' %>" aria-label="Precio mínimo por noche">
+              <span class="campo-euro__simbolo">€</span>
+            </div>
+            <span class="filtro-precio__guion" aria-hidden="true">–</span>
+            <div class="campo-euro">
+              <input type="number" name="precioMax" min="0" step="10" placeholder="hasta"
+                     value="<%= filtros.precioMax || '' %>" aria-label="Precio máximo por noche">
+              <span class="campo-euro__simbolo">€</span>
+            </div>
+          </div>
+          <div class="ayuda">Opcionales. Es por noche, no el total de la estancia.</div>
+        </div>
+
+        <div class="campo">
+          <label>Nota mínima</label>
+          <div class="chips">
+            <% [[null,'Cualquiera'],[7,'7+'],[8,'8+'],[9,'9+']].forEach(([valor, etiqueta]) => { %>
+              <button class="chip" type="button"
+                      aria-pressed="<%= (filtros.notaMinima || null) === valor %>"
+                      data-grupo="notaMinima" data-valor="<%= valor === null ? '' : valor %>"><%= etiqueta %></button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="notaMinima" value="<%= filtros.notaMinima || '' %>">
+        </div>
+
+        <div class="campo" style="margin-bottom:0">
+          <label>Estrellas</label>
+          <div class="chips">
+            <% [[null,'Cualquiera'],[3,'3+'],[4,'4+'],[5,'5']].forEach(([valor, etiqueta]) => { %>
+              <button class="chip" type="button"
+                      aria-pressed="<%= (filtros.estrellas || null) === valor %>"
+                      data-grupo="estrellas" data-valor="<%= valor === null ? '' : valor %>">
+                <% if (valor !== null) { %><i class="ti ti-star" aria-hidden="true"></i><% } %> <%= etiqueta %>
+              </button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="estrellas" value="<%= filtros.estrellas || '' %>">
+        </div>
+      </div>
+
+      <%# ---------- Bloque 2: comodidades ---------- %>
+      <div class="grupo-filtro">
+        <div class="grupo-filtro__titulo">Comodidades</div>
+        <div class="chips">
+          <% [['piscina','Piscina','ti-pool'],['wifi','Wifi','ti-wifi'],['parking','Parking','ti-parking'],['desayuno','Desayuno','ti-coffee']].forEach(([clave, etiqueta, icono]) => { %>
+            <button class="chip" type="button"
+                    aria-pressed="<%= filtros[clave] %>"
+                    data-booleano="<%= clave %>">
+              <i class="ti <%= icono %>" aria-hidden="true"></i> <%= etiqueta %>
+            </button>
+            <input type="hidden" name="<%= clave %>" value="<%= filtros[clave] ? '1' : '0' %>">
+          <% }) %>
+        </div>
+        <div class="ayuda">
+          Booking no tiene filtro de aire acondicionado ni de calefacción,
+          así que no están: sería un botón que no hace nada.
+        </div>
+      </div>
+
+      <%# ---------- Bloque 3: condiciones ---------- %>
+      <div class="grupo-filtro" style="border-bottom:0;padding-bottom:0;margin-bottom:0">
+        <div class="grupo-filtro__titulo">Condiciones</div>
+
+        <div class="campo">
+          <div class="chips">
+            <button class="chip" type="button"
+                    aria-pressed="<%= filtros.cancelacionGratis %>"
+                    data-booleano="cancelacionGratis">
+              <i class="ti ti-calendar-check" aria-hidden="true"></i> Cancelación gratis
+            </button>
+            <input type="hidden" name="cancelacionGratis" value="<%= filtros.cancelacionGratis ? '1' : '0' %>">
+          </div>
+        </div>
+
+        <div class="campo">
+          <label>Tipo de alojamiento</label>
+          <div class="chips">
+            <% [['','Cualquiera',null],['hotel','Hotel','ti-building'],['apartamento','Apartamento','ti-home']].forEach(([valor, etiqueta, icono]) => { %>
+              <button class="chip" type="button"
+                      aria-pressed="<%= (filtros.tipoAlojamiento || '') === valor %>"
+                      data-grupo="tipoAlojamiento" data-valor="<%= valor %>">
+                <% if (icono) { %><i class="ti <%= icono %>" aria-hidden="true"></i><% } %> <%= etiqueta %>
+              </button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="tipoAlojamiento" value="<%= filtros.tipoAlojamiento || '' %>">
+        </div>
+
+        <%# La distancia NO va a Booking: se aplica sobre lo ya cargado. Cuando
+            hay resultados en pantalla se nota al momento (urlDistancia); si
+            todavía no hay nada que filtrar, viaja con el formulario. %>
+        <div class="campo" style="margin-bottom:0">
+          <label>
+            Distancia al centro
+            <% if (conDistanciaInstantanea) { %>
+              <span class="etiqueta-instantanea"><i class="ti ti-bolt" aria-hidden="true"></i> se aplica al momento</span>
+            <% } %>
+          </label>
+          <div class="chips" <% if (conDistanciaInstantanea) { %>id="chips-distancia" data-url="<%= urlDistancia %>"<% } %>>
+            <% [[null,'Cualquiera'],[1,'< 1 km'],[3,'< 3 km']].forEach(([valor, etiqueta]) => { %>
+              <button class="chip" type="button"
+                      aria-pressed="<%= (filtros.distanciaMax || null) === valor %>"
+                      <% if (conDistanciaInstantanea) { %>data-distancia="<%= valor === null ? '' : valor %>"<% } %>
+                      data-grupo="distanciaMax" data-valor="<%= valor === null ? '' : valor %>">
+                <% if (valor !== null) { %><i class="ti ti-map-pin" aria-hidden="true"></i><% } %> <%= etiqueta %>
+              </button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="distanciaMax" value="<%= filtros.distanciaMax || '' %>">
+          <% if (conDistanciaInstantanea) { %>
+            <div class="ayuda">No hace falta volver a buscar: filtra los resultados que ya tienes.</div>
+          <% } %>
+        </div>
+      </div>
+
+      <%# Lo que la pantalla necesite arrastrar (a dónde volver, por ejemplo). %>
+      <% (typeof ocultos !== 'undefined' ? ocultos : []).forEach(([nombre, valor]) => { %>
+        <input type="hidden" name="<%= nombre %>" value="<%= valor %>">
+      <% }) %>
+
+      <button class="boton boton--primario" type="submit" style="margin-top:18px">
+        <i class="ti ti-search" aria-hidden="true"></i> <%= textoBoton %>
+      </button>
+    </form>
+  </div>
+</div>

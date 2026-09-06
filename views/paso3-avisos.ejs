@@ -1,0 +1,139 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 3, titulo: 'Avisos del destino' }) %>
+
+<%
+// Cada severidad con su icono a la izquierda. El color lo pone el CSS
+// (.aviso--info / --precaucion / --alerta), esto es solo el pictograma.
+const ICONOS = {
+  info: 'ti-info-circle',
+  precaucion: 'ti-alert-triangle',
+  alerta: 'ti-alert-octagon',
+};
+
+// Los avisos llegan de tres fuentes distintas y se muestran agrupados por
+// categoría: así se ve de un vistazo qué es clima y qué es papeleo.
+// El orden es el mismo en el que uno se los pregunta al planear el viaje.
+const CATEGORIAS = [
+  { clave: 'clima',     titulo: 'El tiempo',      icono: 'ti-cloud' },
+  { clave: 'seguridad', titulo: 'Seguridad',      icono: 'ti-shield' },
+  { clave: 'festivos',  titulo: 'Días festivos',  icono: 'ti-calendar-star' },
+];
+
+const porCategoria = (clave) => avisos.filter((a) => a.categoria === clave);
+%>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+    <div class="titulo-con-accion">
+      <div>
+        <h1>Antes de seguir</h1>
+        <p class="secundario" style="margin:0">
+          Cosas que conviene saber sobre <%= viaje.destino || 'el destino' %> en esas fechas.
+        </p>
+      </div>
+
+      <%# Vuelve a preguntar a las tres fuentes. Tarda unos segundos: no hay navegador de por medio. %>
+      <% if (estado === 'hecho') { %>
+        <form method="POST" action="/viajes/<%= viaje.id %>/avisos/actualizar">
+          <button class="boton-discreto" type="submit" title="Vuelve a consultar el clima, las recomendaciones de viaje y los festivos.">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Actualizar datos
+          </button>
+        </form>
+      <% } %>
+    </div>
+
+    <% if (estado === 'sin_datos_viaje') { %>
+      <%# ---------- Faltan destino o fechas: sin eso no hay nada que consultar ---------- %>
+      <div class="caja vacio aireado">
+        <i class="ti ti-map-off" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">
+          Para mirar el tiempo, la seguridad y los festivos hacen falta el destino y las fechas.
+        </p>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/<%= viaje.destino ? 1 : 2 %>">
+          <%= viaje.destino ? 'Poner las fechas' : 'Elegir destino' %>
+        </a>
+      </div>
+
+    <% } else if (estado === 'buscando') { %>
+      <%# ---------- Consultando: el JS sondea y recarga al terminar ---------- %>
+      <div class="buscando aireado" id="buscando-avisos"
+           data-estado-url="/viajes/<%= viaje.id %>/avisos/estado"
+           data-intervalo="2000">
+        <i class="ti ti-plane buscando__avion" aria-hidden="true"></i>
+        <div class="buscando__titulo">Mirando el tiempo, la seguridad y los festivos…</div>
+        <p class="buscando__nota">
+          Son unos segundos. Aquí no se abre ningún navegador: se pregunta directamente
+          a Open-Meteo, al Ministerio de Exteriores y a Nager.Date.
+        </p>
+        <div class="buscando__pista secundario" id="buscando-pista">Comprobando…</div>
+      </div>
+
+    <% } else if (estado === 'error') { %>
+      <%# ---------- Error de verdad: ni siquiera se pudo situar el destino ---------- %>
+      <div class="aviso aviso--alerta aireado">
+        <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+        <div>
+          <div class="aviso__titulo">No se pudieron consultar los avisos</div>
+          <p class="aviso__texto"><%= trabajo && trabajo.mensaje_error ? trabajo.mensaje_error : 'Error desconocido.' %></p>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <form method="POST" action="/viajes/<%= viaje.id %>/avisos/reintentar">
+          <button class="boton boton--primario" type="submit">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+          </button>
+        </form>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/2">Cambiar el destino</a>
+      </div>
+
+    <% } else { %>
+      <%# ---------- Hecho: los avisos reales, agrupados por categoría ---------- %>
+      <div class="aireado">
+        <% CATEGORIAS.forEach(cat => { const delGrupo = porCategoria(cat.clave); %>
+          <% if (delGrupo.length) { %>
+            <section class="avisos-grupo">
+              <h2 class="avisos-grupo__titulo">
+                <i class="ti <%= cat.icono %>" aria-hidden="true"></i> <%= cat.titulo %>
+              </h2>
+
+              <% delGrupo.forEach(a => { %>
+                <div class="aviso aviso--<%= a.severidad %>">
+                  <i class="ti <%= ICONOS[a.severidad] || 'ti-info-circle' %>" aria-hidden="true"></i>
+                  <div>
+                    <div class="aviso__titulo"><%= a.titulo %></div>
+                    <% if (a.texto) { %>
+                      <p class="aviso__texto"><%= a.texto %></p>
+                    <% } %>
+                    <% if (a.url) { %>
+                      <a class="aviso__enlace" href="<%= a.url %>" target="_blank" rel="noopener noreferrer">
+                        Leer recomendación completa <i class="ti ti-external-link" aria-hidden="true"></i>
+                      </a>
+                    <% } %>
+                  </div>
+                </div>
+              <% }) %>
+            </section>
+          <% } %>
+        <% }) %>
+
+        <%# Si las tres fuentes dieran cero avisos (raro, pero posible) no dejamos la pantalla en blanco. %>
+        <% if (!avisos.length) { %>
+          <div class="aviso aviso--info">
+            <i class="ti ti-info-circle" aria-hidden="true"></i>
+            <div>
+              <div class="aviso__titulo">Nada reseñable</div>
+              <p class="aviso__texto">No hay avisos de clima, seguridad ni festivos para esas fechas.</p>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
+
+    <%- include('parciales/barra', {
+          urlAtras: `/viajes/${viaje.id}/paso/2`,
+          urlSiguiente: `/viajes/${viaje.id}/paso/4`,
+          textoSiguiente: 'Entendido, continuar'
+        }) %>
+  </div>
+</main>
+
+<%- include('parciales/pie') %>

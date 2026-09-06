@@ -1,0 +1,700 @@
+<%
+/**
+ * EL DOSIER — plantilla del archivo que se lleva uno al móvil.
+ *
+ * Esto NO es una pantalla de la aplicación: es una plantilla suelta que genera
+ * un HTML que vivirá por su cuenta, en el sistema de archivos de un teléfono,
+ * sin conexión y sin servidor detrás. Por eso no incluye ninguna otra plantilla
+ * y no enlaza absolutamente nada de fuera.
+ *
+ * TODO VA DENTRO: el CSS aquí abajo, el JS al final, los datos como JSON en un
+ * <script> y las fotos como data: URI dentro de ese mismo JSON.
+ *
+ * Y SE PINTA EN EL NAVEGADOR, no aquí. El contenido se monta con el JS de abajo
+ * a partir del JSON embebido, porque el buscador y la navegación por días tienen
+ * que trabajar sobre esos mismos datos: si el HTML viniera ya escrito, buscar
+ * sería recorrer el DOM en vez de los datos, y acabaría desincronizado.
+ *
+ * Espera: datos (lo que arma services/dosier.js) y fotos (url -> data: URI).
+ */
+
+// El JSON va dentro de un <script>, así que hay que asegurarse de que ninguna
+// cadena pueda cerrarlo. Escapando "<" no puede aparecer "</script>".
+const comoJSON = (o) => JSON.stringify(o).replace(/</g, '\\u003c');
+%><!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title><%= datos.viaje.nombre %></title>
+<style>
+/* =============================================================================
+   Estética mediterránea de la aplicación, reducida a lo que hace falta aquí.
+   Sin fuentes externas: la del sistema, que en un móvil siempre está.
+   ========================================================================== */
+:root{
+  --acento:#1B7FA6; --acento-osc:#16688A; --tinte:#D3E8F0; --tinte-tx:#12303E;
+  --fondo:#F4F8FA; --sup:#FFFFFF; --borde:#E2ECF1; --borde-f:#C7DAE3;
+  --tx:#12303E; --tx2:#5E7A87; --tx3:#8FA9B4;
+  --verde-bg:#E1F2E7; --verde-tx:#1E6B3C;
+  --amba-bg:#FAEEDA; --amba-tx:#854F0B;
+  --radio:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--fondo); color:var(--tx);
+  font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  padding-bottom:40px;
+}
+.envoltorio{max-width:720px;margin:0 auto;padding:0 14px}
+
+/* ---------- Portada ---------- */
+.portada{background:var(--acento);color:#fff;padding:26px 16px 22px;margin-bottom:16px}
+.portada__interior{max-width:720px;margin:0 auto}
+.portada__nombre{margin:0 0 6px;font-size:27px;font-weight:700;line-height:1.2}
+.portada__fechas{margin:0;font-size:15px;opacity:.92}
+.portada__ruta{margin:14px 0 0;font-size:15px;font-weight:600;line-height:1.5}
+.portada__flecha{opacity:.6;margin:0 5px}
+.portada__datos{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.dato{background:rgba(255,255,255,.17);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600}
+
+/* ---------- Buscador ---------- */
+.buscador{position:relative;margin:0 0 14px}
+.buscador input{
+  width:100%;padding:12px 14px;font-size:16px;font-family:inherit;color:var(--tx);
+  background:var(--sup);border:1px solid var(--borde-f);border-radius:999px;outline:none;
+}
+.buscador input:focus{border-color:var(--acento)}
+
+/* ---------- Pestañas de día ---------- */
+.dias{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px;scrollbar-width:none}
+.dias::-webkit-scrollbar{display:none}
+.pestana{
+  flex:0 0 auto;padding:9px 14px;border:1px solid var(--borde-f);border-radius:999px;
+  background:var(--sup);color:var(--tx2);font:600 14px/1 inherit;cursor:pointer;white-space:nowrap;
+}
+.pestana--activa{background:var(--acento);border-color:var(--acento);color:#fff}
+.pestana--hoy::after{content:" · hoy";font-weight:700}
+
+.flechas{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0 0 12px}
+.flecha{
+  padding:9px 14px;border:1px solid var(--borde-f);border-radius:999px;background:var(--sup);
+  color:var(--acento);font:600 14px/1 inherit;cursor:pointer;
+}
+.flecha[disabled]{opacity:.4;cursor:default}
+.flechas__centro{font-weight:700;font-size:15px;text-align:center;flex:1}
+
+/* ---------- Un día ---------- */
+.dia__cabecera{margin:0 0 4px;font-size:20px;font-weight:700}
+.dia__ciudad{display:inline-block;background:var(--tinte);color:var(--tinte-tx);
+  border-radius:999px;padding:3px 11px;font-size:13px;font-weight:700;margin-bottom:14px}
+
+.franja{margin-bottom:18px}
+.franja__titulo{
+  display:flex;align-items:baseline;gap:8px;margin:0 0 8px;
+  font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);
+}
+.franja__horas{font-size:11px;letter-spacing:0;text-transform:none;font-weight:600}
+
+.cosa{
+  background:var(--sup);border:1px solid var(--borde);border-radius:var(--radio);
+  margin-bottom:8px;overflow:hidden;
+}
+.cosa__cabecera{
+  display:flex;align-items:center;gap:11px;padding:12px 14px;cursor:pointer;
+}
+.cosa__cabecera--plana{cursor:default}
+.cosa__foto{width:54px;height:54px;flex:0 0 auto;border-radius:10px;object-fit:cover;background:var(--tinte)}
+.cosa__texto{flex:1;min-width:0}
+.cosa__nombre{font-weight:600;line-height:1.35}
+.cosa__meta{font-size:13px;color:var(--tx2);margin-top:2px}
+.cosa__hora{
+  flex:0 0 auto;font-weight:700;font-size:15px;color:var(--acento);
+  font-variant-numeric:tabular-nums;
+}
+.cosa__mas{flex:0 0 auto;color:var(--tx3);font-size:19px;line-height:1;transition:transform .15s ease}
+.cosa--abierta .cosa__mas{transform:rotate(45deg)}
+
+.cosa__detalle{padding:0 14px 14px;border-top:1px solid var(--borde);font-size:15px}
+.cosa__detalle h4{
+  margin:14px 0 5px;font-size:14px;font-weight:700;
+  display:flex;align-items:center;gap:6px;
+}
+.cosa__detalle p{margin:0 0 8px;white-space:pre-line}
+.cosa__detalle ul{margin:0 0 8px;padding-left:20px}
+.cosa__detalle li{margin-bottom:3px}
+.cosa__detalle dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:8px 0 0;font-size:14px}
+.cosa__detalle dt{font-weight:600;color:var(--tx2)}
+.cosa__detalle dd{margin:0}
+.cosa__foto-grande{width:100%;border-radius:10px;margin:12px 0 4px;display:block}
+
+.enlace{
+  display:inline-block;margin-top:10px;padding:9px 14px;border-radius:999px;
+  background:var(--tinte);color:var(--acento-osc);font-weight:600;font-size:14px;text-decoration:none;
+}
+.enlace + .enlace{margin-left:8px}
+
+/* ---------- Transporte ---------- */
+.transporte{
+  background:var(--amba-bg);border:1px solid #E8D5AE;border-radius:var(--radio);
+  padding:13px 15px;margin-bottom:8px;
+}
+.transporte__titulo{font-weight:700;color:var(--amba-tx);margin-bottom:2px}
+.trayecto{
+  display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px dashed #E0CDA6;
+  font-size:14px;flex-wrap:wrap;
+}
+.trayecto__horas{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.trayecto__ruta{color:var(--tx2)}
+.trayecto__dato{color:var(--tx2);font-size:13px}
+
+/* ---------- Hotel de la noche ---------- */
+.hotel{
+  background:var(--verde-bg);border:1px solid #BEDFC9;border-radius:var(--radio);
+  padding:13px 15px;margin-top:14px;
+}
+.hotel__eti{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--verde-tx)}
+.hotel__nombre{font-weight:700;margin-top:3px}
+.hotel__dir{font-size:14px;color:var(--tx2);margin-top:3px}
+
+/* ---------- Adjuntos ----------
+   Los papeles del viaje. Van como archivos dentro del ZIP y se enlazan en
+   relativo, así que descomprimido funcionan sin conexión. */
+.adjuntos-dosier{margin-top:10px;padding-top:10px;border-top:1px dashed var(--borde-f)}
+.adjuntos-dosier__titulo{
+  font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tx3);margin-bottom:6px;
+}
+.adjunto-enlace{
+  display:flex;align-items:center;gap:9px;padding:9px 11px;margin-bottom:6px;
+  background:var(--sup);border:1px solid var(--borde);border-radius:10px;
+  color:var(--tx);text-decoration:none;font-size:14px;
+}
+.adjunto-enlace:last-child{margin-bottom:0}
+.adjunto-enlace__clip{flex:0 0 auto;font-size:15px}
+.adjunto-enlace__nombre{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adjunto-enlace__peso{flex:0 0 auto;color:var(--tx3);font-size:12px}
+
+/* ---------- Reservas ---------- */
+.bloque{background:var(--sup);border:1px solid var(--borde);border-radius:var(--radio);
+  padding:15px 16px;margin-bottom:12px}
+.bloque__titulo{margin:0 0 10px;font-size:17px;font-weight:700}
+.seccion__titulo{margin:22px 0 12px;font-size:21px;font-weight:700}
+
+.vacio{color:var(--tx2);text-align:center;padding:26px 10px}
+.secundario{color:var(--tx2);font-size:14px}
+.oculto{display:none !important}
+
+/* Resultados del buscador */
+.resultado{
+  background:var(--sup);border:1px solid var(--borde);border-radius:var(--radio);
+  padding:12px 14px;margin-bottom:8px;
+}
+.resultado__donde{font-size:13px;color:var(--acento);font-weight:600;margin-bottom:2px}
+
+@media (min-width:620px){
+  .portada__nombre{font-size:32px}
+  .cosa__foto{width:66px;height:66px}
+}
+</style>
+</head>
+<body>
+
+<header class="portada">
+  <div class="portada__interior">
+    <h1 class="portada__nombre" id="p-nombre"></h1>
+    <p class="portada__fechas" id="p-fechas"></p>
+    <p class="portada__ruta" id="p-ruta"></p>
+    <div class="portada__datos" id="p-datos"></div>
+  </div>
+</header>
+
+<main class="envoltorio">
+  <div class="buscador">
+    <input type="search" id="buscar" placeholder="Buscar en el viaje…" autocomplete="off"
+           aria-label="Buscar por nombre">
+  </div>
+
+  <div id="vista-buscar" class="oculto"></div>
+
+  <div id="vista-viaje">
+    <nav class="dias" id="dias" aria-label="Días del viaje"></nav>
+
+    <div class="flechas">
+      <button class="flecha" type="button" id="anterior">‹ Anterior</button>
+      <span class="flechas__centro" id="centro"></span>
+      <button class="flecha" type="button" id="siguiente">Siguiente ›</button>
+    </div>
+
+    <section id="dia"></section>
+
+    <h2 class="seccion__titulo">Reservas</h2>
+    <section id="reservas"></section>
+  </div>
+</main>
+
+<script id="datos-del-viaje" type="application/json"><%- comoJSON(datos) %></script>
+<script id="fotos-del-viaje" type="application/json"><%- comoJSON(fotos) %></script>
+
+<script>
+/* =============================================================================
+   El dosier, por dentro.
+   Sin librerías: unas cuantas funciones que montan HTML a partir del JSON de
+   arriba. Tiene que funcionar en un móvil viejo abriendo un file://, así que
+   nada de nada que pida red.
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var DATOS = JSON.parse(document.getElementById('datos-del-viaje').textContent);
+  var FOTOS = JSON.parse(document.getElementById('fotos-del-viaje').textContent);
+
+  /** Escapa texto para meterlo en HTML. Todo lo que venga del viaje pasa por aquí. */
+  function esc(t) {
+    return String(t == null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /** La foto embebida de una url, si se pudo traer al generar. */
+  function foto(url) { return url && FOTOS[url] ? FOTOS[url] : null; }
+
+  /** Los textos de Civitatis traen saltos de línea que son una lista. */
+  function lineas(t) {
+    return String(t || '').split('\n').map(function (l) { return l.trim(); })
+      .filter(function (l) { return l; });
+  }
+
+  function lista(t) {
+    return '<ul>' + lineas(t).map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>';
+  }
+
+  /* ===========================================================================
+     PORTADA
+     ======================================================================== */
+  function pintarPortada() {
+    var v = DATOS.viaje;
+    document.getElementById('p-nombre').textContent = v.nombre;
+    document.getElementById('p-fechas').textContent = v.fechasLargas;
+    document.title = v.nombre;
+
+    document.getElementById('p-ruta').innerHTML = DATOS.ruta.map(function (e) {
+      return esc(e.ciudad);
+    }).join('<span class="portada__flecha">→</span>');
+
+    var datos = [];
+    datos.push(DATOS.dias.length + (DATOS.dias.length === 1 ? ' día' : ' días'));
+    var noches = DATOS.ruta.reduce(function (s, e) { return s + (e.noches || 0); }, 0);
+    if (noches) datos.push(noches + (noches === 1 ? ' noche' : ' noches'));
+    if (v.adultos) {
+      var gente = v.adultos + (v.adultos === 1 ? ' adulto' : ' adultos');
+      if (v.ninos) gente += ' y ' + v.ninos + (v.ninos === 1 ? ' niño' : ' niños');
+      datos.push(gente);
+    }
+    if (DATOS.reservas.hoteles.length) {
+      datos.push(DATOS.reservas.hoteles.length +
+        (DATOS.reservas.hoteles.length === 1 ? ' alojamiento' : ' alojamientos'));
+    }
+    document.getElementById('p-datos').innerHTML = datos.map(function (d) {
+      return '<span class="dato">' + esc(d) + '</span>';
+    }).join('');
+  }
+
+  /* ===========================================================================
+     LA FICHA DE UNA COSA
+     Se pinta con lo que haya. Lo que no se descargó en su día, no sale: mejor
+     una ficha corta que epígrafes vacíos.
+     ======================================================================== */
+  function pintarFicha(f) {
+    if (!f) return '';
+    var h = '';
+    var img = foto(f.imagen);
+    if (img) h += '<img class="cosa__foto-grande" src="' + img + '" alt="">';
+
+    var datos = [];
+    if (f.duracionDetalle || f.duracion) datos.push(['Duración', f.duracionDetalle || f.duracion]);
+    if (f.horarios) datos.push(['Horarios', f.horarios]);
+    if (f.idiomas) datos.push(['Idiomas', f.idiomas]);
+    if (f.precio != null) datos.push(['Precio', f.precio + ' ' + (f.moneda || 'EUR')]);
+    if (datos.length) {
+      h += '<dl>' + datos.map(function (d) {
+        return '<dt>' + esc(d[0]) + '</dt><dd>' + esc(d[1]) + '</dd>';
+      }).join('') + '</dl>';
+    }
+
+    if (f.descripcion) {
+      h += lineas(f.descripcion).map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('');
+    }
+    if (f.porQue) h += '<h4>Por qué merece la pena</h4><p>' + esc(f.porQue) + '</p>';
+
+    if (f.dentro && f.dentro.length) {
+      h += '<h4>Qué hay dentro</h4><ul>' + f.dentro.map(function (d) {
+        return '<li><strong>' + esc(d.nombre) + '</strong>' +
+          (d.descripcion ? ' — ' + esc(d.descripcion) : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+
+    if (f.incluye) h += '<h4>Incluye</h4>' + lista(f.incluye);
+    if (f.noIncluye) h += '<h4>No incluye</h4>' + lista(f.noIncluye);
+    if (f.puntoEncuentro) {
+      h += '<h4>Punto de encuentro</h4>' +
+        lineas(f.puntoEncuentro).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('');
+    }
+    if (f.comoMoverse) h += '<h4>Cómo moverse</h4><p>' + esc(f.comoMoverse) + '</p>';
+    if (f.cancelacion) {
+      h += '<h4>Cancelación</h4>' +
+        lineas(f.cancelacion).map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('');
+    }
+    if (f.extra) {
+      var claves = Object.keys(f.extra);
+      if (claves.length) {
+        h += '<dl>' + claves.map(function (k) {
+          return '<dt>' + esc(k) + '</dt><dd>' + esc(f.extra[k]) + '</dd>';
+        }).join('') + '</dl>';
+      }
+    }
+
+    // Sin mapas: no hay red. El enlace funcionará si la hay, y las coordenadas
+    // se dejan escritas para poder buscarlas a mano si no.
+    if (f.lat != null && f.lon != null) {
+      h += '<a class="enlace" target="_blank" rel="noopener noreferrer" ' +
+        'href="https://www.google.com/maps/search/?api=1&amp;query=' + f.lat + ',' + f.lon + '">' +
+        'Abrir en Google Maps</a>';
+      h += '<p class="secundario" style="margin-top:8px">Coordenadas: ' +
+        esc(f.lat) + ', ' + esc(f.lon) + '</p>';
+    }
+    if (f.url) {
+      h += '<a class="enlace" target="_blank" rel="noopener noreferrer" href="' + esc(f.url) + '">' +
+        (f.tipo === 'actividad' ? 'Ver en Civitatis' : 'Más información') + '</a>';
+    }
+    return h;
+  }
+
+  /** ¿Tiene esta ficha algo que enseñar al desplegarla? */
+  function tieneDetalle(f) {
+    if (!f) return false;
+    return Boolean(f.descripcion || f.porQue || f.incluye || f.noIncluye || f.puntoEncuentro ||
+      f.comoMoverse || f.cancelacion || f.horarios || f.idiomas || f.url ||
+      (f.dentro && f.dentro.length) || f.lat != null || foto(f.imagen));
+  }
+
+  /**
+   * Los adjuntos de algo, con enlace relativo.
+   *
+   * El `href` es la ruta DENTRO del ZIP, que es la que funciona con el archivo
+   * descomprimido y sin conexión. Cuando el dosier se está mirando desde la
+   * aplicación —para una revisión rápida, sin descomprimir— el bloque del final
+   * cambia esos enlaces por los de la app.
+   */
+  function pintarAdjuntos(lista, titulo) {
+    if (!lista || !lista.length) return '';
+    var h = '<div class="adjuntos-dosier"><div class="adjuntos-dosier__titulo">' +
+      esc(titulo || 'Documentos') + '</div>';
+    lista.forEach(function (a) {
+      h += '<a class="adjunto-enlace" href="' + esc(a.rel) + '" data-adjunto="' + a.id + '" ' +
+        'target="_blank" rel="noopener noreferrer">' +
+        '<span class="adjunto-enlace__clip" aria-hidden="true">&#128206;</span>' +
+        '<span class="adjunto-enlace__nombre">' + esc(a.nombre) + '</span>' +
+        '<span class="adjunto-enlace__peso">' + esc(a.tamano) + '</span></a>';
+    });
+    return h + '</div>';
+  }
+
+  /* ===========================================================================
+     UN DÍA
+     ======================================================================== */
+  function pintarCosa(c) {
+    var f = c.ficha;
+    // Con adjuntos siempre se puede desplegar: aunque no haya ficha, ahí está
+    // el bono, que es justo lo que hace falta en la puerta.
+    var abrible = tieneDetalle(f) || (c.adjuntos && c.adjuntos.length > 0);
+    var img = f ? foto(f.imagen) : null;
+
+    var meta = [];
+    if (f && (f.duracionDetalle || f.duracion)) meta.push(f.duracionDetalle || f.duracion);
+    if (f && f.precio === 0) meta.push('Gratis');
+    else if (f && f.precio != null) meta.push(f.precio + ' ' + (f.moneda || 'EUR'));
+
+    var h = '<article class="cosa" data-nombre="' + esc((c.texto || '').toLowerCase()) + '">';
+    h += '<div class="cosa__cabecera' + (abrible ? '' : ' cosa__cabecera--plana') + '"' +
+      (abrible ? ' role="button" tabindex="0"' : '') + '>';
+    if (img) h += '<img class="cosa__foto" src="' + img + '" alt="">';
+    h += '<div class="cosa__texto"><div class="cosa__nombre">' + esc(c.texto) + '</div>';
+    if (meta.length) h += '<div class="cosa__meta">' + esc(meta.join(' · ')) + '</div>';
+    h += '</div>';
+    if (c.hora) h += '<span class="cosa__hora">' + esc(c.hora) + '</span>';
+    if (abrible) h += '<span class="cosa__mas" aria-hidden="true">+</span>';
+    h += '</div>';
+    var detalle = (abrible ? pintarFicha(f) : '') + pintarAdjuntos(c.adjuntos, 'Bonos y entradas');
+    if (detalle) h += '<div class="cosa__detalle oculto">' + detalle + '</div>';
+    h += '</article>';
+    return h;
+  }
+
+  function pintarTransporte(t) {
+    var d = t.detalle;
+    var h = '<div class="transporte"><div class="transporte__titulo">' + esc(t.texto) + '</div>';
+
+    if (d && d.vuelo) {
+      if (d.vuelo.aerolineas) {
+        h += '<div class="secundario">' + esc(d.vuelo.aerolineas) +
+          (d.vuelo.clase ? ' · ' + esc(d.vuelo.clase) : '') + '</div>';
+      }
+      (d.vuelo.trayectos || []).forEach(function (y) {
+        h += '<div class="trayecto">';
+        h += '<span class="trayecto__horas">' + esc(y.horaSalida) + ' – ' + esc(y.horaLlegada) +
+          (y.diasDespues ? ' <sup>+' + y.diasDespues + '</sup>' : '') + '</span>';
+        h += '<span class="trayecto__ruta">' + esc(y.origen) + ' → ' + esc(y.destino) + '</span>';
+        if (y.duracion) h += '<span class="trayecto__dato">' + esc(y.duracion) + '</span>';
+        if (y.escalas === 0) h += '<span class="trayecto__dato">directo</span>';
+        else if (y.escalas != null) {
+          h += '<span class="trayecto__dato">' + y.escalas +
+            (y.escalas === 1 ? ' escala' : ' escalas') + '</span>';
+        }
+        h += '</div>';
+        if (y.escalaTexto) h += '<div class="secundario">' + esc(y.escalaTexto) + '</div>';
+      });
+      if (d.vuelo.precio != null) {
+        h += '<div class="secundario" style="margin-top:6px">' +
+          esc(d.vuelo.precio) + ' ' + esc(d.vuelo.moneda || 'EUR') + '</div>';
+      }
+    } else if (d && d.notas) {
+      h += '<div class="secundario">' + esc(d.notas) + '</div>';
+      if (d.precio) h += '<div class="secundario">' + esc(d.precio) + ' € aprox.</div>';
+    }
+    if (d) h += pintarAdjuntos(d.adjuntos, 'Billetes y tarjetas');
+    h += '</div>';
+    return h;
+  }
+
+  function pintarHotel(ho, etiqueta) {
+    var dir = [];
+    if (ho.zona) dir.push(ho.zona);
+    if (ho.distanciaCentro) dir.push(ho.distanciaCentro);
+
+    var h = '<div class="hotel"><div class="hotel__eti">' + esc(etiqueta) + '</div>';
+    h += '<div class="hotel__nombre">' + esc(ho.nombre) + '</div>';
+    if (dir.length) h += '<div class="hotel__dir">' + esc(dir.join(' · ')) + '</div>';
+    if (ho.valoracion != null) {
+      h += '<div class="hotel__dir">Nota ' + esc(ho.valoracion) +
+        (ho.opiniones ? ' · ' + esc(ho.opiniones) + ' opiniones' : '') + '</div>';
+    }
+    if (ho.precio != null) {
+      h += '<div class="hotel__dir">' + esc(ho.precio) + ' ' + esc(ho.moneda || 'EUR') +
+        (ho.noches ? ' · ' + esc(ho.noches) : '') + '</div>';
+    }
+    if (ho.url) {
+      h += '<a class="enlace" target="_blank" rel="noopener noreferrer" href="' + esc(ho.url) +
+        '">Ver en Booking</a>';
+    }
+    h += pintarAdjuntos(ho.adjuntos, 'Reserva y documentos');
+    h += '</div>';
+    return h;
+  }
+
+  function pintarDia(i) {
+    var d = DATOS.dias[i];
+    var h = '<h2 class="dia__cabecera">Día ' + d.n + ' · ' + esc(d.fechaLarga) + '</h2>';
+    h += '<span class="dia__ciudad">' + esc(d.ciudad) + '</span>';
+
+    if (d.vacio) {
+      h += '<p class="vacio">Este día no tiene nada apuntado.</p>';
+    } else {
+      d.franjas.forEach(function (f) {
+        h += '<div class="franja"><div class="franja__titulo">' + esc(f.etiqueta) +
+          (f.horas ? '<span class="franja__horas">' + esc(f.horas) + '</span>' : '') + '</div>';
+        f.transportes.forEach(function (t) { h += pintarTransporte(t); });
+        f.cosas.forEach(function (c) { h += pintarCosa(c); });
+        h += '</div>';
+      });
+    }
+
+    if (d.hotel) h += pintarHotel(d.hotel, 'Esta noche duermes en');
+    document.getElementById('dia').innerHTML = h;
+
+    var pestanas = document.querySelectorAll('#dias .pestana');
+    for (var k = 0; k < pestanas.length; k++) {
+      pestanas[k].classList.toggle('pestana--activa', k === i);
+    }
+    if (pestanas[i] && pestanas[i].scrollIntoView) {
+      pestanas[i].scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+
+    document.getElementById('centro').textContent = 'Día ' + d.n + ' de ' + DATOS.dias.length;
+    document.getElementById('anterior').disabled = i === 0;
+    document.getElementById('siguiente').disabled = i === DATOS.dias.length - 1;
+    actual = i;
+  }
+
+  /* ===========================================================================
+     RESERVAS
+     ======================================================================== */
+  function pintarReservas() {
+    var r = DATOS.reservas;
+    var h = '';
+
+    if (r.vuelos.length) {
+      h += '<div class="bloque"><h3 class="bloque__titulo">Transporte</h3>';
+      r.vuelos.forEach(function (v) {
+        h += pintarTransporte({ texto: v.recorrido, detalle: v });
+      });
+      h += '</div>';
+    }
+
+    if (r.hoteles.length) {
+      h += '<div class="bloque"><h3 class="bloque__titulo">Alojamiento</h3>';
+      r.hoteles.forEach(function (x) {
+        h += pintarHotel(x.hotel, x.ciudad + ' · ' + x.desde + ' — ' + x.hasta);
+      });
+      h += '</div>';
+    }
+
+    if (!h) h = '<p class="vacio">No hay nada reservado todavía.</p>';
+    document.getElementById('reservas').innerHTML = h;
+  }
+
+  /* ===========================================================================
+     BUSCADOR
+     Sobre los datos embebidos, no sobre el DOM: así encuentra también lo que
+     está en un día que no se está mirando.
+     ======================================================================== */
+  function buscar(texto) {
+    var q = texto.trim().toLowerCase();
+    var caja = document.getElementById('vista-buscar');
+    var viaje = document.getElementById('vista-viaje');
+
+    if (q.length < 2) {
+      caja.classList.add('oculto');
+      viaje.classList.remove('oculto');
+      return;
+    }
+
+    var hallados = [];
+    DATOS.dias.forEach(function (d) {
+      d.franjas.forEach(function (f) {
+        f.cosas.forEach(function (c) {
+          if ((c.texto || '').toLowerCase().indexOf(q) >= 0) {
+            hallados.push({ dia: d, franja: f, cosa: c });
+          }
+        });
+      });
+    });
+
+    var h = '<p class="secundario" style="margin:0 0 12px">' +
+      (hallados.length ? hallados.length + (hallados.length === 1 ? ' resultado' : ' resultados')
+                       : 'Nada con «' + esc(texto) + '»') + '</p>';
+    hallados.forEach(function (x) {
+      h += '<div class="resultado"><div class="resultado__donde">Día ' + x.dia.n + ' · ' +
+        esc(x.dia.fechaCorta) + ' · ' + esc(x.franja.etiqueta) + '</div>' +
+        pintarCosa(x.cosa) + '</div>';
+    });
+
+    caja.innerHTML = h;
+    caja.classList.remove('oculto');
+    viaje.classList.add('oculto');
+  }
+
+  /* ===========================================================================
+     ARRANQUE
+     ======================================================================== */
+  var actual = 0;
+
+  function pintarPestanas() {
+    var hoy = new Date();
+    var dos = function (n) { return String(n).padStart(2, '0'); };
+    var hoyISO = hoy.getFullYear() + '-' + dos(hoy.getMonth() + 1) + '-' + dos(hoy.getDate());
+
+    document.getElementById('dias').innerHTML = DATOS.dias.map(function (d) {
+      return '<button class="pestana' + (d.fecha === hoyISO ? ' pestana--hoy' : '') +
+        '" type="button" data-i="' + (d.n - 1) + '">Día ' + d.n +
+        ' · ' + esc(d.fechaCorta) + '</button>';
+    }).join('');
+
+    // VISTA "HOY": si el viaje está pasando ahora mismo, se abre por el día que
+    // toca. Es lo que se quiere al sacar el móvil estando allí.
+    var i = 0;
+    for (var k = 0; k < DATOS.dias.length; k++) {
+      if (DATOS.dias[k].fecha === hoyISO) { i = k; break; }
+    }
+    return i;
+  }
+
+  if (!DATOS.dias.length) {
+    document.getElementById('dia').innerHTML =
+      '<p class="vacio">Este viaje todavía no tiene días repartidos.</p>';
+    document.getElementById('dias').classList.add('oculto');
+    document.querySelector('.flechas').classList.add('oculto');
+  } else {
+    var inicial = pintarPestanas();
+    pintarDia(inicial);
+  }
+
+  pintarPortada();
+  pintarReservas();
+
+  document.getElementById('dias').addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('.pestana') : null;
+    if (b) pintarDia(Number(b.dataset.i));
+  });
+  document.getElementById('anterior').addEventListener('click', function () {
+    if (actual > 0) pintarDia(actual - 1);
+  });
+  document.getElementById('siguiente').addEventListener('click', function () {
+    if (actual < DATOS.dias.length - 1) pintarDia(actual + 1);
+  });
+
+  // Desplegar una ficha. Delegado en el documento para que valga igual en la
+  // vista del día y en la del buscador.
+  function alternar(cab) {
+    var caja = cab.parentNode;
+    var det = caja.querySelector('.cosa__detalle');
+    if (!det) return;
+    det.classList.toggle('oculto');
+    caja.classList.toggle('cosa--abierta');
+  }
+  document.addEventListener('click', function (ev) {
+    var cab = ev.target.closest ? ev.target.closest('.cosa__cabecera') : null;
+    if (cab && !cab.classList.contains('cosa__cabecera--plana')) alternar(cab);
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var cab = ev.target.closest ? ev.target.closest('.cosa__cabecera') : null;
+    if (cab && !cab.classList.contains('cosa__cabecera--plana')) { ev.preventDefault(); alternar(cab); }
+  });
+
+  var campo = document.getElementById('buscar');
+  campo.addEventListener('input', function () { buscar(campo.value); });
+
+  /* ===========================================================================
+     LOS ADJUNTOS, SEGÚN DE DÓNDE SE ABRA ESTO
+     ---------------------------------------------------------------------------
+     Los enlaces se escriben en RELATIVO ("adjuntos/vuelo-ida/1-billete.pdf"),
+     que es lo que funciona con el ZIP descomprimido en el móvil y sin conexión.
+     Ese es el caso para el que está hecho el dosier, y el que manda.
+
+     Pero el HTML también se puede abrir desde la propia aplicación para una
+     revisión rápida, sin descomprimir nada. Ahí esas rutas no existen, así que
+     los enlaces se cambian por los de la app.
+
+     La detección es por la RUTA EXACTA de la aplicación, no por el protocolo:
+     si alguien sirve la carpeta descomprimida con un servidor estático, el
+     protocolo también sería http y los enlaces relativos —que ahí SÍ funcionan—
+     se romperían al cambiarlos.
+     ======================================================================== */
+  if (location.pathname === '/viaje/' + DATOS.viaje.id + '/dosier') {
+    var cambiar = function () {
+      var enlaces = document.querySelectorAll('[data-adjunto]');
+      for (var i = 0; i < enlaces.length; i++) {
+        enlaces[i].setAttribute('href', '/adjunto/' + enlaces[i].getAttribute('data-adjunto'));
+      }
+    };
+    cambiar();
+    // El día y el buscador repintan, así que hay que volver a pasar.
+    new MutationObserver(cambiar).observe(document.body, { childList: true, subtree: true });
+  }
+})();
+</script>
+</body>
+</html>

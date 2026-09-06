@@ -1,0 +1,85 @@
+<%
+/**
+ * Una excursión de Civitatis dentro de una etapa: la tarjeta de siempre, el
+ * botón de apuntarla y el de ver su ficha completa.
+ *
+ * LA FICHA VIENE DEL CATÁLOGO, no del viaje. Se busca UNA vez —cuando alguien
+ * pulsa "Ver detalles" de esa excursión— y se queda para siempre y para todos
+ * los viajes. Por eso hay tres situaciones distintas:
+ *
+ *   a) Ya está guardada  -> el botón despliega al instante, sin buscar nada.
+ *   b) Se está buscando  -> "Buscando detalles…" y el JS sondea hasta que esté.
+ *   c) No está           -> el botón la pide, y solo esa.
+ *
+ * NUNCA se piden todas de golpe: con veintiocho excursiones por ciudad serían
+ * veintiocho visitas de navegador para leer tres.
+ *
+ * Espera: c (la excursión, con .ficha, .buscandoFicha y .errorFicha),
+ *         viaje, etapa, colocaciones, diasDeLaEtapa.
+ */
+const puesto = c.apuntado && c.candidatoId ? colocaciones.get(c.candidatoId) : null;
+%>
+<div class="excursion <%= c.apuntado ? 'excursion--apuntada' : '' %>"
+     data-actividad="<%= c.id %>"
+     data-tiene-ficha="<%= c.ficha ? '1' : '' %>"
+     data-buscando-ficha="<%= c.buscandoFicha ? '1' : '' %>">
+
+  <%- include('tarjeta', { c, viaje, icono: 'ti-ticket', soloLectura: true }) %>
+
+  <div class="excursion__acciones">
+    <button class="apuntar <%= c.apuntado ? 'apuntar--si' : '' %>" type="button"
+            data-apuntar="actividad" data-id="<%= c.id %>">
+      <i class="ti <%= c.apuntado ? 'ti-check' : 'ti-bookmark' %>" aria-hidden="true"></i>
+      <span><%= c.apuntado ? 'Apuntado' : 'Me lo apunto' %></span>
+    </button>
+
+    <button class="apuntar" type="button"
+            data-detalles="<%= c.id %>"
+            aria-expanded="false"
+            aria-controls="ficha-<%= c.id %>"
+            <%= c.buscandoFicha ? 'disabled' : '' %>>
+      <i class="ti <%= c.buscandoFicha ? 'ti-loader-2' : 'ti-list-details' %>" aria-hidden="true"></i>
+      <span><%= c.buscandoFicha ? 'Buscando detalles…' : 'Ver detalles' %></span>
+    </button>
+  </div>
+
+  <% if (c.apuntado && c.candidatoId) { %>
+    <% if (puesto) { %>
+      <a class="colocado colocado--ancho" href="/viaje/<%= viaje.id %>/lienzo?etapa=<%= etapa.id %>">
+        <i class="ti ti-calendar-check" aria-hidden="true"></i> <%= puesto.etiqueta %>
+      </a>
+    <% } else if (diasDeLaEtapa.length) { %>
+      <button class="apuntar apuntar--ancho" type="button" data-poner="<%= c.candidatoId %>">
+        <i class="ti ti-calendar-plus" aria-hidden="true"></i> Ponerlo en un día
+      </button>
+    <% } %>
+  <% } %>
+
+  <%# Los bonos y las entradas. Solo si está apuntada: si no lo está, no hay
+      candidato del que colgarlos. %>
+  <% if (c.apuntado && c.candidatoId) { %>
+    <%- include('adjuntos', {
+          tipo: 'excursion', elementoId: c.candidatoId,
+          adjuntos: c.adjuntos ?? [], etiqueta: 'Bonos y entradas',
+        }) %>
+  <% } %>
+
+  <%# Mientras se busca, el aviso ocupa el sitio de la ficha. %>
+  <p class="excursion__buscando <%= c.buscandoFicha ? '' : 'oculto' %>">
+    <span class="rueda" aria-hidden="true"></span>
+    Buscando los detalles en Civitatis… se abrirá una ventana de Chrome en el servidor.
+  </p>
+
+  <% if (c.errorFicha) { %>
+    <p class="excursion__error">
+      <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+      No se pudo traer la ficha: <%= c.errorFicha %>
+    </p>
+  <% } %>
+
+  <div class="ficha-excursion" id="ficha-<%= c.id %>" hidden>
+    <% if (c.ficha) { %>
+      <%- include('ficha-actividad', { f: c.ficha }) %>
+    <% } %>
+  </div>
+</div>

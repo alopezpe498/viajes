@@ -1,0 +1,303 @@
+/**
+ * public/css/portada.css
+ * -----------------------------------------------------------------------------
+ * Los estilos de la PORTADA, y solo de la portada.
+ *
+ * Viven en su propia hoja, que carga únicamente la home, porque sus nombres son
+ * genéricos a propósito (`panel`, `principal`, `menu`, `billete`) y en la hoja
+ * compartida chocaban. `.panel` se llevó por delante la ficha de lugar y la
+ * pantalla de etapa: sus pestañas también se llaman `panel`, y se pintaban con
+ * el azul y los 300 px del lateral de la home.
+ *
+ * Aislar por fichero en vez de renombrar deja el marcado limpio y hace
+ * imposible la colisión: estas reglas no llegan a ninguna otra pantalla.
+ */
+/* ===========================================================================
+   PORTADA: el cuaderno de viajes
+   Panel de acento a la izquierda, billetes a la derecha sobre carta nautica.
+   =========================================================================== */
+.portada {
+  min-height: 100vh;
+  display: flex;
+}
+
+/* --- Panel lateral -------------------------------------------------------- */
+.panel {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--acento);
+  color: #fff;
+  padding: 44px 34px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.panel__sello {
+  width: 58px; height: 58px;
+  border: 2.5px dashed rgba(255, 255, 255, .65);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-8deg);
+  margin-bottom: 26px;
+}
+.panel__sello i { font-size: 26px; transform: rotate(8deg); }
+
+.panel__titulo {
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -.02em;
+  margin: 0;
+  color: #fff;
+}
+.panel__titulo span { font-weight: 300; opacity: .85; }
+
+.panel__lema {
+  margin: 14px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  opacity: .85;
+}
+
+.panel__nuevo {
+  margin-top: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #fff;
+  color: var(--acento);
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 24px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.panel__nuevo:hover { background: var(--tinte); }
+.panel__nuevo i { font-size: 17px; }
+
+.panel__dato {
+  margin: auto 0 0;
+  font-size: 13px;
+  opacity: .75;
+  line-height: 1.5;
+}
+
+/* Trazo de ruta decorativo: detras de todo y sin clics. */
+.panel__ruta {
+  position: absolute;
+  right: -20px; bottom: 90px;
+  width: 220px;
+  opacity: .28;
+  pointer-events: none;
+}
+
+/* --- Zona principal ------------------------------------------------------- */
+.principal {
+  flex: 1;
+  padding: 44px 46px;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* El fondo de carta nautica: decorativo, nunca recibe clics. */
+.fondo-mapa {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.principal > *:not(.fondo-mapa) { position: relative; }
+
+.principal__titulo {
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--texto-3);
+  margin: 0 0 18px;
+}
+
+.billetes {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+}
+
+/* --- El billete ----------------------------------------------------------- */
+.billete {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  display: flex;
+  position: relative;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.billete:hover { transform: translateX(3px); border-color: var(--acento); }
+
+/* El enlace cubre el billete entero, por debajo del menu. Asi se puede pulsar
+   en cualquier parte sin meter un <a> alrededor de todo (que no vale: dentro
+   hay botones, y un boton dentro de un enlace es HTML invalido). */
+.billete__enlace {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 16px;
+}
+
+.talon {
+  width: 86px;
+  flex-shrink: 0;
+  border-right: 2px dashed var(--borde);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 16px 8px;
+}
+.talon__mes {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--acento);
+}
+.talon__dia { font-size: 26px; font-weight: 800; line-height: 1; }
+.talon__sin { font-size: 22px; color: var(--texto-3); }
+
+/* Las muescas troqueladas del billete. */
+.billete::before,
+.billete::after {
+  content: '';
+  position: absolute;
+  left: 78px;
+  width: 16px; height: 16px;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+}
+.billete::before { top: -9px; }
+.billete::after { bottom: -9px; }
+
+.billete__cuerpo { padding: 16px 18px; flex: 1; min-width: 0; }
+.billete__nombre { font-size: 18px; font-weight: 700; margin: 0; }
+
+.billete__ciudades {
+  font-size: 13.5px;
+  color: var(--texto-2);
+  margin: 3px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.billete__flecha { color: var(--texto-3); font-size: 12px; }
+
+.billete__chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.chip-billete {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.chip-billete i { font-size: 13px; }
+.chip-billete--etapas { background: var(--tinte); color: var(--acento); }
+.chip-billete--cuadra { background: var(--verde-bg); color: var(--verde-tx); }
+.chip-billete--faltan { background: #FBEED6; color: #8A5A16; }
+
+/* --- El menu de tres puntos ----------------------------------------------- */
+.menu-btn {
+  position: absolute;
+  top: 12px; right: 12px;
+  z-index: 2;                 /* por encima del enlace que cubre el billete */
+  width: 30px; height: 30px;
+  border-radius: 999px;
+  border: 0;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+  line-height: 1;
+}
+.menu-btn i { font-size: 17px; }
+.menu-btn:hover { color: var(--texto); background: var(--fondo); }
+
+.menu {
+  position: absolute;
+  top: 46px; right: 12px;
+  z-index: 6;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(18, 48, 62, .10);
+  display: none;
+  min-width: 160px;
+  overflow: hidden;
+}
+.menu--abierto { display: block; }
+.menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  color: var(--texto);
+}
+.menu button:hover { background: var(--fondo); }
+.menu__peligro { color: #C0563B; }
+
+/* --- La tarjeta de "empezar uno nuevo" ------------------------------------ */
+.billete-nuevo-form { display: flex; }
+.billete-nuevo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 2px dashed var(--borde);
+  border-radius: 16px;
+  padding: 22px;
+  background: none;
+  color: var(--texto-3);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.billete-nuevo:hover { border-color: var(--acento); color: var(--acento); }
+.billete-nuevo i { font-size: 17px; }
+
+/* El campo del modal de renombrar. */
+.modal__campo {
+  width: 100%;
+  margin-top: 14px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--texto);
+  background: var(--fondo);
+}
+.modal__campo:focus { outline: none; border-color: var(--acento); background: var(--superficie); }
+.modal__texto--nota { margin-top: 10px; font-size: 13px; color: var(--texto-3); }
+
+@media (max-width: 720px) {
+  .portada { flex-direction: column; }
+  .panel { width: 100%; padding: 30px 24px; }
+  .panel__dato { margin-top: 22px; }
+  .panel__ruta { display: none; }
+  .principal { padding: 26px 20px; }
+}

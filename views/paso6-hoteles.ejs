@@ -1,0 +1,147 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 6, titulo: 'Hoteles' }) %>
+
+<%
+/**
+ * Pantalla 6: hoteles REALES de Booking, por la cola de trabajos.
+ * Mismos tres estados que el catálogo: buscando / error / hecho.
+ */
+const ORDENES = [
+  { valor: 'recomendados', etiqueta: 'Recomendados', icono: 'ti-sparkles' },
+  { valor: 'precio',       etiqueta: 'Precio',       icono: 'ti-coin' },
+  { valor: 'nota',         etiqueta: 'Nota',         icono: 'ti-star' },
+];
+
+// Insignias: al más barato y al mejor valorado (por nota ponderada, no la cruda).
+let idBarato = null;
+let idMejor = null;
+if (estado === 'hecho' && hoteles.length) {
+  const conPrecio = hoteles.filter((h) => h.precio != null);
+  if (conPrecio.length) idBarato = conPrecio.reduce((a, b) => (b.precio < a.precio ? b : a)).id;
+  const conNota = hoteles.filter((h) => h.ponderada != null);
+  if (conNota.length) idMejor = conNota.reduce((a, b) => (b.ponderada > a.ponderada ? b : a)).id;
+}
+
+// El panel se abre solo si ya hay filtros puestos: así ves de un vistazo por
+// qué estás viendo estos resultados y no otros.
+const abrirFiltros = resumenDeFiltros !== 'sin filtros';
+
+// (La tarjeta de hotel vive ahora en parciales/hotel.ejs, con su soloNoches.)
+%>
+
+<main class="envoltorio">
+  <div class="contenido">
+    <div class="titulo-con-accion">
+      <div>
+        <h1>Dónde dormir</h1>
+        <p class="secundario" style="margin:0">
+          <% if (estado === 'hecho') { %>
+            <%= hoteles.length %> alojamientos de Booking en <%= viaje.destino %>. Marca uno.
+          <% } else { %>
+            Alojamientos de Booking en <%= viaje.destino || 'tu destino' %>.
+          <% } %>
+        </p>
+        <%# Qué estás viendo exactamente: los filtros con los que se buscó. %>
+        <p class="filtros-resumen">
+          <i class="ti ti-filter" aria-hidden="true"></i> <%= resumenDeFiltros %>
+          <% if (ocultosPorDistancia) { %>
+            <span class="secundario">· <%= ocultosPorDistancia %> ocultos por distancia</span>
+          <% } %>
+        </p>
+      </div>
+
+      <% if (estado === 'hecho') { %>
+        <form method="POST" action="/viajes/<%= viaje.id %>/hoteles/actualizar">
+          <button class="boton-discreto" type="submit" title="Vuelve a buscar en Booking. Lo que tengas marcado se conserva.">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Actualizar datos
+          </button>
+        </form>
+      <% } %>
+    </div>
+
+
+    <%# ================= PANEL "CÓMO BUSCAR" =================
+        El formulario es el mismo que usa la pestaña "Dónde dormir" de una
+        etapa: vive en parciales/filtros-hotel.ejs. Aquí hay resultados en
+        pantalla, así que la distancia al centro se aplica al momento. %>
+    <%- include('parciales/filtros-hotel', {
+          filtros,
+          accion: `/viajes/${viaje.id}/hoteles/filtros`,
+          idPanel: 'panel-filtros',
+          abierto: abrirFiltros,
+          textoBoton: 'Buscar con estos filtros',
+          urlDistancia: `/viajes/${viaje.id}/hoteles/distancia`,
+        }) %>
+
+    <% if (estado === 'sin_datos_viaje') { %>
+      <%# ---------- Faltan destino o fechas ---------- %>
+      <div class="caja vacio aireado">
+        <i class="ti ti-calendar-off" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">Para buscar hoteles hacen falta el destino y las fechas.</p>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/1">Ir a la configuración</a>
+      </div>
+
+    <% } else if (estado === 'buscando') { %>
+      <%# ---------- Buscando: el JS sondea cada 5 s y recarga al terminar ---------- %>
+      <div class="buscando aireado" id="buscando-hoteles"
+           data-estado-url="/viajes/<%= viaje.id %>/hoteles/estado">
+        <i class="ti ti-building-skyscraper buscando__avion" aria-hidden="true"></i>
+        <div class="buscando__titulo">Buscando hoteles en Booking…</div>
+        <p class="buscando__nota">
+          Esto tarda medio minuto. Se abrirá una ventana de Chrome en el servidor:
+          <strong>no la cierres</strong>.
+        </p>
+        <div class="buscando__pista secundario" id="buscando-pista">Comprobando cada 5 segundos…</div>
+      </div>
+
+    <% } else if (estado === 'error') { %>
+      <%# ---------- Error ---------- %>
+      <div class="aviso aviso--alerta aireado">
+        <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+        <div>
+          <div class="aviso__titulo">No se pudieron traer los hoteles</div>
+          <p class="aviso__texto"><%= trabajo && trabajo.mensaje_error ? trabajo.mensaje_error : 'Error desconocido.' %></p>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <form method="POST" action="/viajes/<%= viaje.id %>/hoteles/reintentar">
+          <button class="boton boton--primario" type="submit">
+            <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+          </button>
+        </form>
+        <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/1">Cambiar fechas</a>
+      </div>
+
+    <% } else { %>
+      <%# ---------- Hecho ---------- %>
+      <%# Los chips de orden son enlaces: funcionan sin JavaScript. %>
+      <div class="chips aireado">
+        <% ORDENES.forEach(o => { %>
+          <a class="chip <%= orden === o.valor ? 'chip--activo' : '' %>"
+             href="/viajes/<%= viaje.id %>/paso/6?orden=<%= o.valor %>">
+            <i class="ti <%= o.icono %>" aria-hidden="true"></i> <%= o.etiqueta %>
+          </a>
+        <% }) %>
+      </div>
+
+      <div class="rejilla rejilla--una aireado" style="gap:10px">
+        <% hoteles.forEach(h => { %>
+          <%- include('parciales/hotel', {
+                h, idBarato, idMejor,
+                urlMarcar: `/viajes/${viaje.id}/candidatos/${h.id}/marcar`
+              }) %>
+        <% }) %>
+      </div>
+    <% } %>
+
+    <%- include('parciales/barra', {
+          urlAtras: `/viajes/${viaje.id}/paso/5`,
+          urlSiguiente: `/viajes/${viaje.id}/paso/7`,
+          textoSiguiente: 'Continuar',
+          seleccion
+        }) %>
+  </div>
+
+  <%- include('parciales/lateral', { seleccion }) %>
+</main>
+
+<%- include('parciales/pie') %>

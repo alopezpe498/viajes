@@ -1,0 +1,584 @@
+<%
+/**
+ * LA ETAPA: el subproyecto de una parada.
+ *
+ * Tres pestañas con el mismo patrón que la ficha de ciudad, pero cada una
+ * conectada a las cajas que ya existían: los sitios del catálogo y Civitatis en
+ * "Qué ver", el panel de Booking en "Dónde dormir" y los tramos en "Cómo
+ * llegar". Aquí no se reinventa ninguna, se enchufan a la etapa.
+ *
+ * Espera: etapa, viaje, punto, confirmada, anterior, siguiente, posicion,
+ *         total, queVer, dormir, tramos, tiposTransporte, preparando, orden.
+ */
+const pieExtra = '<script src="/js/etapa.js"></script><script src="/js/adjuntos.js"></script>';
+
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const dia = (iso) => {
+  if (!iso) return null;
+  const [, m, d] = iso.split('-').map(Number);
+  return `${d} ${MESES[m - 1]}`;
+};
+const noches = (n) => `${n} ${n === 1 ? 'noche' : 'noches'}`;
+const rango = etapa.fecha_inicio
+  ? `${dia(etapa.fecha_inicio)} → ${dia(etapa.fecha_fin)} · ${noches(etapa.noches)}`
+  : null;
+
+// Insignias de los hoteles: el más barato y el mejor valorado por nota
+// ponderada. Mismo criterio que el paso 6, que para eso es la misma caja.
+let idBarato = null;
+let idMejor = null;
+if (dormir.hoteles?.length) {
+  const conPrecio = dormir.hoteles.filter((h) => h.precio != null);
+  if (conPrecio.length) idBarato = conPrecio.reduce((a, b) => (b.precio < a.precio ? b : a)).id;
+  const conNota = dormir.hoteles.filter((h) => h.ponderada != null);
+  if (conNota.length) idMejor = conNota.reduce((a, b) => (b.ponderada > a.ponderada ? b : a)).id;
+}
+
+const ORDENES = [
+  { valor: 'recomendados', etiqueta: 'Recomendados', icono: 'ti-sparkles' },
+  { valor: 'precio',       etiqueta: 'Precio',       icono: 'ti-coin' },
+  { valor: 'nota',         etiqueta: 'Nota',         icono: 'ti-star' },
+];
+
+const ICONO_TIPO = {
+  tren: 'ti-train', bus: 'ti-bus', coche: 'ti-car', ferry: 'ti-ship', vuelo: 'ti-plane',
+};
+%>
+<%- include('parciales/cabecera', {
+      viaje: null, pasoActual: null, titulo: etapa.nombre_ciudad, extraCabeza: ''
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido contenido--etapa"
+       data-etapa="<%= etapa.id %>"
+       <%# El sondeo se enciende si CUALQUIER cosa de esta pantalla está en
+           marcha. Los vuelos faltaban aquí, y por eso su "Buscando en Kayak…"
+           se quedaba colgado aunque el trabajo hubiera terminado bien. %>
+       data-trabajando="<%= preparando.trabajando
+             || dormir.estado === 'buscando'
+             || tramos.some((t) => t.resultados.estado === 'buscando') ? '1' : '' %>">
+
+    <%# ======================= CABECERA ======================= %>
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> /
+        <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a> /
+        <%= etapa.nombre_ciudad %>
+      </p>
+
+      <div class="etapa-titular">
+        <h1 class="ruta-cabecera__titulo">
+          <%= etapa.nombre_ciudad %>
+          <% if (confirmada && posicion) { %>
+            <span class="chip-ambito">Etapa <%= posicion %></span>
+          <% } else { %>
+            <span class="chip-ambito chip-ambito--pendiente">
+              <i class="ti ti-alert-triangle" aria-hidden="true"></i> Sin confirmar
+            </span>
+          <% } %>
+        </h1>
+
+        <span class="etapa-acciones">
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/lienzo?etapa=<%= etapa.id %>">
+            <i class="ti ti-layout-board" aria-hidden="true"></i> Ver el lienzo de esta etapa
+          </a>
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/ruta">
+            <i class="ti ti-arrow-left" aria-hidden="true"></i> Volver a la ruta
+          </a>
+        </span>
+      </div>
+
+      <% if (rango) { %>
+        <p class="etapa-fechas"><i class="ti ti-calendar" aria-hidden="true"></i> <%= rango %></p>
+      <% } %>
+    </header>
+
+    <% if (!confirmada) { %>
+      <div class="franja">
+        <i class="ti ti-info-circle" aria-hidden="true"></i>
+        <span>Confírmala en la ruta para tener fechas y poder cotizar hotel.</span>
+        <a class="boton-discreto" href="/viaje/<%= viaje.id %>/ruta">Ir a la ruta</a>
+      </div>
+    <% } %>
+
+    <%# ======================= NOTAS ======================= %>
+    <details class="notas" <%= etapa.notas ? 'open' : '' %>>
+      <summary class="notas__resumen">
+        <i class="ti ti-plus notas__mas" aria-hidden="true"></i>
+        <i class="ti ti-note notas__icono" aria-hidden="true"></i>
+        Notas de la etapa
+        <span class="notas__estado" id="notas-estado"></span>
+      </summary>
+      <textarea class="notas__campo" id="notas-campo" rows="3"
+                placeholder="Lo que no quieras olvidar de esta parada: reservas, horarios, avisos…"
+                data-url="/etapa/<%= etapa.id %>/notas"><%= etapa.notas || '' %></textarea>
+    </details>
+
+    <%# ======================= PESTAÑAS ======================= %>
+    <div class="pestanas" role="tablist" id="pestanas">
+      <button class="pestana pestana--activa" type="button" role="tab"
+              aria-selected="true" data-panel="panel-ver" data-ancla="ver">
+        Qué ver <span class="pestana__n"><%= queVer.apuntados %></span>
+      </button>
+      <button class="pestana" type="button" role="tab"
+              aria-selected="false" data-panel="panel-dormir" data-ancla="dormir">Dónde dormir</button>
+      <button class="pestana" type="button" role="tab"
+              aria-selected="false" data-panel="panel-llegar" data-ancla="llegar">Cómo llegar</button>
+    </div>
+
+    <%# ---------------------- 1) QUÉ VER ---------------------- %>
+    <section class="panel" id="panel-ver" role="tabpanel">
+      <%# LA ETAPA NACE LLENA.
+          Si la ciudad no tiene nada investigado, al entrar se lanzan solas las
+          dos búsquedas (sitios y excursiones) y esto cuenta lo que está
+          pasando. No hay nada que pulsar: entrar en Sevilla es querer Sevilla. %>
+      <% if (preparando.trabajando) { %>
+        <%# El sondeo lo lleva el general de la pantalla, que ya pregunta por
+            todo de una vez. Este bloque solo pone el sitio donde escribir. %>
+        <div class="franja franja--trabajando" id="preparando-etapa">
+          <span class="rueda" aria-hidden="true"></span>
+          <span id="preparando-mensaje"><%= preparando.mensaje %></span>
+          <span class="franja__pista secundario">Se recarga sola cuando esté.</span>
+        </div>
+      <% } else if (preparando.mensaje_error) { %>
+        <div class="aviso aviso--alerta">
+          <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+          <div>
+            <div class="aviso__titulo">No se pudo preparar <%= etapa.nombre_ciudad %></div>
+            <p class="aviso__texto"><%= preparando.mensaje_error %></p>
+            <form method="POST" action="/api/etapas/<%= etapa.id %>/preparacion" style="margin-top:8px">
+              <button class="boton boton--secundario" type="submit">
+                <i class="ti ti-refresh" aria-hidden="true"></i> Reintentar
+              </button>
+            </form>
+          </div>
+        </div>
+      <% } %>
+
+      <p class="etapa-resumen" id="resumen-apuntados">
+        <i class="ti ti-bookmark" aria-hidden="true"></i>
+        Tienes <strong id="cuenta-apuntados"><%= queVer.apuntados %></strong>
+        <span id="palabra-apuntados"><%= queVer.apuntados === 1 ? 'cosa apuntada' : 'cosas apuntadas' %></span>
+        en <%= etapa.nombre_ciudad %>.
+      </p>
+
+      <%# SUBPESTAÑAS.
+          "Qué ver" mezclaba dos cosas que no se parecen: los sitios de la
+          ciudad y las excursiones de Civitatis, estas últimas en un carrusel
+          horizontal larguísimo donde no se veía lo que había. Ahora cada una
+          tiene lo suyo, en lista vertical, y se ve todo bajando con la página.
+
+          La lista de abajo es la que manda: para añadir "Comer" o "Bares" basta
+          con meter una entrada aquí y su <section class="subpanel"> más abajo.
+          El JS no sabe cuántas hay ni cómo se llaman. %>
+      <% const SUBVISTAS = [
+           { clave: 'sitios',      etiqueta: 'Sitios',      icono: 'ti-map-pin', n: queVer.sitios.length },
+           { clave: 'excursiones', etiqueta: 'Excursiones', icono: 'ti-ticket',  n: queVer.excursiones.length },
+         ]; %>
+
+      <div class="subpestanas" role="tablist" aria-label="Qué ver en <%= etapa.nombre_ciudad %>">
+        <% SUBVISTAS.forEach((s, i) => { %>
+          <button class="subpestana <%= i === 0 ? 'subpestana--activa' : '' %>" type="button" role="tab"
+                  aria-selected="<%= i === 0 %>" data-subpanel="sub-<%= s.clave %>">
+            <i class="ti <%= s.icono %>" aria-hidden="true"></i>
+            <%= s.etiqueta %>
+            <span class="subpestana__n"><%= s.n %></span>
+          </button>
+        <% }) %>
+      </div>
+
+      <%# --- Sitios: los de la ficha profunda de la ciudad --- %>
+      <section class="subpanel" id="sub-sitios" role="tabpanel">
+        <% if (!queVer.sitios.length) { %>
+          <p class="candidatos__vacio">
+            <%= preparando.trabajando
+                  ? 'Buscando qué hay que ver aquí…'
+                  : 'Todavía no hay sitios de esta ciudad en el catálogo.' %>
+          </p>
+        <% } %>
+
+        <div class="rejilla-fichas">
+          <% queVer.sitios.forEach(s => { %>
+            <%- include('parciales/ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa }) %>
+          <% }) %>
+        </div>
+      </section>
+
+      <%# --- Excursiones: las de Civitatis, en rejilla vertical --- %>
+      <section class="subpanel" id="sub-excursiones" role="tabpanel" hidden>
+        <% if (!queVer.excursiones.length) { %>
+          <p class="candidatos__vacio">
+            <%= preparando.trabajando
+                  ? 'Buscando excursiones en ' + etapa.nombre_ciudad + '…'
+                  : 'No hay excursiones de ' + etapa.nombre_ciudad + ' en el catálogo.' %>
+          </p>
+        <% } %>
+
+        <div class="rejilla-fichas">
+          <% queVer.excursiones.forEach(c => { %>
+            <%- include('parciales/excursion', { c, viaje, etapa, colocaciones, diasDeLaEtapa }) %>
+          <% }) %>
+        </div>
+      </section>
+    </section>
+
+    <%# ---------------------- 2) DÓNDE DORMIR ---------------------- %>
+    <section class="panel" id="panel-dormir" role="tabpanel" hidden>
+      <% if (dormir.estado === 'sin_fechas') { %>
+        <div class="caja vacio">
+          <i class="ti ti-calendar-off" style="font-size:28px;color:var(--texto-3)" aria-hidden="true"></i>
+          <p style="margin-top:10px">Sin fechas no se puede cotizar un hotel.</p>
+          <p class="secundario" style="margin-top:4px">
+            Confirma esta parada en la ruta y dile cuántas noches te quedas.
+          </p>
+          <a class="boton boton--primario" href="/viaje/<%= viaje.id %>/ruta">
+            <i class="ti ti-route" aria-hidden="true"></i> Ir a la ruta
+          </a>
+        </div>
+
+      <% } else if (dormir.estado === 'buscando') { %>
+        <div class="buscando" id="buscando-hoteles"
+             data-estado-url="/etapa/<%= etapa.id %>/estado">
+          <i class="ti ti-plane buscando__avion" aria-hidden="true"></i>
+          <div class="buscando__titulo">Buscando alojamiento en <%= etapa.nombre_ciudad %>…</div>
+          <p class="buscando__nota">
+            Se abrirá una ventana de Chrome en el servidor: <strong>no la cierres</strong>.
+          </p>
+          <div class="buscando__pista secundario" id="buscando-pista">Comprobando cada 5 segundos…</div>
+        </div>
+
+      <% } else { %>
+        <%# ANTES DE BUSCAR SE PREGUNTA CÓMO.
+            Entrar en esta pestaña ya no dispara una búsqueda de Booking: se
+            enseñan los filtros y se busca cuando se pulsa el botón. Y el
+            formulario vive AQUÍ DENTRO; el botón "Filtros" que echaba a la
+            pantalla del wizard era justo lo contrario de lo que hace falta:
+            se buscaba en un sitio y se filtraba en otro. %>
+        <% const hayHoteles = dormir.estado === 'hecho' && dormir.hoteles.length; %>
+
+        <% if (dormir.estado === 'error') { %>
+          <div class="aviso aviso--alerta">
+            <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+            <div>
+              <div class="aviso__titulo">No se pudieron traer los alojamientos</div>
+              <p class="aviso__texto"><%= dormir.trabajo?.mensaje_error || 'Error desconocido.' %></p>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (hayHoteles) { %>
+          <%# Con resultados: el resumen arriba y el formulario plegado detrás
+              de "Cambiar filtros". Nunca se sale de esta pantalla. %>
+          <p class="filtros-resumen">
+            <i class="ti ti-filter" aria-hidden="true"></i> <%= resumenFiltrosHoteles %>
+            <% if (dormir.ocultosPorDistancia) { %>
+              <span class="secundario">· <%= dormir.ocultosPorDistancia %> ocultos por distancia</span>
+            <% } %>
+            <button class="enlace-boton" type="button"
+                    data-plegar="panel-filtros-hotel-etapa">Cambiar filtros</button>
+          </p>
+        <% } else { %>
+          <div class="caja vacio">
+            <i class="ti ti-bed" style="font-size:28px;color:var(--texto-3)" aria-hidden="true"></i>
+            <p style="margin-top:10px">
+              Todavía no has buscado dónde dormir en <%= etapa.nombre_ciudad %>.
+            </p>
+            <p class="secundario" style="margin-top:4px">
+              Se buscará con las fechas de esta parada: <strong><%= rango %></strong>.
+              Elige abajo cómo quieres que sea y pulsa <strong>Buscar hoteles</strong>.
+            </p>
+          </div>
+        <% } %>
+
+        <%# El mismo formulario del paso 6, aquí dentro. Abierto cuando todavía
+            no hay nada buscado —que es cuando hay que decidir— y plegado
+            cuando ya hay resultados en pantalla. %>
+        <%- include('parciales/filtros-hotel', {
+              filtros: filtrosHoteles,
+              accion: `/etapa/${etapa.id}/hoteles/filtros`,
+              idPanel: 'panel-filtros-hotel-etapa',
+              abierto: !hayHoteles,
+              textoBoton: 'Buscar hoteles',
+              urlDistancia: hayHoteles ? `/viajes/${viaje.id}/hoteles/distancia` : null,
+            }) %>
+
+        <% if (hayHoteles) { %>
+          <%# --- El elegido, destacado arriba --- %>
+          <% if (dormir.elegido) { %>
+            <div class="elegido">
+              <div class="elegido__marca">
+                <i class="ti ti-check" aria-hidden="true"></i> Tu alojamiento en <%= etapa.nombre_ciudad %>
+              </div>
+              <div class="elegido__nombre"><%= dormir.elegido.titulo %></div>
+              <div class="elegido__pie">
+                <span class="elegido__precio">
+                  <%= dormir.elegido.precio != null ? dormir.elegido.precio + ' ' + (dormir.elegido.moneda || 'EUR') : '—' %>
+                </span>
+                <% if (dormir.elegido.url) { %>
+                  <a class="elegido__enlace" href="<%= dormir.elegido.url %>" target="_blank" rel="noopener noreferrer">
+                    Ver en Booking <i class="ti ti-external-link" aria-hidden="true"></i>
+                  </a>
+                <% } %>
+                <button class="boton-discreto" type="button" id="cambiar-hotel">
+                  <i class="ti ti-switch-horizontal" aria-hidden="true"></i> Cambiar
+                </button>
+              </div>
+
+              <%# La confirmación de la reserva y el correo con las instrucciones
+                  de entrada, que es justo lo que hace falta al llegar. %>
+              <%- include('parciales/adjuntos', {
+                    tipo: 'alojamiento', elementoId: dormir.elegido.id,
+                    adjuntos: dormir.elegido.adjuntos ?? [],
+                    etiqueta: 'Reserva y documentos',
+                  }) %>
+            </div>
+          <% } %>
+
+          <div id="lista-hoteles" <%= dormir.elegido ? 'hidden' : '' %>>
+            <div class="titulo-con-accion">
+              <div class="chips">
+                <% ORDENES.forEach(o => { %>
+                  <a class="chip <%= orden === o.valor ? 'chip--activo' : '' %>"
+                     href="/etapa/<%= etapa.id %>?orden=<%= o.valor %>#dormir">
+                    <i class="ti <%= o.icono %>" aria-hidden="true"></i> <%= o.etiqueta %>
+                  </a>
+                <% }) %>
+              </div>
+              <form method="POST" action="/etapa/<%= etapa.id %>/hoteles/buscar">
+                <button class="boton-discreto" type="submit" title="Vuelve a buscar en Booking con las fechas de esta parada.">
+                  <i class="ti ti-refresh" aria-hidden="true"></i> Actualizar
+                </button>
+              </form>
+            </div>
+
+            <div class="rejilla rejilla--una aireado" style="gap:10px">
+              <% dormir.hoteles.forEach(h => { %>
+                <%- include('parciales/hotel', {
+                      h, idBarato, idMejor,
+                      urlMarcar: `/etapa/${etapa.id}/hoteles/${h.id}/elegir`
+                    }) %>
+              <% }) %>
+            </div>
+          </div>
+        <% } %>
+      <% } %>
+    </section>
+
+    <%# ---------------------- 3) CÓMO LLEGAR ---------------------- %>
+    <section class="panel" id="panel-llegar" role="tabpanel" hidden>
+      <% if (!tramos.length) { %>
+        <p class="candidatos__vacio">
+          Esta parada todavía no tiene tramos. Confírmala en la ruta y aparecerán.
+        </p>
+      <% } %>
+
+      <% tramos.forEach(t => { %>
+        <article class="tramo-caja <%= t.resuelto ? 'tramo-caja--resuelta' : '' %>" id="tramo-<%= t.id %>" data-tramo="<%= t.id %>">
+          <header class="tramo-caja__cabecera">
+            <span class="tramo-caja__ruta">
+              <i class="ti <%= ICONO_TIPO[t.tipo] || 'ti-arrow-right' %>" aria-hidden="true"></i>
+              <%= t.nombreOrigen %> <i class="ti ti-arrow-narrow-right" aria-hidden="true"></i> <%= t.nombreDestino %>
+            </span>
+            <span class="tramo-caja__estado <%= t.resuelto ? 'tramo-caja__estado--ok' : '' %>">
+              <i class="ti <%= t.resuelto ? 'ti-check' : 'ti-alert-triangle' %>" aria-hidden="true"></i>
+              <%= t.resuelto ? 'Resuelto' : 'Pendiente' %>
+            </span>
+          </header>
+
+          <p class="tramo-caja__datos">
+            <% if (t.fecha) { %><span><i class="ti ti-calendar" aria-hidden="true"></i> <%= dia(t.fecha) %></span><% } %>
+            <% if (t.referencia) { %><span class="tramo-caja__referencia"><%= t.referencia %></span><% } %>
+          </p>
+
+          <% if (t.resuelto) { %>
+            <div class="tramo-caja__resuelto">
+              <strong><%= t.resumen %></strong>
+              <% if (t.notas) { %><p class="secundario" style="margin:4px 0 0"><%= t.notas %></p><% } %>
+              <% if (t.precioEstimado) { %>
+                <p class="secundario" style="margin:2px 0 0"><%= t.precioEstimado %> € aprox.</p>
+              <% } %>
+            </div>
+          <% } %>
+
+          <div class="tramo-caja__acciones">
+            <%# Los extremos son vuelos: ahí sí tiene sentido abrir Kayak. %>
+            <% if (t.donde !== 'salto' || t.tipo === 'vuelo') { %>
+              <button class="boton boton--secundario" type="button" data-vuelos="<%= t.id %>">
+                <i class="ti ti-plane" aria-hidden="true"></i>
+                <%= t.resultados.estado === 'hecho' && t.resultados.vuelos.length
+                      ? `Ver vuelos (${t.resultados.vuelos.length})`
+                      : 'Buscar vuelos' %>
+              </button>
+            <% } %>
+            <button class="boton boton--secundario" type="button" data-manual="<%= t.id %>">
+              <i class="ti ti-pencil" aria-hidden="true"></i>
+              <%= t.resuelto && t.notas ? 'Editar a mano' : 'Apuntar a mano' %>
+            </button>
+            <% if (t.notas) { %>
+              <button class="boton-discreto" type="button" data-olvidar="<%= t.id %>">Quitar</button>
+            <% } %>
+          </div>
+
+          <%# Los papeles de este tramo: billetes, tarjetas de embarque de todos
+              los viajeros. Cuelgan del TRAMO y no del vuelo elegido, porque
+              siguen valiendo aunque cambie de vuelo dentro del mismo trayecto. %>
+          <%- include('parciales/adjuntos', {
+                tipo: 'transporte', elementoId: t.id, adjuntos: t.adjuntos,
+                etiqueta: 'Billetes y tarjetas',
+              }) %>
+
+          <%# Formulario manual, plegado hasta que se pide. %>
+          <form class="manual" data-form-manual="<%= t.id %>" hidden>
+            <div class="manual__fila">
+              <label class="manual__campo">
+                <span>Cómo vas</span>
+                <select name="tipo">
+                  <% tiposTransporte.forEach(x => { %>
+                    <option value="<%= x.valor %>" <%= t.tipo === x.valor ? 'selected' : '' %>><%= x.etiqueta %></option>
+                  <% }) %>
+                </select>
+              </label>
+              <label class="manual__campo manual__campo--precio">
+                <span>Precio aprox. (€)</span>
+                <input type="number" name="precio" min="0" step="1" value="<%= t.precioEstimado ?? '' %>">
+              </label>
+            </div>
+            <label class="manual__campo">
+              <span>Notas</span>
+              <input type="text" name="notas" maxlength="200"
+                     placeholder="Shinkansen Hikari, ~2h15, cubierto con el JR Pass"
+                     value="<%= t.notas ?? '' %>">
+            </label>
+            <div class="manual__botones">
+              <button class="boton boton--primario" type="submit">Guardar</button>
+              <button class="boton boton--secundario" type="button" data-cancelar-manual>Cancelar</button>
+            </div>
+          </form>
+
+          <%# LOS VUELOS DE ESTE TRAMO.
+              Se busca SOLO ESTE SENTIDO y SOLO ESTA FECHA: BCN→Madrid del 11 y
+              Madrid→BCN del 13 son dos búsquedas distintas, cada una con sus
+              horarios y con SUS filtros. Por eso el panel de filtros está aquí
+              dentro, uno por tramo, y no en una pantalla aparte: puedo querer
+              directos a la ida y que me dé igual a la vuelta. %>
+          <%# Se abre sola cuando hay resultados y también mientras busca: si no,
+              el mensaje de "buscando" quedaba escondido detrás del botón. %>
+          <div class="vuelos-tramo" data-vuelos-de="<%= t.id %>"
+               <%= (t.resultados.estado === 'hecho' && t.resultados.vuelos.length)
+                    || t.resultados.estado === 'buscando'
+                    || t.resultados.estado === 'error' ? '' : 'hidden' %>>
+
+            <% if (t.resultados.estado === 'buscando') { %>
+              <p class="secundario" data-buscando-tramo="<%= t.id %>">
+                <span class="rueda" aria-hidden="true"></span>
+                Buscando <%= t.nombreOrigen %> → <%= t.nombreDestino %> en Kayak…
+                se abrirá una ventana de Chrome en el servidor.
+                <span class="secundario" data-pista-tramo="<%= t.id %>"></span>
+              </p>
+
+            <% } else { %>
+              <% const hayVuelos = t.resultados.estado === 'hecho'; %>
+
+              <% if (t.resultados.estado === 'error') { %>
+                <div class="aviso aviso--alerta">
+                  <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+                  <div><p class="aviso__texto"><%= t.resultados.mensaje_error || 'Error desconocido.' %></p></div>
+                </div>
+              <% } %>
+
+              <% if (hayVuelos) { %>
+                <div class="titulo-con-accion">
+                  <div class="chips">
+                    <% [['precio','Precio','ti-coin'], ['duracion','Más rápidos','ti-clock-bolt']].forEach(([valor, etiqueta, icono]) => { %>
+                      <a class="chip <%= ordenVuelos === valor ? 'chip--activo' : '' %>"
+                         href="/etapa/<%= etapa.id %>?ordenVuelos=<%= valor %>#llegar">
+                        <i class="ti <%= icono %>" aria-hidden="true"></i> <%= etiqueta %>
+                      </a>
+                    <% }) %>
+                  </div>
+                </div>
+
+                <p class="filtros-resumen">
+                  <i class="ti ti-filter" aria-hidden="true"></i> <%= t.resultados.resumenFiltros %>
+                  <% if (t.resultados.ocultosPorFiltros) { %>
+                    <span class="secundario">· <%= t.resultados.ocultosPorFiltros %> ocultos por filtros</span>
+                  <% } %>
+                  <button class="enlace-boton" type="button"
+                          data-plegar="filtros-tramo-<%= t.id %>">Cambiar filtros</button>
+                </p>
+              <% } else { %>
+                <p class="secundario" style="margin:0 0 4px">
+                  Se buscará <strong><%= t.nombreOrigen %> → <%= t.nombreDestino %></strong><%
+                    if (t.fecha) { %> del <strong><%= dia(t.fecha) %></strong><% }
+                  %>, solo ida. Elige cómo quieres volar y pulsa <strong>Buscar vuelos</strong>.
+                </p>
+              <% } %>
+
+              <%- include('parciales/filtros-vuelo', {
+                    filtros: t.filtros,
+                    accion: `/tramo/${t.id}/vuelos/buscar`,
+                    idPanel: `filtros-tramo-${t.id}`,
+                    abierto: !hayVuelos,
+                    textoBoton: 'Buscar vuelos',
+                    pax: (viaje.adultos || 1) + (viaje.ninos || 0),
+                    soloIda: true,
+                    ocultos: [['volverA', `/etapa/${etapa.id}`]],
+                  }) %>
+
+              <% if (hayVuelos) { %>
+                <%# Que los filtros dejen la lista vacía NO es lo mismo que no
+                    haber buscado: hay que decirlo con esas palabras o parece
+                    que la búsqueda falló. %>
+                <% if (!t.resultados.vuelos.length) { %>
+                  <p class="candidatos__vacio">
+                    Ningún vuelo cumple los filtros — afloja alguno o vuelve a buscar.
+                  </p>
+                <% } %>
+
+                <% t.resultados.vuelos.forEach(v => { %>
+                  <%- include('parciales/vuelo', {
+                        v,
+                        idBarata: t.resultados.idBarata,
+                        idRapida: t.resultados.idRapida,
+                        fechaIda: dia(t.fechaIda),
+                        fechaVuelta: dia(t.fechaVuelta),
+                        urlMarcar: `/tramo/${t.id}/vuelos/${v.id}/marcar`
+                      }) %>
+                <% }) %>
+              <% } %>
+            <% } %>
+          </div>
+        </article>
+      <% }) %>
+    </section>
+
+    <%# ======================= NAVEGACIÓN ======================= %>
+    <nav class="etapa-nav">
+      <% if (anterior) { %>
+        <a class="boton-discreto" href="/etapa/<%= anterior.id %>">
+          <i class="ti ti-arrow-left" aria-hidden="true"></i> <%= anterior.nombre_ciudad %>
+        </a>
+      <% } else { %><span></span><% } %>
+
+      <a class="boton-lienzo" href="/viaje/<%= viaje.id %>/ruta">
+        <i class="ti ti-route" aria-hidden="true"></i> Ver la ruta completa
+      </a>
+
+      <% if (siguiente) { %>
+        <a class="boton-discreto" href="/etapa/<%= siguiente.id %>">
+          <%= siguiente.nombre_ciudad %> <i class="ti ti-arrow-right" aria-hidden="true"></i>
+        </a>
+      <% } else { %><span></span><% } %>
+    </nav>
+  </div>
+</main>
+
+<%# Los días y franjas de esta etapa, para el mini-selector de "Ponerlo en un día". %>
+<script type="application/json" id="datos-colocar"><%- JSON.stringify({
+      viajeId: viaje.id,
+      etapaId: etapa.id,
+      dias: diasDeLaEtapa.map(d => ({ n: d.n, fecha: d.fechaCorta })),
+      franjas: franjas.map(f => ({ clave: f.clave, etiqueta: f.etiqueta })),
+    }) %></script>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

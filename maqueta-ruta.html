@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi ruta — Maqueta</title>
+<style>
+  :root {
+    --fondo: #F4F8FA;
+    --superficie: #FFFFFF;
+    --borde: #E2ECF1;
+    --acento: #1B7FA6;
+    --acento-hover: #16688A;
+    --acento-tinte: #D3E8F0;
+    --texto: #12303E;
+    --secundario: #5E7A87;
+    --pendiente: #8FA9B4;
+    --verde-fondo: #E1F2E7;
+    --verde-texto: #1E6B3C;
+    --ambar-fondo: #FBEED6;
+    --ambar-texto: #8A5A16;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--fondo);
+    color: var(--texto);
+    min-height: 100vh;
+    padding: 28px 16px 80px;
+  }
+  .contenedor { max-width: 720px; margin: 0 auto; }
+
+  /* ── Cabecera ── */
+  .cabecera { margin-bottom: 22px; }
+  .cabecera .miga {
+    font-size: 13px;
+    color: var(--pendiente);
+    margin-bottom: 6px;
+  }
+  .cabecera h1 {
+    font-size: 26px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .chip-ambito {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--acento);
+    background: var(--acento-tinte);
+    border-radius: 999px;
+    padding: 5px 14px;
+  }
+
+  /* ── Contador de noches ── */
+  .contador {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 26px;
+  }
+  .contador .fila {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .contador .texto { font-size: 15px; font-weight: 600; }
+  .contador .fechas { font-size: 13px; color: var(--secundario); }
+  .barra {
+    height: 8px;
+    background: var(--fondo);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .barra .lleno {
+    height: 100%;
+    background: var(--acento);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+  .barra .lleno.exceso { background: #C0563B; }
+  .contador .aviso {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--secundario);
+  }
+  .contador .aviso.exceso { color: #C0563B; font-weight: 600; }
+  .contador .aviso.completo { color: var(--verde-texto); font-weight: 600; }
+
+  /* ── Secciones ── */
+  .seccion-titulo {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pendiente);
+    margin: 26px 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .seccion-titulo .num {
+    background: var(--acento-tinte);
+    color: var(--acento);
+    border-radius: 999px;
+    font-size: 12px;
+    padding: 2px 9px;
+  }
+
+  /* ── Candidatos ── */
+  .candidatos {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .candidato {
+    background: var(--superficie);
+    border: 1px dashed var(--pendiente);
+    border-radius: 14px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .candidato .nombre { font-weight: 600; font-size: 15px; }
+  .candidato .botones { display: flex; gap: 6px; }
+  .btn-mini {
+    border: none;
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-mini.confirmar { background: var(--acento); color: white; }
+  .btn-mini.confirmar:hover { background: var(--acento-hover); }
+  .btn-mini.quitar { background: var(--fondo); color: var(--secundario); }
+  .candidatos .vacio {
+    font-size: 14px;
+    color: var(--pendiente);
+    padding: 8px 4px;
+  }
+
+  /* ── Ruta confirmada ── */
+  .ruta { position: relative; }
+
+  .tramo-transporte {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0 4px 26px;
+    position: relative;
+  }
+  .tramo-transporte::before {
+    content: '';
+    position: absolute;
+    left: 12px; top: -6px; bottom: -6px;
+    width: 2px;
+    background: var(--borde);
+  }
+  .chip-transporte {
+    font-size: 13px;
+    border-radius: 999px;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .chip-transporte.pendiente {
+    background: var(--ambar-fondo);
+    color: var(--ambar-texto);
+  }
+  .chip-transporte.resuelto {
+    background: var(--verde-fondo);
+    color: var(--verde-texto);
+  }
+  .chip-transporte:hover { border-color: currentColor; }
+
+  .etapa {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    border-radius: 16px;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: grab;
+  }
+  .etapa.arrastrando { opacity: 0.4; }
+  .etapa .asa {
+    color: var(--pendiente);
+    font-size: 18px;
+    cursor: grab;
+    user-select: none;
+    line-height: 1;
+  }
+  .etapa .orden {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--acento);
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .etapa .info { flex: 1; min-width: 0; }
+  .etapa .nombre { font-weight: 700; font-size: 16px; }
+  .etapa .fechas { font-size: 13px; color: var(--secundario); margin-top: 2px; }
+  .etapa .noches {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--fondo);
+    border-radius: 999px;
+    padding: 5px 8px;
+  }
+  .etapa .noches button {
+    width: 26px; height: 26px;
+    border: none;
+    border-radius: 50%;
+    background: var(--superficie);
+    color: var(--texto);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--borde);
+    line-height: 1;
+  }
+  .etapa .noches button:hover { background: var(--acento-tinte); }
+  .etapa .noches .valor {
+    font-size: 14px;
+    font-weight: 700;
+    min-width: 52px;
+    text-align: center;
+  }
+  .etapa .abrir {
+    border: none;
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    color: var(--acento);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .etapa .abrir:hover { background: var(--acento-tinte); }
+
+  .extremo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    font-size: 14px;
+    color: var(--secundario);
+  }
+  .extremo .icono {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--fondo);
+    border: 1px solid var(--borde);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+
+  .pie {
+    margin-top: 30px;
+    display: flex;
+    justify-content: center;
+  }
+  .btn-lienzo {
+    background: var(--superficie);
+    border: 1px solid var(--borde);
+    color: var(--secundario);
+    border-radius: 999px;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  @media (max-width: 560px) {
+    .etapa { flex-wrap: wrap; }
+    .etapa .abrir { flex: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="contenedor">
+
+  <div class="cabecera">
+    <div class="miga">Mis viajes / Japón primavera 2027</div>
+    <h1>Mi ruta <span class="chip-ambito">Japón</span></h1>
+  </div>
+
+  <div class="contador">
+    <div class="fila">
+      <div class="texto" id="contador-texto"></div>
+      <div class="fechas">12 abr — 22 abr · 10 noches</div>
+    </div>
+    <div class="barra"><div class="lleno" id="barra-lleno"></div></div>
+    <div class="aviso" id="contador-aviso"></div>
+  </div>
+
+  <div class="seccion-titulo">Candidatos <span class="num" id="num-candidatos"></span></div>
+  <div class="candidatos" id="zona-candidatos"></div>
+
+  <div class="seccion-titulo">Ruta confirmada <span class="num" id="num-etapas"></span></div>
+  <div class="ruta" id="zona-ruta"></div>
+
+  <div class="pie">
+    <button class="btn-lienzo" onclick="alert('Aquí se abriría el lienzo de los 10 días del viaje')">◫ Ver el lienzo del viaje</button>
+  </div>
+
+</div>
+
+<script>
+  const FECHA_INICIO = new Date(2027, 3, 12); // 12 abr 2027
+  const NOCHES_VIAJE = 10;
+
+  let etapas = [
+    { id: 1, nombre: 'Tokio', noches: 3 },
+    { id: 2, nombre: 'Kioto', noches: 3 },
+    { id: 3, nombre: 'Osaka', noches: 2 }
+  ];
+  let candidatos = [
+    { id: 4, nombre: 'Nara' },
+    { id: 5, nombre: 'Hakone' }
+  ];
+  let transportes = { '1-2': 'Tren Tokio → Kioto · elegido', };
+
+  const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const fmt = d => `${d.getDate()} ${MESES[d.getMonth()]}`;
+
+  function render() {
+    // Contador
+    const usadas = etapas.reduce((s, e) => s + e.noches, 0);
+    document.getElementById('contador-texto').textContent = `${usadas} de ${NOCHES_VIAJE} noches repartidas`;
+    const pct = Math.min(100, usadas / NOCHES_VIAJE * 100);
+    const lleno = document.getElementById('barra-lleno');
+    lleno.style.width = pct + '%';
+    lleno.classList.toggle('exceso', usadas > NOCHES_VIAJE);
+    const aviso = document.getElementById('contador-aviso');
+    if (usadas > NOCHES_VIAJE) {
+      aviso.textContent = `Te pasas en ${usadas - NOCHES_VIAJE} noche${usadas - NOCHES_VIAJE > 1 ? 's' : ''}: quita noches o alarga el viaje`;
+      aviso.className = 'aviso exceso';
+    } else if (usadas === NOCHES_VIAJE) {
+      aviso.textContent = 'Cuadra perfecto ✓';
+      aviso.className = 'aviso completo';
+    } else {
+      aviso.textContent = `Te quedan ${NOCHES_VIAJE - usadas} noche${NOCHES_VIAJE - usadas > 1 ? 's' : ''} por colocar`;
+      aviso.className = 'aviso';
+    }
+
+    // Candidatos
+    document.getElementById('num-candidatos').textContent = candidatos.length;
+    const zc = document.getElementById('zona-candidatos');
+    zc.innerHTML = candidatos.length ? '' : '<div class="vacio">Nada pendiente — marca sitios desde la pantalla Descubrir y aparecerán aquí.</div>';
+    candidatos.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'candidato';
+      div.innerHTML = `
+        <span class="nombre">${c.nombre}</span>
+        <span class="botones">
+          <button class="btn-mini confirmar" onclick="confirmar(${c.id})">A la ruta</button>
+          <button class="btn-mini quitar" onclick="quitarCandidato(${c.id})">Quitar</button>
+        </span>`;
+      zc.appendChild(div);
+    });
+
+    // Ruta
+    document.getElementById('num-etapas').textContent = etapas.length;
+    const zr = document.getElementById('zona-ruta');
+    zr.innerHTML = '';
+
+    zr.appendChild(extremo('🏠', 'Salida desde casa', '1-2'.length && 'Vuelo BCN → Tokio · pendiente'));
+
+    let cursor = new Date(FECHA_INICIO);
+    etapas.forEach((e, i) => {
+      const inicio = new Date(cursor);
+      cursor.setDate(cursor.getDate() + e.noches);
+      const fin = new Date(cursor);
+
+      const div = document.createElement('div');
+      div.className = 'etapa';
+      div.draggable = true;
+      div.dataset.idx = i;
+      div.innerHTML = `
+        <span class="asa">⠿</span>
+        <span class="orden">${i + 1}</span>
+        <span class="info">
+          <div class="nombre">${e.nombre}</div>
+          <div class="fechas">${fmt(inicio)} → ${fmt(fin)}</div>
+        </span>
+        <span class="noches">
+          <button onclick="cambiarNoches(${e.id}, -1)">−</button>
+          <span class="valor">${e.noches} noche${e.noches !== 1 ? 's' : ''}</span>
+          <button onclick="cambiarNoches(${e.id}, 1)">+</button>
+        </span>
+        <button class="abrir" onclick="alert('Aquí se abriría la etapa de ${e.nombre}: qué ver, dónde dormir, cómo llegar')">Abrir etapa</button>`;
+
+      div.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', i); div.classList.add('arrastrando'); });
+      div.addEventListener('dragend', () => div.classList.remove('arrastrando'));
+      div.addEventListener('dragover', ev => ev.preventDefault());
+      div.addEventListener('drop', ev => {
+        ev.preventDefault();
+        const desde = parseInt(ev.dataTransfer.getData('text/plain'));
+        const hasta = i;
+        if (desde === hasta) return;
+        const [mov] = etapas.splice(desde, 1);
+        etapas.splice(hasta, 0, mov);
+        render();
+      });
+      zr.appendChild(div);
+
+      // Tramo de transporte hacia la siguiente (o la vuelta)
+      if (i < etapas.length - 1) {
+        const sig = etapas[i + 1];
+        const clave = `${e.id}-${sig.id}`;
+        const resuelto = transportes[clave];
+        zr.appendChild(tramo(resuelto ? transportes[clave] : `¿Cómo vas de ${e.nombre} a ${sig.nombre}?`, !!resuelto));
+      }
+    });
+
+    zr.appendChild(extremo('🏠', 'Vuelta a casa', true));
+  }
+
+  function tramo(texto, resuelto) {
+    const div = document.createElement('div');
+    div.className = 'tramo-transporte';
+    div.innerHTML = `<span class="chip-transporte ${resuelto ? 'resuelto' : 'pendiente'}"
+      onclick="alert('Aquí se abriría el buscador de transporte para este tramo')">
+      ${resuelto ? '✓' : '⚠'} ${texto}</span>`;
+    return div;
+  }
+
+  function extremo(icono, texto, esVuelta) {
+    const wrap = document.createElement('div');
+    const chipTexto = texto === 'Salida desde casa'
+      ? 'Vuelo BCN → Tokio · pendiente'
+      : 'Vuelo Osaka → BCN · pendiente';
+    wrap.innerHTML = `
+      <div class="extremo"><span class="icono">${icono}</span> ${texto}</div>
+      <div class="tramo-transporte"><span class="chip-transporte pendiente"
+        onclick="alert('Aquí se abriría el buscador de vuelos (Kayak) para este tramo')">⚠ ${chipTexto}</span></div>`;
+    // La vuelta lleva el chip antes del extremo
+    if (texto === 'Vuelta a casa') {
+      const chip = wrap.children[1];
+      wrap.insertBefore(chip, wrap.children[0]);
+    }
+    return wrap;
+  }
+
+  function cambiarNoches(id, delta) {
+    const e = etapas.find(x => x.id === id);
+    e.noches = Math.max(1, e.noches + delta);
+    render();
+  }
+
+  function confirmar(id) {
+    const idx = candidatos.findIndex(c => c.id === id);
+    const [c] = candidatos.splice(idx, 1);
+    etapas.push({ id: c.id, nombre: c.nombre, noches: 1 });
+    render();
+  }
+
+  function quitarCandidato(id) {
+    candidatos = candidatos.filter(c => c.id !== id);
+    render();
+  }
+
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<%- include('parciales/cabecera', { viaje, pasoActual: 2, titulo: 'Ayúdame a elegir' }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+    <h1>Ayúdame a elegir</h1>
+    <p class="secundario">Cuatro preguntas para acotar. De momento no hacen nada: es una maqueta.</p>
+
+    <div class="caja aireado">
+      <div class="campo">
+        <label>¿Por qué zona te mueves?</label>
+        <select disabled>
+          <option>Europa · vuelo corto</option>
+          <option>España · sin volar</option>
+          <option>Fuera de Europa</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>¿Cuántos días?</label>
+        <select disabled>
+          <option>Un fin de semana (2-3)</option>
+          <option>Una semana</option>
+          <option>Más de una semana</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>¿Qué te apetece?</label>
+        <select disabled>
+          <option>Ciudad y museos</option>
+          <option>Comer bien</option>
+          <option>Naturaleza</option>
+          <option>No hacer nada</option>
+        </select>
+      </div>
+      <div class="campo" style="margin-bottom:0">
+        <label>¿Presupuesto por persona?</label>
+        <select disabled>
+          <option>Hasta 500 €</option>
+          <option>500 - 1000 €</option>
+          <option>Más de 1000 €</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="proximamente aireado">
+      <i class="ti ti-sparkles" aria-hidden="true"></i>
+      <strong>Próximamente: sugerencias con IA</strong>
+      <p class="secundario" style="margin:6px 0 0">
+        Con estas respuestas propondremos destinos concretos. Todavía no está conectado.
+      </p>
+    </div>
+
+    <%- include('parciales/barra', {
+          urlAtras: `/viajes/${viaje.id}/paso/2`,
+          urlSiguiente: `/viajes/${viaje.id}/paso/2`,
+          textoSiguiente: 'Volver a escribirlo yo'
+        }) %>
+  </div>
+</main>
+
+<%- include('parciales/pie') %>

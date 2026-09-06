@@ -1,0 +1,55 @@
+<%
+/**
+ * EL CAJÓN DE ADJUNTOS de un elemento del viaje.
+ *
+ * El mismo en los tres sitios donde hace falta —un tramo, el hotel elegido, una
+ * excursión apuntada—, porque es la misma idea: aquí van los papeles de esto.
+ *
+ * Nace plegado y discreto: en una tarjeta ya llena de datos, una zona de subida
+ * desplegada todo el rato sería lo que más ocupa y lo que menos se usa. El
+ * número de al lado ya dice si hay algo dentro.
+ *
+ * Espera: tipo ('transporte' | 'alojamiento' | 'excursion'), elementoId,
+ *         adjuntos (la lista ya cargada) y opcionalmente etiqueta.
+ */
+const n = adjuntos.length;
+const id = `adjuntos-${tipo}-${elementoId}`;
+%>
+<div class="adjuntos" data-tipo="<%= tipo %>" data-elemento="<%= elementoId %>">
+  <button class="adjuntos__disparador" type="button"
+          aria-expanded="false" aria-controls="<%= id %>">
+    <i class="ti ti-paperclip" aria-hidden="true"></i>
+    <%= typeof etiqueta !== 'undefined' ? etiqueta : 'Adjuntos' %>
+    <span class="adjuntos__n <%= n ? '' : 'adjuntos__n--cero' %>"><%= n %></span>
+    <i class="ti ti-chevron-down adjuntos__flecha" aria-hidden="true"></i>
+  </button>
+
+  <div class="adjuntos__cuerpo" id="<%= id %>" hidden>
+    <%# La lista. La repinta el JS después de cada subida o borrado, así que su
+        forma vive en un solo sitio: public/js/adjuntos.js. %>
+    <ul class="adjuntos__lista" data-lista>
+      <% adjuntos.forEach(a => { %>
+        <li class="adjunto" data-adjunto="<%= a.id %>">
+          <i class="ti <%= a.mime === 'application/pdf' ? 'ti-file-type-pdf' : 'ti-photo' %>" aria-hidden="true"></i>
+          <span class="adjunto__nombre" title="<%= a.nombre_original %>"><%= a.nombre_original %></span>
+          <span class="adjunto__peso"><%= a.tamanoTexto %></span>
+          <a class="adjunto__accion" href="/adjunto/<%= a.id %>" target="_blank" rel="noopener noreferrer">Ver</a>
+          <button class="adjunto__accion adjunto__accion--peligro" type="button"
+                  data-borrar-adjunto="<%= a.id %>">Borrar</button>
+        </li>
+      <% }) %>
+    </ul>
+
+    <%# La zona de soltar es también la de pulsar: el mismo sitio hace las dos
+        cosas, que es lo que espera cualquiera. %>
+    <label class="soltar" data-soltar>
+      <input type="file" accept="application/pdf,image/jpeg,image/png,image/heic,image/heif"
+             multiple hidden data-archivo>
+      <i class="ti ti-cloud-upload" aria-hidden="true"></i>
+      <span class="soltar__texto">Arrastra aquí los archivos o pulsa para elegirlos</span>
+      <span class="soltar__pista secundario">PDF o imágenes, hasta 15 MB cada uno</span>
+    </label>
+
+    <p class="adjuntos__aviso oculto" data-aviso></p>
+  </div>
+</div>

@@ -1,0 +1,79 @@
+<%
+/**
+ * Tarjeta de opción de vuelo de Kayak. Salió del paso 5 tal cual, sin tocarle
+ * el aspecto, para poder usarla también en la pestaña "Cómo llegar" de una
+ * etapa, donde se estaba pintando una lista pelada sin horarios.
+ *
+ * DOS FORMAS, SEGÚN DE DÓNDE VENGA:
+ *
+ *  - Del paso 5 (el viaje entero): la tarjeta es una OPCIÓN de ida y vuelta con
+ *    un precio único, y a veces con aerolínea distinta en cada trayecto (que es
+ *    la gracia de un metabuscador). Lleva los dos apilados y se elige entera.
+ *  - De un TRAMO de la ruta: un solo trayecto, porque cada sentido se busca por
+ *    separado y con su fecha.
+ *
+ * La plantilla no necesita que se lo digan: lo ve en cuántos trayectos trae.
+ *
+ * Espera:
+ *   v          el candidato de vuelo (con .extra ya desempaquetado)
+ *   fechaIda   / fechaVuelta  "12 oct", para la etiqueta de cada trayecto
+ *   idBarata   / idRapida     ids para las insignias (o null)
+ *   urlMarcar  a dónde va el POST del círculo de elegir
+ *
+ * Lo de `data-exclusivo="vuelo"` lo entiende el manejador genérico de
+ * public/js/app.js: al elegir uno, apaga los demás.
+ */
+%>
+<% const trayectos = v.extra.tramos || [];
+   // Un solo trayecto = una búsqueda de solo ida (la de un tramo). Decir "ida y
+   // vuelta" ahí sería mentir sobre lo que se está comprando.
+   const queEs = trayectos.length > 1 ? 'ida y vuelta' : 'solo ida'; %>
+<article class="segmento segmento--vuelo <%= v.marcado ? 'segmento--elegido' : '' %>">
+  <div class="segmento__centro">
+    <%# Los dos tramos, apilados: ida arriba, vuelta abajo %>
+    <% trayectos.forEach(t => { %>
+      <div class="tramo">
+        <span class="tramo__etiqueta">
+          <i class="ti <%= t.tramo === 'ida' ? 'ti-plane-departure' : 'ti-plane-arrival' %>" aria-hidden="true"></i>
+          <%= t.tramo === 'ida' ? fechaIda : fechaVuelta %>
+        </span>
+        <span class="tramo__horas">
+          <%= t.horaSalida %> – <%= t.horaLlegada %><% if (t.diasDespues) { %><sup class="tramo__diasup">+<%= t.diasDespues %></sup><% } %>
+        </span>
+        <span class="tramo__ruta secundario"><%= t.aeropuertoOrigen %>–<%= t.aeropuertoDestino %></span>
+        <span class="tramo__dato secundario"><%= t.duracion || '' %></span>
+        <span class="tramo__dato secundario">
+          <% if (t.escalas === 0) { %>directo<% } else if (t.escalas != null) { %>
+            <%= t.escalas %> <%= t.escalas === 1 ? 'escala' : 'escalas' %><% if (t.escalaTexto) { %>
+              <% const esp = /(\d+h(?:\s*\d+m)?|\d+m)/.exec(t.escalaTexto); %><% if (esp) { %>(<%= esp[1] %>)<% } %>
+            <% } %>
+          <% } %>
+        </span>
+      </div>
+    <% }) %>
+
+    <div class="vuelo__pie">
+      <%# Mismo formato que el título del panel lateral ("easyJet + Vueling"),
+          para no enseñar dos escrituras distintas de lo mismo. %>
+      <span class="vuelo__aerolineas"><%= (v.titulo || '').split(' · ')[0] %></span>
+      <% if (idBarata && v.id === idBarata) { %><span class="pildora-verde">Mejor precio</span><% } %>
+      <% if (idRapida && v.id === idRapida) { %><span class="pildora-azul">Más rápido</span><% } %>
+    </div>
+  </div>
+
+  <div class="segmento__der">
+    <div>
+      <div class="segmento__precio"><%= v.precio != null ? v.precio + ' ' + (v.moneda || 'EUR') : '—' %></div>
+      <div class="secundario">
+        <%= queEs %><% if (v.duracion) { %> · <%= v.duracion %><% } %>
+      </div>
+    </div>
+    <button class="marca" type="button"
+            aria-pressed="<%= v.marcado %>"
+            aria-label="<%= v.marcado ? 'Quitar de la selección' : 'Elegir esta opción de vuelo' %>"
+            data-marcar="<%= urlMarcar %>"
+            data-exclusivo="vuelo">
+      <svg viewBox="0 0 20 20"><polyline points="4,10 8,14 16,6"></polyline></svg>
+    </button>
+  </div>
+</article>

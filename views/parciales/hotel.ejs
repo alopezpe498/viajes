@@ -1,0 +1,82 @@
+<%
+/**
+ * Tarjeta de hotel de Booking. Salió del paso 6 tal cual, sin tocarle el
+ * aspecto, para poder usarla también en la pantalla de etapa.
+ *
+ * Espera:
+ *   h         el candidato de hotel (con .extra ya desempaquetado)
+ *   idBarato  id del más barato, para la insignia (o null)
+ *   idMejor   id del mejor valorado por nota ponderada (o null)
+ *   urlMarcar a dónde va el POST del círculo de elegir
+ *
+ * El enlace a Booking va junto al círculo de elegir, con el mismo círculo de
+ * enlace externo que ya usan las excursiones para ir a Civitatis. La url la
+ * guarda el scraper desde el principio; lo que faltaba era enseñarla, así que
+ * no había forma de abrir el hotel para verlo de verdad. Si un hotel no la
+ * tiene, no se pinta el enlace: mejor nada que un enlace roto.
+ *
+ * Lo de `data-exclusivo="hotel"` lo entiende el manejador genérico de
+ * public/js/app.js: al elegir uno, apaga los demás. Por eso el endpoint de la
+ * etapa contesta con { marcado } y no con otro nombre.
+ */
+
+/** "3 noches, 2 adultos, 2 niños" -> "3 noches" */
+const soloNoches = (texto) => {
+  const m = /(\d+)\s*noches?/i.exec(texto || '');
+  return m ? `${m[1]} ${Number(m[1]) === 1 ? 'noche' : 'noches'}` : null;
+};
+%>
+<article class="segmento <%= h.marcado ? 'segmento--elegido' : '' %>">
+  <div class="segmento__centro">
+    <div class="hotel__titulo">
+      <span class="segmento__nombre"><%= h.titulo %></span>
+      <% if (h.extra.estrellas) { %>
+        <span class="hotel__estrellas" title="<%= h.extra.estrellasAutodeclaradas ? 'Categoría autodeclarada por el alojamiento' : 'Estrellas oficiales' %>">
+          <% for (let i = 0; i < h.extra.estrellas; i++) { %><i class="ti ti-star-filled"></i><% } %><%= h.extra.estrellasAutodeclaradas ? '*' : '' %>
+        </span>
+      <% } %>
+    </div>
+
+    <div class="secundario" style="margin-top:4px">
+      <i class="ti ti-map-pin" aria-hidden="true"></i>
+      <%= h.extra.zona || 'Zona sin indicar' %><% if (h.extra.distanciaCentro) { %> · <%= h.extra.distanciaCentro %><% } %>
+    </div>
+
+    <div class="hotel__insignias">
+      <% if (idBarato && h.id === idBarato) { %><span class="pildora-verde">Mejor precio</span><% } %>
+      <% if (idMejor && h.id === idMejor) { %><span class="pildora-azul">Mejor valorado</span><% } %>
+    </div>
+  </div>
+
+  <%# Nota en badge azul, con el nº de opiniones debajo %>
+  <% if (h.valoracion != null) { %>
+    <div class="nota">
+      <span class="nota__badge"><%= h.valoracion %></span>
+      <span class="nota__opiniones"><%= (h.num_opiniones || 0).toLocaleString('es-ES') %> opiniones</span>
+    </div>
+  <% } %>
+
+  <div class="segmento__der">
+    <div>
+      <div class="segmento__precio"><%= h.precio != null ? h.precio + ' ' + (h.moneda || 'EUR') : '—' %></div>
+      <% const noches = soloNoches(h.duracion); %>
+      <% if (noches) { %><div class="secundario">total <%= noches %></div><% } %>
+    </div>
+    <div class="segmento__controles">
+      <% if (h.url) { %>
+        <a class="marca marca--enlace" href="<%= h.url %>" target="_blank" rel="noopener noreferrer"
+           aria-label="Ver <%= h.titulo %> en Booking" title="Ver en Booking">
+          <i class="ti ti-external-link" aria-hidden="true"></i>
+        </a>
+      <% } %>
+
+      <button class="marca" type="button"
+              aria-pressed="<%= h.marcado %>"
+              aria-label="<%= h.marcado ? 'Quitar de la selección' : 'Elegir este alojamiento' %>"
+              data-marcar="<%= urlMarcar %>"
+              data-exclusivo="hotel">
+        <svg viewBox="0 0 20 20"><polyline points="4,10 8,14 16,6"></polyline></svg>
+      </button>
+    </div>
+  </div>
+</article>

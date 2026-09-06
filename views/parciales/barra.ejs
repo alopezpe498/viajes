@@ -1,0 +1,32 @@
+<%
+/**
+ * Barra de acciones. En móvil va FIJA abajo (a mano del pulgar); en escritorio
+ * el CSS la devuelve al flujo normal.
+ * .barra__resumen lo repinta public/js/app.js: no cambiar esa clase.
+ */
+%>
+<div class="barra">
+  <% if (typeof seleccion !== 'undefined' && seleccion) { %>
+    <div class="barra__resumen">
+      <strong><%= seleccion.total %></strong> seleccionado<%= seleccion.total === 1 ? '' : 's' %>
+      <% if (seleccion.costeTotal) { %> · <%= Math.round(seleccion.costeTotal) %> €<% } %>
+    </div>
+  <% } %>
+
+  <% if (typeof urlAtras !== 'undefined' && urlAtras) { %>
+    <a class="boton boton--secundario" href="<%= urlAtras %>">
+      <i class="ti ti-chevron-left" aria-hidden="true"></i> Atrás
+    </a>
+  <% } %>
+
+  <% if (typeof urlSiguiente !== 'undefined' && urlSiguiente) { %>
+    <a class="boton boton--primario <%= (typeof siguienteDesactivado !== 'undefined' && siguienteDesactivado) ? 'boton--desactivado' : '' %>"
+       href="<%= urlSiguiente %>"><%= typeof textoSiguiente !== 'undefined' ? textoSiguiente : 'Continuar' %>
+      <i class="ti ti-chevron-right" aria-hidden="true"></i>
+    </a>
+  <% } else { %>
+    <button class="boton boton--primario" type="submit"><%= typeof textoSiguiente !== 'undefined' ? textoSiguiente : 'Continuar' %>
+      <i class="ti ti-chevron-right" aria-hidden="true"></i>
+    </button>
+  <% } %>
+</div>

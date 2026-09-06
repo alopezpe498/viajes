@@ -1,0 +1,1563 @@
+# CreadorViajes
+
+Generador de viajes personal. Dos mitades:
+
+1. **Los scrapers** (`providers/`), que ya funcionan contra las webs reales.
+2. **La aplicación web** (`app.js` + wizard de 7 pasos), que de momento va con
+   **datos falsos**. Los scrapers todavía **no están conectados** a la app.
+
+---
+
+## Arrancar
+
+```bash
+npm install
+npm start
+```
+
+→ http://localhost:3000
+
+La primera vez crea la base de datos (`db/viajes.db`) y siembra un viaje de
+ejemplo a París. Si borras ese fichero, se vuelve a sembrar solo.
+
+**Si el puerto 3000 está ocupado** (te lo dirá con un mensaje claro), arranca en
+otro:
+
+```powershell
+$env:PORT=3100; npm start      # PowerShell
+```
+
+```bash
+PORT=3100 npm start            # bash
+```
+
+La BD usa el módulo `node:sqlite` que trae Node 24 de serie: cero dependencias
+nativas, nada que compilar. Va marcado como experimental, por eso `npm start`
+silencia ese aviso concreto.
+
+### Los scrapers, por separado
+
+```bash
+node test-vueling.js BCN OVD 2026-09-07 2026-09-10
+node test-civitatis.js berlin 20
+node test-booking.js "Paris" 2026-09-14 2026-09-17 2 15
+```
+
+---
+
+## Estructura
+
+```
+app.js                  Servidor Express y arranque
+routes/viajes.js        Todas las rutas del wizard
+db/index.js             Esquema SQLite y migraciones
+db/seed.js              DATOS FALSOS de ejemplo
+services/proveedores.js EL ENCHUFE: la única puerta por la que se piden datos
+services/catalogo.js    El CATÁLOGO: lo que se sabe del mundo, sin viaje detrás
+services/etapas.js      Las paradas de la ruta y sus fechas derivadas
+services/avisos.js      Clima, seguridad y festivos del destino
+services/geocodificar.js Proxy a Nominatim, con turno y caché
+services/ruta.js        Las paradas del viaje: orden, fechas y tramos
+services/etapa.js       El subproyecto de una parada
+services/distancias.js  OSRM y Haversine para los tramos
+services/lienzo.js      Los días del viaje y lo que hay puesto en cada uno
+services/portada.js     Los billetes de la home y el borrado en cascada
+services/descubrir.js   Investigar un destino: IA + Wikipedia
+lib/ia.js               La única puerta a la API de Anthropic
+public/js/descubrir.js  Mapa (Leaflet) y carrusel de la pantalla de descubrir
+public/js/sitio.js      Pestañas y sondeo de la ficha profunda
+public/js/elegir-destino.js  El mapamundi y su tarjeta deslizante
+public/js/ruta.js       Mi ruta: repintado, arrastre y modal
+public/js/etapa.js      La etapa: pestañas, apuntar, notas y tramos
+public/js/lienzo.js     El lienzo: mochila, días y arrastre
+public/js/home.js       La portada: menú, renombrar y borrar
+.env.ejemplo            Plantilla: cópiala a .env y pon tu clave
+jobs/cola.js            Cola de trabajos (tabla SQLite)
+jobs/worker.js          Ejecuta los trabajos de uno en uno, dentro de Express
+views/                  Plantillas EJS (una por pantalla + parciales)
+public/css/estilo.css   Hoja única, mobile-first
+public/js/app.js        JS del navegador (marcado, chips, filtros)
+
+providers/              Scrapers reales
+lib/browser.js          Playwright con perfil persistente
+lib/iata.js             Ciudad -> código IATA de CIUDAD (PAR, LON, ROM...)
+test-*.js               Pruebas de los scrapers por línea de comandos
+```
+
+---
+
+## Qué es falso y qué es real en esta fase
+
+| | Estado |
+|---|---|
+| Wizard completo, 7 pasos navegables | **Real**, funciona |
+| Guardado en SQLite y retomar por `paso_actual` | **Real** |
+| Viajeros (adultos, niños con edades) y ritmo | **Real**, en la pantalla 1 |
+| Marcar/desmarcar candidatos | **Real** (escribe en BD) |
+| **Actividades del catálogo** | **REALES**, de Civitatis vía cola de trabajos |
+| **Hoteles** | **REALES**, de Booking vía cola, con filtros de búsqueda |
+| **Vuelos** | **REALES**, de Kayak vía cola de trabajos |
+| **Avisos del destino** | **REALES**: clima, seguridad y festivos vía cola |
+| "Ayúdame a elegir" (rama IA) | **Maqueta**: los desplegables no hacen nada |
+| Reparto por días del itinerario | **No implementado** (placeholder) |
+| "Generar dossier" | **No implementado** (botón desactivado) |
+| Scraper `providers/civitatis.js` | **Real y CONECTADO** al catálogo |
+| Scraper `providers/booking.js` | **Real y CONECTADO** a la pantalla de hoteles |
+| Scraper `providers/kayak.js` | **Real y CONECTADO** a la pantalla de vuelos |
+| `providers/vueling.js` | **Real**, guardado como reserva. Sin conectar a propósito |
+| `services/avisos.js` | **Real y CONECTADO** a la pantalla 3. Sin navegador |
+| Pantalla **Descubrir destino** | **REAL**: IA + Wikipedia + mapa de OpenStreetMap |
+| **Ficha profunda** de una ciudad o sitio | **REAL**: IA + Wikipedia + excursiones de Civitatis desde el catálogo |
+| **Pantalla de etapa** | **REAL**: catálogo, Booking y Kayak conectados a la parada |
+| **El lienzo** | **REAL**: reparto por días, con avisos de incoherencia |
+| Opinión de la IA sobre el lienzo | **Cascarón**: botón, cola y hueco listos; el contenido llega después |
+
+Los datos falsos están calcados en forma y rangos de lo que devuelven los
+providers de verdad (misma escala de valoración sobre 10, precios de hotel como
+total de la estancia, etc.) para que al conectarlos no haya que tocar plantillas
+ni consultas.
+
+---
+
+## El enchufe para conectar los scrapers
+
+`services/proveedores.js` expone `obtenerActividades(viaje)`,
+`obtenerVuelos(viaje)`, `obtenerHoteles(viaje)` y `obtenerAvisos(viaje)`.
+
+**Los cuatro están conectados.** Todos siguen el mismo patrón: si el viaje no
+tiene datos guardados, se encola un trabajo y se devuelve estado `buscando`; el
+worker lo ejecuta y la pantalla se refresca sola por sondeo.
+
+La única diferencia está en **quién** encola:
+
+- **Actividades y avisos** se encolan solos al entrar en la pantalla: no hay
+  nada que configurar antes.
+- **Vuelos y hoteles** no, porque antes quieres tocar sus filtros. Ahí la
+  búsqueda la lanzas tú con un botón.
+
+### La cola
+
+| | |
+|---|---|
+| Tabla | `trabajos` (id, viaje_id, tipo, estado, mensaje_error, creado_en, terminado_en) |
+| Tipos | `actividades` (Civitatis) · `vuelos` (Kayak) · `hoteles` (Booking) · `avisos` · `descubrir_destino` · `investigar_ciudad` |
+| `referencia_id` | De qué va el trabajo cuando no basta el viaje: el id del destino o del punto de interés |
+| Estados | `pendiente` → `en_curso` → `hecho` / `error` |
+| Worker | `jobs/worker.js`, dentro del proceso de Express, uno a la vez |
+| Al arrancar | los `en_curso` colgados pasan a `error` ("interrumpido por reinicio") |
+
+Nunca corren dos scrapers a la vez: comparten el perfil de Chrome de
+`browser-profile/` y se pelearían por él. **Por lo mismo, no lances
+`node test-civitatis.js` mientras el servidor esté trabajando.**
+
+**Si levantas dos servidores contra la misma base de datos, solo uno procesa
+la cola.** El segundo lo detecta por un latido (tabla `worker_latido`), lo
+avisa por consola y no arranca su bucle; puedes navegar con él igualmente,
+porque las búsquedas las hará el otro. Si el primero muere, espera 30 s y
+reinicia el segundo para que tome el relevo.
+
+Esto no es una manía: los dos workers compartían el perfil de Chrome de
+`browser-profile/`. Cuando ambos cogían el mismo trabajo, uno abría el
+navegador y el otro se quedaba esperando el candado del perfil **para siempre**,
+sin volver a coger ni un trabajo más. El síntoma era una pantalla eternamente
+en "Buscando…" sin que se abriera Chrome. Además del latido, el reclamo del
+trabajo ahora es atómico (`reclamar()` en `jobs/cola.js`) y abrir el navegador
+tiene un tope de 45 s.
+
+**La regla que hace posible ese cambio sin tocar nada más:** ninguna ruta ni
+plantilla lee datos falsos directamente; todas pasan por ese servicio. Por eso
+las funciones ya reciben el `viaje` entero (con destino y fechas), que es justo
+lo que necesitan los providers.
+
+---
+
+## Filtros de hoteles
+
+La pantalla 6 tiene un panel plegable "Filtros de búsqueda", en tres bloques:
+
+| Bloque | Filtros |
+|---|---|
+| Precio y calidad | precio/noche, nota mínima (7+/8+/9+), estrellas (3+/4+/5) |
+| Comodidades | piscina, wifi, parking, desayuno |
+| Condiciones | cancelación gratis, tipo (hotel/apartamento), distancia al centro |
+
+Se guardan por viaje en `viajes.filtros_hoteles` (JSON). Todos se aplican **en
+la propia búsqueda de Booking**, con el parámetro `nflt` de su URL: los
+resultados ya llegan filtrados.
+
+**Salvo la distancia al centro**, que es un filtro LOCAL: se aplica sobre los
+resultados ya leídos (campo `distanciaCentro`), así que se nota al momento sin
+volver a scrapear. En el panel va marcado con "se aplica al momento". Los
+hoteles sin dato de distancia no se descartan.
+
+Los códigos de `nflt` están documentados y verificados uno a uno en la cabecera
+de `providers/booking.js`. Los saqué del atributo `data-filters-item` de su
+propio panel de filtros y luego comprobé que la URL construida a mano deja las
+casillas marcadas y cambia el número de resultados.
+
+**Booking no ofrece filtro de aire acondicionado ni de calefacción.** Lo
+comprobé desplegando la lista entera en dos destinos (Lisboa en octubre y
+Sevilla en agosto): hay 14 `hotelfacility` y 25 `roomfacility`, y ninguno es
+eso. Por eso no están en el panel.
+
+---
+
+## Filtros de vuelos
+
+La pantalla 5 tiene su propio panel plegable, con la misma regla que hoteles:
+se guardan en `viajes.filtros_vuelos` (JSON) y hay un botón explícito.
+
+**Los vuelos NO se buscan solos al entrar en la pantalla.** Kayak abre un
+Chrome y tarda; que eso pase solo por pasar por la pantalla es agresivo y
+además te impide elegir filtros antes de gastar la búsqueda. La primera vez
+verás el panel abierto y un botón *Buscar con estos filtros*.
+
+| Filtro | Quién lo aplica |
+|---|---|
+| Escalas (directos / máx. 1) | **Kayak**, en la URL (`fs=stops=0` / `stops=0,1`) |
+| Duración máx. por trayecto | **Kayak** (`fs=legdur=-N`, en minutos) |
+| Franja de salida (ida y vuelta) | **Nosotros**, al momento |
+| Precio máx. por persona | **Nosotros**, al momento |
+
+Los dos primeros obligan a rebuscar (los aplica Kayak, así que las 15 opciones
+que trae ya son buenas). Los otros dos se notan al instante y llevan la píldora
+"se aplican al momento".
+
+Probé los cuatro contra la web de Kayak; el detalle de qué funcionó y qué no
+está en la cabecera de `providers/kayak.js`. Dos avisos que salieron de ahí:
+`stops=-1` **no** significa "hasta una escala" (Kayak lo normaliza a
+`stops=0,2`, justo lo contrario), y ni `depart=` ni `price=` hacen nada.
+
+Si los filtros locales dejan la lista en cero pero la búsqueda sí tenía
+resultados, la pantalla lo dice con otro mensaje: *"Ningún vuelo cumple los
+filtros"*, para no confundirlo con una búsqueda vacía.
+
+---
+
+## Avisos del destino (pantalla 3)
+
+Tres fuentes gratuitas y públicas, sin clave ni registro. **No abren navegador**:
+son peticiones HTTP normales, así que el trabajo tarda segundos y no se pelea
+por el perfil de Chrome con los scrapers.
+
+| Aviso | Fuente | Qué mira |
+|---|---|---|
+| Clima | [Open-Meteo](https://open-meteo.com) (geocoding + archivo histórico) | Los mismos días del viaje en los **5 años anteriores** |
+| Seguridad | [Recomendaciones de viaje del Ministerio de Exteriores](https://www.exteriores.gob.es) | La sección "Seguridad" de la ficha del país |
+| Festivos | [Nager.Date](https://date.nager.at) | Festivos **nacionales** que caen dentro de las fechas |
+
+### Los umbrales del clima
+
+Están en `UMBRALES_CLIMA`, arriba de `services/avisos.js`, para poder moverlos
+sin bucear en el código:
+
+| | Valor | Aviso |
+|---|---|---|
+| `calorFuerte` | máxima media > **32 °C** | "Va a hacer calor" (precaución) |
+| `frio` | mínima media < **5 °C** | "Va a hacer frío" (precaución) |
+| `lluviaFrecuente` | llovió > **40 %** de los días | "Llueve a menudo en esas fechas" (precaución) |
+| `mmParaContarComoLluvia` | **1 mm** en el día | umbral para contar un día como lluvioso |
+| `anosDeHistorico` | **5** años | cuántos años se promedian |
+
+Si no hay nada reseñable, el aviso es positivo y en azul: *"Clima templado en
+esas fechas"*, con las medias reales.
+
+### La severidad de seguridad
+
+Sale del propio texto oficial, no de una lista mía:
+
+- contiene **"desaconseja"** → `alerta` (rojo)
+- contiene **"precaución/precauciones/extreme"** → `precaución` (ámbar)
+- si no → `info` (azul)
+
+**España no lleva aviso de seguridad**: es el país desde el que se viaja y
+Exteriores no tiene ficha propia para él.
+
+### Si una fuente se cae
+
+Cada una va en su propio `try/catch`. La que falle deja un aviso suyo en azul
+(*"No he podido consultar X"*) y **las otras dos siguen**. La pantalla nunca se
+queda rota y el botón "Entendido, continuar" está siempre.
+
+Lo único imprescindible es el geocoding: sin coordenadas ni país no hay nada
+que consultar, y entonces sí sale la pantalla de error con "Reintentar".
+
+Casos ya probados: países que Nager.Date no cubre (Nepal contesta `204` vacío,
+y eso **no** se trata como fallo) y sitios de los que Open-Meteo no devuelve
+nombre de país (Nuuk, Longyearbyen): ahí Exteriores se salta sin ruido.
+
+### Cuándo caducan
+
+Los avisos se guardan en la tabla `avisos` por viaje. Se borran y se vuelven a
+pedir cuando cambia el **destino** o cambian las **fechas** — no cuando cambian
+los viajeros, que no influyen en nada de esto. También hay un "Actualizar datos"
+para forzarlo a mano.
+
+---
+
+## Los adjuntos
+
+El billete, la confirmación del hotel, el bono de la excursión. Todo eso llega
+por correo en PDF o como foto y no tenía sitio: acababa en la galería del móvil.
+
+Cuelgan de **tres clases de elemento**, y `adjuntos.elemento_id` apunta a una
+tabla distinta según cuál sea. Es una relación polimórfica, así que no lleva
+clave ajena: SQLite no puede tener una columna que apunte a tres tablas.
+
+| tipo_elemento | apunta a | qué guarda |
+|---|---|---|
+| `transporte` | `transportes.id` | billetes, tarjetas de embarque |
+| `alojamiento` | `candidatos.id` del hotel **elegido** | confirmación, instrucciones de entrada |
+| `excursion` | `candidatos.id` de la apuntada | bonos, entradas |
+
+El alojamiento cuelga del hotel elegido y no de la etapa a propósito: la
+confirmación es **de ese** hotel. Si cambio de hotel, ya no vale para nada.
+
+Los archivos van a `adjuntos/viaje-{id}/{tipo}/{elemento_id}/`, con un nombre
+nuevo (marca de tiempo + nombre saneado) porque lo que llega es el nombre que
+tenía en tu ordenador y puede traer barras, `..` o cualquier cosa. El original se
+conserva solo para enseñarlo. Se aceptan PDF, JPG, PNG y HEIC hasta 15 MB.
+
+**Se suben con el archivo como cuerpo del `fetch`**, no como multipart: el
+navegador puede mandar un `File` tal cual y el servidor lo recibe con
+`express.raw`, así que no hace falta meter una librería de multipart para subir
+de uno en uno, que es como se suben estas cosas.
+
+**Desapuntar una excursión con adjuntos pregunta antes.** El servidor los borra
+al quitar el candidato —si no, se quedarían colgando de algo que ya no está en el
+viaje—, así que hay que decirlo antes y con el número. La cuenta sale del propio
+cajón, que ya la lleva al día: no hace falta preguntar al servidor para saber si
+hay que avisar.
+
+**Sin clave ajena, la limpieza la hace el código**: `borrarAdjuntosDe()` donde se
+borra un elemento, y `limpiarAdjuntosHuerfanos()` como red de seguridad para los
+caminos que se escapan —recalcular la ruta borra tramos, refrescar los hoteles
+borra candidatos—. Se pasa por lo que hay y limpia lo que sobra, disco incluido.
+
+---
+
+## El dosier es un ZIP
+
+```
+dosier.html
+adjuntos/vuelo-ida/1-billete-ida-toni.pdf
+adjuntos/hotel-madrid/1-confirmacion.png
+```
+
+El HTML sigue siendo autocontenido en datos y fotos (base64), y **enlaza los
+adjuntos en relativo**, así que con el ZIP descomprimido funcionan sin conexión.
+Los adjuntos NO van en base64: irían dentro del HTML y lo harían inmanejable.
+
+**El mismo HTML sirve para las dos cosas.** Si se abre desde la aplicación —para
+una revisión rápida, sin descomprimir— un bloque al final cambia esos enlaces
+por los de la app. La detección es por la **ruta exacta** (`/viaje/{id}/dosier`)
+y no por el protocolo: si alguien sirve la carpeta descomprimida con un servidor
+estático, el protocolo también sería `http` y los enlaces relativos —que ahí sí
+funcionan— se romperían.
+
+"Ver" abre el HTML suelto; "Descargar" baja el ZIP. Un adjunto que ya no esté en
+el disco se omite y se cuenta en el resultado: que falte un billete no puede
+dejarte sin el resto del viaje.
+
+**Compartir** usa la Web Share API, que abre el selector del sistema con lo que
+haya instalado. Chrome de escritorio no comparte archivos y algunos navegadores
+no traen la API: en los dos casos descarga el ZIP y dice que lo compartas desde
+el gestor de archivos. Nada de integraciones propias con cada aplicación.
+
+### El control, en una línea
+
+Interruptor pequeño, un ⚠ que solo aparece si falta algo, y el botón Dosier con
+un puntito si se ha quedado viejo. La fecha y las acciones —Ver, Descargar,
+Compartir, Regenerar— viven dentro del menú. Antes era una caja que ocupaba más
+que el contador de noches para algo que se toca al final del viaje y una vez.
+
+---
+
+## El dosier
+
+La salida final: **un solo archivo HTML** con el viaje entero dentro, para
+consultarlo desde el móvil en la calle y sin conexión.
+
+### Tres reglas que mandan sobre todo lo demás
+
+1. **Todo va dentro.** Los datos como JSON en un `<script>`, el CSS y el JS en
+   línea, las fotos en base64. Ni una petición a internet: ni CDNs, ni fuentes,
+   ni llamadas a esta aplicación. Se abre con `file://` y funciona.
+2. **Se genera con lo que ya está guardado.** El dosier no busca nada: si una
+   excursión no tiene su ficha descargada, enseña lo básico y ya está.
+3. **Si algo falla al generarlo, se omite y se sigue.** Una foto que no se deja
+   descargar no puede impedir que exista el archivo.
+
+### El check de "viaje listo"
+
+Lo pongo y lo quito yo, desde el mismo panel en "Mi ruta" y en el lienzo. Al
+lado se ve qué falta —tramos sin resolver, etapas sin hotel—, pero eso **solo
+informa**: un viaje puede estar listo con la última noche sin cerrar si así lo
+decido. Bloquear el check por eso sería la aplicación diciéndome cuándo está
+listo mi viaje.
+
+El botón "Generar dosier" sí depende del check, y cuando está apagado su tooltip
+dice por qué.
+
+### Cómo se sabe que el dosier se ha quedado viejo
+
+`viajes.modificado_en` contra `viajes.dosier_en`. La primera la mantienen
+**disparadores de SQLite** sobre `itinerario`, `etapas`, `transportes` y el
+`marcado` de `candidatos`.
+
+Son disparadores y no llamadas a mano porque "tocar el viaje" pasa desde una
+docena de sitios y basta olvidarse de uno para que el dosier diga que está al día
+cuando no lo está.
+
+Y cada uno lleva un `WHEN` que compara columna a columna, así que **una escritura
+que deja los mismos valores no cuenta**: sin eso, `recalcularFechasEtapas` —que
+reescribe las mismas fechas cada vez que se entra en la ruta— avisaría de que el
+viaje ha cambiado cada vez que se mira. Por lo mismo quedan fuera las columnas de
+caché: que OSRM rellene la distancia de un tramo no es un cambio mío.
+
+### Las fotos
+
+Se piden **tal y como están guardadas**, que ya son miniaturas: las de Wikipedia
+vienen a 330 px de ancho (~33 KB) y las de Civitatis a 230 px (~8 KB).
+Redimensionar en el servidor pediría una librería nativa de imagen para llegar a
+un tamaño que las fuentes ya dan. Lo que sí hay es **tope por foto** (200 KB) y
+**presupuesto total** (4 MB), que es lo que de verdad decide si el archivo cabe
+en un móvil.
+
+Solo se descargan las que el dosier va a pintar: las de sitios y excursiones. El
+hotel se enseña con su nombre, su zona y su nota.
+
+### Ojo con el catálogo: la misma excursión en dos ciudades
+
+Civitatis lista la misma actividad desde varias ciudades —el tour del Palacio
+Real sale en la página de Madrid y también en la de Granada—, así que en
+`catalogo_actividades` hay **dos filas con la misma url**. Es correcto: la clave
+única es ciudad + actividad.
+
+Pero significa que buscar la ficha solo por url devuelve la primera que caiga,
+que puede ser la de la otra ciudad y no tener los detalles descargados. El
+síntoma era una excursión ampliada que en el dosier salía pelada. El cruce mira
+la ciudad de la parada, y solo si no encuentra nada se conforma con la url.
+
+### El archivo por dentro
+
+Se pinta **en el navegador** a partir del JSON embebido, no viene escrito desde
+el servidor: el buscador y la navegación por días trabajan sobre esos mismos
+datos, y si el HTML viniera hecho, buscar sería recorrer el DOM y acabaría
+desincronizado.
+
+- **Portada** con nombre, fechas, ruta y los datos de un vistazo.
+- **Vista "hoy"**: si la fecha actual cae dentro del viaje, se abre por el día
+  que toca, con su pestaña marcada.
+- **Un día por pantalla**, con sus franjas, sus bloques de transporte (vuelo,
+  aerolínea, horarios, origen→destino) y el hotel de esa noche. El último día no
+  lleva hotel: se vuelve.
+- **Cada cosa es desplegable** y enseña la ficha entera que haya en el catálogo.
+- **Reservas** al final: todos los vuelos y hoteles juntos.
+- **Buscador** por nombre, sobre los datos embebidos.
+
+Sin mapas —necesitan red—: donde hay coordenadas va un enlace a Google Maps, que
+funcionará si hay conexión, y las coordenadas escritas para poder buscarlas a
+mano si no.
+
+---
+
+## Días y noches no son lo mismo
+
+Un viaje del 25 al 27 son **dos noches pero tres días**. El día de la vuelta
+también se viaja y tiene sus horas: el vuelo sale por la tarde y queda una mañana
+entera que repartir.
+
+El lienzo estaba usando el número de noches como número de días, así que generaba
+solo el 25 y el 26, y el vuelo de vuelta del 27 acababa cayendo en el 26. Ahora
+crea un día por cada fecha de la salida a la vuelta **inclusive** (`noches + 1`).
+
+`nochesEntre()` está bien y se usa bien en todas partes —el reparto de la ruta,
+el contador de la portada, las fechas en cascada de las etapas—: **el único sitio
+donde se confundía era `services/lienzo.js`**. Lo demás cuenta noches porque lo
+que necesita son noches.
+
+Y los bloques fijos de transporte se colocan **por su fecha**, no por su
+posición: la vuelta va al día cuya fecha coincide con el fin de la última etapa,
+no a "el último día que haya". Buscar por fecha es lo que hace que no vuelva a
+descolocarse si algún día vuelve a faltar o sobrar un día.
+
+**Las horas de un vuelo de un tramo.** Como los tramos se buscan de solo ida,
+esas tarjetas traen UN trayecto y va etiquetado `ida`. El lienzo buscaba uno
+llamado `vuelta` para sacar la hora de salida del regreso, no lo encontraba, y el
+bloque se quedaba sin hora y en la franja por defecto. Ahora, con un solo
+trayecto, las dos horas salen de él: el bloque de ida usa su llegada y el de
+vuelta su salida.
+
+---
+
+## Un solo sondeo por pantalla
+
+En la etapa pueden estar trabajando a la vez la preparación de la ciudad, los
+hoteles y los vuelos de cada tramo. Todo eso lo cuenta **un único** endpoint
+(`/etapa/:id/estado`) y lo sondea **un único** temporizador.
+
+El sondeo solo se enciende si algo está en marcha, y ahí estaba el fallo: la
+condición miraba la ficha y los hoteles pero **no los vuelos**. Buscar vuelos
+dejaba el *"Buscando en Kayak…"* colgado indefinidamente —el trabajo terminaba
+bien, pero nadie estaba mirando— y los resultados solo aparecían cuando otra cosa
+forzaba una recarga.
+
+Cuando algo termina se recarga la pantalla, y eso **no pisa al tramo que siga
+buscando**: lo que se pinta lo decide el servidor, que sabe cómo está cada uno.
+El que siga en marcha vuelve a salir "buscando"; el que haya fallado, con su
+error y su botón de reintentar. Si algo acaba mientras otra cosa sigue, también
+se recarga, para enseñar ya lo que esté hecho sin esperar a lo demás.
+
+---
+
+## El centro de trabajo es la ETAPA
+
+El mapa era paso obligado y concentraba las fichas ricas; la etapa era una lista
+pobre. Ahora es al revés: **el trabajo se hace en la etapa**, y el mapa solo se
+usa cuando de verdad hay algo que elegir.
+
+### El mapa se comporta según el NIVEL del destino
+
+| Nivel | Qué pasa al elegirlo |
+|---|---|
+| **Ciudad** ("Sevilla") | No hay pantalla de fichas. El mapa se queda contando el progreso —*"Buscando los sitios más bonitos de Sevilla…"*, *"Buscando excursiones…"*— y al terminar **entra directamente en su etapa**. Si ya estaba investigada, entra al instante. |
+| **País o región** ("Portugal") | El mapa **sí** es la pantalla de exploración: fichas de ciudades y zonas, cada una con "A mi ruta". Solo las añadidas se vuelven etapas candidatas; el resto se queda en el catálogo. Ahí no se buscan sitios ni excursiones de cada ciudad: eso pasa al entrar en su etapa. |
+
+Una ciudad no se elige entre otras, se trabaja. Por eso no tiene sentido
+enseñarle a nadie una pantalla intermedia para que "explore" Sevilla dentro de
+Sevilla.
+
+**Un país tampoco es una parada.** Elegir "Portugal" ya no crea una etapa
+"Portugal" confirmada: en la ruta aparecía como si uno fuera a dormir en el país
+entero. Las paradas de un viaje a Portugal son las ciudades que se elijan, y
+solo esas.
+
+### La etapa nace llena
+
+Al abrir una parada cuya ciudad no tiene nada en el catálogo, se lanzan **solas**
+las dos búsquedas —los sitios (IA + Wikipedia) y las excursiones (Civitatis)— y
+la pestaña "Qué ver" cuenta por dónde van. No hay que pulsar nada: entrar en
+Sevilla es querer Sevilla. Si el catálogo ya tiene datos, abre cargada al
+instante y no se abre ningún navegador.
+
+Las dos van en UN trabajo (`preparar_etapa`) y no en dos, porque lo que se
+pregunta es una sola cosa —"¿puedo entrar ya?"—. **Si una fuente falla, la otra
+sigue**: solo se da por fallido si fallan las dos.
+
+No se reintenta sola después de un fallo. Sin esa condición, una ciudad que falla
+(sin clave de IA, por ejemplo) se reencolaría en cada visita: un bucle silencioso
+de trabajos condenados. Para reintentar está el botón del aviso.
+
+### Fichas cuadradas, en rejilla vertical
+
+Las dos subpestañas usan la misma rejilla: **3 fichas por fila en escritorio, 2
+en pantalla media, 1 en móvil**. Todo se ve bajando con la página; ni un carrusel
+horizontal.
+
+"Sitios" usa la misma tarjeta cuadrada que tenía el mapa
+(`parciales/ficha-sitio.ejs`, sobre `.tarjeta-punto`): foto, nombre, descripción
+y su detalle desplegable. Antes eran barras horizontales de una línea, y en una
+barra no cabe una foto ni se lee una descripción. Cada ficha conserva sus
+acciones: "Me lo apunto" / "Apuntado" y "Ponerlo en un día".
+
+### El detalle no se pierde nunca
+
+**El fallo era de lectura, no de guardado.** Ampliar la ficha del Coliseo
+escribía tres cosas en el catálogo —el párrafo del "por qué" y el "cómo moverse"
+en `puntos_interes.datos_extra`, y los lugares de dentro en `sitios_lugar`—, pero
+la consulta de la etapa se traía solo el nombre, la foto y la descripción corta.
+El detalle seguía ahí; nadie lo leía.
+
+Ahora `queVerDeEtapa` lo lee entero (los hijos de una vez y agrupados en memoria,
+que una consulta por sitio serían quince para pintar una pestaña) y la ficha lo
+enseña. **Una ficha ampliada una vez queda ampliada para siempre, se mire desde
+donde se mire**: desde la etapa, desde el mapa o desde otro viaje.
+
+Y se puede ampliar desde la etapa, con el mismo trabajo que usa el mapa
+(`investigar_ciudad`), porque lo que sale va al catálogo.
+
+### Volver al mapa, solo cuando tiene sentido
+
+En la cabecera de "Mi ruta", junto a Configuración, hay un **"Elegir más
+ciudades"** que lleva al mapa de exploración del destino. Solo aparece si el
+destino del viaje es de nivel país o región. En un viaje a Sevilla no sale: no
+hay nada más que explorar allí, y sería una puerta a ninguna parte.
+
+---
+
+## La pantalla de la etapa
+
+### "Qué ver" tiene subpestañas
+
+Mezclaba dos cosas que no se parecen: los **sitios** de la ciudad y las
+**excursiones** de Civitatis, estas últimas en un carrusel horizontal larguísimo
+donde no se veía lo que había. Ahora cada una tiene su subpestaña y su lista
+vertical: se ve todo bajando con la página.
+
+La lista de subpestañas está en la propia plantilla (`SUBVISTAS`, en
+`views/etapa.ejs`) y el JS no sabe cuántas hay ni cómo se llaman. Para añadir
+"Comer" o "Bares" basta con meter una entrada ahí y su `<section class="subpanel">`
+debajo.
+
+### Las excursiones tienen foto y ficha
+
+El catálogo ya guardaba `imagen_url` de cada excursión y la tarjeta pintaba un
+icono de ticket sobre fondo azul. Ahora manda la foto; la que no tenga se queda
+con el icono, sin hueco gris ni imagen rota.
+
+Y cada una lleva **"Ver detalles"**, que trae la ficha completa de Civitatis:
+descripción larga, duración, idiomas, qué incluye y qué no, punto de encuentro y
+política de cancelación.
+
+**La ficha es del CATÁLOGO, no del viaje.** Lo que incluye el free tour de Berlín
+no cambia porque yo viaje en marzo o en octubre: se busca **una vez** y se queda
+para siempre y para todos los viajes. La segunda vez que alguien la abre no se
+busca nada, se despliega al instante.
+
+Y se pide **una a una**, al pulsar su botón. Nunca en masa: con veintisiete
+excursiones por ciudad serían veintisiete visitas de navegador para leer tres.
+
+La receta (`buscarFichaActividad`, en `providers/civitatis.js`) lee **por texto,
+no por clases**, y no es pereza: Civitatis sirve la misma ficha con dos maquetas
+—móvil y escritorio, con los ids repetidos— y además cambia de forma según el
+tipo de actividad. Recorriendo el DOM, la receta que funcionaba en un free tour
+se traía la sección entera en una entrada de acuario. Leyendo las etiquetas
+("Duración", "Incluido", "No incluido"...) funciona igual en las dos.
+
+**Lo que no está, no está.** Una entrada de museo no tiene punto de encuentro, y
+casi ninguna ficha publica horarios de salida: Civitatis los enseña en el
+calendario de reserva, después de elegir un día, y eso ya no es información
+estable del catálogo. Esos campos se quedan vacíos y no se pintan.
+
+### Los filtros van ANTES de buscar, y viven dentro de la pestaña
+
+Antes, entrar en "Dónde dormir" lanzaba Booking sin preguntar, y el botón
+"Filtros" te echaba a la pantalla del wizard: se buscaba en un sitio y se
+filtraba en otro. Ahora:
+
+- **Sin resultados**: no se lanza nada. Se enseña el formulario de filtros,
+  abierto, y se busca al pulsar **"Buscar hoteles"**.
+- **Con resultados**: el resumen de los filtros usados arriba y un
+  **"Cambiar filtros"** que despliega el mismo formulario ahí mismo.
+
+Nunca se sale de la pantalla. El formulario es el mismo de siempre, extraído a
+`parciales/filtros-hotel.ejs` (y `parciales/filtros-vuelo.ejs`), que ahora
+comparten el wizard y la etapa.
+
+Para que puedan convivir varios paneles en una página no queda ni un id global:
+cada chip dice a qué **campo** pertenece y el manejador de `app.js` lo busca por
+`name` dentro de **su** formulario.
+
+### Los vuelos se buscan POR TRAMO
+
+BCN → Berlín del 10 y Berlín → BCN del 13 son **dos búsquedas distintas**, cada
+una **solo ida** (`buscarVuelosKayak` con `fechaVuelta: null`) y con **sus
+propios filtros**, guardados en `transportes.filtros_vuelos`. Puedo querer
+directos a la ida y que me dé igual a la vuelta.
+
+Mientras un tramo no tenga filtros propios hereda los del viaje, así que lo que
+ya estaba buscado sigue viéndose igual.
+
+De paso desaparece la aproximación que había documentada: entrar por una ciudad
+y salir por otra ya no obliga a fingir un ida y vuelta a la misma, porque cada
+punta se busca por separado y con sus dos puntas reales.
+
+### Ámbitos: qué es del viaje y qué es de una parte
+
+| Se guarda con | Es de | Se busca desde |
+|---|---|---|
+| `transporte_id` | ese tramo | su tarjeta, en "Cómo llegar" |
+| `etapa_id` | esa parada | la pestaña de la etapa |
+| ninguno de los dos | el viaje entero | el paso 5 |
+
+`candidatosDe()` excluye lo que cuelga de un tramo, porque si no el paso 5
+listaba la ida y la vuelta de la ruta juntas y revueltas como si fueran opciones
+de ida y vuelta del viaje.
+
+Con `etapa_id` **no** se hace lo mismo, y es a propósito: un hotel se duerme EN
+una ciudad, así que siempre cuelga de una etapa —hasta cuando lo busca el paso
+6, que lo guarda en la única del viaje—. Excluirlos dejaría el paso 6
+eternamente vacío, buscando otra vez algo que ya tiene.
+
+---
+
+## Ya no hay wizard
+
+La pantalla de configuración arrastraba la cabecera del wizard: la tira de pasos
+"Tu viaje · Destino · Avisos" prometiendo un camino que hace tiempo que no
+existe. Se ha quitado: la pantalla empieza en "Configura tu viaje", con su miga
+de pan, y al guardar **vuelve a donde estabas** —a la ruta si venías de ella, al
+mapamundi si el viaje acaba de nacer y todavía no tiene destino—. El botón dice
+"Guardar", no "Continuar".
+
+---
+
+## Las listas de resultados son compartidas
+
+Las presentaciones ricas de vuelos y hoteles viven en parciales y las usan **el
+wizard y la pantalla de etapa**:
+
+| Parcial | Qué pinta | La usan |
+|---|---|---|
+| `parciales/vuelo.ejs` | La opción de ida y vuelta con los **dos trayectos**: horarios, aeropuertos, duración y escalas | Paso 5 y "Cómo llegar" de la etapa |
+| `parciales/hotel.ejs` | Nota, nº de opiniones, zona, distancia al centro y precio total | Paso 6 y "Dónde dormir" de la etapa |
+| `parciales/tarjeta.ejs` | Actividad de Civitatis | Paso 4, ficha de ciudad y etapa |
+
+Los tres llevan el círculo de elegir con `data-marcar`, que maneja el código
+genérico de `app.js`. Por eso **todos los endpoints que eligen algo contestan
+`{ marcado }`**: la tarjeta es la misma en todas partes y no se le cambia el
+contrato, solo la URL.
+
+### Lo que se había perdido
+
+La pestaña "Cómo llegar" montaba su propia lista desde el JS y se dejaba por el
+camino **los horarios**, que es justo el dato con el que se elige un vuelo. El
+scraper nunca dejó de extraerlos: estaban en `datos_extra.tramos` todo el
+tiempo. Ahora la lista se pinta en el servidor con el parcial de siempre.
+
+### Los filtros, en los dos sitios
+
+Los filtros son del VIAJE y se ajustan en su panel del paso 5 / paso 6. La etapa
+enseña cuáles están puestos, cuántos resultados esconden y un atajo para
+cambiarlos, y **los aplica**: los de búsqueda viajan a Kayak en la URL
+(`fs=stops=0`) y los locales (precio por persona, franja horaria) se aplican
+sobre lo guardado. Si los filtros dejan la lista vacía se dice con esas
+palabras — *"Ningún vuelo cumple los filtros"* — y no se confunde con "no has
+buscado".
+
+**Ojo con los ámbitos:** refrescar vuelos u hoteles desde el wizard NO toca los
+que cuelgan de un tramo o de una etapa. El trabajo que se encola ahí es de
+ámbito viaje y no sabría reponerlos, así que se quedarían vacíos para siempre.
+Cada etapa se refresca con su propio botón.
+
+### La ventana del navegador, apartada
+
+`lib/browser.js` lanza Chrome con `--window-position=-2400,0`: fuera de
+pantalla, para que no salte al primer plano cada vez que se busca algo.
+
+**Sigue siendo una ventana real. Nada de headless**, nunca: los cuatro scrapers
+están validados con ventana de verdad y en headless los antibots de Booking y
+Kayak los cazarían al primer intento. Lo único que cambia es dónde aparece; si
+hace falta verla, se quita esa línea.
+
+---
+
+## Una etapa no es un museo
+
+La regla que decide todo en `descubrir`, y que costó un rato aprender:
+
+> **El NIVEL del destino decide qué es cada resultado.**
+
+| Nivel del destino | Qué son sus resultados | Qué hace el botón |
+|---|---|---|
+| País o región | Ciudades y zonas donde dormir | **"A mi ruta"** — crea una etapa |
+| Ciudad | Sitios de dentro (museos, parques, barrios) | **"Me lo apunto"** — candidato dentro de la etapa de esa ciudad |
+
+### Qué estaba mal
+
+El botón creaba una etapa por cada resultado sin mirar el nivel. Para Japón eso
+está bien: Tokio, Kioto y Osaka son paradas. Para Madrid era un disparate: el
+Prado, el Palacio Real y el Retiro no son paradas de ningún viaje, son cosas que
+ver **dentro** de la parada Madrid.
+
+El síntoma era un viaje con tres candidatos llamados **"Madrid, Madrid,
+Madrid"**: como los tres resultados son de categoría `sitio`, la etapa tomaba el
+nombre de su `ciudad_base`, que en los tres casos era Madrid.
+
+Y encima la etapa Madrid de verdad estaba suelta: no apuntaba a nada del
+catálogo, así que su pestaña "Qué ver" salía vacía aunque el catálogo tuviera
+quince sitios y veintiocho excursiones de esa misma ciudad.
+
+### El enlace que faltaba
+
+`etapas.destino_id` — de una parada al destino del catálogo del que sabemos
+cosas. Con él, "Qué ver" bebe de **dos fuentes** y las suma:
+
+- Del **destino de nivel ciudad**: sus `puntos_interes` (el Prado, el Retiro).
+- Del **punto de un destino de nivel país**: su ficha profunda en `sitios_lugar`
+  (los templos de Kioto).
+
+Las excursiones van por nombre de ciudad, que es como se guardan: no necesitan
+el enlace.
+
+### Apuntar crea la parada sola
+
+Apuntar el Museo del Prado en un viaje que aún no pasaba por Madrid **crea la
+etapa Madrid** en `recopilando`, enlazada al catálogo, sin preguntar: quien
+apunta el Prado está diciendo que quiere ir a Madrid, y hacerle confirmar eso
+sobra. Se avisa una vez — *"Madrid añadida a tu ruta"* — y no se repite con cada
+museo.
+
+### Cuidado con los ids
+
+Tres tablas distintas alimentan "Qué ver" y **sus ids se solapan**: el 42 es el
+Museo del Prado en `puntos_interes` y otra cosa en `sitios_lugar`. Por eso al
+apuntar se manda también de qué tabla viene (`punto` / `sitio` / `actividad`).
+
+### La reparación
+
+Migración `2026-09-etapa-no-es-un-sitio`, de un solo uso:
+
+```
+4 etapas convertidas en sitios apuntados (1 etapa de ciudad creada),
+1 etapa reenganchada al catálogo.
+```
+
+Convierte las etapas que en realidad eran sitios en candidatos dentro de la
+etapa de su ciudad (creándola si no estaba), las borra como etapas, y engancha
+al catálogo las etapas sueltas cuyo nombre coincide con un destino investigado.
+**No borra nada del catálogo**: lo apuntado sigue apuntado, solo que en el sitio
+correcto.
+
+---
+
+## La portada: el cuaderno de viajes
+
+Panel de acento a la izquierda y los viajes como **billetes** a la derecha,
+sobre un fondo de carta náutica (curvas de nivel, cruces, rosa de los vientos
+y una ruta punteada; todo decorativo y sin clics).
+
+Cada billete lleva datos de verdad, no adornos:
+
+| Parte | De dónde sale |
+|---|---|
+| Talón con mes y día | `viajes.fecha_inicio`, o "?" en gris si no tiene fechas |
+| Ciudades con → | Las etapas **confirmadas** en su orden; "Sin ruta todavía" si no hay |
+| Chip "N etapas · M noches" | Cuenta y suma de esas etapas |
+| Chip verde "Cuadra" / ámbar "Faltan N noches" | Noches repartidas contra las del viaje. Sin fechas no sale chip |
+| Panel: "N viajes" y "Próxima salida" | La fecha de inicio futura más cercana |
+
+Son **dos consultas**, no una por billete: los viajes y todas sus etapas de un
+tirón, y el cruce en memoria.
+
+### Sus estilos van APARTE
+
+`public/css/portada.css`, y la carga solo la home. No es manía: los nombres de
+la portada son genéricos a propósito (`panel`, `principal`, `menu`, `billete`)
+y en la hoja compartida chocaron. **`.panel` se llevó por delante la ficha de
+lugar y la pantalla de etapa**, cuyas pestañas también se llaman `panel`: se
+pintaban con el azul y los 300 px del lateral de la home, y todo el contenido
+salía embutido en una columna estrecha.
+
+Aislar por fichero en vez de renombrar deja el marcado limpio y hace imposible
+la colisión: esas reglas no llegan a ninguna otra pantalla.
+
+### Entrar en un viaje existente
+
+Clicar un billete NO reabre el configurador. Se entra por donde se dejó, de más
+avanzado a menos:
+
+| Estado del viaje | A dónde va |
+|---|---|
+| Tiene paradas (candidatas o confirmadas) | `/viaje/:id/ruta` |
+| Sin paradas, pero con el destino en el catálogo | `/descubrir/:destinoId` |
+| Sin nada, pero con fechas | `/elegir-destino/:id` |
+| Ni fechas | `/viajes/:id/paso/1`, el configurador |
+
+El configurador queda para el flujo de "＋ Nuevo viaje" y como enlace discreto
+**"Configuración"** en la cabecera de la ruta, para cambiar fechas o viajeros.
+
+### Borrar un viaje
+
+Menú ⋯ en cada billete, con "Cambiar nombre" y "Borrar viaje…". Borrar pregunta
+con el modal de la casa y dice exactamente qué se lleva:
+
+> Se borrará «Viaje a Japón» con 1 etapa, 0 cosas apuntadas y 0 cosas del lienzo.
+
+La cascada la hace SQLite: `candidatos`, `etapas`, `transportes`, `itinerario`,
+`trabajos` y `avisos` referencian `viajes(id)` con `ON DELETE CASCADE` y las
+claves ajenas están activadas. Un solo `DELETE` se lo lleva todo.
+
+**El catálogo NO se toca**: `destinos`, `puntos_interes`, `sitios_lugar` y
+`catalogo_actividades` no tienen `viaje_id`. Borrar el viaje a Japón no puede
+borrar lo que sabemos de Japón.
+
+---
+
+## La jerarquía de destinos
+
+Investigando España salían mezcladas Barcelona, el Parque Güell y la Sagrada
+Familia. Eso no es cuestión de gusto, es un error de jerarquía: el Parque Güell
+no compite con Barcelona, **está dentro** de Barcelona. Y rompe el modelo,
+porque de una etapa se duerme y de un monumento no.
+
+Ahora el **nivel del destino** manda sobre lo que se pide:
+
+| Nivel | Qué se pide |
+|---|---|
+| País o región | **Solo** ciudades, pueblos, comarcas, islas y valles: sitios donde dormir o hacer base. Cada uno con una frase de qué aporta a la ruta |
+| Ciudad | Sitios concretos de dentro (barrios, monumentos, museos, mercados) y alguna excursión de día |
+
+La prohibición del prompt de país va **con ejemplos**, que es lo que se cumple:
+decir "nada de monumentos" se obedece a medias; decir *"Sagrada Familia NO, está
+dentro de Barcelona"* se entiende a la primera.
+
+El nivel viene del mapamundi (Nominatim contesta país o ciudad según el zoom) y
+se guarda en `destinos.tipo`. **El que devuelve la IA se ignora**: a veces
+contesta "ciudad" para un país entero y eso volvería a mezclarlo todo. Si un
+destino antiguo no tiene nivel, se le pregunta a Nominatim antes de investigar.
+
+Para limpiar lo ya investigado con la mezcla, la ficha de destino tiene dos
+botones donde antes había uno:
+
+- **Refrescar** — actualiza lo que hay sin borrarlo (el de siempre).
+- **Reinvestigar** — borra los puntos y vuelve a preguntar desde cero. Es el que
+  hace falta aquí: refrescar no quita la Sagrada Familia, hay que tirarlo todo.
+
+---
+
+## El lienzo: repartir lo apuntado por los días
+
+```
+/viaje/:viajeId/lienzo        ?etapa=ID para verlo filtrado
+```
+
+La mochila a la izquierda con lo apuntado que aún no tiene día, y los días a la
+derecha con sus cuatro franjas. Se arrastra de una a otros.
+
+### De dónde salen los días
+
+De las etapas confirmadas, no de una tabla de días. El día 1 es la fecha de
+inicio del viaje y hay tantos días como **noches**. Cada día cae dentro del
+rango de una etapa (`fecha_inicio <= día < fecha_fin`) y, como las etapas van
+encadenadas sin huecos, cada día pertenece a una y solo una:
+
+```
+Osaka 10→14 nov (4 noches)  ->  días 1, 2, 3, 4
+Tokio 14→19 nov (5 noches)  ->  días 5, 6, 7, 8, 9
+Kioto 19→24 nov (5 noches)  ->  días 10, 11, 12, 13, 14
+```
+
+### Una consulta, no sesenta
+
+Quince días por cuatro franjas serían sesenta viajes a la base para pintar algo
+que cabe en cinco `SELECT`. `lienzoDeViaje()` los hace una vez y reparte en
+memoria: días, colocados, mochila, bloques fijos y avisos salen de la misma
+pasada. Es también lo que devuelve la API tras cada cambio, para repintar sin
+recargar.
+
+### La tabla `itinerario`, rehecha
+
+Existía desde el primer día pero nunca se usó (cero filas, ni una consulta), y
+su `dia` guardaba una FECHA en una columna de texto. El lienzo necesita el
+NÚMERO de día, y eso en una columna TEXT es una trampa: SQLite ordenaría el día
+10 antes que el 2. Como no había datos, se rehízo con la forma correcta.
+
+Lleva un `CHECK` que hace cumplir la regla del diseño:
+
+```sql
+CHECK ((candidato_id IS NOT NULL) <> (texto_manual IS NOT NULL))
+```
+
+Una fila es **o** una cosa colocada **o** un texto a mano. Nunca las dos, nunca
+ninguna. Probado: la base rechaza los dos casos.
+
+### Los bloques fijos de transporte
+
+Los tramos resueltos se pintan en ámbar y no se arrastran. Van donde les toca:
+
+| Tramo | Dónde cae |
+|---|---|
+| Vuelo de ida | Día 1, en la franja de su hora de llegada (mañana si no se sabe) |
+| Entre etapas | Primer día de la etapa de destino |
+| Vuelo de vuelta | Último día, en la franja de su hora de salida (tarde si no se sabe) |
+
+Las horas salen del vuelo elegido: de la ida interesa cuándo se **aterriza** y
+de la vuelta cuándo se **despega**.
+
+**El tiempo de OSRM solo se enseña si el tramo va en coche o bus.** Poner
+"Shinkansen · 5h35" al lado de un tren que tarda 2h15 no es un detalle feo: es
+decirle a alguien una hora que no es.
+
+### Los avisos
+
+Se calculan al pintar y **no bloquean nada**: igual has puesto ahí el museo a
+propósito porque piensas cambiar el vuelo.
+
+| Aviso | Cuándo salta |
+|---|---|
+| *"Llegas a las 20:35 — tienes 1 cosa antes de llegar"* | Hay algo en una franja anterior a la de la llegada |
+| *"Te vas a las 15:20 — tienes N cosas después de irte"* | Lo mismo al revés, el día de la vuelta |
+| *"Cena en Pontocho empieza a las 21:00 (noche)"* | La hora de la tarjeta no cuadra con su franja |
+
+El aviso sale en la cabecera del día y la tarjeta afectada se pone en rojo.
+
+### Si mueven las fechas
+
+El lienzo no toca la ruta. Si las fechas cambian allí y alguna fila queda con un
+día que ya no existe, **no se borra**: vuelve a la mochila con el borde
+discontinuo y un aviso *"Se movieron tus fechas: N cosas por recolocar"*.
+
+### Desde la pantalla de etapa
+
+Cada cosa apuntada gana **"Ponerlo en un día"**: un mini-selector con los días
+de esa etapa y las cuatro franjas, sin abrir el lienzo. Lo ya colocado enseña
+dónde está (*"Día 12 · mediodía"*) con enlace al lienzo, y arriba hay un botón
+**"Ver el lienzo de esta etapa"** que lo abre ya filtrado.
+
+### El botón de la IA
+
+**Cascarón a propósito.** Existen el botón, el trabajo `opinar_lienzo` en la
+cola, el sondeo y el hueco donde aterriza el resultado; lo que dice hoy es
+*"La opinión de la IA llegará en la próxima versión."*. Cuando haya contenido
+real solo hay que rellenar el medio.
+
+---
+
+## La etapa: el subproyecto de cada parada
+
+```
+/etapa/:etapaId          #ver | #dormir | #llegar
+```
+
+Tres pestañas con el mismo patrón que la ficha de ciudad. Lo importante es lo
+que **no** tiene: código nuevo de catálogo, de hoteles ni de vuelos. Las cajas
+son las mismas de siempre, enchufadas al contexto de una parada.
+
+| Del viaje entero | De la etapa |
+|---|---|
+| `viaje.destino` | `etapa.nombre_ciudad` |
+| `viaje.fecha_inicio/fin` | `etapa.fecha_inicio/fin` |
+| `candidatos.viaje_id` | `candidatos.etapa_id` |
+
+El truco para reutilizar los trabajos de la cola sin romper el wizard es
+`trabajos.referencia_id`: un trabajo de **hoteles con referencia** es de una
+etapa (y busca en su ciudad y sus fechas); **sin referencia** es el del viaje,
+como toda la vida. Igual con los vuelos, donde la referencia es un tramo.
+
+La tarjeta de hotel salió del paso 6 a `parciales/hotel.ejs` **sin tocarle el
+aspecto**, y su círculo de elegir lo sigue manejando el código genérico de
+`app.js`: por eso el endpoint de la etapa contesta `{ marcado }` y no otro
+nombre. Lo mismo con la caja de excursión, que se reusa en modo solo lectura.
+
+### Qué ver
+
+Los sitios de `sitios_lugar` y las excursiones del catálogo de la ciudad, cada
+uno con su interruptor **"Me lo apunto"**. Apuntar crea un `candidato` con
+`etapa_id`; desapuntar lo borra. Lo apuntado se tiñe de `--tinte` con un tic.
+
+Si la ciudad no tiene ficha profunda, se encola `investigar_ciudad` **una sola
+vez**. Sin ese "una sola vez", una ciudad que falla (por ejemplo, sin clave de
+IA) se re-encolaba en CADA visita: un bucle silencioso de trabajos condenados.
+
+### Dónde dormir
+
+El panel de Booking, con las fechas de la etapa. **No busca solo al entrar**:
+abre un navegador y tarda, así que lo pide quien quiera pedirlo. Los filtros son
+los del viaje.
+
+Solo puede haber un hotel elegido por etapa: elegir otro suelta el anterior, y
+volver a pulsar el que estaba lo deja sin elegir. El elegido sale destacado
+arriba en verde con un botón "Cambiar".
+
+Sin fechas (etapa en `recopilando`) no hay panel: un aviso con enlace a la ruta.
+
+### Cómo llegar
+
+Cada tramo enseña **distancia y tiempo de referencia**, calculados una vez con
+OSRM y cacheados en `transportes.distancia_km` / `duracion_min`. Se recalculan
+solos cuando el tramo cambia de puntas, porque al reordenar la ruta esa fila se
+borra y la nueva nace sin distancia.
+
+Hay un tope de **1.500 km** para el dato por carretera, y no es un capricho:
+OSRM es más listo de lo que conviene y, preguntado por Barcelona → Tokio,
+contesta tan tranquilo *"12.513 km, 158 horas"* atravesando Eurasia. Es cierto y
+no le sirve a nadie. Por encima del tope se enseña la línea recta (Haversine,
+calculada aquí sin pedir nada a nadie), que es la que dice a las claras que eso
+es un vuelo: *"≈ 10.307 km en línea recta"*.
+
+| Tipo de tramo | Cómo se resuelve |
+|---|---|
+| Extremos (casa→primera, última→casa) | **Buscar vuelos** con el panel de Kayak |
+| Entre ciudades | **A mano**: tipo, notas y precio aproximado. Nada de scraping de trenes |
+
+Los chips de la pantalla de ruta llevan a la pestaña "Cómo llegar" de la etapa
+**de la que sale** el tramo (la ida, a la de la primera parada), y muestran el
+resumen real: *"Tren · Shinkansen Hikari · ≈ 452 km"*.
+
+**Una limitación conocida de los vuelos:** una tarjeta de Kayak es un ida y
+vuelta, así que los tramos de los extremos buscan la ventana entera del viaje
+(de la primera parada a la última). Si entras por una ciudad y sales por otra
+—Osaka de ida, Kioto de vuelta— un ida y vuelta a la misma ciudad es una
+aproximación. Lo correcto sería una búsqueda multidestino, y eso es tocar
+`providers/kayak.js`. Mientras tanto el precio orienta, y el tramo siempre se
+puede apuntar a mano.
+
+### Notas y navegación
+
+Bajo la cabecera hay un campo de notas plegado que guarda solo, 800 ms después
+de dejar de escribir. Al pie, la parada anterior, la siguiente y la ruta entera.
+
+---
+
+## Mi ruta: las paradas del viaje
+
+```
+/viaje/:viajeId/ruta
+```
+
+Es la columna vertebral del modelo nuevo: el sitio donde un montón de ciudades
+sueltas se convierte en una ruta con fechas. Se llega desde el atajo "Mi ruta"
+de la tarjeta de embarque y desde el aviso que sale al añadir un sitio en
+Descubrir.
+
+### Todo pasa por `recalcularRuta()`
+
+No es manía de ordenado: hay tres cosas que dependen unas de otras y tocarlas
+por separado las descuadra en cuanto te despistas.
+
+1. **El orden** tiene que ser 1, 2, 3… sin huecos. Si borras la 2ª parada, la 3ª
+   pasa a ser la 2ª o el número del círculo miente.
+2. **Las fechas** son derivadas y van en cascada: la primera empieza cuando
+   empieza el viaje y cada una arranca donde acabó la anterior — ese día se
+   viaja, no se duerme en dos sitios. Cambiar una noche en la primera parada
+   mueve todas las demás.
+3. **Los tramos** son los huecos ENTRE paradas, más la ida desde casa y la
+   vuelta. Reordenar cambia qué salto es cuál.
+
+Así que después de cada operación se recalcula la ruta entera y se persiste. Son
+tres paradas y media: no hay nada que optimizar.
+
+Un tramo que **sigue existiendo no se toca**, para no perder el transporte ya
+elegido: si mueves Osaka al principio, el salto de Tokio a Kioto sigue siendo el
+mismo y conserva su elección. Comprobado: tras reordenar, la fila
+`Tokio → Kioto` seguía siendo la misma (mismo `id`).
+
+### La API
+
+| Ruta | Qué hace |
+|---|---|
+| `POST /api/etapas/:id/confirmar` | Un candidato pasa a la ruta, al final y con 1 noche |
+| `POST /api/etapas/:id/quitar` | Fuera esa parada (y sus tramos) |
+| `POST /api/etapas/:id/noches` | `{ delta: +1 \| -1 }`, mínimo 1 noche |
+| `POST /api/viajes/:id/reordenar` | `{ ordenIds: [...] }` tras arrastrar |
+
+Todas devuelven **la ruta entera recalculada** y el cliente repinta con eso. Es
+más tráfico que mandar solo lo que cambió, pero cambiar una noche mueve las
+fechas de todas las paradas siguientes y los tramos de en medio: con el estado
+completo no hay forma de desincronizarse.
+
+### El contador de noches
+
+Cuenta **solo las etapas confirmadas**, y tiene cuatro caras:
+
+| Estado | Qué dice |
+|---|---|
+| `faltan` | "Te quedan X noches por colocar" |
+| `exacto` | "Cuadra perfecto ✓" en verde |
+| `exceso` | "Te pasas en X noches…" en rojo, y la barra también |
+| `sin_fechas` | "Define las fechas del viaje…" con enlace a la configuración |
+
+Sin fechas los steppers **siguen funcionando**: se reparten noches igual y las
+fechas de cada parada salen como "— → —". Poner fechas después las rellena
+solas.
+
+### Detalles
+
+- Quitar un **candidato** es inmediato; quitar una **parada confirmada** pregunta
+  antes con el modal de la app, porque mueve las fechas de todo lo que venga
+  detrás.
+- Reordenar va con drag & drop de HTML5 a pelo, sin librerías.
+- La ciudad de casa sale de `ORIGEN_POR_DEFECTO` (`BCN`). El wizard todavía no
+  pregunta el origen; el día que lo haga, `ciudadDeCasa()` es el único sitio que
+  hay que tocar.
+- La maqueta usaba emoji para los iconos (🏠 ⠿ ⚠ ✓). Aquí van los de Tabler,
+  que es lo que usa el resto de la app.
+
+**Tres nombres de clase chocaban** con los que ya usaba el paso 1 (`contador`,
+`barra`) y las tarjetas de vuelo (`tramo`). Las nuevas se llaman
+`ruta-contador`, `ruta-barra` y `ruta-tramo`: renombrar las mías era lo seguro,
+tocar las viejas habría roto pantallas que van bien.
+
+### Lo que todavía no hace
+
+Los chips de transporte y el botón "Abrir etapa" llevan a `/etapa/:id`, que hoy
+es un **placeholder** ("En construcción"). Lo mismo con
+`/viaje/:viajeId/lienzo`. Las filas de `transportes` sí se crean y se mantienen
+de verdad: cuando llegue la búsqueda, los tramos ya estarán ahí esperando.
+
+---
+
+## Elegir destino: el mapamundi
+
+```
+/elegir-destino/:viajeId
+```
+
+Sustituye al campo de texto que había en el paso 2. La diferencia no es
+estética: escribir "Japón" exige saber ya a dónde vas, y mirar el mapa no. El
+buscador sigue arriba para quien lo tenga decidido.
+
+El flujo del wizard queda: **configuración → mapamundi → descubrir**. El paso 2
+ya no tiene formulario, y su GET redirige aquí para que el enlace de la tarjeta
+de embarque siga funcionando.
+
+### Las teselas: CARTO ya no vale
+
+El plan era CARTO Voyager, pero **ya no es gratis sin clave**. Y engaña: sus
+teselas siguen devolviendo `200` con una imagen, solo que la imagen es un cartel
+de *"API KEY REQUIRED"* estampado sobre el mapa. No falla, sale feo.
+
+Como aquí no se usa nada que pida clave, el mapa va con las teselas del
+**Humanitarian OSM Team** (`tile.openstreetmap.fr/hot`): libres, sin registro,
+con un color más cálido y menos ruido que las estándar de OSM. Se les baja un
+poco la saturación por CSS (solo al `leaflet-tile-pane`, para no despintar el
+marcador ni los controles). La atribución va abajo a la derecha y es obligatoria.
+
+Comprobado el 06/09/2026: Wikimedia responde `403` a peticiones externas y
+Stadia `401`. Las de HOT y las estándar de OSM son las dos únicas que funcionan
+sin clave.
+
+### Geocodificación: SIEMPRE desde el servidor
+
+Nominatim (el buscador de OpenStreetMap) se llama desde
+`services/geocodificar.js`, nunca desde el navegador. Tres razones:
+
+1. **Exige un User-Agent** que identifique a la aplicación. Sin él banea, y
+   desde el navegador no se puede poner: manda el suyo.
+2. **Una petición por segundo como máximo.** Desde el navegador, alguien
+   nervioso clicando el mapa manda diez en dos segundos. Aquí se ponen en fila,
+   encadenando cada una a la anterior.
+3. La **caché en memoria** sirve para todos: clicar dos veces en el mismo sitio
+   no sale del servidor. La clave redondea a dos decimales (~1 km), porque dos
+   clics a un dedo de distancia son el mismo sitio.
+
+| Ruta | Qué hace |
+|---|---|
+| `GET /api/geocodificar?lat&lon&zoom` | De un punto del mapa a un sitio con nombre |
+| `GET /api/geocodificar-texto?q` | Del buscador a unas coordenadas |
+| `POST /api/destinos/elegir` | Guarda el destino y lleva a descubrir |
+
+### Qué nivel de detalle se pide
+
+El `zoom` de Nominatim decide si contesta el país o el pueblo. Se saca del zoom
+del mapa, que es lo que dice qué está mirando la persona:
+
+| Zoom del mapa | Zoom Nominatim | Qué devuelve |
+|---|---|---|
+| ≤ 4 | 3 | País |
+| 5-7 | 8 | Región o ciudad grande |
+| ≥ 8 | 12 | Ciudad o pueblo |
+
+Quien mira el mundo entero y toca España quiere España, no el pueblo que haya
+debajo. Del `address` se coge `country` y, como ciudad, el primero que exista de
+`city` / `town` / `village` / `state` — que son cuatro nombres distintos para lo
+mismo según dónde caiga el dedo.
+
+### La tarjeta de abajo
+
+Sube deslizándose (`transform`, 0,35 s) y tiene tres caras: "Identificando el
+lugar…" con tres puntitos, el sitio encontrado, o el "ahí solo hay agua". Vive
+siempre en el DOM y sube o baja con una clase: montarla y desmontarla con cada
+clic haría imposible animarla.
+
+El botón **Investigar X** pasa por `elegirDestinoParaViaje()`, que es el único
+sitio por el que cambia el destino de un viaje, porque son cuatro cosas
+encadenadas y olvidarse de una deja la base coja: el viaje apunta al destino, su
+etapa le sigue, los avisos caducan y se re-encolan, y el destino entra en el
+catálogo. **Si el destino ya estaba investigado se entra directo con la caché,
+sin encolar nada.**
+
+---
+
+## Descubrir destino (mapa + carrusel)
+
+Es la pantalla nueva: escribes "Japón" en el paso 2 del wizard y, en vez de ir
+al paso 3, entras a un mapa con los imprescindibles del país.
+
+```
+/descubrir/:destinoId?viaje=:id
+```
+
+El id de la ruta es el del **destino del catálogo**, no el del viaje. Es a
+propósito: el mismo Japón se mira desde viajes distintos, y lo único que cambia
+entre uno y otro es qué sitios ya están en esa ruta. Sin `?viaje=` la pantalla
+se ve igual pero no deja añadir nada.
+
+### Las dos fuentes, y por qué son dos
+
+| Paso | Fuente | Qué aporta |
+|---|---|---|
+| 1 | **IA** (`/v1/messages`) | QUÉ hay que ver: 12-15 sitios con categoría, coordenadas, días recomendados y por qué merecen la pena |
+| 2 | **Wikipedia en español** (API de resúmenes) | CÓMO SE VE: la foto y el enlace al artículo |
+
+Las fotos **no** se le piden a la IA a posta. Una URL de imagen inventada es una
+imagen rota, y un modelo no tiene forma de saber si un fichero existe.
+Wikipedia sí, porque se le pregunta. Lo que sí se le pide a la IA es el
+`titulo_wikipedia` exacto, que es lo que se busca después.
+
+Wikipedia va con **350 ms de pausa entre peticiones**. No es prudencia
+decorativa: las 15 seguidas a pelo tardan 1,7 s y a partir de la sexta contesta
+`429` y se quedaban sin foto sitios que sí tienen artículo. Con el respiro tarda
+unos 6 s y entran todas. Misma regla que con los scrapers.
+
+Un sitio sin artículo, sin foto o con página de desambiguación se queda con la
+imagen a null y la tarjeta pinta el placeholder de color con su icono. Nunca
+tumba la investigación entera.
+
+### La clave de IA
+
+Se lee de `.env` (hay un `.env.ejemplo` al lado):
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+MODELO_IA=claude-haiku-4-5
+```
+
+**Sin clave la app arranca igual.** Solo fallan los trabajos que de verdad la
+necesitan, y lo hacen con el mensaje *"Falta configurar la clave de IA en .env"*
+en la pantalla, con su botón de reintentar. `.env` está en el `.gitignore`.
+
+`lib/ia.js` exige en el system prompt que se responda solo con JSON, limpia el
+```json que llegue igualmente, y **reintenta una vez** si no parsea. Una, no un
+bucle: si a la segunda tampoco es JSON, algo va mal de verdad y prefiero
+enterarme a gastar tokens en silencio.
+
+### Los marcadores
+
+Leaflet con teselas de OpenStreetMap: gratis, sin clave, y con la atribución
+`© OpenStreetMap` en la esquina, que es obligatoria y no se quita.
+
+Nada de la chincheta azul de Leaflet: los marcadores son HTML con los colores
+del tema, y el estado se lee de un vistazo.
+
+| Estado | Marcador |
+|---|---|
+| Sin investigar | Punto blanco con borde gris |
+| Investigándose | Borde azul y un aro discontinuo girando |
+| Investigada | Relleno azul claro con un tic |
+| La que se está mirando | La de su estado, más grande y con halo |
+
+### Mapa y carrusel, atados
+
+Tocas un marcador y el carrusel va a su tarjeta; deslizas el carrusel y el mapa
+centra su marcador. Hecho a lo tonto eso se muerde la cola (mover uno mueve el
+otro, que mueve el primero...), así que hay un cerrojo que corta el eco mientras
+dura el desplazamiento, y el scroll espera 120 ms a que pares antes de mover el
+mapa: seguirlo píxel a píxel marea.
+
+### Los botones de la tarjeta
+
+- **[Investigar]** — encola `investigar_ciudad`. El botón pasa a "Investigando…"
+  con su rueda y el marcador se pone a girar. Cuando termina, la tarjeta pasa a
+  **[Ver ficha]** y lleva a la ficha profunda (ver más abajo).
+- **[A mi ruta]** — **siempre visible**, se haya investigado o no. Crea una etapa
+  en estado `recopilando`, sin noches y sin fechas, y el botón pasa a
+  "En tu ruta ✓" deshabilitado. Sin salir de la pantalla y sin recargar.
+
+`recopilando` significa justo eso: me interesa, todavía no sé cuánto me quedo.
+Cuando se confirme y se le pongan noches, `recalcularFechasEtapas` le pondrá las
+fechas.
+
+### Entrar y actualizar
+
+Al confirmar el destino en el paso 2:
+
+- si ya está investigado en el catálogo → entra directo, con la caché;
+- si no → encola `descubrir_destino` y entra enseñando el estado de carga.
+
+La fila de `destinos` se crea **siempre**, aunque no sepamos nada del sitio,
+porque la pantalla necesita un id al que ir mientras la IA piensa.
+
+El botón de refrescar junto a la pill de frescura ("Investigado hoy / hace X")
+vuelve a lanzar la investigación. Los puntos **se actualizan, no se duplican**:
+hay un índice único por `(destino_id, nombre_norm)`, así que el Kioto de hoy es
+el Kioto de la semana pasada con los datos al día.
+
+Ojo con una cosa: reinvestigar el país **no** toca el `investigado_en` de los
+puntos. Ese campo dice si un punto tiene ficha profunda, y pisarlo borraría
+trabajo ya hecho.
+
+### Lo que NO cambia todavía
+
+Los pasos 3 a 7 del wizard antiguo siguen exactamente igual. El paso 2 ahora
+lleva aquí en vez de al paso 3, y nada más.
+
+---
+
+## Ficha profunda de una ciudad o un sitio
+
+```
+/sitio/:puntoInteresId?viaje=:id
+```
+
+Se llega desde el botón **[Ver ficha]** de la tarjeta del carrusel, o desde el
+globo del marcador en el mapa (solo los marcadores ya investigados llevan globo:
+uno que no lleva a ningún sitio solo estorba).
+
+### Qué hace el trabajo `investigar_ciudad`
+
+Cuatro pasos, y el orden importa:
+
+1. **La IA** dice qué hay dentro: 6-10 lugares concretos (templos, barrios,
+   mercados, miradores) con coordenadas, más un `parrafo_por_que` y un
+   `como_moverse`.
+2. **Wikipedia** le pone foto y enlace a cada uno, con los mismos 350 ms de
+   pausa entre peticiones que en la investigación del destino.
+3. **Se guarda.** A partir de aquí ya hay ficha aunque lo siguiente falle.
+4. **Solo si es una ciudad**: las excursiones de Civitatis, y solo si no las
+   teníamos ya cacheadas.
+
+El paso 4 va el último y en su propio `try/catch` a posta: es el que abre el
+navegador y el que más veces va a fallar. Si Civitatis se pone tonto, la ficha
+está guardada y la pantalla se ve entera menos la pestaña de excursiones.
+Al revés sería absurdo: perder la ficha por unos free tours.
+
+Lo que se le pide a la IA en `descripcion` no es un resumen de enciclopedia
+— para eso ya está el enlace a Wikipedia — sino **consejo práctico**: a qué hora
+ir, qué no perderse, cuánto tiempo hace falta.
+
+### La caché de excursiones, en acción
+
+Aquí se ve para qué sirvió mover la caché de actividades del viaje a la ciudad:
+
+```
+Lisboa: 28 en caché -> no se scrapea
+Kioto:   0 en caché -> Civitatis (21,9 s, 30 actividades)
+Segunda vez: 30 en caché -> se salta Civitatis
+```
+
+Investigar Kioto desde otro viaje ya no vuelve a abrir el navegador.
+
+### La pantalla
+
+Cabecera con la foto del punto a sangre (o un bloque de tinte con icono grande
+si no hay), nombre, "Recomendado: X-Y días · Investigada [cuándo]", botón de
+volver al mapa y **[Añadir a mi ruta]** — que pasa a "En tu ruta ✓" sin recargar.
+
+El velo oscuro sobre la foto va fuerte a propósito: muchas imágenes de Wikipedia
+son montajes con bandas blancas (la de Kioto, sin ir más lejos) y con un velo
+suave el chip de "CIUDAD" desaparecía justo encima de una de esas bandas.
+
+Tres pestañas tipo píldora, y solo se ve la activa:
+
+| Pestaña | Qué lleva |
+|---|---|
+| **Resumen** | La tarjeta "Por qué merece la pena" y una rejilla con días recomendados, cómo moverse, nº de sitios y nº de excursiones |
+| **Qué ver (n)** | Mini-fichas plegables (`<details>` del propio HTML, sin librería): foto de 56 px, nombre y una línea. Al abrir, la descripción entera y los enlaces "Wikipedia" y "Ver en mapa" (OpenStreetMap centrado en sus coordenadas, en pestaña nueva) |
+| **Excursiones (n)** | Las cajas de Civitatis de siempre, leídas del catálogo. **Solo para ciudades** |
+
+Las excursiones se pintan con el mismo componente que el catálogo
+(`parciales/tarjeta.ejs`), pero en **modo solo lectura**: llevan enlace a
+Civitatis en vez del círculo de marcar. Son actividades del catálogo, de la
+ciudad, y no candidatas de ningún viaje: no cuelgan de ninguna etapa todavía,
+así que no hay nada que marcar.
+
+Si la investigación sigue en curso, la pantalla **enseña lo que ya haya** y
+añade arriba una franja "Completando la ficha…" con la rueda, que sondea cada
+5 s y recarga sola al terminar.
+
+### Un detalle de las etapas
+
+Añadir a la ruta un punto de categoría `sitio` crea la etapa con el nombre de su
+**ciudad base**, no el del sitio: del Monte Fuji se duerme en Hakone. La misma
+función (`anadirPuntoALaRuta`) la usan el mapa y la ficha, para que el botón
+haga exactamente lo mismo en las dos pantallas.
+
+---
+
+## El modelo de datos: catálogo y viaje
+
+Las tablas están partidas en dos mundos, y la línea que los separa es esta:
+
+> **catálogo** = conocimiento estable, vale para cualquier viaje futuro.
+> **viaje** = mis decisiones y mis cotizaciones, con fechas.
+
+Dicho de otra forma: *"qué se puede ver en Lisboa"* es catálogo y no caduca;
+*"cuánto cuesta el hotel del 19 al 22"* es viaje y caduca en cuanto muevo las
+fechas.
+
+### Catálogo (sin `viaje_id` en ninguna tabla)
+
+| Tabla | Qué guarda |
+|---|---|
+| `destinos` | El ámbito que se investiga: un país, una región o una ciudad. `investigado_en` dice si la ficha está fresca |
+| `puntos_interes` | Los ~15 imprescindibles de un destino. Pueden ser **ciudades** (Tokio) o **sitios** que se visitan desde una ciudad (Monte Fuji, con `ciudad_base` = "Hakone") |
+| `sitios_lugar` | La ficha profunda de un punto: los templos, barrios y mercados **de** esa ciudad |
+| `catalogo_actividades` | Caché de Civitatis **por ciudad normalizada**, no por viaje |
+
+Lo de la caché es el cambio con más efecto práctico: antes las actividades solo
+vivían dentro de cada viaje, así que ir dos veces a Lisboa significaba scrapear
+Lisboa dos veces. Ahora la ciudad es la clave (`ciudad_norm`: sin acentos ni
+mayúsculas), y el segundo viaje se aprovecha del primero.
+
+### Viaje
+
+| Tabla | Qué guarda |
+|---|---|
+| `viajes` | La cabecera. **`destino` es ahora el ÁMBITO** ("Japón"), no una ciudad |
+| `etapas` | Las paradas de la ruta: ciudad, orden, noches, fechas y estado |
+| `transportes` | Cómo se va de una etapa a la siguiente. `etapa_origen_id` a null = ida desde casa; `etapa_destino_id` a null = vuelta a casa |
+| `candidatos` | Lo que se puede marcar. **Hoteles y actividades cuelgan de una `etapa_id`; los vuelos, de un `transporte_id`** |
+| `itinerario` | El reparto por días, con `etapa_id` para poder mirar una etapa o el viaje entero |
+| `avisos` | Clima, seguridad y festivos |
+
+### Estados de una etapa
+
+- **`recopilando`** — ciudad que estoy mirando y que **aún no entra** en el
+  itinerario. No tiene fechas: todavía no ocupa sitio en el calendario.
+- **`confirmada`** — entra, con sus noches asignadas.
+
+### Las fechas de las etapas son derivadas
+
+No se editan a mano. Salen de la fecha de inicio del viaje, del orden de las
+etapas y de las noches de cada una, encadenando: la etapa siguiente empieza el
+día en que acaba la anterior, porque ese día se viaja y se duerme ya en la
+ciudad nueva.
+
+Todo eso vive en una sola función, `recalcularFechasEtapas()`
+(`services/etapas.js`), que se llama cada vez que cambia algo de lo que
+dependen.
+
+### Un viaje de un destino es un viaje de UNA etapa
+
+Es la pieza que hace que el cambio no rompa nada. Mientras el wizard siga
+preguntando por un destino y dos fechas, `sincronizarEtapaUnica()` mantiene esa
+etapa pegada a `viajes.destino`: cambiar el destino le cambia el nombre, cambiar
+las fechas le cambia las noches. En cuanto un viaje tenga más de una etapa, esa
+función se aparta y manda la ruta.
+
+### Qué hizo la migración `2026-09-etapas-y-catalogo`
+
+No borró **nada**: ni una columna ni una fila. Solo añadió.
+
+- Creó las tablas nuevas y las columnas `candidatos.etapa_id`,
+  `candidatos.transporte_id` e `itinerario.etapa_id`.
+- A cada viaje existente le creó **una etapa confirmada** con su destino, orden
+  1 y las noches que durase, más sus dos transportes (ida y vuelta).
+- Colgó de ahí sus candidatos: hoteles y actividades de la etapa, vuelos del
+  transporte de ida (hoy una tarjeta de Kayak trae ida y vuelta juntas).
+- Volcó al catálogo las actividades de Civitatis que había en los viajes,
+  deduplicadas por ciudad: 435 candidatos intactos, 200 actividades únicas en el
+  catálogo a partir de 222 repartidas por ocho ciudades.
+
+Las columnas viejas siguen donde estaban y marcadas como tales en los
+comentarios del esquema. Nada de la interfaz cambió en esta fase.
+
+---
+
+## De dónde sales
+
+El origen de los vuelos no se pregunta en el wizard: está fijo en
+`services/proveedores.js`, en `ORIGEN_POR_DEFECTO` (ahora `'BCN'`). Cámbialo ahí
+si te mudas.
+
+El destino se traduce a código IATA con `lib/iata.js`, que tiene ~100 ciudades
+habituales desde España. Son códigos de **ciudad**, no de aeropuerto: `PAR`
+incluye Charles de Gaulle, Orly y Beauvais. Si buscas un destino que no está,
+el trabajo acaba en error con el mensaje *"No conozco el código de aeropuerto
+de «X»; añádelo a lib/iata.js"* — y añadirlo es una línea.
+
+---
+
+## Responsive
+
+Una sola app que se adapta, no dos versiones. Un único punto de ruptura en
+`900px`:
+
+- **Móvil (base):** tarjetas a una columna, barra de acción **fija abajo** a mano
+  del pulgar con el contador de selección.
+- **Escritorio (≥900px):** rejilla de 3 columnas, panel lateral derecho de 220px
+  con la selección siempre visible, etiquetas de paso en la barra de progreso, y
+  la barra de acciones vuelve al flujo normal.

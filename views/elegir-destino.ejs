@@ -1,0 +1,121 @@
+<%
+/**
+ * ELEGIR DESTINO: el mapamundi.
+ *
+ * Sustituye al campo de texto de antes. La diferencia no es estética: escribir
+ * "Japón" exige saber ya a dónde vas, y mirar el mapa no. El buscador sigue
+ * ahí arriba para quien lo tenga decidido.
+ *
+ * Espera: viaje.
+ *
+ * Misma versión de Leaflet que la pantalla de descubrir, a propósito: dos
+ * versiones distintas del mismo mapa en la misma app solo dan problemas.
+ */
+const LEAFLET = '1.9.4';
+
+const cabezaExtra =
+  `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">`;
+const pieExtra =
+  `<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.js"></script>` +
+  '<script src="/js/elegir-destino.js"></script>';
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: '¿A dónde vamos?',
+      extraCabeza: cabezaExtra
+    }) %>
+
+<main class="mundo" data-viaje="<%= viaje.id %>">
+
+  <%# El mapa ocupa todo; lo demás flota encima. %>
+  <div id="mapamundi" class="mundo__mapa"></div>
+
+  <%# ---------------------- Cabecera flotante ---------------------- %>
+  <div class="mundo__cabecera">
+    <a class="pill pill--volver" href="/viajes/<%= viaje.id %>/paso/1" title="Volver a la configuración">
+      <i class="ti ti-arrow-left" aria-hidden="true"></i>
+    </a>
+
+    <span class="pill pill--pregunta">
+      <i class="ti ti-world" aria-hidden="true"></i>
+      <strong>¿A dónde vamos?</strong>
+    </span>
+
+    <form class="buscador" id="buscador" autocomplete="off">
+      <i class="ti ti-search buscador__lupa" aria-hidden="true"></i>
+      <input class="buscador__campo" id="campo-busqueda" type="search" name="q"
+             placeholder="Escribe un país o ciudad… o toca el mapa"
+             aria-label="Buscar un país o una ciudad">
+      <button class="buscador__boton" type="submit">Buscar</button>
+    </form>
+
+    <span class="pill pill--pista" id="pista">
+      <i class="ti ti-hand-click" aria-hidden="true"></i>
+      Toca cualquier punto del mapa
+    </span>
+  </div>
+
+  <%# ---------------------- Tarjeta deslizante ----------------------
+      Vive siempre en el DOM y sube o baja con una clase. Montarla y
+      desmontarla con cada clic haría imposible animarla. %>
+  <section class="bandeja" id="bandeja" aria-live="polite">
+    <div class="bandeja__asa" aria-hidden="true"></div>
+
+    <%# 1) Preguntando qué hay ahí %>
+    <div class="bandeja__vista" id="vista-cargando">
+      <span class="puntitos" aria-hidden="true"><span></span><span></span><span></span></span>
+      <p class="bandeja__cargando">Identificando el lugar…</p>
+    </div>
+
+    <%# 2) Un sitio de verdad %>
+    <div class="bandeja__vista" id="vista-sitio" hidden>
+      <p class="bandeja__miga" id="sitio-pais"></p>
+      <div class="bandeja__titular">
+        <h2 class="bandeja__nombre" id="sitio-nombre"></h2>
+        <span class="chip-tipo" id="sitio-tipo"></span>
+      </div>
+      <p class="bandeja__texto" id="sitio-texto"></p>
+      <div class="bandeja__botones">
+        <button class="boton boton--primario" type="button" id="boton-investigar">
+          <i class="ti ti-compass" aria-hidden="true"></i>
+          <span id="boton-investigar-texto">Investigar</span>
+        </button>
+        <button class="boton boton--secundario" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+
+    <%# 3) Preparando una CIUDAD.
+        Una ciudad no se explora: se trabaja. Así que no hay pantalla de fichas
+        que enseñar, y el mapa se queda aquí contando lo que se está buscando
+        hasta que la parada está lista para entrar. %>
+    <div class="bandeja__vista" id="vista-preparando" hidden>
+      <div class="bandeja__titular">
+        <h2 class="bandeja__nombre" id="preparando-titulo"></h2>
+      </div>
+      <p class="bandeja__texto preparando__linea">
+        <span class="rueda" aria-hidden="true"></span>
+        <span id="preparando-texto">Preparando…</span>
+      </p>
+      <p class="bandeja__texto secundario" id="preparando-pista">
+        Se abrirá una ventana de Chrome en el servidor: no la cierres.
+      </p>
+    </div>
+
+    <%# 4) Agua, o algo sin nombre %>
+    <div class="bandeja__vista" id="vista-nada" hidden>
+      <div class="bandeja__titular">
+        <h2 class="bandeja__nombre" id="nada-titulo">Ahí solo hay agua</h2>
+      </div>
+      <p class="bandeja__texto" id="nada-texto">
+        Prueba a tocar tierra firme, o usa el buscador de arriba.
+      </p>
+      <div class="bandeja__botones">
+        <button class="boton boton--secundario" type="button" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

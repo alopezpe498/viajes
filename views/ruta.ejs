@@ -1,0 +1,108 @@
+<%
+/**
+ * MI RUTA: las paradas del viaje, en orden.
+ *
+ * El servidor pinta la primera vez y el JS repinta después de cada cambio, con
+ * el mismo objeto que devuelven los endpoints. Por eso el marcado de aquí y el
+ * de public/js/ruta.js tienen que decir lo mismo: si tocas uno, toca el otro.
+ *
+ * Espera: ruta (lo que devuelve rutaDeViaje()).
+ *
+ * La maqueta usaba emoji para los iconos (🏠 ⠿ ⚠ ✓). Aquí van los de Tabler,
+ * que es lo que usa el resto de la app.
+ */
+const pieExtra = '<script src="/js/ruta.js"></script><script src="/js/dosier.js"></script>';
+const { viaje } = ruta;
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Mi ruta · ${viaje.nombre}`,
+      extraCabeza: ''
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido contenido--ruta" data-viaje="<%= viaje.id %>">
+
+    <%# ---------------------- Cabecera ---------------------- %>
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <a href="/viajes/<%= viaje.id %>"><%= viaje.nombre %></a>
+      </p>
+      <div class="etapa-titular">
+        <h1 class="ruta-cabecera__titulo">
+          Mi ruta
+          <% if (viaje.ambito) { %><span class="chip-ambito"><%= viaje.ambito %></span><% } %>
+        </h1>
+
+        <span class="etapa-acciones">
+          <%# El dosier, en una línea. El mismo control que en el lienzo: el
+              viaje se cierra desde donde se esté mirando. %>
+          <%- include('parciales/panel-dosier', { viajeId: viaje.id, dosier }) %>
+
+          <%# Volver al mapa a por más ciudades. Solo sale si el destino del
+              viaje es un país o una región: en un viaje a Sevilla no hay nada
+              más que explorar allí, y el botón sería una puerta a ninguna parte. %>
+          <% if (typeof urlExplorar !== 'undefined' && urlExplorar) { %>
+            <a class="boton-discreto" href="<%= urlExplorar %>">
+              <i class="ti ti-compass" aria-hidden="true"></i> Elegir más ciudades
+            </a>
+          <% } %>
+
+          <%# Entrar al viaje ya no pasa por el configurador, así que las fechas y
+              los viajeros se cambian desde aquí. %>
+          <a class="boton-discreto" href="/viajes/<%= viaje.id %>/paso/1?volverA=/viaje/<%= viaje.id %>/ruta">
+            <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> Configuración
+          </a>
+        </span>
+      </div>
+    </header>
+
+    <%# ---------------------- Contador de noches ----------------------
+        Lo pinta el JS, para que después de cada cambio no haya dos sitios
+        distintos donde tocar el mismo número. %>
+    <section class="ruta-contador" id="ruta-contador"></section>
+
+    <%# ---------------------- Candidatos ---------------------- %>
+    <h2 class="seccion-titulo">
+      Candidatos <span class="seccion-titulo__num" id="num-candidatos">0</span>
+    </h2>
+    <div class="candidatos" id="zona-candidatos"></div>
+
+    <%# ---------------------- Ruta confirmada ---------------------- %>
+    <h2 class="seccion-titulo">
+      Ruta confirmada <span class="seccion-titulo__num" id="num-etapas">0</span>
+    </h2>
+    <div class="ruta-lista" id="zona-ruta"></div>
+
+    <%# ---------------------- Pie ---------------------- %>
+    <div class="ruta-pie">
+      <a class="boton-lienzo" href="/viaje/<%= viaje.id %>/lienzo">
+        <i class="ti ti-layout-board" aria-hidden="true"></i> Ver el lienzo del viaje
+      </a>
+    </div>
+  </div>
+</main>
+
+<%# ---------------------- Modal de confirmación ----------------------
+    El de la app, no el confirm() del navegador: aquí se está borrando una
+    parada de una ruta que ha costado montar y merece una pregunta con cara. %>
+<div class="modal" id="modal" hidden>
+  <div class="modal__fondo" data-modal-cerrar></div>
+  <div class="modal__caja" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <h2 class="modal__titulo" id="modal-titulo">¿Quitar esta parada?</h2>
+    <p class="modal__texto" id="modal-texto"></p>
+    <div class="modal__botones">
+      <button class="boton boton--secundario" type="button" data-modal-cerrar>Cancelar</button>
+      <button class="boton boton--peligro" type="button" id="modal-confirmar">
+        <i class="ti ti-trash" aria-hidden="true"></i> Quitar
+      </button>
+    </div>
+  </div>
+</div>
+
+<%# Los datos de partida viajan en el HTML: la pantalla se pinta ya llena, sin
+    una petición extra nada más cargar. %>
+<script type="application/json" id="datos-ruta"><%- JSON.stringify(ruta) %></script>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>
