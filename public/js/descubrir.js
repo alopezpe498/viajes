@@ -317,7 +317,9 @@
     // Tocar una tarjeta también la selecciona y lleva el mapa a su marcador:
     // antes solo funcionaba en un sentido (del mapa a la tarjeta).
     carrusel.addEventListener('click', (ev) => {
-      if (ev.target.closest('button, a')) return;   // los botones son suyos
+      // Los botones, enlaces y campos son suyos: marcar una casilla no tiene
+      // por qué mover el carrusel ni el mapa debajo.
+      if (ev.target.closest('button, a, label, input, select, textarea')) return;
       const tarjeta = ev.target.closest('.tarjeta-punto');
       if (!tarjeta) return;
       irATarjeta(Number(tarjeta.dataset.puntoId));
@@ -390,8 +392,20 @@
 
     carrusel.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType === 'touch') return;
-      // Los botones y enlaces de la tarjeta siguen siendo suyos.
-      if (ev.target.closest('button, a')) return;
+
+      // LO QUE SE PULSA NO SE ARRASTRA.
+      //
+      // Aquí faltaban las etiquetas y los campos, y eso tenía roto el "Ciudad
+      // de entrada". Es un `<label>` con una casilla dentro, así que no entraba
+      // en `button, a`: al pulsarlo empezaba un arrastre del carrusel y, con
+      // ocho píxeles de deriva del ratón —lo que hace cualquier mano—, el
+      // guardián de abajo cancelaba el clic con `preventDefault()`. Cancelar el
+      // clic de una casilla impide que cambie de estado, así que no se marcaba,
+      // no había evento `change` y no pasaba absolutamente nada.
+      //
+      // Un clic hecho por código sí funcionaba, porque no mueve el puntero. Por
+      // eso no salió al probarlo en su día.
+      if (ev.target.closest('button, a, label, input, select, textarea')) return;
 
       arrastrando = true;
       recorrido = 0;
