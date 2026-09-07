@@ -394,6 +394,7 @@ async function ejecutarHoteles(trabajo) {
         h.imagenUrl ?? null,
         JSON.stringify({
           zona: h.zona ?? null,
+          direccion: h.direccion ?? null,
           estrellas: h.estrellas ?? null,
           estrellasAutodeclaradas: h.estrellasAutodeclaradas ?? null,
           distanciaCentro: h.distanciaCentro ?? null,

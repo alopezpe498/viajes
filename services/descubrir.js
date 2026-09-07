@@ -21,6 +21,7 @@
 
 import { db, todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { consultarJSON } from '../lib/ia.js';
+import { direccionDe, guardarDireccion } from './direcciones.js';
 import { actividadesDeCiudad } from './catalogo.js';
 
 /** Cuántos imprescindibles se piden. Suficientes para una ruta, pocos para no agobiar. */
@@ -109,6 +110,7 @@ Devuelve un objeto JSON con esta forma exacta:
       "por_que": "UNA frase: qué aporta esta parada a la ruta y por qué merece dormir aquí",
       "dias_recomendados_min": número entero,
       "dias_recomendados_max": número entero,
+      "direccion": "calle y número si es un sitio concreto; vacío si es una ciudad o una región",
       "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
     }
   ]
@@ -118,6 +120,7 @@ Reglas:
 - Ordena "puntos" por importancia: el primero es la parada que no te puedes perder.
 - "categoria" es "ciudad" para ciudades y pueblos, y "sitio" para comarcas, islas, valles o parques naturales grandes que se recorren durmiendo en ellos.
 - lat y lon son obligatorios y tienen que ser las coordenadas reales del lugar.
+- "direccion" solo si el punto es un sitio concreto con dirección postal (un monasterio, un castillo): la calle, SIN ciudad ni país. Para una ciudad o una región entera, deja la cadena VACÍA. NO te la inventes.
 - "titulo_wikipedia" es el título del artículo en es.wikipedia.org, tal cual, con sus tildes.
 - No inventes URLs de imágenes ni de páginas web: eso lo busco yo aparte.`;
 }
@@ -155,6 +158,7 @@ Devuelve un objeto JSON con esta forma exacta:
       "por_que": "una frase: por qué merece la pena ir",
       "dias_recomendados_min": número entero,
       "dias_recomendados_max": número entero,
+      "direccion": "calle y número, o la plaza donde está",
       "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
     }
   ]
@@ -164,6 +168,7 @@ Reglas:
 - Ordena "puntos" por importancia: el primero es el que no te puedes perder.
 - "categoria" es "sitio" para lo que está dentro de la ciudad, y "ciudad" solo para una excursión de día a otra población.
 - lat y lon son obligatorios y tienen que ser las coordenadas reales del sitio.
+- "direccion" es la dirección postal, SIN la ciudad ni el país: "Calle de Ruiz de Alarcón 23", "Plaza de Oriente". Para un barrio o un parque grande, la entrada principal. Si el sitio no tiene una dirección con sentido —una sierra, una isla—, deja la cadena VACÍA. NO te la inventes: una calle equivocada manda a la otra punta.
 - "titulo_wikipedia" es el título del artículo en es.wikipedia.org, tal cual, con sus tildes.
 - No inventes URLs de imágenes ni de páginas web: eso lo busco yo aparte.`;
 }
@@ -205,6 +210,10 @@ export async function investigarDestinoConIA(nombreDestino, tipo = 'pais') {
       lon: numeroONulo(p.lon),
       descripcion_corta: textoONulo(p.descripcion_corta),
       por_que: textoONulo(p.por_que),
+      // La dirección postal, para el campo de la ficha. Puede venir vacía y es
+      // lo correcto: una sierra no tiene calle, y preferimos el hueco a una
+      // dirección inventada que mandaría el traslado a la otra punta.
+      direccion: textoONulo(p.direccion),
       dias_recomendados_min: enteroONulo(p.dias_recomendados_min),
       dias_recomendados_max: enteroONulo(p.dias_recomendados_max),
       titulo_wikipedia: p.titulo_wikipedia ? String(p.titulo_wikipedia).trim() : String(p.nombre).trim(),
@@ -376,7 +385,47 @@ export function guardarInvestigacion(destinoId, { destino, puntos }) {
     throw err;
   }
 
+  volcarDirecciones(destinoId, puntos);
   return puntos.length;
+}
+
+/**
+ * Mete en el campo "dirección" de cada ficha la que haya dado la IA.
+ *
+ * PRE-RELLENADA Y EDITABLE, que es lo que se pedía: llega escrita para no tener
+ * que teclearla, y se corrige a mano si viene mal.
+ *
+ * NO PISA NADA. Solo se rellenan las fichas que no tienen ninguna dirección
+ * todavía. Volver a investigar un destino no puede borrar una calle que alguien
+ * corrigió a mano; eso convertiría "Actualizar" en una trampa.
+ *
+ * Y no hay migración de lo viejo: las fichas de antes se quedan como están, con
+ * su campo vacío y su botón de ponerla. Las nuevas generaciones ya la traen.
+ *
+ * Va fuera de la transacción a propósito: guardar una dirección encola su
+ * geocodificación, y eso no tiene por qué estar dentro del BEGIN de los puntos.
+ */
+function volcarDirecciones(destinoId, puntos) {
+  const conDireccion = puntos.filter((p) => p.direccion);
+  if (!conDireccion.length) return;
+
+  let puestas = 0;
+  for (const p of conDireccion) {
+    const fila = una(
+      'SELECT id FROM puntos_interes WHERE destino_id = ? AND nombre_norm = ?',
+      destinoId,
+      normalizarNombre(p.nombre)
+    );
+    if (!fila) continue;
+    if (direccionDe('punto', fila.id)) continue;   // ya tiene una: manda la suya
+
+    guardarDireccion('punto', fila.id, p.direccion);
+    puestas += 1;
+  }
+
+  if (puestas) {
+    console.log(`[descubrir] ${puestas} dirección/es de la IA volcadas a las fichas.`);
+  }
 }
 
 /** Números que llegan como texto, o como cualquier otra cosa. */

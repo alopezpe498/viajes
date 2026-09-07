@@ -25,10 +25,46 @@
 
   // ===========================================================================
   // PESTAÑAS
+  // ---------------------------------------------------------------------------
+  // DÓNDE ESTABAS SE RECUERDA, y hace falta.
+  //
+  // Media pantalla trabaja en segundo plano —hoteles, vuelos, cómo llegar,
+  // restaurantes— y cuando algo termina la forma más honesta de enseñarlo es
+  // recargar: lo que se pinta lo decide el servidor, que sabe cómo está cada
+  // cosa. Pero recargar te devolvía a "Qué ver" y perdías de vista justo lo que
+  // estabas esperando.
+  //
+  // El ancla de la URL ya guardaba la pestaña grande. Faltaban dos cosas:
+  //
+  //   - La SUBPESTAÑA (Sitios / Excursiones / Comer / Moverse) no se guardaba
+  //     en ningún sitio, así que siempre volvías a Sitios.
+  //   - Y el ancla solo se ponía al pulsar una pestaña. Llegando por un
+  //     redirect sin ancla, no había nada que reponer.
+  //
+  // Se guardan las dos en `sessionStorage`, por etapa. Es de la pestaña del
+  // navegador y se va al cerrarla, que es exactamente lo que se quiere: no es
+  // un dato del viaje, es dónde estaba mirando ahora mismo.
   // ===========================================================================
   const barra = document.getElementById('pestanas');
   const botones = barra ? [...barra.querySelectorAll('.pestana')] : [];
   const paneles = botones.map((b) => document.getElementById(b.dataset.panel));
+
+  const LLAVE = `etapa:${etapaId}:vista`;
+
+  function recordar(cambios) {
+    try {
+      const guardado = { ...leerRecuerdo(), ...cambios };
+      sessionStorage.setItem(LLAVE, JSON.stringify(guardado));
+    } catch { /* sin sessionStorage (modo privado antiguo): se sigue igual */ }
+  }
+
+  function leerRecuerdo() {
+    try {
+      return JSON.parse(sessionStorage.getItem(LLAVE) ?? '{}') ?? {};
+    } catch {
+      return {};
+    }
+  }
 
   function mostrar(indice, { conAncla = true } = {}) {
     botones.forEach((b, i) => {
@@ -43,6 +79,8 @@
     if (conAncla && botones[indice]) {
       history.replaceState(null, '', `#${botones[indice].dataset.ancla}`);
     }
+    // Y guardada, que es lo que la repone cuando no hay ancla de la que tirar.
+    if (botones[indice]) recordar({ pestana: botones[indice].dataset.ancla });
   }
 
   botones.forEach((b, i) => b.addEventListener('click', () => mostrar(i)));
@@ -61,9 +99,22 @@
     const ancla = location.hash.slice(1);
     const i = botones.findIndex((b) => b.dataset.ancla === ancla);
     if (i >= 0) mostrar(i, { conAncla: false });
+    return i >= 0;
   }
 
-  pestanaDelAncla();
+  /**
+   * Al cargar: manda el ancla y, si no la hay, lo último que se estaba mirando.
+   *
+   * En ese orden porque el ancla es una intención explícita —venir de la ruta
+   * pulsando "cómo llegar"— y lo recordado es solo dónde te quedaste.
+   */
+  (() => {
+    if (pestanaDelAncla()) return;
+
+    const { pestana } = leerRecuerdo();
+    const i = botones.findIndex((b) => b.dataset.ancla === pestana);
+    if (i > 0) mostrar(i);   // 0 es la de por defecto: ya está puesta
+  })();
 
   // Y también cuando el ancla cambia sin recargar. Pasa más de lo que parece:
   // ir de /etapa/15 a /etapa/15#dormir es navegación DENTRO del mismo
@@ -84,7 +135,7 @@
     const subBotones = [...barraSub.querySelectorAll('.subpestana')];
     const subPaneles = subBotones.map((b) => document.getElementById(b.dataset.subpanel));
 
-    const mostrarSub = (indice) => {
+    const mostrarSub = (indice, { guardar = true } = {}) => {
       subBotones.forEach((b, i) => {
         b.classList.toggle('subpestana--activa', i === indice);
         b.setAttribute('aria-selected', String(i === indice));
@@ -92,9 +143,18 @@
       subPaneles.forEach((p, i) => {
         if (p) p.hidden = i !== indice;
       });
+      if (guardar && subBotones[indice]) {
+        recordar({ subpestana: subBotones[indice].dataset.subpanel });
+      }
     };
 
     subBotones.forEach((b, i) => b.addEventListener('click', () => mostrarSub(i)));
+
+    // Y se repone al cargar. Sin esto, cada recarga te devolvía a "Sitios"
+    // aunque estuvieras esperando una búsqueda de restaurantes.
+    const { subpestana } = leerRecuerdo();
+    const iSub = subBotones.findIndex((b) => b.dataset.subpanel === subpestana);
+    if (iSub > 0) mostrarSub(iSub, { guardar: false });
 
     barraSub.addEventListener('keydown', (ev) => {
       if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
@@ -496,23 +556,74 @@
     ev.preventDefault();
     ev.stopPropagation();
 
-    // Si ya estaba abierto, se cierra: el botón es un interruptor.
-    const abierto = boton.parentElement.querySelector('.poner-en-dia');
-    if (abierto) { abierto.remove(); return; }
-
     // UN TRASLADO SE COLOCA IGUAL QUE UNA VISITA, pero no es un candidato: no
     // está apuntado en la mochila, es una ficha del catálogo urbano. Va con su
     // nombre y su ficha, y con hora, que en un metro o un taxi es el dato.
     const traslado = boton.dataset.ponerTraslado;
-    boton.parentElement.appendChild(
+    abrirModal(
       traslado
         ? selectorDeDia({
             movilidadId: Number(traslado),
             textoManual: boton.dataset.nombre,
             conHora: true,
           })
-        : selectorDeDia({ candidatoId: Number(boton.dataset.poner) })
+        : selectorDeDia({ candidatoId: Number(boton.dataset.poner) }),
+      boton.dataset.nombre ?? boton.closest('[data-comer], .ficha-sitio, .excursion')
+        ?.querySelector('h4, h2, .tarjeta__titulo')?.textContent.trim()
     );
+  });
+
+  /**
+   * El selector de día, EN UN MODAL CENTRADO.
+   *
+   * Antes se colgaba del propio botón, y en las fichas de "Moverse" el botón
+   * está dentro de una tarjeta de una rejilla: el formulario acababa pintado
+   * arriba del todo de la página, a pantallas de distancia de lo que se acababa
+   * de pulsar. Parecía que no había pasado nada.
+   *
+   * Centrado sobre el contenido no hay dónde perderlo. Se cierra con Cancelar,
+   * con Escape y tocando fuera, que son las tres cosas que uno intenta.
+   */
+  let modalAbierto = null;
+
+  function abrirModal(contenido, titulo) {
+    cerrarModal();
+
+    const fondo = document.createElement('div');
+    fondo.className = 'ventana-fondo';
+    fondo.innerHTML = `
+      <div class="ventana" role="dialog" aria-modal="true" aria-label="Ponerlo en un día">
+        <div class="ventana__cabecera">
+          <h3 class="ventana__titulo">Ponerlo en un día</h3>
+          ${titulo ? `<p class="ventana__sub">${esc(titulo)}</p>` : ''}
+        </div>
+      </div>`;
+
+    fondo.querySelector('.ventana').appendChild(contenido);
+    document.body.appendChild(fondo);
+    document.body.classList.add('con-ventana');
+    modalAbierto = fondo;
+
+    // Tocar fuera cierra; tocar dentro, no.
+    fondo.addEventListener('click', (ev) => {
+      if (ev.target === fondo) cerrarModal();
+    });
+
+    contenido.querySelector('select, input')?.focus();
+    return fondo;
+  }
+
+  function cerrarModal() {
+    modalAbierto?.remove();
+    modalAbierto = null;
+    document.body.classList.remove('con-ventana');
+  }
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && modalAbierto) {
+      ev.preventDefault();
+      cerrarModal();
+    }
   });
 
   function selectorDeDia(cuerpo, { medios = [] } = {}) {
@@ -535,9 +646,17 @@
            <input type="number" name="duracionMin" min="1" max="1440" step="5"
                   placeholder="min" aria-label="Duración en minutos" title="Duración en minutos">`
         : ''}
-      <button type="submit">Poner</button>`;
+      <div class="poner-en-dia__pie">
+        <button class="boton boton--primario boton--pequeno" type="submit">Poner</button>
+        <button class="boton boton--secundario boton--pequeno" type="button" data-cerrar-modal>
+          Cancelar
+        </button>
+      </div>`;
 
-    caja.addEventListener('click', (ev) => ev.stopPropagation());
+    caja.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (ev.target.closest('[data-cerrar-modal]')) cerrarModal();
+    });
     caja.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -763,16 +882,6 @@
     }
     return datos;
   }
-
-  // --- Abrir y cerrar el panel de medios de un tramo -------------------------
-  raiz.addEventListener('click', (ev) => {
-    const boton = ev.target.closest('[data-medios]');
-    if (!boton) return;
-    const caja = raiz.querySelector(`[data-medios-de="${boton.dataset.medios}"]`);
-    if (!caja) return;
-    caja.hidden = !caja.hidden;
-    if (!caja.hidden) caja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  });
 
   // --- Pedirle a la IA cómo se llega ----------------------------------------
   raiz.addEventListener('click', async (ev) => {
@@ -1037,6 +1146,7 @@
       const tramoId = nuevoMedio.dataset.nuevoMedio;
       const caja = raiz.querySelector(`[data-medios-de="${tramoId}"]`);
       if (!caja) return;
+      // Con el panel vacío está escondido: al escribir el primero, se enseña.
       caja.hidden = false;
       formularioFicha({
         titulo: 'Un medio más, escrito a mano',
@@ -1338,6 +1448,24 @@
     }
   });
 
+  // --- Fijar un traslado para tenerlo siempre arriba ------------------------
+  raiz.addEventListener('click', async (ev) => {
+    const boton = ev.target.closest('[data-fijar]');
+    if (!boton) return;
+
+    boton.disabled = true;
+    try {
+      await pedir(`/api/traslados/${boton.dataset.fijar}/fijar`, { method: 'POST' });
+      // Recargar: cambiar de montón mueve la fila de una lista a la otra, y eso
+      // lo pinta el servidor.
+      location.reload();
+    } catch (err) {
+      console.error('[etapa] no se pudo fijar el traslado:', err);
+      boton.disabled = false;
+      avisar(err.message);
+    }
+  });
+
   raiz.addEventListener('click', async (ev) => {
     const recalcular = ev.target.closest('[data-recalcular]');
     if (recalcular) {
@@ -1374,8 +1502,6 @@
     if (!boton || !datosColocar?.dias.length) return;
 
     ev.preventDefault();
-    const abierto = boton.parentElement.querySelector('.poner-en-dia');
-    if (abierto) { abierto.remove(); return; }
 
     const fila = boton.closest('.traslado');
     const medios = [...fila.querySelectorAll('.traslado__medio')].map((m) => ({
@@ -1383,8 +1509,9 @@
       etiqueta: m.textContent.replace(/\s+/g, ' ').trim(),
     }));
 
-    boton.parentElement.appendChild(
-      selectorDeDia({ trasladoId: Number(boton.dataset.alLienzo) }, { medios })
+    abrirModal(
+      selectorDeDia({ trasladoId: Number(boton.dataset.alLienzo) }, { medios }),
+      fila.querySelector('.traslado__recorrido')?.textContent.trim()
     );
   });
 

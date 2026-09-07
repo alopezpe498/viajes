@@ -15,7 +15,7 @@
  */
 const d = f.datos ?? {};
 %>
-<article class="ficha-transporte <%= f.elegida ? 'ficha-transporte--elegida' : '' %> <%= f.esAvion ? 'ficha-transporte--avion' : '' %>"
+<article class="ficha-transporte <%= f.elegida ? 'ficha-transporte--elegida' : '' %>"
          data-ficha="<%= f.id %>"
          data-medio="<%= f.medio %>"
          data-nota-sentido="<%= f.nota_sentido ?? '' %>"
@@ -51,41 +51,29 @@ const d = f.datos ?? {};
   <% } %>
 
   <div class="ficha-transporte__acciones">
-    <%# EL AVIÓN ES OTRA COSA. No se elige aquí: elegir un vuelo es elegir UN
-        vuelo concreto, con su hora y su precio, y para eso ya está el buscador
-        de siempre. Esta ficha es la puerta, no la elección. %>
-    <% if (f.esAvion) { %>
-      <button class="apuntar <%= f.elegida ? 'apuntar--si' : '' %>" type="button"
-              data-vuelos="<%= transporteId %>">
-        <i class="ti <%= f.elegida ? 'ti-check' : 'ti-search' %>" aria-hidden="true"></i>
-        <span><%= f.elegida ? 'Vuelo elegido' : 'Buscar vuelos' %></span>
-      </button>
-    <% } else { %>
-      <button class="apuntar <%= f.elegida ? 'apuntar--si' : '' %>" type="button"
-              data-elegir-medio="<%= f.id %>" data-tramo="<%= transporteId %>">
-        <i class="ti <%= f.elegida ? 'ti-check' : 'ti-circle' %>" aria-hidden="true"></i>
-        <span><%= f.elegida ? 'Elegido' : 'Elegir' %></span>
-      </button>
+    <button class="apuntar <%= f.elegida ? 'apuntar--si' : '' %>" type="button"
+            data-elegir-medio="<%= f.id %>" data-tramo="<%= transporteId %>">
+      <i class="ti <%= f.elegida ? 'ti-check' : 'ti-circle' %>" aria-hidden="true"></i>
+      <span><%= f.elegida ? 'Elegido' : 'Elegir' %></span>
+    </button>
 
-      <% if (f.web) { %>
-        <a class="apuntar" href="<%= f.web %>" target="_blank" rel="noopener noreferrer">
-          <i class="ti ti-external-link" aria-hidden="true"></i> Web
-        </a>
-      <% } %>
-
-      <button class="apuntar" type="button" data-editar-medio="<%= f.id %>">
-        <i class="ti ti-pencil" aria-hidden="true"></i> Editar
-      </button>
-      <button class="apuntar apuntar--peligro" type="button"
-              data-borrar-medio="<%= f.id %>" data-nombre="<%= f.nombre %>">
-        <i class="ti ti-trash" aria-hidden="true"></i>
-      </button>
+    <% if (f.web) { %>
+      <a class="apuntar" href="<%= f.web %>" target="_blank" rel="noopener noreferrer">
+        <i class="ti ti-external-link" aria-hidden="true"></i> Web
+      </a>
     <% } %>
+
+    <button class="apuntar" type="button" data-editar-medio="<%= f.id %>">
+      <i class="ti ti-pencil" aria-hidden="true"></i> Editar
+    </button>
+    <button class="apuntar apuntar--peligro" type="button"
+            data-borrar-medio="<%= f.id %>" data-nombre="<%= f.nombre %>">
+      <i class="ti ti-trash" aria-hidden="true"></i>
+    </button>
   </div>
 
   <%# Los campos de lo concreto. Solo se ven en la elegida: en las demás no hay
       nada que apuntar todavía, pero lo tecleado se guarda igual por si vuelvo. %>
-  <% if (!f.esAvion) { %>
   <form class="ficha-transporte__mios <%= f.elegida ? '' : 'oculto' %>"
         data-datos-medio="<%= f.id %>" data-tramo="<%= transporteId %>">
     <div class="ficha-transporte__campos">
@@ -112,5 +100,4 @@ const d = f.datos ?? {};
     </label>
     <span class="ficha-transporte__guardado" data-guardado></span>
   </form>
-  <% } %>
 </article>

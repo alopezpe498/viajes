@@ -178,7 +178,8 @@ const ICONO_TIPO = {
       <% const SUBVISTAS = [
            { clave: 'sitios',      etiqueta: 'Sitios',      icono: 'ti-map-pin', n: queVer.sitios.length },
            { clave: 'excursiones', etiqueta: 'Excursiones', icono: 'ti-ticket',  n: queVer.excursiones.length },
-           { clave: 'comer',       etiqueta: 'Comer',       icono: 'ti-tools-kitchen-2', n: comer.fichas.length },
+           { clave: 'comer',       etiqueta: 'Comer',       icono: 'ti-tools-kitchen-2',
+             n: comer.apuntadas.length + comer.resultados.length },
            { clave: 'moverse',     etiqueta: 'Moverse',     icono: 'ti-bus',     n: moverse.fichas.length },
          ]; %>
 
@@ -281,14 +282,69 @@ const ICONO_TIPO = {
           </p>
         <% } %>
 
-        <div class="rejilla-fichas" id="lista-comer">
-          <% comer.fichas.forEach(c => { %>
-            <%- include('parciales/ficha-comer', {
-                  c, etapa, viaje, colocaciones, diasDeLaEtapa,
-                  distancias: distanciasComer.get(c.id) ?? [],
-                }) %>
-          <% }) %>
-        </div>
+        <%# TRES MONTONES, Y ANTES ERA UNO SOLO.
+            Madrid llegó a tener setenta y una fichas aquí porque cada búsqueda
+            añadía doce y ninguna se iba. Lo que uno se apunta es suyo y no
+            caduca; lo que sale de una consulta es de usar y tirar. %>
+
+        <% if (comer.apuntadas.length) { %>
+          <div class="seccion-cabecera seccion-cabecera--fina">
+            <h4 class="seccion-cabecera__titulo">
+              <i class="ti ti-bookmark-filled" aria-hidden="true"></i>
+              Los que me he apuntado
+              <span class="pastilla"><%= comer.apuntadas.length %></span>
+            </h4>
+          </div>
+          <div class="rejilla-fichas" id="lista-comer">
+            <% comer.apuntadas.forEach(c => { %>
+              <%- include('parciales/ficha-comer', {
+                    c, etapa, viaje, colocaciones, diasDeLaEtapa,
+                    distancias: distanciasComer.get(c.id) ?? [],
+                  }) %>
+            <% }) %>
+          </div>
+        <% } %>
+
+        <% if (comer.resultados.length) { %>
+          <div class="seccion-cabecera seccion-cabecera--fina">
+            <h4 class="seccion-cabecera__titulo">
+              <i class="ti ti-search" aria-hidden="true"></i>
+              De la última búsqueda
+              <span class="pastilla"><%= comer.resultados.length %></span>
+            </h4>
+            <p class="seccion-cabecera__pie">
+              Se irán en cuanto busques otra cosa. Apunta los que quieras conservar.
+            </p>
+          </div>
+          <div class="rejilla-fichas" <%= comer.apuntadas.length ? '' : 'id="lista-comer"' %>>
+            <% comer.resultados.forEach(c => { %>
+              <%- include('parciales/ficha-comer', {
+                    c, etapa, viaje, colocaciones, diasDeLaEtapa,
+                    distancias: distanciasComer.get(c.id) ?? [],
+                  }) %>
+            <% }) %>
+          </div>
+        <% } %>
+
+        <%# Lo de búsquedas anteriores. No se borra —cada ficha costó una
+            llamada a Places y el próximo viaje la reutiliza— pero se guarda
+            plegado, que es donde no estorba. %>
+        <% if (comer.historico.length) { %>
+          <details class="comer-historico">
+            <summary>
+              <i class="ti ti-history" aria-hidden="true"></i>
+              De búsquedas anteriores <span class="pastilla"><%= comer.historico.length %></span>
+            </summary>
+            <div class="rejilla-fichas">
+              <% comer.historico.forEach(c => { %>
+                <%- include('parciales/ficha-comer', {
+                      c, etapa, viaje, colocaciones, diasDeLaEtapa,
+                      distancias: distanciasComer.get(c.id) ?? [],
+                    }) %>
+              <% }) %>
+            </div>
+          </details>
+        <% } %>
       </section>
 
       <%# --- Moverse: el transporte urbano de la ciudad --- %>
@@ -302,17 +358,28 @@ const ICONO_TIPO = {
             el servidor ya las quita, y aquí no harían ninguna falta. %>
         <script type="application/json" id="datos-lugares"><%- JSON.stringify(lugares) %></script>
 
+        <%# El objeto entero, no solo la lista: el parcial separa los fijados
+            del historial y necesita las dos partes. %>
         <%- include('parciales/traslados', {
-              traslados: traslados.traslados, lugares, etapa, viaje, diasDeLaEtapa,
+              traslados, lugares, etapa, viaje, diasDeLaEtapa,
             }) %>
 
         <hr class="separador-suave">
 
-        <div class="titulo-con-accion">
-          <p class="secundario" style="margin:0">
+        <%# LA SEGUNDA MITAD DE LA PESTAÑA, y se dice que lo es.
+            Antes las dos cosas —los traslados punto a punto y las fichas de
+            metro y taxi— caían una detrás de otra sin nada que las separase, y
+            la pantalla parecía una sola lista revuelta. Son dos preguntas
+            distintas: "cuánto hay de aquí a allá" y "cómo funciona el
+            transporte de esta ciudad". %>
+        <div class="seccion-cabecera">
+          <h3 class="seccion-cabecera__titulo">
+            <i class="ti ti-bus" aria-hidden="true"></i> Transporte en la ciudad
+          </h3>
+          <p class="seccion-cabecera__pie">
             Metro, buses, taxis con su teléfono y lo peculiar de <%= etapa.nombre_ciudad %>.
           </p>
-          <span class="moverse-acciones">
+          <span class="seccion-cabecera__acciones">
             <button class="boton boton--secundario" type="button" id="buscar-movilidad"
                     data-etapa="<%= etapa.id %>" <%= moverse.buscando ? 'disabled' : '' %>>
               <i class="ti <%= moverse.buscando ? 'ti-loader-2 girando' : 'ti-sparkles' %>" aria-hidden="true"></i>
@@ -349,7 +416,12 @@ const ICONO_TIPO = {
           </p>
         <% } %>
 
-        <div class="rejilla-fichas" id="lista-movilidad">
+        <%# DOS POR FILA, no tres. Estas fichas llevan teléfono, web, horarios y
+            dirección: en una columna de 244 px el contenido no cabe y empujaba
+            la rejilla hasta descuadrarla —las columnas salían de 352, 218 y 184
+            píxeles en vez de repartidas—. Con dos caben, y siguen siendo
+            tarjetas, no franjas de ancho completo. %>
+        <div class="rejilla-fichas rejilla-fichas--dos" id="lista-movilidad">
           <% moverse.fichas.forEach(m => { %>
             <%- include('parciales/ficha-movilidad', { m, etapa, diasDeLaEtapa }) %>
           <% }) %>
@@ -553,26 +625,40 @@ const ICONO_TIPO = {
           <% } %>
 
           <div class="tramo-caja__acciones">
-            <%# EL AVIÓN YA NO ES LA ÚNICA PUERTA.
-                Antes este botón era lo único que había, también en Sarajevo →
-                Mostar, que se hace en bus por unos euros. Sigue estando —hay
-                tramos largos donde sí se vuela— pero ahora al lado de "Cómo
-                llegar", que es lo que hace falta en la mayoría de los saltos. %>
-            <% if (t.donde !== 'salto' || t.tipo === 'vuelo') { %>
-              <button class="boton boton--secundario" type="button" data-vuelos="<%= t.id %>">
-                <i class="ti ti-plane" aria-hidden="true"></i>
-                <%= t.resultados.estado === 'hecho' && t.resultados.vuelos.length
-                      ? `Ver vuelos (${t.resultados.vuelos.length})`
-                      : 'Buscar vuelos' %>
+            <%# UN SOLO NIVEL.
+                Antes había un botón "Cómo llegar" que abría un panel donde
+                dentro había OTRO botón "Buscar cómo llegar" y una caja de
+                avión. Dos capas para tres acciones que caben en una fila: se
+                buscan los medios, se busca vuelo, o se escribe uno a mano.
+                El panel de abajo ya solo enseña resultados. %>
+
+            <% if (t.medios) { %>
+              <button class="boton boton--secundario" type="button"
+                      data-buscar-medios="<%= t.id %>" <%= t.medios.buscando ? 'disabled' : '' %>>
+                <i class="ti <%= t.medios.buscando ? 'ti-loader-2 girando' : 'ti-route-2' %>" aria-hidden="true"></i>
+                <span><%= t.medios.buscando
+                      ? 'Buscando…'
+                      : t.medios.delCatalogo
+                        ? `Buscar otra vez (${t.medios.delCatalogo})`
+                        : 'Buscar cómo llegar' %></span>
               </button>
             <% } %>
 
+            <%# El vuelo, al mismo nivel. Hay tramos largos donde sí se vuela, y
+                los de casa y a casa son siempre vuelo. %>
+            <button class="boton boton--secundario" type="button" data-vuelos="<%= t.id %>">
+              <i class="ti ti-plane" aria-hidden="true"></i>
+              <%= t.resultados.estado === 'hecho' && t.resultados.vuelos.length
+                    ? `Ver vuelos (${t.resultados.vuelos.length})`
+                    : 'Buscar vuelo' %>
+            </button>
+
             <% if (t.medios) { %>
-              <button class="boton boton--secundario" type="button" data-medios="<%= t.id %>">
-                <i class="ti ti-route-2" aria-hidden="true"></i>
-                Cómo llegar<% if (t.medios.delCatalogo) { %> (<%= t.medios.delCatalogo %>)<% } %>
+              <button class="boton boton--secundario" type="button" data-nuevo-medio="<%= t.id %>">
+                <i class="ti ti-plus" aria-hidden="true"></i> Añadir medio
               </button>
             <% } %>
+
             <button class="boton boton--secundario" type="button" data-manual="<%= t.id %>">
               <i class="ti ti-pencil" aria-hidden="true"></i>
               <%= t.resuelto && t.notas ? 'Editar a mano' : 'Apuntar a mano' %>
@@ -623,24 +709,16 @@ const ICONO_TIPO = {
               los tiene. El avión no está en esta lista: tiene su propio botón,
               que lleva al buscador de Kayak. %>
           <% if (t.medios) { %>
+            <%# El panel es SOLO resultados: los botones viven arriba, con los
+                demás del tramo. Se ve cuando hay algo que enseñar y se esconde
+                cuando no, sin botón que lo despliegue. %>
             <div class="medios-tramo" data-medios-de="<%= t.id %>"
-                 <%= t.medios.delCatalogo || t.medios.elegidaId ? '' : 'hidden' %>>
+                 <%= t.medios.delCatalogo || t.medios.elegidaId || t.medios.buscando ? '' : 'hidden' %>>
 
-              <div class="titulo-con-accion">
-                <p class="secundario" style="margin:0">
-                  De <strong><%= t.nombreOrigen %></strong> a <strong><%= t.nombreDestino %></strong>
-                </p>
-                <span class="moverse-acciones">
-                  <button class="boton boton--secundario" type="button"
-                          data-buscar-medios="<%= t.id %>" <%= t.medios.buscando ? 'disabled' : '' %>>
-                    <i class="ti <%= t.medios.buscando ? 'ti-loader-2 girando' : 'ti-sparkles' %>" aria-hidden="true"></i>
-                    <span><%= t.medios.buscando ? 'Buscando…' : (t.medios.delCatalogo ? 'Buscar otra vez' : 'Buscar cómo llegar') %></span>
-                  </button>
-                  <button class="boton boton--secundario" type="button" data-nuevo-medio="<%= t.id %>">
-                    <i class="ti ti-plus" aria-hidden="true"></i> A mano
-                  </button>
-                </span>
-              </div>
+              <p class="secundario" style="margin:0">
+                Cómo ir de <strong><%= t.nombreOrigen %></strong> a
+                <strong><%= t.nombreDestino %></strong>
+              </p>
 
               <% if (t.medios.buscando) { %>
                 <div class="franja franja--trabajando" data-medios-trabajando="<%= t.id %>">
@@ -655,12 +733,6 @@ const ICONO_TIPO = {
                     <p class="aviso__texto secundario">Puedes crear las fichas a mano igualmente.</p>
                   </div>
                 </div>
-              <% } %>
-
-              <% if (!t.medios.delCatalogo && !t.medios.buscando) { %>
-                <p class="candidatos__vacio">
-                  Todavía no se ha mirado cómo ir de <%= t.nombreOrigen %> a <%= t.nombreDestino %>.
-                </p>
               <% } %>
 
               <div class="rejilla-fichas">

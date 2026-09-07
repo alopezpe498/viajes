@@ -158,6 +158,7 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
     dia: f.dia,
     franja: f.franja,
     hora: f.hora,
+    orden: f.orden,
     etapaId: f.etapa_id,
     ciudad: f.nombre_ciudad,
     candidatoId: f.candidato_id,
@@ -169,11 +170,19 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
     nombre: f.candidato_id == null ? f.texto_manual : f.c_titulo,
     precio: f.precio,
     moneda: f.moneda,
-    // La duración en minutos manda cuando la hay: la teclea uno en el propio
-    // lienzo. Un traslado siempre la lleva; una comida también, porque cuánto
-    // dura una cena es cosa de la cena, no del restaurante. Para lo demás vale
-    // la del catálogo ("2 horas" de una excursión).
-    duracion: minutosLargos(f.duracion_min) ?? (esTraslado(f) ? null : f.duracion),
+    // LA HORA Y LA DURACIÓN SON DEL PLAN, NO DE LA FICHA.
+    //
+    // La misma catedral puede verse a las diez un martes y a las seis un
+    // viernes: eso no es un dato de la catedral, es un dato de ESTE día. Por
+    // eso viven en `itinerario` y no en el catálogo, y por eso cualquier
+    // tarjeta puede llevarlas, no solo las escritas a mano.
+    //
+    // Lo tecleado manda sobre lo que diga el catálogo: si alguien pone que su
+    // visita al Prado son 90 minutos, son 90, aunque la ficha diga "2 horas".
+    duracion: minutosLargos(f.duracion_min),
+    // La del catálogo se sigue enseñando cuando no hay una tecleada: es una
+    // orientación útil ("2 horas", "7 horas") y no estorba.
+    duracionCatalogo: f.duracion,
     duracionMin: f.duracion_min ?? null,
     movilidadId: f.movilidad_id ?? null,
     trasladoId: f.traslado_id ?? null,
@@ -228,6 +237,8 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
   const fijos = bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa);
 
   // --- 5) Los avisos ------------------------------------------------------
+  ordenarPorHora(colocados);
+
   const avisos = calcularAvisos(dias, colocados, fijos);
 
   // --- Filtro por etapa ---------------------------------------------------
@@ -641,12 +652,91 @@ function minutosLargos(min) {
   return m ? `${h} h ${m}` : `${h} h`;
 }
 
+/**
+ * Sube o baja una tarjeta dentro de su franja.
+ *
+ * Hasta ahora lo único que se podía hacer era soltar una tarjeta en una franja,
+ * y caía al final. No había forma de meter una comida entre dos visitas sin
+ * borrarlo todo y volver a colocarlo en orden.
+ *
+ * Intercambia el `orden` con la vecina, que es lo que hace que el movimiento se
+ * vea de uno en uno y se entienda. Solo se mueve entre las que NO tienen hora:
+ * las que la tienen ya están ordenadas por ella y empujarlas no cambiaría nada,
+ * así que la pantalla ni siquiera les ofrece los botones.
+ */
+export function moverEnFranja(id, direccion) {
+  const fila = una('SELECT * FROM itinerario WHERE id = ?', id);
+  if (!fila) return null;
+
+  const hermanas = todas(
+    `SELECT * FROM itinerario
+      WHERE viaje_id = ? AND dia = ? AND franja = ? AND hora IS NULL
+      ORDER BY orden, id`,
+    fila.viaje_id,
+    fila.dia,
+    fila.franja
+  );
+
+  const i = hermanas.findIndex((h) => h.id === fila.id);
+  const j = direccion === 'arriba' ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= hermanas.length) return fila;   // ya está en el borde
+
+  // Se intercambian los dos órdenes. Si empataran —puede pasar con datos
+  // viejos—, se reparten dos números seguidos para que el cambio se note.
+  const a = hermanas[i];
+  const b = hermanas[j];
+  const ordenA = a.orden === b.orden ? (direccion === 'arriba' ? b.orden + 1 : b.orden - 1) : a.orden;
+
+  ejecutar('UPDATE itinerario SET orden = ? WHERE id = ?', b.orden, a.id);
+  ejecutar('UPDATE itinerario SET orden = ? WHERE id = ?', ordenA, b.id);
+
+  return una('SELECT * FROM itinerario WHERE id = ?', id);
+}
+
 /** Lo saca del lienzo. Si era un candidato, vuelve solo a la mochila. */
 export function quitar(id) {
   const fila = una('SELECT * FROM itinerario WHERE id = ?', id);
   if (!fila) return null;
   ejecutar('DELETE FROM itinerario WHERE id = ?', id);
   return fila;
+}
+
+/**
+ * Ordena cada franja: primero las que tienen hora, por hora; después el resto.
+ *
+ * LA HORA MANDA CUANDO LA HAY. Si he apuntado que el free tour es a las 10:00 y
+ * la comida a las 14:30, el orden del día ya está dicho y arrastrarlas para
+ * ponerlas "bien" es trabajo que no debería hacer nadie.
+ *
+ * Y las que NO tienen hora conservan su orden manual, detrás. No se mezclan con
+ * las otras a ojo: una tarjeta sin hora no tiene un sitio natural entre las
+ * 10:00 y las 14:30, y colocarla ahí sería inventárselo. Van después, donde el
+ * usuario las suba o las baje.
+ *
+ * Se ordena aquí y no en el SQL porque `hora` puede ser NULL y la regla es de
+ * dos tramos; en una consulta quedaría ilegible.
+ */
+function ordenarPorHora(colocados) {
+  // UN ORDEN TOTAL, sin atajos. El primer intento devolvía 0 para dos tarjetas
+  // de franjas distintas —"que las agrupe la vista"— y eso rompe el comparador:
+  // deja de ser transitivo y `sort` puede colocarlas como le dé la gana. El
+  // resultado era que poner una hora no movía nada.
+  const posicionFranja = (f) => {
+    const i = CLAVES_FRANJA.indexOf(f);
+    return i === -1 ? 99 : i;
+  };
+
+  colocados.sort(
+    (a, b) =>
+      a.dia - b.dia ||
+      posicionFranja(a.franja) - posicionFranja(b.franja) ||
+      // Con hora van delante, ordenadas entre ellas. Sin hora, detrás y en su
+      // orden manual, que es donde el usuario las haya subido o bajado.
+      (a.hora ? 0 : 1) - (b.hora ? 0 : 1) ||
+      (a.hora && b.hora ? a.hora.localeCompare(b.hora) : 0) ||
+      (a.orden ?? 0) - (b.orden ?? 0) ||
+      a.id - b.id
+  );
 }
 
 /** Una fila del itinerario es un traslado si viene de una ficha o de una consulta. */

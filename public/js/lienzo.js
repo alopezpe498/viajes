@@ -158,15 +158,21 @@
           <i class="ti ${ICONO_TIPO[m.tipo] || 'ti-point'}" aria-hidden="true"></i>
           <span class="item__nombre">${esc(m.nombre)}</span>
         </div>
-        ${meta(m)}
+        ${meta({ ...m, duracionCatalogo: m.duracion })}
       </article>`;
   }
 
-  /** La línea de debajo: hora en negrita, duración y precio, lo que haya. */
+  /**
+   * La línea de debajo: lo que NO está ya en el reloj.
+   *
+   * La hora y la duración tecleadas viven en sus casillas, así que repetirlas
+   * aquí sería decir dos veces lo mismo. Queda la duración que trae el catálogo
+   * —"2 horas" de una excursión, como orientación— y el precio.
+   */
   function meta(x) {
     const trozos = [];
-    if (x.hora) trozos.push(`<span class="item__hora">${esc(x.hora)}</span>`);
-    if (x.duracion) trozos.push(esc(x.duracion));
+    // Solo la del catálogo, y solo si no hay una tecleada que la sustituya.
+    if (!x.duracionMin && x.duracionCatalogo) trozos.push(esc(x.duracionCatalogo));
     if (x.precio != null) trozos.push(`${x.precio} ${esc(x.moneda || 'EUR')}`);
     return trozos.length ? `<div class="item__meta">${trozos.join(' · ')}</div>` : '';
   }
@@ -277,40 +283,73 @@
         <div class="item__fila">
           <i class="ti ${(c.tipo === 'traslado' && ICONO_MEDIO[c.medio]) || ICONO_TIPO[c.tipo] || 'ti-point'}" aria-hidden="true"></i>
           <span class="item__nombre">${esc(c.nombre)}</span>
+          ${flechas(c)}
           <button class="item__quitar" type="button" data-quitar="${c.id}"
                   title="${c.manual ? 'Borrar' : 'Devolver a la mochila'}"
                   aria-label="${c.manual ? 'Borrar' : 'Devolver a la mochila'}">
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
         </div>
-        ${LLEVAN_RELOJ.has(c.tipo) ? reloj(c) : meta(c)}
+        ${meta(c)}
+        ${reloj(c)}
       </article>`;
   }
 
   /**
-   * Qué tarjetas llevan hora y duración a la vista.
+   * Las flechas de subir y bajar.
    *
-   * Un traslado y una comida son las dos cosas del día que se planean POR LA
-   * HORA: el bus sale a las 9:15, la mesa es a las 14:30. En una visita a un
-   * museo la hora es opcional y la duración la dice el catálogo.
+   * SOLO EN LAS QUE NO TIENEN HORA. Las que la tienen ya están ordenadas por
+   * ella: empujarlas no cambiaría nada y el botón sería una promesa falsa.
+   *
+   * Existen porque hasta ahora una tarjeta nueva solo podía caer al final de su
+   * franja: para meter una comida entre dos visitas había que sacarlo todo y
+   * volver a ponerlo en orden.
    */
-  const LLEVAN_RELOJ = new Set(['traslado', 'comer']);
+  function flechas(c) {
+    if (c.hora) return '';
+    return `
+      <span class="item__flechas">
+        <button class="item__flecha" type="button" data-subir="${c.id}"
+                title="Subir" aria-label="Subir">
+          <i class="ti ti-chevron-up" aria-hidden="true"></i>
+        </button>
+        <button class="item__flecha" type="button" data-bajar="${c.id}"
+                title="Bajar" aria-label="Bajar">
+          <i class="ti ti-chevron-down" aria-hidden="true"></i>
+        </button>
+      </span>`;
+  }
 
   /**
-   * La hora y la duración, tecleables ahí mismo.
+   * La hora y la duración, en CUALQUIER tarjeta.
    *
-   * En el resto de tarjetas la hora es un dato que se lee. En un traslado es el
-   * dato: "el bus sale a las 9:15 y son 2 h 30" es TODO lo que hay que saber, y
-   * mandar a otra pantalla a escribirlo sería absurdo. Por eso son dos casillas
-   * y no una etiqueta.
+   * Antes solo las escritas a mano —y luego traslados y comidas— podían llevar
+   * hora. No tenía sentido: a las diez de la mañana en el Prado se llega a una
+   * hora concreta igual que a una cena, y sin poder apuntarla el lienzo no
+   * termina de ser un plan.
+   *
+   * LA HORA ES DEL PLAN, NO DE LA FICHA. La misma catedral puede ir a las diez
+   * un día y a las seis otro; eso no se guarda en el catálogo, se guarda en la
+   * tarjeta.
+   *
+   * NO SE PROPONE NINGUNA HORA. Ni la de apertura, ni una deducida de la
+   * anterior más su duración. El campo nace vacío y lo rellena quien quiera:
+   * una hora sugerida que nadie ha pedido se acaba dando por buena.
+   *
+   * Y va PLEGADO mientras no haya nada. Con cinco tarjetas en un día, diez
+   * casillas vacías convierten la columna en un formulario; así solo se ve un
+   * relojito, y se abre al tocarlo.
    */
   function reloj(c) {
-    // Sin línea de meta: repetiría la hora y la duración que están justo debajo
-    // en sus propias casillas.
+    const tieneAlgo = Boolean(c.hora || c.duracionMin);
     return `
-      <div class="item__reloj">
+      <div class="item__reloj ${tieneAlgo ? '' : 'item__reloj--plegado'}">
+        <button class="item__reloj-abrir" type="button" data-abrir-reloj="${c.id}"
+                title="Poner hora o duración" aria-label="Poner hora o duración">
+          <i class="ti ti-clock-plus" aria-hidden="true"></i>
+        </button>
         <input type="time" value="${esc(c.hora)}" data-hora="${c.id}"
-               aria-label="Hora de salida" title="Hora de salida">
+               aria-label="Hora de inicio" title="Hora de inicio">
         <input type="number" min="1" max="1440" step="5" placeholder="min"
                value="${c.duracionMin ?? ''}" data-duracion="${c.id}"
                aria-label="Duración en minutos" title="Duración en minutos">
@@ -334,9 +373,15 @@
 
       lienzo = respuesta;
       pintar();
+      return { ok: true };
     } catch (err) {
+      // Se avisa aquí —todas las llamadas quieren eso— pero además se DEVUELVE
+      // el motivo. Sin esto, quien necesita reaccionar al fallo no se entera:
+      // el menú del "+" se quedaba en "calculando…" para siempre mientras el
+      // aviso flotante aparecía y se iba en otra esquina de la pantalla.
       console.error('[lienzo] no se pudo aplicar el cambio:', err);
       avisar(err.message);
+      return { ok: false, error: err.message };
     } finally {
       pantalla.classList.remove('lienzo-pantalla--esperando');
     }
@@ -367,6 +412,29 @@
   // --- La hora y la duración de un traslado ---------------------------------
   // Se guardan al salir del campo, como las notas de la etapa: son dos casillas
   // que uno rellena y deja, no un formulario que se envía.
+  // El relojito: despliega las casillas de esa tarjeta. No manda nada al
+  // servidor, solo enseña lo que estaba plegado.
+  pantalla.addEventListener('click', (ev) => {
+    const boton = ev.target.closest('[data-abrir-reloj]');
+    if (!boton) return;
+    const caja = boton.closest('.item__reloj');
+    caja.classList.remove('item__reloj--plegado');
+    caja.querySelector('[data-hora]')?.focus();
+  });
+
+  // --- Subir y bajar dentro de la franja ------------------------------------
+  pantalla.addEventListener('click', (ev) => {
+    const arriba = ev.target.closest('[data-subir]');
+    const abajo = ev.target.closest('[data-bajar]');
+    if (!arriba && !abajo) return;
+
+    const id = arriba?.dataset.subir ?? abajo.dataset.bajar;
+    llamar(`/api/itinerario/${id}/mover-en-franja`, {
+      method: 'POST',
+      body: JSON.stringify(conEtapa({ direccion: arriba ? 'arriba' : 'abajo' })),
+    });
+  });
+
   pantalla.addEventListener('change', (ev) => {
     const hora = ev.target.closest('[data-hora]');
     const duracion = ev.target.closest('[data-duracion]');
@@ -483,6 +551,9 @@
       const datos = await r.json();
       if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
       menu.innerHTML = pintarMenuHueco(datos);
+      // El hueco entero se queda con el menú: el formulario de extremos y el
+      // envío lo necesitan, y volver a pedirlo sería una llamada de más.
+      menu.__hueco = datos;
       menu.dataset.dia = dia;
       menu.dataset.franja = franja;
       menu.dataset.indice = indice;
@@ -511,13 +582,20 @@
     // ponérsela: es más útil que un "no se puede" a secas.
     const sinSitio = [h.origen, h.destino].find((x) => !x.situada);
     if (sinSitio) {
+      // Se dice QUÉ ficha es la que no tiene dirección, con su nombre, y se dan
+      // las dos salidas: ir a ponérsela, o elegir otro extremo que sí la tenga.
+      // Quedarse solo con la primera obliga a salir del lienzo por un traslado
+      // que a lo mejor ni siquiera era entre esas dos cosas.
       return `<span class="hueco__aviso">
                 <i class="ti ti-map-pin-off"></i>
                 Falta la dirección de <strong>${esc(sinSitio.nombre)}</strong>.
               </span>
               <a class="hueco__opcion" href="/etapa/${h.etapaId}#ver">
-                <i class="ti ti-pencil"></i> Ponérsela
-              </a>`;
+                <i class="ti ti-pencil"></i> <span>Ponérsela</span>
+              </a>
+              <button class="hueco__opcion hueco__opcion--fina" type="button" data-cambiar-extremos>
+                <i class="ti ti-edit"></i> <span>O elegir otro sitio</span>
+              </button>`;
     }
 
     return `
@@ -528,6 +606,10 @@
           <span class="hueco__extremos">${esc(h.origen.nombre)} → ${esc(h.destino.nombre)}</span>
         </span>
       </button>
+      <button class="hueco__opcion hueco__opcion--fina" type="button" data-cambiar-extremos>
+        <i class="ti ti-edit" aria-hidden="true"></i>
+        <span>Cambiar de dónde a dónde</span>
+      </button>
       <button class="hueco__opcion" type="button" data-hueco-comer>
         <i class="ti ti-tools-kitchen-2" aria-hidden="true"></i>
         <span>
@@ -537,6 +619,66 @@
       </button>`;
   }
 
+  /**
+   * El formulario para elegir los extremos a mano.
+   *
+   * LO DEDUCIDO SIGUE SIENDO LA PROPUESTA: los dos campos vienen rellenos con
+   * las tarjetas de al lado, que es lo que uno quiere nueve de cada diez veces.
+   * Esto es para la décima: el traslado que sale del hotel aunque antes hubiera
+   * un museo, o el que va al aeropuerto aunque no haya nada detrás.
+   *
+   * La lista es la MISMA del buscador de traslados de la etapa —el hotel, lo
+   * apuntado, los restaurantes, el transporte urbano— y además admite escribir
+   * una dirección cualquiera.
+   */
+  async function formularioDeExtremos(menu, h) {
+    menu.innerHTML = '<span class="hueco__cargando"><i class="ti ti-loader-2 girando"></i> …</span>';
+
+    let lugares = [];
+    try {
+      const r = await fetch(`/api/etapas/${h.etapaId}/lugares`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (r.ok) lugares = (await r.json()).lugares ?? [];
+    } catch { /* sin lista: los dos campos siguen aceptando texto libre */ }
+
+    // Se guarda para poder traducir lo tecleado a un elemento del viaje.
+    menu.__lugares = lugares.filter((l) => l.situada);
+
+    const opciones = menu.__lugares
+      .map((l) => `<option value="${esc(l.nombre)}">${esc(l.etiqueta)}</option>`)
+      .join('');
+
+    menu.innerHTML = `
+      <form class="hueco__form">
+        <label>
+          <span>Desde</span>
+          <input name="origen" list="lugares-hueco" autocomplete="off"
+                 value="${esc(h.origen?.nombre ?? '')}"
+                 placeholder="Un sitio del viaje o una dirección">
+        </label>
+        <label>
+          <span>Hasta</span>
+          <input name="destino" list="lugares-hueco" autocomplete="off"
+                 value="${esc(h.destino?.nombre ?? '')}"
+                 placeholder="Un sitio del viaje o una dirección">
+        </label>
+        <datalist id="lugares-hueco">${opciones}</datalist>
+        <div class="hueco__form-pie">
+          <button class="boton boton--primario boton--pequeno" type="submit">Calcular</button>
+          <button class="boton boton--secundario boton--pequeno" type="button" data-volver>Volver</button>
+        </div>
+      </form>`;
+  }
+
+  /** ¿Lo tecleado es un sitio del viaje, o texto suelto? */
+  function comoExtremo(texto, lugares) {
+    const t = String(texto ?? '').trim();
+    if (!t) return null;
+    const encaja = (lugares ?? []).find((l) => l.nombre.toLowerCase() === t.toLowerCase());
+    return encaja ? { tipo: encaja.tipo, id: encaja.id, texto: encaja.nombre } : { texto: t };
+  }
+
   function cerrarHuecos() {
     for (const c of pantalla.querySelectorAll('.hueco--abierto')) {
       c.classList.remove('hueco--abierto');
@@ -544,34 +686,93 @@
     }
   }
 
-  // Un clic en cualquier otro sitio cierra el menú abierto.
+  /**
+   * Un clic en cualquier otro sitio cierra el menú abierto.
+   *
+   * SE MIRA EL CAMINO DEL EVENTO, no `ev.target`, y esa diferencia es la que
+   * tenía roto "Comer".
+   *
+   * Este manejador va en `document`, así que corre DESPUÉS de los de la
+   * pantalla. Para cuando llega, el de "Comer" ya ha sustituido el contenido
+   * del menú por el "buscando…", y con él el botón que se acababa de pulsar:
+   * `ev.target` es un elemento que ya no está en el documento, su `closest()`
+   * no encuentra ningún `.hueco`, y esto cerraba el menú entero. La petición
+   * salía y contestaba treinta segundos después, pero no había dónde pintarla.
+   * Desde fuera: pulsas "Comer" y no pasa nada.
+   *
+   * `composedPath()` se calcula al lanzar el evento y se queda guardado, así
+   * que sigue diciendo por dónde pasó aunque el DOM haya cambiado debajo.
+   */
   document.addEventListener('click', (ev) => {
-    if (!ev.target.closest('.hueco')) cerrarHuecos();
+    const dentroDeUnHueco = ev
+      .composedPath()
+      .some((n) => n instanceof Element && n.classList?.contains('hueco'));
+    if (!dentroDeUnHueco) cerrarHuecos();
+  });
+
+  // --- Cambiar de dónde a dónde ---------------------------------------------
+  pantalla.addEventListener('click', (ev) => {
+    const boton = ev.target.closest('[data-cambiar-extremos]');
+    if (!boton) return;
+    const menu = boton.closest('.hueco__menu');
+    formularioDeExtremos(menu, menu.__hueco);
+  });
+
+  pantalla.addEventListener('click', (ev) => {
+    const boton = ev.target.closest('[data-volver]');
+    if (!boton) return;
+    const menu = boton.closest('.hueco__menu');
+    menu.innerHTML = pintarMenuHueco(menu.__hueco);
+  });
+
+  pantalla.addEventListener('submit', (ev) => {
+    const form = ev.target.closest('.hueco__form');
+    if (!form) return;
+    ev.preventDefault();
+
+    const menu = form.closest('.hueco__menu');
+    const origen = comoExtremo(form.origen.value, menu.__lugares);
+    const destino = comoExtremo(form.destino.value, menu.__lugares);
+    if (!origen || !destino) {
+      avisar('Hay que decir desde dónde y hasta dónde.');
+      return;
+    }
+    calcularYColocarTraslado(menu, { origen, destino });
   });
 
   /** Calcular y colocar, de un tirón. La consulta se guarda en la etapa. */
-  pantalla.addEventListener('click', async (ev) => {
+  pantalla.addEventListener('click', (ev) => {
     const boton = ev.target.closest('[data-hueco-traslado]');
     if (!boton) return;
+    // Sin extremos: manda lo deducido de las tarjetas de al lado.
+    calcularYColocarTraslado(boton.closest('.hueco__menu'), {});
+  });
 
-    const menu = boton.closest('.hueco__menu');
+  async function calcularYColocarTraslado(menu, extremos) {
+    const donde = {
+      dia: Number(menu.dataset.dia),
+      franja: menu.dataset.franja,
+      indice: Number(menu.dataset.indice),
+    };
+    const hueco = menu.__hueco;
     menu.innerHTML = '<span class="hueco__cargando"><i class="ti ti-loader-2 girando"></i> calculando…</span>';
 
-    try {
-      await llamar(`/api/viaje/${viajeId}/hueco/traslado`, {
-        method: 'POST',
-        body: JSON.stringify(
-          conEtapa({
-            dia: Number(menu.dataset.dia),
-            franja: menu.dataset.franja,
-            indice: Number(menu.dataset.indice),
-          })
-        ),
-      });
-    } finally {
-      cerrarHuecos();
-    }
-  });
+    const r = await llamar(`/api/viaje/${viajeId}/hueco/traslado`, {
+      method: 'POST',
+      body: JSON.stringify(conEtapa({ ...donde, ...extremos })),
+    });
+
+    if (r.ok) return cerrarHuecos();
+
+    // Al fallar se deja el motivo DENTRO del menú, no solo en el aviso
+    // flotante, y con la puerta abierta para corregir los extremos sin tener
+    // que volver a empezar.
+    menu.innerHTML =
+      `<span class="hueco__aviso"><i class="ti ti-alert-triangle"></i> ${esc(r.error)}</span>` +
+      '<button class="hueco__opcion hueco__opcion--fina" type="button" data-cambiar-extremos>' +
+      '<i class="ti ti-edit"></i> <span>Cambiar de dónde a dónde</span></button>';
+    menu.__hueco = hueco;
+  }
 
 // --- Comer entre esos dos puntos ------------------------------------------
   // Se busca alrededor del punto medio con un radio proporcional a lo que
@@ -635,8 +836,12 @@
             : '<span class="hueco__desvio hueco__desvio--sin">sin situar: no se sabe el desvío</span>';
 
           return `
-            <button class="hueco__sitio" type="button" data-elegir-comer="${s.id}">
-              <span class="hueco__sitio-nombre">${esc(s.nombre)}</span>
+            <button class="hueco__sitio ${s.yaApuntado ? 'hueco__sitio--apuntado' : ''}"
+                    type="button" data-elegir-comer="${s.id}">
+              <span class="hueco__sitio-nombre">${esc(s.nombre)}
+                ${s.yaApuntado
+                  ? '<span class="hueco__apuntado"><i class="ti ti-bookmark-filled"></i> apuntado</span>'
+                  : ''}</span>
               ${datosSitio ? `<span class="hueco__sitio-datos">${esc(datosSitio)}</span>` : ''}
               ${desvio}
             </button>`;
@@ -688,8 +893,8 @@
 
     // Las casillas de hora y duración van DENTRO de una tarjeta arrastrable, y
     // sin esto el navegador empieza a arrastrarla en cuanto pinchas en una y no
-    // hay forma de escribir nada.
-    if (ev.target.closest('.item__reloj')) { ev.preventDefault(); return; }
+    // hay forma de escribir nada. Con las flechas de orden pasa lo mismo.
+    if (ev.target.closest('.item__reloj, .item__flechas')) { ev.preventDefault(); return; }
 
     // Lo que viaja: de dónde sale la tarjeta y qué es.
     const carga = item.dataset.fila

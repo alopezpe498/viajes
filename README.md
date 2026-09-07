@@ -373,6 +373,285 @@ se puede hacer; lo que no se puede es no haberse dado cuenta.
 
 ---
 
+## Las búsquedas dejan de acumularse
+
+### El problema, con números
+
+Madrid llegó a tener **71 fichas** en la pestaña "Comer". Cada búsqueda añadía
+doce y ninguna se iba nunca, así que a la cuarta consulta era imposible
+encontrar entre ellas los tres sitios que uno mismo se había apuntado.
+
+Son **dos cosas distintas metidas en la misma lista**:
+
+- Lo que YO me he apuntado (o he escrito a mano). Es mío, es del viaje y no
+  caduca.
+- Lo que salió de una consulta. Es de usar y tirar: si vuelvo a buscar, lo de
+  antes ya no me interesa.
+
+Ahora hay tres montones: **los míos**, **la última búsqueda**, y **el histórico
+plegado**. Con eso Madrid pasó de 81 tarjetas en pantalla a 13, y el histórico
+ocupa 37 píxeles cerrado.
+
+**No se borra nada, y es deliberado.** Cada ficha costó una llamada a Places, y
+el próximo viaje a Madrid la reutiliza sin volver a pedirla. Lo que se limpia es
+la pantalla, que es donde estaba el problema. `catalogo_comer.busqueda` guarda de
+qué consulta es cada fila; "la última" es la marca más alta, y como son
+timestamps ISO ordenan igual como texto que como fecha.
+
+Las marcas `'manual'` y `'antiguo'` no cuentan como búsqueda: lo escrito a mano
+es una decisión y no caduca, y lo que había antes de existir esta columna se va
+directo al histórico.
+
+### La movilidad duplicaba
+
+`guardarFichaMovilidad` era un `INSERT` a secas: pulsar "Buscar otra vez" en
+Moverse metía otra vez las mismas cinco fichas de metro y taxi. Ahora hay un
+índice único por (ciudad, nombre) y la segunda búsqueda **actualiza** en vez de
+duplicar, que es lo que ya hacían las excursiones y los restaurantes. Lo que no
+se pisa es el teléfono ni la web cuando vienen vacíos: si alguien los escribió a
+mano, una búsqueda que no los trae no puede borrarlos.
+
+## "Moverse", partida en dos
+
+La pestaña mezclaba dos preguntas distintas sin nada que las separase: **cuánto
+hay de aquí a allá** y **cómo funciona el transporte de esta ciudad**. Ahora son
+dos secciones con su cabecera, su icono y su frase.
+
+### Los traslados, con lo importante arriba
+
+La lista crecía con cada consulta y no todas valen lo mismo: "del hotel al
+centro" se mira veinte veces durante el viaje; "del Prado a Atocha" se miró una
+vez para decidir algo. Un chincheta fija los que quiero tener a mano; el resto
+se queda plegado como **historial**. Nada se borra.
+
+### Dos tarjetas por fila, y por qué
+
+Las fichas de transporte urbano llevan teléfono, web, horarios y dirección. En
+una columna de 244 px eso no cabe — y ahí estaba el fallo de verdad: **`1fr` es
+en realidad `minmax(auto, 1fr)`**, así que el contenido que no puede encoger
+EMPUJA su columna. La rejilla salía con columnas de **352, 218 y 184 px** en vez
+de repartidas, que es lo que se veía como "desbordan la pantalla".
+
+Con `minmax(0, 1fr)` las columnas mandan sobre el contenido, y con dos por fila
+hay sitio de sobra: 373 px cada una. El teléfono sigue siendo un `tel:` tocable.
+
+## "Ponerlo en un día", en una ventana centrada
+
+El formulario colgaba del propio botón con `position: absolute`. En una ficha de
+"Moverse" ese botón está dentro de una tarjeta de una rejilla, así que el
+formulario acababa pintado **arriba del todo de la página**, a pantallas de
+distancia de lo que se acababa de pulsar: parecía que no había pasado nada.
+
+Ahora es una ventana centrada sobre el contenido, con los mismos campos y un
+Cancelar. Se cierra con **Cancelar, con Escape y tocando fuera**, que son las
+tres cosas que uno intenta.
+
+Se llama `.ventana` y no `.modal` **porque `.modal` ya existía**: es el diálogo
+de confirmar el borrado de un viaje, en la portada. Reutilizar el nombre hizo
+que las dos se pisaran las reglas y la nueva salía pegada al borde izquierdo y
+descuadrada.
+
+---
+
+## La hora y el orden en el lienzo
+
+### Cualquier tarjeta puede llevar hora
+
+Antes solo las escritas a mano —y luego los traslados y las comidas— podían
+tenerla. No tenía sentido: al Prado se llega a una hora concreta igual que a una
+cena, y sin poder apuntarla el lienzo no termina de ser un plan.
+
+**La hora es del PLAN, no de la ficha.** La misma catedral puede ir a las diez un
+martes y a las seis un viernes; eso no se guarda en el catálogo, se guarda en la
+tarjeta (`itinerario.hora` y `.duracion_min`). Por eso una ficha apuntada en dos
+viajes no arrastra la hora de uno al otro.
+
+**No se propone ninguna hora, nunca.** Ni la de apertura del museo, ni una
+deducida de la tarjeta anterior más su duración. El campo nace vacío. Una hora
+sugerida que nadie ha pedido se acaba dando por buena, y entonces el plan dice
+algo que nadie decidió.
+
+**El control va plegado.** Con cinco tarjetas en un día, diez casillas vacías
+convierten la columna en un formulario: se ve un relojito muy tenue, y las
+casillas salen al tocarlo. La duración tecleada manda sobre la del catálogo —si
+pones que tu visita son 90 minutos, son 90 aunque la ficha diga "2 horas"— y las
+dos viajan al dosier.
+
+### El orden dentro de la franja
+
+- **Las que tienen hora van primero, ordenadas por ella.** Si el free tour es a
+  las 10:00 y la comida a las 14:30, el orden del día ya está dicho: arrastrarlas
+  para ponerlas "bien" sería trabajo que no debería hacer nadie.
+- **Las que no tienen hora van detrás, en su orden manual**, y se suben o bajan
+  con dos flechas que aparecen al pasar por encima. Antes una tarjeta nueva solo
+  podía caer al final de su franja: para meter una comida entre dos visitas había
+  que sacarlo todo y volver a colocarlo.
+
+Las flechas solo salen en las tarjetas **sin** hora. Las que la tienen ya están
+ordenadas por ella y empujarlas no cambiaría nada: el botón sería una promesa
+falsa.
+
+Un detalle que costó encontrar: el primer comparador devolvía `0` para dos
+tarjetas de franjas distintas —"que las agrupe la vista"— y eso rompe el orden.
+Un comparador no transitivo hace que `sort` coloque las cosas como le dé la gana,
+y el síntoma era que poner una hora no movía nada. Ahora el orden es total:
+día, franja, con-hora, hora, orden manual, id.
+
+### El traslado del "+" con extremos elegibles
+
+Lo deducido de las tarjetas de al lado sigue siendo **la propuesta**, que acierta
+casi siempre. Debajo hay un "Cambiar de dónde a dónde" que abre dos campos con
+el **mismo autocompletado** del buscador de traslados de la etapa: el
+alojamiento, los sitios apuntados, las excursiones, los restaurantes y el
+transporte urbano, más cualquier dirección escrita a mano.
+
+Sale también cuando a un extremo le falta la dirección: ahí es justo donde más
+falta hace poder cambiarlo, en vez de tener que salir del lienzo.
+
+La tarjeta muestra la duración calculada. **La hora de salida la pone el
+usuario**; no se calcula ninguna hora de llegada.
+
+### "Comer" no hacía nada: por qué
+
+El fallo estaba en una línea que parecía inofensiva:
+
+```js
+document.addEventListener('click', (ev) => {
+  if (!ev.target.closest('.hueco')) cerrarHuecos();
+});
+```
+
+Ese manejador vive en `document`, así que corre **después** de los de la
+pantalla. Para cuando llegaba, el de "Comer" ya había sustituido el contenido del
+menú por el "buscando…", y con él el botón que se acababa de pulsar: `ev.target`
+era un elemento **ya desconectado del DOM**, su `closest()` no encontraba ningún
+`.hueco`, y esto cerraba el menú entero.
+
+La petición salía igual y contestaba treinta segundos después, pero no había
+dónde pintarla. Desde fuera: pulsas y no pasa nada.
+
+Se arregla mirando `ev.composedPath()`, que se calcula al lanzar el evento y se
+queda guardado, así que sigue diciendo por dónde pasó aunque el DOM haya cambiado
+debajo.
+
+De paso, `llamar()` se tragaba los errores: avisaba en un aviso flotante y no
+devolvía nada, así que quien necesitaba reaccionar al fallo no se enteraba y el
+menú se quedaba en "calculando…" para siempre. Ahora devuelve `{ ok, error }`.
+
+### Lo apuntado, primero
+
+Si me molesté en apuntarme un restaurante para esta parada, me interesa más que
+doce que acabo de descubrir. Salen arriba y marcados como "apuntado", y detrás
+los nuevos. Entre ellos se ordenan igual —por desvío—, así que un apuntado que
+queda lejísimos no se cuela por delante de otro que pilla de paso.
+
+---
+
+## El mapa de exploración
+
+### Teselas de Google, con OpenStreetMap de respaldo
+
+Se usa `GOOGLE_MAPS_BROWSER_KEY` —la del navegador, restringida por dominio— a
+través del plugin `Leaflet.GoogleMutant`. No se pueden pedir las imágenes de
+Google por URL y ya: sus condiciones no lo permiten. Lo que hace el plugin es
+montar un mapa de Google de verdad por debajo y llevarlo sincronizado con el de
+Leaflet, así que su atribución sale como tiene que salir y los marcadores, el
+carrusel y las líneas siguen siendo de Leaflet, sin tocarlos.
+
+El estilo apaga las etiquetas de puntos de interés y de transporte y baja la
+saturación: encima del mapa hay que pintar marcadores, líneas punteadas y
+etiquetas de distancia, y con los negocios y las paradas de metro de Google no
+se lee nada.
+
+**El respaldo es lo que costó hacer bien.** Hay cuatro formas de que Google no
+funcione y no todas avisan igual:
+
+| Qué pasa | Cómo se detecta |
+|---|---|
+| No hay clave en el `.env` | Se mira antes de nada |
+| El script no se descarga | `onerror` |
+| La clave no vale (algunos casos) | `gm_authFailure` |
+| **`RefererNotAllowedMapError`** | **Ninguna de las anteriores** |
+
+El último es el que muerde, y es además el más probable: la clave está
+restringida por dominio, así que en cuanto se prueba desde un puerto que no está
+en la lista salta ese error. Y en ese caso **la API carga bien, no llama a
+`gm_authFailure`, escribe el error en la consola y deja el mapa en gris**. Desde
+el código todo parece haber ido bien.
+
+Por eso, después de poner la capa, se espera al `tilesloaded` del mapa de Google
+—el evento que dice "ya hay imágenes en pantalla"— con un plazo de cuatro
+segundos. Si no llega, se quita la capa y entra OpenStreetMap con el motivo en
+la consola:
+
+```
+[descubrir] teselas de OpenStreetMap: Google no llegó a pintar. Lo normal es
+que la clave no autorice «http://localhost:3210»: mira la consola, ahí lo dice
+con su nombre.
+```
+
+### Ciudad de entrada
+
+Un control pequeño en cada ficha, aparte de "A mi ruta" porque no es lo mismo
+apuntar una parada que decidir por dónde se entra al viaje. Marcarlo hace dos
+cosas:
+
+1. **Confirma la ciudad en la ruta como primera parada.** No queda como
+   candidata: una ciudad de entrada es por definición una parada decidida.
+2. **Mueve ahí la referencia de todas las distancias**, y las fichas se
+   recalculan al momento.
+
+Y lo segundo sale gratis de lo primero: `referenciaDelViaje` ya cogía la primera
+parada confirmada. No hace falta columna nueva ni ajuste aparte — "ciudad de
+entrada" y "primera parada" son la misma cosa dicha de dos maneras, y conviene
+que lo sigan siendo. Por debajo son `confirmarEtapa` y `reordenar`, las mismas
+que usa la pantalla de la ruta.
+
+**Solo puede haber una.** Se comporta como un grupo de opciones: se cambia
+marcando otra, y la anterior se queda en la ruta un puesto más abajo. Se cambia
+por dónde se entra, no se borra media ruta. Desmarcar no hace nada —el viaje
+entra por algún sitio— y se dice.
+
+Solo aparece en destinos de nivel **país**, donde cada resultado es una ciudad.
+En una ciudad los resultados son el Prado o el Retiro, y por ninguno se entra a
+ningún sitio.
+
+### Refresco en vivo
+
+Antes, añadir una ciudad pintaba su botón de "En tu ruta" y hasta ahí llegaba
+todo: el marcador seguía igual y, sobre todo, **no aparecía su línea punteada**,
+porque esa lista vive en el mapa de marcadores del JS y nadie la actualizaba.
+Había que salir de la pantalla y volver a entrar.
+
+Y con las investigaciones era peor. El sondeo comparaba qué tarjetas seguían
+girando y, si alguna terminaba, **recargaba la página entera** — perdiendo el
+encuadre del mapa y el sitio del carrusel. Pero solo se enteraba si la propia
+pantalla había visto empezar la investigación: si el trabajo ya estaba en marcha
+al entrar, o si el sondeo se saltaba justo el momento del final, la tarjeta se
+quedaba para siempre con su ruedecita y su distancia sin pintar. **Eso es lo que
+le pasó a Gdansk.**
+
+Ahora hay un solo endpoint, `/api/destinos/:id/mapa`, que devuelve **todo junto**
+—estado de cada punto, referencia y distancias— y una sola función que repinta
+con lo que diga. Sin comparar nada y sin recordar nada: si algo cambió se ve, y
+repintar lo mismo no cuesta. Se llama al añadir a la ruta, al marcar la ciudad
+de entrada y en cada vuelta del sondeo. **Ya no queda ni un `location.reload()`
+en esta pantalla.**
+
+Pedirlo todo en una llamada es a propósito: por trozos, el mapa se queda medio
+de una época y medio de otra —la tarjeta ya dice "En tu ruta" pero la línea
+todavía no está—.
+
+### Un fallo que escondía a otro
+
+El endpoint nuevo leía `distancias.calculando`, pero `distanciasDelMapa` no
+devuelve eso: devuelve `faltan`, y lo de "estoy calculando" se deduce. Como
+`undefined` es falso, el mapa dejaba de sondear justo cuando había pares en
+camino, y los guiones no se rellenaban nunca. Ahora es `faltan > 0`, igual que
+en el endpoint de distancias de siempre.
+
+---
+
 ## App instalable (PWA)
 
 Se instala desde Chrome y se abre en su propia ventana, sin barra de URL, con

@@ -2,34 +2,28 @@
 /**
  * TRASLADOS: la chuleta de "cuánto hay de aquí a allá".
  *
- * Va ARRIBA del todo en "Moverse" porque es lo que más se usa: planificando un
- * día esta pregunta se hace veinte veces, y hasta ahora había que salir a Google
- * Maps, mirarla y volver sin que quedara constancia de nada.
+ * DOS LISTAS, NO UNA. La de consultas crecía sin freno: cada vez que uno mira
+ * cuánto hay de un sitio a otro se queda una línea, y a la décima ya no se
+ * encuentra la que de verdad importa —"del hotel al centro"— entre las nueve
+ * que se miraron una vez y no volvieron a hacer falta.
  *
- * DOS CAMPOS Y UN BOTÓN. Cada campo autocompleta con lo que hay en el viaje
- * —el hotel, lo apuntado, las paradas de transporte— y además admite cualquier
- * cosa tecleada: el aeropuerto, una calle, un restaurante que todavía no está
- * en ningún sitio.
+ * Arriba, las FIJADAS: las que he decidido tener a mano. Abajo, plegado, el
+ * HISTORIAL. No se borra nada; una consulta hecha puede volver a hacer falta, y
+ * además ya está pagada en tiempo de cálculo.
  *
- * LO CONSULTADO SE QUEDA. La lista de abajo no se limpia sola ni se borra
- * porque una actividad salga del lienzo: es material de investigación, y que
- * del hotel al centro haya 20 minutos andando sigue siendo verdad mañana.
- *
- * Espera: traslados (la lista), lugares (para el autocompletado), etapa,
- *         viaje, diasDeLaEtapa.
+ * Espera: traslados ({ fijados, historial }), lugares, etapa, viaje,
+ *         diasDeLaEtapa.
  */
 %>
 <section class="traslados" data-traslados-de="<%= etapa.id %>">
 
-  <div class="titulo-con-accion">
-    <div>
-      <h3 class="traslados__titulo">
-        <i class="ti ti-route" aria-hidden="true"></i> Traslados
-      </h3>
-      <p class="secundario" style="margin:2px 0 0">
-        ¿Cuánto hay de aquí a allá? Lo que consultes se queda apuntado.
-      </p>
-    </div>
+  <div class="seccion-cabecera">
+    <h3 class="seccion-cabecera__titulo">
+      <i class="ti ti-route" aria-hidden="true"></i> Traslados
+    </h3>
+    <p class="seccion-cabecera__pie">
+      ¿Cuánto hay de aquí a allá? Lo que consultes se queda apuntado.
+    </p>
   </div>
 
   <%# --- El buscador ------------------------------------------------------ %>
@@ -83,55 +77,31 @@
     </div>
   </div>
 
-  <%# --- La lista, una línea por traslado --------------------------------- %>
-  <ul class="traslados__lista" id="lista-traslados">
-    <% traslados.forEach(t => { %>
-      <li class="traslado <%= t.calculando ? 'traslado--calculando' : '' %>"
-          data-traslado="<%= t.id %>">
+  <%# --- Los fijados, arriba y a la vista --------------------------------- %>
+  <% if (traslados.fijados.length) { %>
+    <ul class="traslados__lista">
+      <% traslados.fijados.forEach(t => { %>
+        <%- include('traslado', { t, diasDeLaEtapa }) %>
+      <% }) %>
+    </ul>
+  <% } %>
 
-        <div class="traslado__linea">
-          <span class="traslado__recorrido"><%= t.recorrido %></span>
+  <%# --- Y el historial, plegado ------------------------------------------ %>
+  <% if (traslados.historial.length) { %>
+    <details class="traslados__historial" <%= traslados.fijados.length ? '' : 'open' %>>
+      <summary>
+        <i class="ti ti-history" aria-hidden="true"></i>
+        Consultas anteriores <span class="pastilla"><%= traslados.historial.length %></span>
+      </summary>
+      <ul class="traslados__lista">
+        <% traslados.historial.forEach(t => { %>
+          <%- include('traslado', { t, diasDeLaEtapa }) %>
+        <% }) %>
+      </ul>
+    </details>
+  <% } %>
 
-          <span class="traslado__tiempos">
-            <% if (t.calculando) { %>
-              <span class="traslado__esperando">
-                <i class="ti ti-loader-2 girando" aria-hidden="true"></i> calculando…
-              </span>
-            <% } else if (t.resultados.length) { %>
-              <% t.resultados.forEach(r => { %>
-                <span class="traslado__medio" data-modo="<%= r.modo %>"
-                      title="<%= r.fuente === 'estimado' ? 'Estimado sobre la distancia' : 'Según ' + r.fuente %>">
-                  <i class="ti <%= r.icono %>" aria-hidden="true"></i>
-                  <strong><%= r.texto %></strong> <%= r.etiqueta %>
-                </span>
-              <% }) %>
-            <% } else { %>
-              <span class="traslado__esperando"><%= t.mensaje ?? 'sin resultado' %></span>
-            <% } %>
-          </span>
-        </div>
-
-        <div class="traslado__acciones">
-          <% if (t.resultados.length && diasDeLaEtapa.length) { %>
-            <button class="apuntar" type="button" data-al-lienzo="<%= t.id %>">
-              <i class="ti ti-calendar-plus" aria-hidden="true"></i> Al lienzo
-            </button>
-          <% } %>
-          <button class="apuntar" type="button" data-recalcular="<%= t.id %>"
-                  title="Volver a consultarlo">
-            <i class="ti ti-refresh" aria-hidden="true"></i>
-          </button>
-          <button class="apuntar apuntar--peligro" type="button"
-                  data-borrar-traslado="<%= t.id %>" data-nombre="<%= t.recorrido %>"
-                  title="Borrarlo de la lista">
-            <i class="ti ti-trash" aria-hidden="true"></i>
-          </button>
-        </div>
-      </li>
-    <% }) %>
-  </ul>
-
-  <% if (!traslados.length) { %>
+  <% if (!traslados.fijados.length && !traslados.historial.length) { %>
     <p class="candidatos__vacio">
       Todavía no has consultado ningún traslado en <%= etapa.nombre_ciudad %>.
     </p>

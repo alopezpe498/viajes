@@ -1,0 +1,57 @@
+<%
+/**
+ * Una línea de la lista de traslados.
+ *
+ * Sale del parcial grande para poder pintarla en los dos sitios —los fijados y
+ * el historial— sin duplicar el markup. Espera: t, diasDeLaEtapa.
+ */
+%>
+<li class="traslado <%= t.calculando ? 'traslado--calculando' : '' %> <%= t.fijado ? 'traslado--fijado' : '' %>"
+    data-traslado="<%= t.id %>">
+
+  <button class="traslado__fijar <%= t.fijado ? 'traslado__fijar--si' : '' %>" type="button"
+          data-fijar="<%= t.id %>"
+          title="<%= t.fijado ? 'Soltarlo al historial' : 'Tenerlo siempre a mano' %>"
+          aria-label="<%= t.fijado ? 'Soltarlo al historial' : 'Tenerlo siempre a mano' %>">
+    <i class="ti <%= t.fijado ? 'ti-pin-filled' : 'ti-pin' %>" aria-hidden="true"></i>
+  </button>
+
+  <div class="traslado__linea">
+    <span class="traslado__recorrido"><%= t.recorrido %></span>
+
+    <span class="traslado__tiempos">
+      <% if (t.calculando) { %>
+        <span class="traslado__esperando">
+          <i class="ti ti-loader-2 girando" aria-hidden="true"></i> calculando…
+        </span>
+      <% } else if (t.resultados.length) { %>
+        <% t.resultados.forEach(r => { %>
+          <span class="traslado__medio" data-modo="<%= r.modo %>"
+                title="<%= r.fuente === 'estimado' ? 'Estimado sobre la distancia' : 'Según ' + r.fuente %>">
+            <i class="ti <%= r.icono %>" aria-hidden="true"></i>
+            <strong><%= r.texto %></strong> <%= r.etiqueta %>
+          </span>
+        <% }) %>
+      <% } else { %>
+        <span class="traslado__esperando"><%= t.mensaje ?? 'sin resultado' %></span>
+      <% } %>
+    </span>
+  </div>
+
+  <div class="traslado__acciones">
+    <% if (t.resultados.length && diasDeLaEtapa.length) { %>
+      <button class="apuntar" type="button" data-al-lienzo="<%= t.id %>">
+        <i class="ti ti-calendar-plus" aria-hidden="true"></i> Al lienzo
+      </button>
+    <% } %>
+    <button class="apuntar" type="button" data-recalcular="<%= t.id %>"
+            title="Volver a consultarlo">
+      <i class="ti ti-refresh" aria-hidden="true"></i>
+    </button>
+    <button class="apuntar apuntar--peligro" type="button"
+            data-borrar-traslado="<%= t.id %>" data-nombre="<%= t.recorrido %>"
+            title="Borrarlo de la lista">
+      <i class="ti ti-trash" aria-hidden="true"></i>
+    </button>
+  </div>
+</li>

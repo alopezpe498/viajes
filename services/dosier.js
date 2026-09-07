@@ -548,9 +548,13 @@ export function datosDelDosier(viajeId) {
           // "andando", "coche", "público": en el papel hay que decir CÓMO se
           // va, porque el mismo trayecto son 20 minutos o son 8.
           medioEtiqueta: ETIQUETA_MEDIO[c.medio] ?? null,
-          // La duración tecleada en el lienzo: la llevan los traslados y las
-          // comidas, que son las dos cosas que se planean por la hora.
-          duracion: c.tipo === 'traslado' || c.tipo === 'comer' ? c.duracion : null,
+          // LA DURACIÓN TECLEADA EN EL LIENZO, la lleve la tarjeta que la lleve.
+          //
+          // Antes solo viajaban las de traslados y comidas, que eran las únicas
+          // que podían tenerla. Ahora cualquier tarjeta puede llevar hora y
+          // duración, y las dos tienen que llegar al papel: en la calle, "10:00
+          // · 1 h 30" es la mitad de lo que se consulta.
+          duracion: c.duracion,
           telefono: c.telefono ?? null,
           telefonoMarcable: c.telefono ? String(c.telefono).replace(/[^+\d]/g, '') : null,
           // Una comida colocada: dónde es y a qué número se llama para

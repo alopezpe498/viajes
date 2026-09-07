@@ -463,7 +463,11 @@ body{
     var img = f ? foto(f.imagen) : null;
 
     var meta = [];
-    if (f && (f.duracionDetalle || f.duracion)) meta.push(f.duracionDetalle || f.duracion);
+    // La duración TECLEADA manda sobre la del catálogo: si alguien apuntó que
+    // su visita son 90 minutos, son 90, aunque la ficha diga "2 horas".
+    if (!c.duracion && f && (f.duracionDetalle || f.duracion)) {
+      meta.push(f.duracionDetalle || f.duracion);
+    }
     if (f && f.precio === 0) meta.push('Gratis');
     else if (f && f.precio != null) meta.push(f.precio + ' ' + (f.moneda || 'EUR'));
     // "12 min andando". El medio importa tanto como los minutos: el mismo

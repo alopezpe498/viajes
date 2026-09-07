@@ -105,6 +105,7 @@ function conCara(f, direccion) {
     // bar sin teléfono de uno que nadie ha mirado.
     tieneDetalles: Boolean(f.detalles_en),
     claveUnica: f.clave_unica,
+    busqueda: f.busqueda,
     // Solo para el cálculo; la vista no lo usa.
     punto: f.lat != null && f.lng != null ? { lat: f.lat, lng: f.lng } : (direccion?.punto ?? null),
   };
@@ -121,15 +122,18 @@ function conCara(f, direccion) {
  * alguien abrió su ficha) y vuelve a salir en otra búsqueda, la búsqueda no los
  * trae —no los pide— y no puede borrarlos.
  */
-export function guardarFichasDeComer(ciudad, lista, origen = 'places') {
+export function guardarFichasDeComer(ciudad, lista, origen = 'places', busqueda = null) {
   if (!ciudad || !lista?.length) return [];
 
   const ciudadNorm = normalizarNombre(ciudad);
+  // La marca de ESTA consulta. Es lo que después permite enseñar solo lo último
+  // en vez de las setenta fichas que se han ido acumulando.
+  const marca = busqueda ?? new Date().toISOString();
   const sentencia = db.prepare(
     `INSERT INTO catalogo_comer
        (ciudad, ciudad_norm, clave_unica, nombre, cocina, precio_nivel, precio_texto,
-        valoracion, num_opiniones, direccion, lat, lng, nota, origen, visto_en)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        valoracion, num_opiniones, direccion, lat, lng, nota, origen, busqueda, visto_en)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT (ciudad_norm, clave_unica) DO UPDATE SET
        nombre        = excluded.nombre,
        cocina        = COALESCE(excluded.cocina, cocina),
@@ -141,6 +145,7 @@ export function guardarFichasDeComer(ciudad, lista, origen = 'places') {
        lat           = COALESCE(excluded.lat, lat),
        lng           = COALESCE(excluded.lng, lng),
        nota          = COALESCE(excluded.nota, nota),
+       busqueda      = excluded.busqueda,
        visto_en      = datetime('now')`
   );
 
@@ -163,7 +168,8 @@ export function guardarFichasDeComer(ciudad, lista, origen = 'places') {
         s.lat != null ? Number(s.lat) : null,
         s.lng != null ? Number(s.lng) : null,
         texto(s.nota),
-        origen
+        origen,
+        marca
       );
       guardadas.push(clave);
     }
@@ -237,7 +243,9 @@ function sincronizarDireccion(fila) {
 
 /** Una ficha escrita a mano: el bar que te recomendó un amigo. */
 export function guardarFichaManual(ciudad, ficha) {
-  const claves = guardarFichasDeComer(ciudad, [{ ...ficha, claveUnica: null }], 'manual');
+  // 'manual' como marca de búsqueda: lo escrito a mano no pertenece a ninguna
+  // consulta y no tiene por qué desaparecer cuando se haga la siguiente.
+  const claves = guardarFichasDeComer(ciudad, [{ ...ficha, claveUnica: null }], 'manual', 'manual');
   if (!claves.length) return null;
 
   const fila = una(
@@ -328,13 +336,52 @@ export function comerDeEtapa(etapa) {
   const activo = trabajoActivo(etapa.viaje_id, 'comer_buscar', etapa.id);
   const ultimo = ultimoTrabajo(etapa.viaje_id, 'comer_buscar', etapa.id);
 
+  const conEstado = fichas.map((f) => ({
+    ...f,
+    apuntado: porFicha.has(f.id),
+    candidatoId: porFicha.get(f.id)?.id ?? null,
+  }));
+
+  // DOS COSAS DISTINTAS, Y ANTES ESTABAN EN LA MISMA LISTA.
+  //
+  // Lo apuntado es mío y no se va nunca. Lo que salió en una búsqueda es de
+  // usar y tirar: al buscar otra vez, lo de antes deja de interesar. Sin esta
+  // separación, Madrid acumuló setenta y una fichas y encontrar lo propio entre
+  // ellas era imposible.
+  //
+  // La última búsqueda es la marca más alta: son timestamps ISO, que ordenan
+  // igual como texto que como fecha.
+  // Solo cuentan las marcas de consultas de verdad. 'manual' es lo escrito a
+  // mano y 'antiguo' es lo que había antes de que existiera esta columna: ni lo
+  // uno ni lo otro son "la última búsqueda".
+  const esDeUnaBusqueda = (m) => Boolean(m) && /^\d/.test(m);
+
+  const ultimaBusqueda = fichas
+    .map((f) => f.busqueda)
+    .filter(esDeUnaBusqueda)
+    .sort()
+    .pop() ?? null;
+
+  // MÍOS: lo apuntado y lo escrito a mano. Las dos cosas son decisiones, y una
+  // decisión no caduca porque yo busque otra cosa.
+  const esMio = (f) => f.apuntado || f.origen === 'manual';
+
+  const apuntadas = conEstado.filter(esMio);
+  const resultados = conEstado.filter(
+    (f) => !esMio(f) && ultimaBusqueda && f.busqueda === ultimaBusqueda
+  );
+  // Lo de búsquedas anteriores. No se borra —cada ficha costó una llamada a
+  // Places y el próximo viaje la reutiliza— pero se guarda plegado.
+  const historico = conEstado.filter((f) => !esMio(f) && !resultados.includes(f));
+
   return {
     ciudad: etapa.nombre_ciudad,
-    fichas: fichas.map((f) => ({
-      ...f,
-      apuntado: porFicha.has(f.id),
-      candidatoId: porFicha.get(f.id)?.id ?? null,
-    })),
+    apuntadas,
+    resultados,
+    historico,
+    // La lista completa se sigue devolviendo: la usan el dosier y las
+    // distancias, a los que esta separación de pantalla no les incumbe.
+    fichas: conEstado,
     buscando: Boolean(activo),
     mensajeError:
       !activo && !fichas.length && ultimo?.estado === 'error' ? ultimo.mensaje_error : null,
@@ -385,9 +432,12 @@ export async function investigarComer(ciudad, consulta, { centro = null, radio =
   const pregunta = texto(consulta) || `los mejores sitios para comer de ${ciudad}`;
 
   // --- 1) Places, que es quien tiene notas y opiniones de verdad -----------
+  // Una sola marca para toda la consulta, se resuelva con Places o con la IA.
+  const marca = new Date().toISOString();
+
   const dePlaces = await buscarSitiosConGoogle(`${pregunta} en ${ciudad}`, { centro, radio });
   if (dePlaces && dePlaces.length) {
-    guardarFichasDeComer(ciudad, dePlaces, 'places');
+    guardarFichasDeComer(ciudad, dePlaces, 'places', marca);
     console.log(`[comer] ${dePlaces.length} sitio/s de Places para «${pregunta}» en ${ciudad}.`);
     return { sitios: dePlaces, fuente: 'places' };
   }
@@ -428,7 +478,7 @@ export async function investigarComer(ciudad, consulta, { centro = null, radio =
     throw new Error(`No se ha encontrado nada para comer en ${ciudad} con «${pregunta}».`);
   }
 
-  guardarFichasDeComer(ciudad, sitios, 'ia');
+  guardarFichasDeComer(ciudad, sitios, 'ia', marca);
   console.log(`[comer] ${sitios.length} sitio/s de la IA para «${pregunta}» en ${ciudad}.`);
   return { sitios, fuente: 'ia' };
 }
@@ -453,8 +503,17 @@ function nivelDePrecio(precio) {
 export function promptDeComer(ciudad, consulta) {
   return `Eres alguien que conoce bien la restauración de ${ciudad}.
 
-BUSCA EN LA WEB sitios para comer o tomar algo en ${ciudad} que respondan a esto:
+BUSCA EN LA WEB **RESTAURANTES, BARES, TABERNAS O CAFETERÍAS** de ${ciudad}.
+SOLO sitios donde se come o se bebe. Nada más.
+
+El usuario ha escrito esto para afinar la búsqueda:
 "${consulta}"
+
+Ese texto sirve ÚNICAMENTE para refinar: el tipo de cocina, el ambiente, el
+precio o la zona. NUNCA para cambiar QUÉ se busca. Si dice "sitios cerca del
+hotel", quiere decir RESTAURANTES cerca del hotel; si dice "algo con encanto",
+quiere decir RESTAURANTES con encanto. No devuelvas hoteles, museos, tiendas,
+monumentos ni atracciones aunque el texto los mencione o lo parezca.
 
 Dame entre 8 y 12 sitios que existan DE VERDAD y estén abiertos. Nada de
 inventar nombres ni direcciones: si no encuentras la calle exacta, deja
@@ -479,7 +538,9 @@ Reglas:
   la cadena vacía.
 - "porQue" en español de España, una frase, sin superlativos vacíos.
 - Variedad: no doce sitios del mismo estilo ni todos en la misma calle.
-- Si un dato no lo encuentras, deja la cadena VACÍA. NO te lo inventes.`;
+- Si un dato no lo encuentras, deja la cadena VACÍA. NO te lo inventes.
+- Y otra vez, porque es lo que más se tuerce: TODOS tienen que ser sitios de
+  comer o de beber. Ni un hotel, ni un museo, ni una tienda.`;
 }
 
 // =============================================================================

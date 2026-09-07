@@ -54,10 +54,10 @@ import {
   recalcularRuta,
   rutaDeViaje,
   confirmarEtapa,
+  reordenar,
   clonarEtapa,
   quitarEtapa,
   cambiarNoches,
-  reordenar,
 } from '../services/ruta.js';
 import {
   cargarEtapa,
@@ -87,6 +87,7 @@ import {
   mover,
   quitar,
   retocar,
+  moverEnFranja,
   vecinosDeHueco,
   colocacionesDeEtapa,
   FRANJAS,
@@ -125,6 +126,7 @@ import {
   calcularTraslado,
   trasladosDeElemento,
   trasladosDeElementos,
+  fijarTraslado,
 } from '../services/traslados.js';
 import {
   comoLlegarDeTramo,
@@ -142,6 +144,7 @@ import {
 } from '../services/movilidad.js';
 import {
   distanciasDelMapa,
+  referenciaDelViaje,
   trasladosDeLaRuta,
   avisoDeTraslados,
 } from '../services/distancias-ciudades.js';
@@ -788,6 +791,20 @@ router.post('/viajes/:id/candidatos/:cid/marcar', cargarViaje, async (req, res) 
 
   ejecutar('UPDATE candidatos SET marcado = ? WHERE id = ?', nuevo, cid);
 
+  // AL ELEGIR EL HOTEL, SU DIRECCIÓN ENTRA SOLA.
+  //
+  // Es justo el momento en que hace falta: el hotel elegido es el extremo de
+  // casi todos los traslados del día —se sale de dormir y se vuelve a dormir—
+  // y hasta ahora había que teclearla a mano habiéndola tenido delante en
+  // Booking.
+  //
+  // Solo se rellena si el campo está VACÍO: si ya hay una escrita o corregida
+  // a mano, esa manda. Y sigue siendo editable, que lo que da Booking a veces
+  // es el barrio y no la calle.
+  if (nuevo === 1 && candidato.tipo === 'hotel') {
+    volcarDireccionDeHotel(candidato);
+  }
+
   const seleccion = await obtenerSeleccion(req.viaje.id);
   res.json({
     marcado: Boolean(nuevo),
@@ -826,15 +843,182 @@ router.get('/descubrir/:destinoId', cargarDestino, (req, res) => {
   const panorama = panoramaDeDestino(req.destino.id, viaje?.id ?? null);
   const estado = estadoDescubrimiento(req.destino.id, viaje?.id ?? null);
 
+  // Cuál es la ciudad de entrada ahora mismo: la referencia desde la que se
+  // miden todas las distancias de esta pantalla.
+  const referencia = viaje ? referenciaDelViaje(viaje.id) : null;
+
   res.render('descubrir', {
     destino: panorama.destino,
-    puntos: panorama.puntos,
+    puntos: panorama.puntos.map((p) => ({ ...p, esEntrada: esLaEntrada(referencia, p.id) })),
     esCiudad: panorama.esCiudad,
     viaje,
     etapasEnRuta: viaje ? etapasEnRuta(viaje.id) : 0,
     estado: estado.estado,
     mensajeError: estado.mensaje_error,
     hayIA: hayClaveIA(),
+    // LA CLAVE DEL NAVEGADOR, y solo esa. Está restringida por dominio y su
+    // sitio es el HTML. La de servidor —Places, Routes, Geocoding— no sale de
+    // `lib/google.js` ni aparece en ninguna vista.
+    claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
+  });
+});
+
+/**
+ * Vuelca en el campo "dirección" lo que Booking supiera del hotel.
+ *
+ * Se compone con el nombre y la ciudad delante y detrás porque lo que suele dar
+ * Booking es el barrio ("Centro de Madrid"), y eso solo no se puede geocodificar:
+ * "Blume Cruz Suites, Centro de Madrid, Madrid" sí, y cae donde tiene que caer.
+ *
+ * No pisa nada. Si la ficha ya tenía dirección —puesta a mano o de antes— se
+ * deja como está: corregir algo y que te lo vuelvan a cambiar es de las cosas
+ * que más molestan.
+ */
+function volcarDireccionDeHotel(candidato) {
+  if (direccionDe('hotel', candidato.id)) return;
+
+  let extra = {};
+  try {
+    extra = candidato.datos_extra ? JSON.parse(candidato.datos_extra) ?? {} : {};
+  } catch { /* datos_extra corrupto: se sigue con lo que haya */ }
+
+  const ciudad = una('SELECT nombre_ciudad FROM etapas WHERE id = ?', candidato.etapa_id)
+    ?.nombre_ciudad;
+
+  const donde = String(extra.direccion ?? extra.zona ?? '').trim();
+  const nombre = String(candidato.titulo ?? '').trim();
+  const ciudadTexto = String(ciudad ?? '').trim();
+
+  // La ciudad solo se añade si no está ya dentro. Booking suele dar el barrio
+  // CON la ciudad detrás ("Centro de Ámsterdam, Ámsterdam"), y pegándosela otra
+  // vez salía "…, Ámsterdam, Ámsterdam, Ámsterdam", que además de feo confunde
+  // al geocodificador.
+  const yaDiceLaCiudad =
+    ciudadTexto && donde.toLowerCase().includes(ciudadTexto.toLowerCase());
+
+  const texto = [nombre, donde, yaDiceLaCiudad ? null : ciudadTexto]
+    .map((t) => String(t ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+  if (!texto) return;
+
+  guardarDireccion('hotel', candidato.id, texto, { viajeId: candidato.viaje_id });
+  console.log(`[rutas] Hotel «${candidato.titulo}»: dirección de Booking → «${texto}».`);
+}
+
+/**
+ * ¿Es este punto la CIUDAD DE ENTRADA?
+ *
+ * Lo es cuando es la primera parada confirmada de la ruta, que es justo de
+ * donde `referenciaDelViaje` saca la referencia de las distancias. Si la
+ * referencia viene de otro sitio —del vuelo de ida, o de una candidata suelta—
+ * es un apaño del sistema, no una decisión de nadie, y el control no se marca:
+ * marcarlo es lo que la convierte en decisión.
+ */
+function esLaEntrada(referencia, puntoId) {
+  return Boolean(referencia && referencia.de === 'ruta' && referencia.ciudadId === puntoId);
+}
+
+/**
+ * Marcar una ciudad como la de ENTRADA del viaje.
+ *
+ * Hace las dos cosas que pide el nombre, y en este orden:
+ *
+ *   1. La confirma en la ruta. No queda como candidata: una ciudad de entrada
+ *      es por definición una parada decidida.
+ *   2. La pone LA PRIMERA. Y con eso, sin tocar nada más, pasa a ser la
+ *      referencia de las distancias: `referenciaDelViaje` ya coge la primera
+ *      parada confirmada. No hace falta una columna nueva ni un ajuste aparte;
+ *      "ciudad de entrada" y "primera parada" son la misma cosa dicha de dos
+ *      maneras, y conviene que lo sigan siendo.
+ *
+ * SOLO PUEDE HABER UNA. Marcar otra mueve la referencia, y la anterior se queda
+ * en la ruta un puesto más abajo: se cambia por dónde se entra, no se borra
+ * media ruta.
+ *
+ * Se apoya en `confirmarEtapa` y `reordenar`, que son las mismas que usa la
+ * pantalla de la ruta. Aquí no se toca el modelo de etapas.
+ */
+router.post('/descubrir/:destinoId/punto/:puntoId/ciudad-entrada', cargarDestino, (req, res) => {
+  const viaje = req.viajeDelContexto;
+  if (!viaje) return res.status(400).json({ error: 'Hace falta un viaje.' });
+
+  // Solo tiene sentido en un destino de nivel PAÍS, donde cada punto es una
+  // ciudad. En una ciudad los puntos son el Prado o el Retiro, y ninguno es una
+  // parada por la que se entre a ningún sitio.
+  if (req.destino.tipo === 'ciudad') {
+    return res.status(400).json({ error: 'Aquí los resultados no son ciudades.' });
+  }
+
+  const punto = una(
+    'SELECT * FROM puntos_interes WHERE id = ? AND destino_id = ?',
+    Number(req.params.puntoId),
+    req.destino.id
+  );
+  if (!punto) return res.status(404).json({ error: 'Ese sitio no está en este destino.' });
+
+  // Si todavía no estaba en la ruta, entra ahora.
+  const enLaRuta = anadirPuntoALaRuta(viaje, punto);
+  confirmarEtapa(enLaRuta.etapaId);
+  // Con un solo id delante, `reordenar` deja el resto detrás en su mismo orden.
+  reordenar(viaje.id, [enLaRuta.etapaId]);
+
+  console.log(
+    `[rutas] Viaje #${viaje.id}: «${punto.nombre}» es la ciudad de entrada (y la primera parada).`
+  );
+  res.json({ ok: true, puntoId: punto.id, etapaId: enLaRuta.etapaId });
+});
+
+/**
+ * TODO lo que el mapa necesita para repintarse, en una sola respuesta.
+ *
+ * Existe porque hasta ahora la pantalla no se enteraba de nada: añadías una
+ * ciudad y las líneas punteadas seguían como estaban, terminaba una
+ * investigación y la tarjeta se quedaba con su ruedecita girando. Había que
+ * salir y volver a entrar.
+ *
+ * Se junta todo en una llamada a propósito: el estado de los puntos, las
+ * distancias y la referencia se pintan A LA VEZ, y pedirlos por separado deja
+ * medio mapa de una época y medio de otra.
+ */
+router.get('/api/destinos/:destinoId/mapa', (req, res) => {
+  const destinoId = Number(req.params.destinoId);
+  const viajeId = Number(req.query.viaje) || null;
+
+  const panorama = panoramaDeDestino(destinoId, viajeId);
+  if (!panorama) return res.status(404).json({ error: 'Ese destino ya no está.' });
+
+  const estado = estadoDescubrimiento(destinoId, viajeId);
+  const referencia = viajeId ? referenciaDelViaje(viajeId) : null;
+
+  const distancias = viajeId
+    ? distanciasDelMapa(destinoId, viajeId)
+    : { referencia: null, distancias: {}, faltan: 0, calculando: false };
+
+  // Lo que falte, que se vaya calculando por detrás. Igual que en el endpoint
+  // de distancias: uno cada vez por destino.
+  if (distancias.faltan && viajeId && !trabajoActivo(viajeId, 'distancias', destinoId)) {
+    encolar(viajeId, 'distancias', destinoId);
+  }
+
+  res.json({
+    puntos: panorama.puntos.map((p) => ({
+      id: p.id,
+      estado: p.estado,
+      enRuta: Boolean(p.enRuta),
+      ficha: p.estado === 'investigada' ? `/sitio/${p.id}${viajeId ? `?viaje=${viajeId}` : ''}` : null,
+      esEntrada: esLaEntrada(referencia, p.id),
+    })),
+    estado: estado.estado,
+    investigando: estado.investigando ?? [],
+    referencia: distancias.referencia,
+    distancias: distancias.distancias,
+    // `distanciasDelMapa` cuenta los pares que le faltan, no dice "estoy
+    // calculando": lo segundo se deduce de lo primero, igual que en el
+    // endpoint de distancias de toda la vida. Leer un `calculando` que esa
+    // función nunca devuelve daba siempre `false`, y el mapa dejaba de
+    // preguntar justo cuando había cosas en camino.
+    calculando: distancias.faltan > 0,
   });
 });
 
@@ -2018,7 +2202,26 @@ router.post('/api/viaje/:viajeId/hueco/comer', async (req, res) => {
       // Places.
       entre: { origen: hueco.origen.nombre, destino: hueco.destino.nombre },
     });
-    res.json({ ...r, hueco });
+
+    // LO QUE YA TIENES APUNTADO, DELANTE.
+    //
+    // Si me molesté en apuntarme un sitio para esta parada, es que me interesa
+    // más que doce que acabo de descubrir. Salen arriba y marcados, y detrás
+    // los nuevos. Se ordenan igual entre ellos —por desvío—, así que un
+    // apuntado que queda lejísimos no se cuela por delante de otro apuntado que
+    // pilla de paso.
+    const apuntados = new Set(
+      todas(
+        "SELECT titulo FROM candidatos WHERE etapa_id = ? AND tipo = 'comer'",
+        hueco.etapaId
+      ).map((c) => c.titulo)
+    );
+
+    const sitios = r.sitios
+      .map((x) => ({ ...x, yaApuntado: apuntados.has(x.nombre) }))
+      .sort((x, y) => (y.yaApuntado ? 1 : 0) - (x.yaApuntado ? 1 : 0));
+
+    res.json({ ...r, sitios, hueco });
   } catch (err) {
     console.error('[rutas] al buscar dónde comer entre dos puntos:', err);
     res.status(500).json({ error: err.message || 'No se pudo buscar.' });
@@ -2140,6 +2343,13 @@ router.post('/api/etapas/:etapaId/traslados', (req, res) => {
   res.json(r);
 });
 
+/** Fijar un traslado para que salga arriba, o soltarlo al historial. */
+router.post('/api/traslados/:id/fijar', (req, res) => {
+  const r = fijarTraslado(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Ese traslado ya no está.' });
+  res.json(r);
+});
+
 router.post('/api/traslados/:id/recalcular', (req, res) => {
   const t = recalcularTraslado(Number(req.params.id));
   if (!t) return res.status(404).json({ error: 'Ese traslado ya no está.' });
@@ -2214,14 +2424,26 @@ router.post('/api/viaje/:viajeId/hueco/traslado', async (req, res) => {
   });
   if (!hueco) return res.status(404).json({ error: 'Ese hueco no existe.' });
 
-  if (!hueco.origen || !hueco.destino) {
+  // LO DEDUCIDO ES UNA PROPUESTA, NO UNA IMPOSICIÓN.
+  //
+  // Las tarjetas de al lado aciertan casi siempre, y por eso siguen siendo lo
+  // que sale puesto. Pero no siempre: a veces uno quiere el traslado desde el
+  // hotel aunque la tarjeta anterior sea un museo, o hasta el aeropuerto
+  // aunque no haya ninguna tarjeta detrás. Si el navegador manda extremos, se
+  // usan esos.
+  const origen = req.body?.origen ?? hueco.origen;
+  const destino = req.body?.destino ?? hueco.destino;
+
+  if (!origen || !destino) {
     return res.status(400).json({
-      error: 'Aquí no hay nada antes o después que enlazar.',
+      error: 'Hay que decir desde dónde y hasta dónde.',
     });
   }
-  // Si a un extremo le falta la dirección se dice CUÁL y de qué elemento, para
-  // poder ofrecer abrir su edición ahí mismo.
-  const sinSitio = [hueco.origen, hueco.destino].find((x) => !x.situada);
+
+  // A un elemento del viaje se le exige dirección; al texto libre no, que se
+  // busca al calcular. `crearTraslado` ya sabe distinguirlos, así que aquí solo
+  // se comprueba lo que viene de las tarjetas de al lado.
+  const sinSitio = [origen, destino].find((x) => x?.tipo && x?.id && x.situada === false);
   if (sinSitio) {
     return res.status(400).json({
       error: `Falta la dirección de «${sinSitio.nombre}».`,
@@ -2229,7 +2451,7 @@ router.post('/api/viaje/:viajeId/hueco/traslado', async (req, res) => {
     });
   }
 
-  const creado = crearTraslado(hueco.etapaId, hueco.origen, hueco.destino);
+  const creado = crearTraslado(hueco.etapaId, origen, destino);
   if (!creado || creado.error) {
     return res.status(400).json({ error: creado?.error ?? 'No se pudo consultar.' });
   }
@@ -2675,6 +2897,15 @@ router.post('/api/itinerario/:id/retocar', (req, res) => {
     hora: 'hora' in (req.body ?? {}) ? req.body.hora : undefined,
     duracionMin: 'duracionMin' in (req.body ?? {}) ? req.body.duracionMin : undefined,
   });
+  if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
+
+  res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.body?.etapa) || null }));
+});
+
+/** Subirlo o bajarlo dentro de su franja. */
+router.post('/api/itinerario/:id/mover-en-franja', (req, res) => {
+  const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
+  const fila = moverEnFranja(Number(req.params.id), direccion);
   if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
 
   res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.body?.etapa) || null }));

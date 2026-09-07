@@ -10,10 +10,25 @@
  */
 const LEAFLET = '1.9.4';
 
+/**
+ * El puente entre Leaflet y las teselas de Google.
+ *
+ * No se pueden pedir las imágenes de Google por URL y ya: sus condiciones no lo
+ * permiten. Lo que hace este plugin es montar un mapa de Google de verdad por
+ * debajo y llevarlo sincronizado con el de Leaflet, así que la atribución y el
+ * logotipo salen como tienen que salir y los marcadores, el carrusel y las
+ * líneas siguen siendo de Leaflet, sin tocarlos.
+ *
+ * La API de Google NO se carga aquí: la carga el JS, para poder darse cuenta de
+ * si falla y volver a OpenStreetMap sin dejar la pantalla en blanco.
+ */
+const MUTANT = '0.14.1';
+
 const cabezaExtra =
   `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">`;
 const pieExtra =
   `<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.js"></script>` +
+  `<script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@${MUTANT}/dist/Leaflet.GoogleMutant.min.js"></script>` +
   '<script src="/js/descubrir.js"></script>';
 
 /** "hace cuánto" en cristiano, a partir de un datetime de SQLite. */
@@ -43,6 +58,12 @@ const conCoordenadas = puntos.filter((p) => p.lat != null && p.lon != null);
 // es más simple que montar un endpoint solo para esto.
 const datosMapa = JSON.stringify({
   centro: destino.lat != null && destino.lon != null ? [destino.lat, destino.lon] : null,
+  // LA CLAVE DEL NAVEGADOR, restringida por dominio. Es la única que puede
+  // estar en el HTML; la de servidor no sale nunca de `lib/google.js`.
+  claveMapas,
+  // En un destino de nivel ciudad los puntos son el Prado o el Retiro: por
+  // ninguno se "entra" a nada, y el control no se ofrece.
+  admiteEntrada: destino.tipo !== 'ciudad' && Boolean(viaje),
   // El JS los necesita para pedir las distancias y para saber a quién dibujarle
   // una línea: solo a las que ya están en la ruta.
   destino: { id: destino.id, tipo: destino.tipo },
@@ -59,6 +80,7 @@ const datosMapa = JSON.stringify({
     ficha: p.estado === 'investigada'
       ? `/sitio/${p.id}` + (viaje ? `?viaje=${viaje.id}` : '')
       : null,
+    esEntrada: Boolean(p.esEntrada),
   })),
 });
 
@@ -243,6 +265,28 @@ const datosMapa = JSON.stringify({
               <i class="ti ti-car" aria-hidden="true"></i>
               <span data-distancia-texto>—</span>
             </p>
+
+            <%# CIUDAD DE ENTRADA. Pequeño y aparte de "A mi ruta" a propósito:
+                no es lo mismo apuntar una parada que decidir por dónde se entra
+                al viaje. Marcarlo hace dos cosas —la confirma como primera
+                parada y mueve ahí la referencia de todas las distancias—, y por
+                eso se dice debajo con todas las letras.
+
+                Solo en destinos de nivel PAÍS, donde cada punto es una ciudad. %>
+            <% if (viaje && !esCiudad) { %>
+              <label class="entrada <%= p.esEntrada ? 'entrada--si' : '' %>"
+                     data-entrada-de="<%= p.id %>">
+                <input type="checkbox" data-accion="ciudad-entrada"
+                       <%= p.esEntrada ? 'checked' : '' %>>
+                <span class="entrada__marca" aria-hidden="true">
+                  <i class="ti ti-plane-arrival"></i>
+                </span>
+                <span class="entrada__texto">
+                  Ciudad de entrada
+                  <span class="entrada__pista">Las distancias se miden desde aquí</span>
+                </span>
+              </label>
+            <% } %>
 
             <div class="tarjeta-punto__acciones">
               <%# Acción de investigar: cambia según el estado del punto %>

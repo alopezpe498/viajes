@@ -239,34 +239,22 @@ export function comoLlegarDeTramo(transporteId, ciudadA, ciudadB) {
     datos: datos.get(f.id) ?? null,
   }));
 
-  // El avión va al final: en un salto de dos horas en bus es la opción rara,
-  // pero en uno de mil kilómetros es la única. No se guarda en el catálogo
-  // porque no es un dato sobre el mundo —los buses de Sarajevo a Mostar sí lo
-  // son—, es una puerta a una pantalla de esta aplicación.
-  const avion = {
-    id: 'avion',
-    esAvion: true,
-    medio: 'avion',
-    etiquetaMedio: MEDIOS.avion.etiqueta,
-    icono: MEDIOS.avion.icono,
-    nombre: `Volar de ${ciudadA} a ${ciudadB}`,
-    duracion: null,
-    frecuencia: null,
-    precio: null,
-    nota: 'Busca vuelos concretos con sus horarios y su precio.',
-    nota_sentido: null,
-    web: null,
-    origen: 'app',
-    elegida: t.tipo === 'vuelo' && Boolean(t.candidato_id),
-    datos: null,
-  };
-
+  // EL AVIÓN YA NO ES UNA FICHA DE ESTA LISTA.
+  //
+  // Lo fue, y era una capa de más: para buscar un vuelo había que abrir el
+  // panel de medios, bajar hasta una tarjeta de avión que no tenía ni duración
+  // ni precio, y pulsar ahí. Ahora "Buscar vuelo" está arriba, junto a "Buscar
+  // cómo llegar" y "Añadir medio", que son las tres cosas que se pueden hacer
+  // con un tramo.
+  //
+  // Esta lista se queda con lo que de verdad es catálogo: los medios por tierra
+  // y mar de esa pareja de ciudades.
   return {
     transporteId: t.id,
     ciudadA,
     ciudadB,
     elegidaId: t.ficha_transporte_id ?? null,
-    fichas: [...delCatalogo, avion],
+    fichas: delCatalogo,
     buscando: Boolean(activo),
     mensajeError: !activo && !fichas.length && ultimo?.estado === 'error' ? ultimo.mensaje_error : null,
     consultada: Boolean(ultimo),
@@ -344,15 +332,35 @@ export function fichasDeMovilidad(ciudad) {
   }));
 }
 
+/**
+ * Guarda una ficha de transporte urbano. ACTUALIZA si ya estaba.
+ *
+ * Era un INSERT a secas, y por eso pulsar "Buscar otra vez" en Moverse metía
+ * otra vez las mismas cinco fichas de metro y de taxi. Con el índice único por
+ * (ciudad, nombre) la segunda búsqueda refresca lo que ya había en vez de
+ * duplicarlo, que es lo que ya hacían las excursiones y los restaurantes.
+ *
+ * Lo que NO se pisa es el teléfono ni la web cuando vienen vacíos: si alguien
+ * los escribió a mano, una búsqueda que no los trae no puede borrarlos.
+ */
 export function guardarFichaMovilidad(ciudad, ficha, origen = 'ia') {
   const r = ejecutar(
     `INSERT INTO catalogo_movilidad
-       (ciudad_norm, ciudad, tipo, nombre, descripcion, precio, telefono, web, nota, orden, origen)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (ciudad_norm, ciudad, tipo, nombre, nombre_norm, descripcion, precio, telefono, web, nota, orden, origen)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (ciudad_norm, nombre_norm) DO UPDATE SET
+       tipo        = excluded.tipo,
+       descripcion = COALESCE(excluded.descripcion, descripcion),
+       precio      = COALESCE(excluded.precio, precio),
+       telefono    = COALESCE(excluded.telefono, telefono),
+       web         = COALESCE(excluded.web, web),
+       nota        = COALESCE(excluded.nota, nota),
+       orden       = excluded.orden`,
     normalizarNombre(ciudad),
     ciudad,
     tipoValido(ficha.tipo),
     texto(ficha.nombre) ?? 'Sin nombre',
+    normalizarNombre(texto(ficha.nombre) ?? 'Sin nombre'),
     texto(ficha.descripcion),
     texto(ficha.precio),
     texto(ficha.telefono),
@@ -361,7 +369,13 @@ export function guardarFichaMovilidad(ciudad, ficha, origen = 'ia') {
     Number(ficha.orden) || 0,
     origen
   );
-  return una('SELECT * FROM catalogo_movilidad WHERE id = ?', Number(r.lastInsertRowid));
+  // Con un upsert, `lastInsertRowid` no sirve cuando lo que ha habido es un
+  // UPDATE: se busca por la clave, que es la que de verdad identifica la ficha.
+  return una(
+    'SELECT * FROM catalogo_movilidad WHERE ciudad_norm = ? AND nombre_norm = ?',
+    normalizarNombre(ciudad),
+    normalizarNombre(texto(ficha.nombre) ?? 'Sin nombre')
+  ) ?? una('SELECT * FROM catalogo_movilidad WHERE id = ?', Number(r.lastInsertRowid));
 }
 
 export function actualizarFichaMovilidad(id, ficha) {

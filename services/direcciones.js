@@ -224,7 +224,7 @@ export async function geocodificarFila(direccionId, { cerca = null } = {}) {
   //
   // Se prueba entera primero porque a veces el paréntesis es parte del nombre
   // de verdad, y porque lo que la persona escribió merece el primer intento.
-  const formas = [d.direccion, sinParentesis(d.direccion)].filter(
+  const formas = [d.direccion, sinParentesis(d.direccion), sinLoDeEnMedio(d.direccion)].filter(
     (t, i, todas) => t && todas.indexOf(t) === i
   );
 
@@ -280,6 +280,29 @@ export async function geocodificarFila(direccionId, { cerca = null } = {}) {
   );
   console.log(`[direcciones] situada con ${hallado.fuente}: «${d.direccion}»`);
   return direccionDe(d.tipo_elemento, d.elemento_id);
+}
+
+/**
+ * "Hotel Tal, Centro de Ámsterdam, Ámsterdam" -> "Hotel Tal, Ámsterdam".
+ *
+ * El tercer intento, y el que salva los hoteles. Booking da el barrio con la
+ * ciudad detrás, así que la dirección volcada queda con tres partes y el
+ * buscador no encuentra nada: la de en medio no es una calle, es una zona
+ * comercial ("Centro de Ámsterdam") que no está en ningún callejero.
+ *
+ * Quitándola queda el nombre y la ciudad, y ESO sí lo encuentra: los hoteles
+ * están en el mapa por su nombre.
+ *
+ * Solo se prueba si los dos intentos anteriores han fallado, y solo cuando hay
+ * tres partes o más: con dos no hay nada que quitar.
+ */
+function sinLoDeEnMedio(texto) {
+  const partes = String(texto ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (partes.length < 3) return null;
+  return `${partes[0]}, ${partes[partes.length - 1]}`;
 }
 
 /**

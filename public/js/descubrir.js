@@ -9,8 +9,10 @@
  * dispara el scroll, que mueve el mapa, que... Por eso hay un cerrojo
  * (`moviendoYo`) que corta el eco durante el desplazamiento.
  *
- * Mapa: Leaflet con teselas de OpenStreetMap. Son gratis y no piden clave, pero
- * exigen la atribución en pantalla: está puesta y no se quita.
+ * Mapa: Leaflet, con las teselas de Google si la clave del navegador funciona y
+ * con las de OpenStreetMap si no. El respaldo no es un adorno: la clave está
+ * restringida por dominio y en cuanto se prueba desde otro sitio deja de valer,
+ * y entonces esta pantalla tiene que seguir viéndose igual.
  */
 (() => {
   const divMapa = document.getElementById('mapa');
@@ -36,12 +38,154 @@
     scrollWheelZoom: true,
   });
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18,
-    attribution: '© OpenStreetMap',
-  }).addTo(mapa);
-
   L.control.zoom({ position: 'topright' }).addTo(mapa);
+
+  // ===========================================================================
+  // LAS TESELAS
+  // ---------------------------------------------------------------------------
+  // Google primero, OpenStreetMap de respaldo. Y el respaldo entra SIEMPRE que
+  // algo salga mal: sin clave, con la clave restringida a otro dominio, con la
+  // API caída o con el script bloqueado por una extensión. Nunca se queda el
+  // mapa en gris, que es lo que pasaría si esto se diera por hecho.
+  // ===========================================================================
+
+  /**
+   * El mapa, sin gritar.
+   *
+   * Google trae por defecto todos los negocios, todas las paradas de metro y
+   * los iconos de las carreteras, y encima de eso hay que pintar marcadores,
+   * líneas punteadas y etiquetas de distancia. Se apagan las etiquetas de
+   * puntos de interés y de transporte —lo que sobra— y se baja la saturación,
+   * y quedan a la vista las ciudades, las carreteras y la costa, que es lo que
+   * se está mirando aquí.
+   */
+  const ESTILO_LIMPIO = [
+    { elementType: 'geometry', stylers: [{ saturation: -30 }] },
+    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+    { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
+    { featureType: 'administrative.neighborhood', stylers: [{ visibility: 'off' }] },
+    // El agua, del azul de la casa.
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#D3E8F0' }] },
+  ];
+
+  function teselasDeOSM(motivo) {
+    if (motivo) console.warn(`[descubrir] teselas de OpenStreetMap: ${motivo}`);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap',
+    }).addTo(mapa);
+  }
+
+  /**
+   * Carga la API de Google. Resuelve cuando está lista y falla en cuanto se
+   * tuerza, para poder irse al respaldo sin dejar a nadie esperando.
+   *
+   * Tres formas de enterarse de que no va, y hacen falta las tres:
+   *
+   *   - `gm_authFailure`, que Google llama en ALGUNOS fallos de clave.
+   *   - El `onerror` del script, si ni siquiera se descarga.
+   *   - Un plazo, porque los otros dos no siempre llegan: una extensión que
+   *     bloquee el dominio puede dejar la carga colgada sin decir nada.
+   *
+   * Y aun con las tres no basta, que es lo que costó descubrir: con
+   * `RefererNotAllowedMapError` —la clave no autoriza este dominio— la API
+   * CARGA BIEN, no llama a `gm_authFailure`, escribe el error en la consola y
+   * deja el mapa en gris. Desde el código todo parece haber ido bien. Por eso
+   * después de poner la capa hay que comprobar que de verdad ha pintado algo:
+   * eso lo hace `teselasDeGoogle`.
+   */
+  function cargarGoogle(clave) {
+    return new Promise((listo, falla) => {
+      const CALLBACK = '__mapaListo';
+      const reloj = setTimeout(() => falla(new Error('la API de Google tardó demasiado')), 6000);
+
+      const terminar = (fn, arg) => { clearTimeout(reloj); fn(arg); };
+
+      window[CALLBACK] = () => terminar(listo);
+      window.gm_authFailure = () =>
+        terminar(falla, new Error('la clave no vale para este dominio'));
+
+      const script = document.createElement('script');
+      // `language` y `region` en español: sin esto los nombres salen en el
+      // idioma del país que se esté mirando.
+      script.src =
+        'https://maps.googleapis.com/maps/api/js' +
+        `?key=${encodeURIComponent(clave)}` +
+        `&language=es&region=ES&loading=async&callback=${CALLBACK}`;
+      script.async = true;
+      script.onerror = () => terminar(falla, new Error('no se pudo descargar la API de Google'));
+      document.head.appendChild(script);
+    });
+  }
+
+  /**
+   * Pone las teselas de Google y COMPRUEBA QUE PINTAN.
+   *
+   * La comprobación no es paranoia: es el único modo de detectar
+   * `RefererNotAllowedMapError`. En ese caso la API carga, la capa se añade sin
+   * quejarse y el mapa se queda gris para siempre. Se espera al `tilesloaded`
+   * del mapa de Google —el evento que dice "ya hay imágenes"— y, si no llega a
+   * tiempo, se quita la capa y se vuelve a OpenStreetMap.
+   */
+  function teselasDeGoogle() {
+    return new Promise((listo, falla) => {
+      if (!L.gridLayer?.googleMutant) {
+        return falla(new Error('no cargó el puente con Leaflet'));
+      }
+
+      const capa = L.gridLayer.googleMutant({
+        type: 'roadmap',
+        styles: ESTILO_LIMPIO,
+        maxZoom: 20,
+      });
+      capa.addTo(mapa);
+
+      const reloj = setTimeout(() => {
+        mapa.removeLayer(capa);
+        falla(
+          new Error(
+            'Google no llegó a pintar. Lo normal es que la clave no autorice ' +
+              `«${location.origin}»: mira la consola, ahí lo dice con su nombre.`
+          )
+        );
+      }, 4000);
+
+      // `_mutant` es el mapa de Google que hay por debajo. Su `tilesloaded` es
+      // la señal de que hay imágenes de verdad en pantalla.
+      const alPintar = () => { clearTimeout(reloj); listo(); };
+
+      if (capa._mutant && window.google?.maps?.event) {
+        google.maps.event.addListenerOnce(capa._mutant, 'tilesloaded', alPintar);
+      } else {
+        // Sin acceso al mapa de dentro, se mira si el plugin ha destapado su
+        // contenedor, que es lo que hace cuando Google le contesta.
+        const mirar = setInterval(() => {
+          const div = document.querySelector('.leaflet-google-mutant');
+          if (div && getComputedStyle(div).visibility === 'visible') {
+            clearInterval(mirar);
+            alPintar();
+          }
+        }, 250);
+        setTimeout(() => clearInterval(mirar), 4000);
+      }
+    });
+  }
+
+  (async () => {
+    const clave = datos.claveMapas;
+    if (!clave) return teselasDeOSM('no hay GOOGLE_MAPS_BROWSER_KEY en el .env');
+
+    try {
+      await cargarGoogle(clave);
+      await teselasDeGoogle();
+      console.log('[descubrir] teselas de Google Maps, en español.');
+    } catch (err) {
+      teselasDeOSM(err.message);
+    }
+  })();
 
   /** Escapa lo que va dentro del globo: los nombres vienen de la IA. */
   function escapar(t) {
@@ -310,6 +454,61 @@
         await aMiRuta(boton, `${base}/punto/${puntoId}/a-mi-ruta?viaje=${viaje}`);
       }
     });
+
+    // ---------------------------------------------------------------------
+    // CIUDAD DE ENTRADA
+    // ---------------------------------------------------------------------
+    // Es un `change` y no un `click` porque el control es una casilla de
+    // verdad: así funciona también con el teclado.
+    //
+    // SE COMPORTA COMO UN GRUPO DE OPCIONES, no como una casilla suelta: solo
+    // puede haber una ciudad de entrada, y se cambia marcando otra. Desmarcar
+    // la que está no significa nada —el viaje entra por algún sitio— así que
+    // se vuelve a poner y se dice por qué.
+    carrusel.addEventListener('change', async (ev) => {
+      const casilla = ev.target.closest('[data-accion="ciudad-entrada"]');
+      if (!casilla) return;
+
+      const etiqueta = casilla.closest('[data-entrada-de]');
+      const puntoId = Number(etiqueta?.dataset.entradaDe);
+      const base = carrusel.dataset.urlBase;
+      const viaje = carrusel.dataset.viaje;
+      if (!puntoId || !base || !viaje) return;
+
+      if (!casilla.checked) {
+        casilla.checked = true;
+        avisar('Marca otra ciudad para cambiar por dónde entras.');
+        return;
+      }
+
+      casilla.disabled = true;
+      try {
+        const r = await fetch(`${base}/punto/${puntoId}/ciudad-entrada?viaje=${viaje}`, {
+          method: 'POST',
+          headers: { Accept: 'application/json' },
+        });
+        const datosR = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(datosR.error || `Error ${r.status}`);
+
+        const nombre = etiqueta.closest('.tarjeta-punto')?.querySelector('.tarjeta-punto__nombre');
+        avisarConEnlace(
+          `Entras por ${nombre?.textContent.trim() ?? 'esa ciudad'}`,
+          'Ver mi ruta',
+          `/viaje/${viaje}/ruta`
+        );
+        // Todo cambia a la vez: la que era entrada deja de serlo, la ciudad
+        // queda confirmada en la ruta y TODAS las distancias se miden desde
+        // otro sitio. Se repinta entero, que es más simple y más seguro que
+        // ir tocando trozos.
+        await refrescar();
+      } catch (err) {
+        console.error('[descubrir] no se pudo marcar la ciudad de entrada:', err);
+        casilla.checked = false;
+        avisar(err.message);
+      } finally {
+        casilla.disabled = false;
+      }
+    });
   }
 
   /** [Investigar] -> encola el trabajo y deja el botón girando. */
@@ -350,8 +549,10 @@
     boton.disabled = true;
     try {
       const r = await fetch(url, { method: 'POST', headers: { Accept: 'application/json' } });
-      const datos = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+      // Ojo con el nombre: `datos` de fuera son los del mapa. Llamar igual a la
+      // respuesta tapaba aquel dentro de esta función.
+      const datosRespuesta = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datosRespuesta.error || `Error ${r.status}`);
 
       boton.classList.remove('boton--primario');
       boton.classList.add('boton--hecho');
@@ -367,14 +568,21 @@
       if (esCiudad) {
         // La ciudad solo entra en la ruta la primera vez, y solo entonces se
         // avisa: repetirlo con cada museo sería ruido.
-        if (datos.etapaNueva) {
-          avisarConEnlace(`${datos.ciudad} añadida a tu ruta`, 'Ver mi ruta', `/viaje/${viaje}/ruta`);
+        if (datosRespuesta.etapaNueva) {
+          avisarConEnlace(`${datosRespuesta.ciudad} añadida a tu ruta`, 'Ver mi ruta', `/viaje/${viaje}/ruta`);
           subirContadorDeRuta();
         }
       } else {
         avisarConEnlace('Añadido a tu ruta', 'Ver mi ruta', `/viaje/${viaje}/ruta`);
         subirContadorDeRuta();
       }
+
+      // Y AQUÍ ESTABA EL FALLO. La tarjeta se pintaba de "En tu ruta" y hasta
+      // ahí llegaba todo: el marcador seguía igual y, sobre todo, la ciudad no
+      // aparecía en la lista de las que llevan línea punteada, porque esa lista
+      // vive en `marcadores` y nadie la actualizaba. Había que salir de la
+      // pantalla y volver a entrar para verlo.
+      await refrescar();
     } catch (err) {
       console.error('[descubrir] no se pudo añadir:', err);
       boton.disabled = false;
@@ -427,36 +635,50 @@
   let sondeando = false;
 
   function arrancarSondeo() {
-    if (sondeando || !carrusel?.dataset.estadoUrl) return;
+    if (sondeando || !destinoId) return;
     sondeando = true;
     setTimeout(comprobar, 5000);
   }
 
+  /**
+   * Cada vuelta REPINTA, mire lo que mire.
+   *
+   * Antes esto comparaba qué tarjetas seguían investigándose y, si alguna había
+   * terminado, recargaba la página entera. Tenía dos problemas y los dos se
+   * notaban:
+   *
+   *   - Recargar es un martillazo: se pierde el encuadre del mapa, la tarjeta
+   *     que estabas mirando y el sitio del carrusel.
+   *   - Y sobre todo, solo se enteraba de un cambio si LA PROPIA PANTALLA había
+   *     visto empezar la investigación. Si el trabajo ya estaba en marcha al
+   *     entrar, o si el sondeo se saltaba justo el momento en que terminaba, la
+   *     tarjeta se quedaba para siempre con su ruedecita y su línea de
+   *     distancia sin pintar. Eso es lo que le pasó a Gdansk.
+   *
+   * Ahora se pide el estado completo y se pinta lo que diga el servidor. Sin
+   * comparar nada, sin recordar nada: si algo cambió, se ve; y si no cambió,
+   * repintar lo mismo no cuesta nada.
+   */
   async function comprobar() {
     try {
-      const r = await fetch(carrusel.dataset.estadoUrl, { headers: { Accept: 'application/json' } });
-      if (!r.ok) throw new Error(`El servidor respondió ${r.status}`);
-      const estado = await r.json();
-
-      const enCurso = new Set(estado.investigando ?? []);
-
-      // Si alguna tarjeta estaba investigándose y ya no lo está, es que terminó:
-      // recargamos para que salga con su ficha y su marcador con tic.
-      const seguian = [...carrusel.children].filter((t) => t.dataset.estado === 'investigando');
-      const algunaAcabo = seguian.some((t) => !enCurso.has(Number(t.dataset.puntoId)));
-      if (algunaAcabo) { location.reload(); return; }
-
-      if (!enCurso.size) { sondeando = false; return; } // nada en marcha: paramos
+      const estado = await refrescar();
+      // Se para cuando no queda nada en marcha, ni investigándose ni
+      // calculándose. Preguntar cada cinco segundos por gusto no tiene sentido.
+      if (estado && !estado.investigando?.length && !estado.calculando) {
+        sondeando = false;
+        return;
+      }
     } catch (err) {
       console.error('[descubrir] no se pudo consultar el estado:', err);
     }
     setTimeout(comprobar, 5000);
   }
 
-  // Al cargar puede haber cosas ya en marcha (venías de pulsar y recargaste).
-  if (carrusel && [...carrusel.children].some((t) => t.dataset.estado === 'investigando')) {
-    arrancarSondeo();
-  }
+  // Al cargar ya no hace falta mirar las tarjetas para saber si hay algo en
+  // marcha: el `refrescar()` del final pregunta al servidor y enciende el
+  // sondeo si toca. Mirar el DOM era además lo que dejaba fuera el caso de
+  // Gdansk: si el trabajo empezó en otra pestaña, aquí no había ninguna
+  // ruedecita que ver y nunca se sondeaba.
 
   // ===========================================================================
   // DISTANCIAS DESDE LA CIUDAD DE ENTRADA
@@ -539,40 +761,159 @@
     }
   }
 
-  let sondeoDistancias = null;
+  // ===========================================================================
+  // REFRESCAR: una llamada y el mapa entero al día
+  // ---------------------------------------------------------------------------
+  // Se pide TODO junto —estado de cada punto, referencia y distancias— y se
+  // repinta entero. Pedirlo por trozos deja medio mapa de una época y medio de
+  // otra: la tarjeta ya dice "En tu ruta" pero la línea punteada todavía no
+  // está, o la referencia se ha movido y las distancias siguen siendo las de
+  // antes.
+  //
+  // Repintar de más no cuesta nada; repintar de menos es justo el fallo que
+  // había.
+  // ===========================================================================
 
-  async function traerDistancias() {
-    if (!viajeId || !destinoId) return;
+  /** Cómo se ve la acción de investigar según en qué anda el punto. */
+  function botonDeInvestigar(estado, ficha) {
+    if (estado === 'investigando') {
+      return (
+        '<span class="boton boton--secundario boton--esperando" data-accion="investigando">' +
+        '<span class="rueda" aria-hidden="true"></span> Investigando…</span>'
+      );
+    }
+    if (estado === 'investigada' && ficha) {
+      return (
+        `<a class="boton boton--secundario" href="${ficha}" data-accion="ver-ficha">` +
+        '<i class="ti ti-file-text" aria-hidden="true"></i> Ver ficha</a>'
+      );
+    }
+    return (
+      '<button class="boton boton--secundario" type="button" data-accion="investigar">' +
+      '<i class="ti ti-sparkles" aria-hidden="true"></i> Investigar</button>'
+    );
+  }
 
-    try {
-      const r = await fetch(`/api/destinos/${destinoId}/distancias?viaje=${viajeId}`, {
-        headers: { Accept: 'application/json' },
-      });
-      if (!r.ok) return;
-      const datosD = await r.json();
+  /** Pone al día una tarjeta del carrusel con lo que dice el servidor. */
+  function refrescarTarjeta(p) {
+    const tarjeta = carrusel?.querySelector(`[data-punto-id="${p.id}"]`);
+    if (!tarjeta) return;
 
-      referencia = datosD.referencia;
-      distancias = datosD.distancias ?? {};
+    // --- El botón de investigar, si de verdad ha cambiado ------------------
+    // Se compara antes de tocar el DOM: rehacerlo en cada vuelta del sondeo
+    // haría parpadear la ruedecita cada cinco segundos.
+    if (tarjeta.dataset.estado !== p.estado) {
+      tarjeta.dataset.estado = p.estado;
+      const viejo = tarjeta.querySelector(
+        '[data-accion="investigar"], [data-accion="investigando"], [data-accion="ver-ficha"]'
+      );
+      if (viejo) viejo.outerHTML = botonDeInvestigar(p.estado, p.ficha);
+    }
 
-      for (const [id, m] of marcadores) {
-        if (id === referencia?.ciudadId) continue;
-        pintarDistanciaEnFicha(id, distancias[id] ?? null);
-      }
-      pintarLineas();
+    // --- El botón de añadir -----------------------------------------------
+    const anadir = tarjeta.querySelector('[data-accion="a-mi-ruta"]');
+    if (anadir && p.enRuta && !anadir.disabled) {
+      anadir.disabled = true;
+      anadir.classList.remove('boton--primario');
+      anadir.classList.add('boton--hecho');
+      anadir.innerHTML = carrusel.dataset.ciudad
+        ? '<i class="ti ti-check" aria-hidden="true"></i> Apuntado'
+        : '<i class="ti ti-check" aria-hidden="true"></i> En tu ruta';
+    }
 
-      // Mientras queden pares por calcular se vuelve a preguntar. Cuando no
-      // quede ninguno —o cuando los que faltan sean los que OSRM no sabe
-      // resolver— se para: esos se reintentarán al volver a abrir el mapa.
-      if (datosD.calculando) {
-        clearTimeout(sondeoDistancias);
-        sondeoDistancias = setTimeout(traerDistancias, 4000);
-      } else {
-        clearTimeout(sondeoDistancias);
-      }
-    } catch (err) {
-      console.warn('[descubrir] no se pudieron traer las distancias:', err.message);
+    // --- El control de ciudad de entrada ----------------------------------
+    const entrada = tarjeta.querySelector('[data-entrada-de]');
+    if (entrada) {
+      entrada.classList.toggle('entrada--si', p.esEntrada);
+      const casilla = entrada.querySelector('input');
+      if (casilla) casilla.checked = p.esEntrada;
     }
   }
 
-  traerDistancias();
+  /** El marcador del mapa: su icono y si le toca línea. */
+  function refrescarMarcador(p) {
+    const m = marcadores.get(p.id);
+    if (!m) return;
+
+    // `enRuta` es lo que decide si se le pinta línea punteada, y era justo lo
+    // que se quedaba desactualizado al añadir una ciudad.
+    m.enRuta = p.enRuta;
+    m.ficha = p.ficha;
+
+    if (m.estado !== p.estado) {
+      m.estado = p.estado;
+      m.marcador.setIcon(iconoDe(p.estado, p.id === idActivo));
+    }
+
+    // Al terminar de investigarse gana globo con el atajo a su ficha.
+    if (p.ficha && !m.marcador.getPopup()) {
+      m.marcador.bindPopup(
+        `<strong>${escapar(p.nombre ?? '')}</strong><br>` +
+          `<a class="popup__enlace" href="${p.ficha}">Ver ficha →</a>`,
+        { closeButton: false, offset: [0, -6] }
+      );
+    }
+  }
+
+  let refrescando = null;
+
+  /**
+   * Trae el estado completo y lo pinta. Devuelve lo que dijo el servidor.
+   *
+   * Si ya hay una llamada en marcha se devuelve esa misma en vez de lanzar
+   * otra: el sondeo y un clic pueden coincidir, y dos respuestas pisándose
+   * dejarían el mapa a medias.
+   */
+  function refrescar() {
+    if (refrescando) return refrescando;
+    refrescando = traerYPintar().finally(() => { refrescando = null; });
+    return refrescando;
+  }
+
+  async function traerYPintar() {
+    if (!destinoId) return null;
+
+    const url =
+      `/api/destinos/${destinoId}/mapa` + (viajeId ? `?viaje=${viajeId}` : '');
+
+    let estado;
+    try {
+      const r = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!r.ok) throw new Error(`El servidor respondió ${r.status}`);
+      estado = await r.json();
+    } catch (err) {
+      console.warn('[descubrir] no se pudo refrescar el mapa:', err.message);
+      return null;
+    }
+
+    referencia = estado.referencia ?? null;
+    distancias = estado.distancias ?? {};
+
+    for (const p of estado.puntos ?? []) {
+      // El nombre no viaja en esta respuesta: lo tenemos del pintado inicial.
+      const nombre = marcadores.get(p.id)?.marcador.options.title ?? '';
+      refrescarTarjeta(p);
+      refrescarMarcador({ ...p, nombre });
+    }
+
+    // La ciudad de entrada no se mide contra sí misma: su línea se borra.
+    for (const [id] of marcadores) {
+      if (id === referencia?.ciudadId) {
+        const linea = carrusel?.querySelector(`[data-distancia-de="${id}"]`);
+        if (linea) linea.hidden = true;
+        continue;
+      }
+      pintarDistanciaEnFicha(id, distancias[id] ?? null);
+    }
+
+    pintarLineas();
+
+    // Mientras quede algo en marcha —una investigación o un par de ciudades
+    // sin calcular— se sigue mirando. El sondeo se enciende solo.
+    if (estado.investigando?.length || estado.calculando) arrancarSondeo();
+
+    return estado;
+  }
+
+  refrescar();
 })();

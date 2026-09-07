@@ -389,18 +389,22 @@ export function trasladosDeEtapa(etapaId) {
   if (!etapa) return { traslados: [], calculando: false };
 
   const filas = todas(
-    'SELECT * FROM traslados WHERE etapa_id = ? ORDER BY id DESC',
+    'SELECT * FROM traslados WHERE etapa_id = ? ORDER BY fijado DESC, id DESC',
     etapa.id
-  ).map(conCara);
-
-  return {
-    traslados: filas.map((t) => ({
+  )
+    .map(conCara)
+    .map((t) => ({
       ...t,
       calculando: t.estado === 'calculando' || Boolean(trabajoActivo(etapa.viaje_id, 'traslado', t.id)),
-    })),
-    calculando: filas.some(
-      (t) => t.estado === 'calculando' || trabajoActivo(etapa.viaje_id, 'traslado', t.id)
-    ),
+    }));
+
+  return {
+    // Arriba lo que he decidido tener a mano; el resto, plegado como historial.
+    fijados: filas.filter((t) => t.fijado),
+    historial: filas.filter((t) => !t.fijado),
+    // La lista entera sigue saliendo para el dosier y para quien la necesite.
+    traslados: filas,
+    calculando: filas.some((t) => t.calculando),
   };
 }
 
@@ -436,8 +440,28 @@ function conCara(t) {
     fuente: t.fuente,
     mensaje: t.mensaje,
     calculadoEn: t.calculado_en,
+    fijado: Boolean(t.fijado),
     recorrido: `${t.origen_texto} → ${t.destino_texto}`,
   };
+}
+
+/**
+ * Fija o suelta un traslado.
+ *
+ * LA LISTA CRECE CON CADA CONSULTA y no todas valen lo mismo: "del hotel al
+ * centro" se mira veinte veces durante el viaje, y "del Prado a Atocha" se miró
+ * una vez para decidir algo y ya no importa. Fijar es decir cuál de las dos es.
+ *
+ * Los fijados salen arriba y el resto se queda plegado como historial. Nada se
+ * borra: una consulta hecha es una consulta que puede volver a hacer falta.
+ */
+export function fijarTraslado(id) {
+  const t = una('SELECT * FROM traslados WHERE id = ?', Number(id));
+  if (!t) return null;
+
+  const nuevo = t.fijado ? 0 : 1;
+  ejecutar('UPDATE traslados SET fijado = ? WHERE id = ?', nuevo, t.id);
+  return { id: t.id, fijado: Boolean(nuevo) };
 }
 
 /**

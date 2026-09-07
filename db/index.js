@@ -319,6 +319,7 @@ export function migrarEsquema() {
   migracionMovilidad();
   migracionTrasladosYDirecciones();
   migracionComer();
+  migracionBusquedasEfimeras();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -328,6 +329,83 @@ export function migrarEsquema() {
     CREATE INDEX IF NOT EXISTS idx_candidatos_transp ON candidatos(transporte_id);
     CREATE INDEX IF NOT EXISTS idx_itinerario_etapa  ON itinerario(etapa_id, dia);
   `);
+}
+
+/**
+ * Migracion 19: las busquedas dejan de acumularse.
+ *
+ * EL PROBLEMA, con numeros: Madrid tenia 71 fichas en la pestaña "Comer". Cada
+ * busqueda anadia doce mas y ninguna se iba nunca, asi que a la cuarta consulta
+ * la pestaña era una lista infinita donde no se encontraba lo que uno mismo se
+ * habia apuntado tres dias antes.
+ *
+ * DOS COSAS DISTINTAS MEZCLADAS EN LA MISMA LISTA:
+ *
+ *   - Lo que YO me he apuntado. Es mio, es del viaje y no se toca nunca.
+ *   - Lo que salio en una busqueda. Es material de usar y tirar: si vuelvo a
+ *     buscar, lo de antes ya no me interesa.
+ *
+ * `busqueda` es la marca de en que consulta salio cada ficha. La pantalla
+ * enseña lo apuntado + lo de la ULTIMA busqueda, y lo demas se queda plegado.
+ *
+ * NO SE BORRA NADA, y eso es deliberado. Las filas siguen en el catalogo porque
+ * se pagaron: cada una es una llamada a Places, y el proximo viaje a Madrid las
+ * reutiliza sin volver a pedirlas. Lo que se limpia es LA PANTALLA, que es
+ * donde estaba el problema.
+ *
+ * Y DE PASO, LA MOVILIDAD DUPLICABA. `guardarFichaMovilidad` era un INSERT a
+ * secas: pulsar "Buscar otra vez" en Moverse metia otra vez las mismas cinco
+ * fichas de metro y taxi. Se le pone un indice unico por (ciudad, nombre) para
+ * que una segunda busqueda ACTUALICE en vez de duplicar, que es lo que ya hacen
+ * las actividades y los restaurantes.
+ */
+function migracionBusquedasEfimeras() {
+  const CLAVE = '2026-09-busquedas-efimeras';
+  if (yaAplicada(CLAVE)) return false;
+
+  // --- Comer: de que busqueda es cada ficha --------------------------------
+  const colsComer = db.prepare('PRAGMA table_info(catalogo_comer)').all().map((c) => c.name);
+  if (!colsComer.includes('busqueda')) {
+    db.exec('ALTER TABLE catalogo_comer ADD COLUMN busqueda TEXT');
+  }
+
+  // Lo que ya habia no pertenece a ninguna busqueda concreta: se queda en el
+  // historico. Lo apuntado sale igual, que eso no depende de esta columna.
+  db.exec("UPDATE catalogo_comer SET busqueda = 'antiguo' WHERE busqueda IS NULL");
+
+  // --- Traslados: los que quiero tener a mano ------------------------------
+  const colsTraslados = db.prepare('PRAGMA table_info(traslados)').all().map((c) => c.name);
+  if (!colsTraslados.includes('fijado')) {
+    db.exec('ALTER TABLE traslados ADD COLUMN fijado INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // --- Movilidad: que no se dupliquen -------------------------------------
+  const colsMov = db.prepare('PRAGMA table_info(catalogo_movilidad)').all().map((c) => c.name);
+  if (!colsMov.includes('nombre_norm')) {
+    db.exec('ALTER TABLE catalogo_movilidad ADD COLUMN nombre_norm TEXT');
+  }
+
+  const sinNorm = db.prepare('SELECT id, nombre FROM catalogo_movilidad WHERE nombre_norm IS NULL').all();
+  const ponerNorm = db.prepare('UPDATE catalogo_movilidad SET nombre_norm = ? WHERE id = ?');
+  for (const f of sinNorm) ponerNorm.run(normalizarNombre(f.nombre), f.id);
+
+  // Si ya hubiera duplicados de antes, el indice unico no se podria crear: se
+  // deja el primero de cada grupo, que es el que lleva mas tiempo y el que
+  // puede tener direccion puesta a mano.
+  db.exec(`
+    DELETE FROM catalogo_movilidad
+     WHERE id NOT IN (
+       SELECT MIN(id) FROM catalogo_movilidad GROUP BY ciudad_norm, nombre_norm
+     )
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_movilidad_unica
+      ON catalogo_movilidad(ciudad_norm, nombre_norm)
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: las búsquedas dejan de acumularse en pantalla.');
+  return true;
 }
 
 /**

@@ -150,6 +150,23 @@ document.addEventListener('click', (evento) => {
 // de los de la lista y un data-estado-url al que preguntar.
 // =============================================================================
 (() => {
+  // ESTA PANTALLA, ¿LLEVA SU PROPIO SONDEO? Entonces aquí no se toca nada.
+  //
+  // La de etapa lo lleva: mira a la vez la preparación de la ciudad, los
+  // hoteles, los vuelos de cada tramo, el transporte, los traslados y la
+  // búsqueda de restaurantes, y contesta en un solo JSON con `trabajando`.
+  //
+  // Este de aquí es más viejo y espera otra cosa: un `estado` en la raíz de la
+  // respuesta. Como en la etapa ese campo no existe, `datos.estado !== 'buscando'`
+  // daba SIEMPRE verdadero y recargaba la pantalla entera CADA CINCO SEGUNDOS
+  // mientras hubiera una búsqueda en marcha. Eso es lo que hacía saltar la
+  // pestaña a "Qué ver" una y otra vez: cada recarga vuelve a pintar la primera
+  // pestaña antes de que el JS reponga la que estabas mirando.
+  //
+  // Dos sondeos sobre la misma pantalla no tienen arreglo bueno. El que manda
+  // es el que la pantalla declara suyo.
+  if (document.querySelector('[data-trabajando]')) return;
+
   const caja =
     document.getElementById('buscando-actividades') ||
     document.getElementById('buscando-hoteles') ||

@@ -6,7 +6,7 @@
  *   buscarHoteles({ destino, fechaEntrada, fechaSalida, adultos, maxResultados })
  *     -> Promise<Array<{
  *          nombre, precioTotal, moneda, valoracion, numOpiniones,
- *          zona, estrellas, distanciaCentro, url, imagenUrl,
+ *          zona, direccion, estrellas, distanciaCentro, url, imagenUrl,
  *          // extras
  *          estrellasAutodeclaradas, esAnuncio, precioTexto, estanciaTexto
  *        }>>
@@ -406,6 +406,17 @@ function extraerHotelesDelDOM() {
       valoracion: mValoracion ? aNumero(mValoracion[1]) : null,
       numOpiniones: mOpiniones ? aNumero(mOpiniones[1]) : null,
       zona: txt(card.querySelector('[data-testid="address-link"]')),
+      // LA DIRECCION, con tres sitios donde mirar.
+      //
+      // Booking no la pone siempre en el mismo elemento de la tarjeta: a veces
+      // hay un `address` con la calle, a veces solo el `address-link` con el
+      // barrio ("Centro de Madrid, Madrid"). Se cogen en orden de mas concreto
+      // a menos, y lo que salga es un punto de partida EDITABLE: la ficha deja
+      // corregirlo a mano si viene mal o viene corto.
+      direccion:
+        txt(card.querySelector('[data-testid="address"]')) ??
+        txt(card.querySelector('[data-testid="location"]')) ??
+        txt(card.querySelector('[data-testid="address-link"]')),
       estrellas,
       estrellasAutodeclaradas: autodeclaradas,
       distanciaCentro: txt(card.querySelector('[data-testid="distance"]')),
@@ -561,6 +572,7 @@ export async function buscarHoteles({
       valoracion: h.valoracion,
       numOpiniones: h.numOpiniones,
       zona: h.zona,
+      direccion: h.direccion,
       estrellas: h.estrellas,
       distanciaCentro: h.distanciaCentro,
       url: h.url,

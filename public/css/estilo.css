@@ -3935,9 +3935,6 @@ a  { color: var(--acento); }
   border-radius: var(--radio-sm);
 }
 .ficha-transporte--elegida { border-color: var(--acento); background: var(--tinte); }
-/* El avión no es una opción del catálogo: es una puerta a otra pantalla. Se
-   distingue con el borde punteado para que no parezca un dato investigado. */
-.ficha-transporte--avion { border-style: dashed; }
 
 .ficha-transporte__cabecera {
   display: flex;
@@ -4782,3 +4779,374 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
    pilla de paso por muy céntrico que sea el punto medio. */
 .hueco__desvio { font-size: 11px; color: var(--acento); font-weight: 650; }
 .hueco__desvio--sin { color: var(--texto-3); font-weight: 400; font-style: italic; }
+
+/* ===========================================================================
+   CIUDAD DE ENTRADA
+   ---------------------------------------------------------------------------
+   Pequeño y por debajo de los botones: no compite con "A mi ruta", que es la
+   acción principal de la tarjeta. Marcado cambia de color y el avión aterriza
+   en azul, que se lee de un vistazo desde el carrusel.
+   =========================================================================== */
+.entrada {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 0 10px;
+  padding: 7px 10px;
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color .12s, background .12s;
+}
+.entrada:hover { border-color: var(--acento); }
+
+.entrada--si {
+  border-style: solid;
+  border-color: var(--acento);
+  background: var(--tinte);
+}
+
+/* La casilla de verdad sigue ahí, invisible pero enfocable: así funciona con
+   el teclado y con lector de pantalla. Lo que se ve es la pastilla. */
+.entrada input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.entrada__marca {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--borde-fuerte);
+  background: var(--superficie);
+  color: var(--texto-3);
+  transition: background .12s, color .12s, border-color .12s;
+}
+.entrada__marca i { font-size: 15px; }
+.entrada--si .entrada__marca {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+
+.entrada__texto {
+  display: grid;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--texto-2);
+  line-height: 1.25;
+}
+.entrada--si .entrada__texto { color: var(--tinte-texto); }
+
+.entrada__pista {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--texto-3);
+}
+.entrada--si .entrada__pista { color: var(--texto-2); }
+
+/* El foco de teclado se ve en la pastilla, ya que la casilla está escondida. */
+.entrada input:focus-visible + .entrada__marca {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+/* ===========================================================================
+   EL RELOJ Y EL ORDEN DE LAS TARJETAS
+   ---------------------------------------------------------------------------
+   Cualquier tarjeta puede llevar hora y duración, así que el control tiene que
+   ser MUY discreto: con cinco tarjetas en un día, diez casillas vacías
+   convierten la columna en un formulario. Plegado es un relojito; abierto son
+   las dos casillas de siempre.
+   =========================================================================== */
+.item__reloj--plegado input,
+.item__reloj--plegado span { display: none; }
+
+.item__reloj-abrir {
+  display: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+  place-items: center;
+  line-height: 1;
+}
+.item__reloj--plegado .item__reloj-abrir { display: grid; }
+.item__reloj-abrir i { font-size: 14px; }
+.item__reloj-abrir:hover {
+  color: var(--acento);
+  border-color: var(--borde-fuerte);
+  background: var(--superficie);
+}
+
+/* En reposo casi no se ve; al pasar por la tarjeta se insinúa. Igual que el
+   "+" de los huecos: presente sin gritar. */
+.item__reloj--plegado { opacity: .35; transition: opacity .12s; }
+.item:hover .item__reloj--plegado,
+.item__reloj--plegado:focus-within { opacity: 1; }
+
+/* --- Subir y bajar -------------------------------------------------------- */
+.item__flechas {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity .12s;
+}
+.item:hover .item__flechas,
+.item__flechas:focus-within { opacity: 1; }
+/* En el móvil no hay hover: se dejan puestas pero tenues. */
+@media (hover: none) { .item__flechas { opacity: .45; } }
+
+.item__flecha {
+  width: 18px;
+  height: 13px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+.item__flecha i { font-size: 13px; }
+.item__flecha:hover { color: var(--acento); background: var(--tinte); }
+
+/* --- El formulario de extremos del hueco ---------------------------------- */
+.hueco__opcion--fina {
+  font-size: 12px;
+  color: var(--texto-2);
+  padding: 5px 9px;
+}
+.hueco__opcion--fina i { font-size: 14px; }
+
+.hueco__form { display: grid; gap: 8px; padding: 4px; }
+.hueco__form label { display: grid; gap: 3px; }
+.hueco__form label span {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.hueco__form input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 9px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+}
+.hueco__form input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.hueco__form-pie { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Lo que ya tenías apuntado, marcado en la lista de sitios para comer. */
+.hueco__sitio--apuntado { background: var(--tinte); }
+.hueco__apuntado {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--tinte-texto);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+/* ===========================================================================
+   SECCIONES DENTRO DE UNA PESTAÑA
+   ---------------------------------------------------------------------------
+   "Moverse" mezclaba dos preguntas distintas —cuánto hay de aquí a allá, y cómo
+   funciona el transporte de la ciudad— una detrás de otra, sin nada que las
+   separase. Cada una tiene ahora su cabecera con icono y su frase.
+   =========================================================================== */
+.seccion-cabecera {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.seccion-cabecera__titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.seccion-cabecera__titulo i { color: var(--acento); font-size: 19px; }
+.seccion-cabecera__pie {
+  margin: 0;
+  color: var(--texto-2);
+  font-size: 13px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.seccion-cabecera__acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.seccion-cabecera--fina { margin-top: 18px; }
+.seccion-cabecera--fina .seccion-cabecera__titulo { font-size: 14px; }
+.seccion-cabecera--fina .seccion-cabecera__titulo i { font-size: 16px; }
+
+/* ---------------------------------------------------------------------------
+   DOS TARJETAS POR FILA
+   ---------------------------------------------------------------------------
+   Las fichas de transporte urbano llevan teléfono, web, horarios y dirección. En
+   una columna de 244 px eso no cabe, y como `1fr` es en realidad
+   `minmax(auto, 1fr)`, el contenido que no puede encoger EMPUJA su columna: la
+   rejilla salía con columnas de 352, 218 y 184 px en vez de repartidas.
+
+   Con `minmax(0, 1fr)` las columnas mandan sobre el contenido, y con dos por
+   fila hay sitio de sobra.
+   ------------------------------------------------------------------------- */
+.rejilla-fichas { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 760px) {
+  .rejilla-fichas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rejilla-fichas--dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1180px) {
+  .rejilla-fichas { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Y estas se quedan en dos, pase lo que pase. */
+  .rejilla-fichas--dos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Lo que no puede encoger, que al menos no desborde. */
+.ficha-movilidad__dato,
+.ficha-movilidad__telefono { max-width: 100%; }
+.ficha-movilidad__dato { white-space: normal; overflow-wrap: anywhere; }
+
+/* --- El historial plegado (traslados y comer) ----------------------------- */
+.traslados__historial,
+.comer-historico {
+  margin-top: 10px;
+  border-top: 1px solid var(--borde);
+  padding-top: 10px;
+}
+.traslados__historial > summary,
+.comer-historico > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  list-style: none;
+  padding: 4px 0;
+}
+.traslados__historial > summary::-webkit-details-marker,
+.comer-historico > summary::-webkit-details-marker { display: none; }
+.traslados__historial > summary i,
+.comer-historico > summary i { color: var(--acento); font-size: 15px; }
+.comer-historico[open] > summary { margin-bottom: 12px; }
+.traslados__historial[open] > summary { margin-bottom: 8px; }
+
+/* --- Fijar un traslado ---------------------------------------------------- */
+.traslado__fijar {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.traslado__fijar i { font-size: 15px; }
+.traslado__fijar:hover { color: var(--acento); border-color: var(--borde-fuerte); }
+.traslado__fijar--si { color: var(--acento); }
+
+.traslado--fijado { border-color: var(--acento); background: var(--tinte); }
+
+/* ===========================================================================
+   VENTANA FLOTANTE (el "ponerlo en un día")
+   ---------------------------------------------------------------------------
+   Se llama `ventana` y no `modal` porque `.modal` ya es de otra cosa: el
+   diálogo de confirmar el borrado de un viaje, en la portada. Reutilizar el
+   nombre hacía que las dos se pisaran las reglas y esta salía pegada al borde
+   izquierdo y descuadrada.
+   "Ponerlo en un día" colgaba del propio botón, y en una rejilla de tarjetas el
+   formulario acababa pintado arriba del todo de la página: parecía que no había
+   pasado nada. Centrado sobre el contenido no hay dónde perderlo.
+   =========================================================================== */
+.ventana-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(18, 48, 62, .38);
+  backdrop-filter: blur(2px);
+  animation: ventana-entra .12s ease-out;
+}
+@keyframes ventana-entra { from { opacity: 0 } to { opacity: 1 } }
+
+.ventana {
+  width: min(420px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px;
+  border-radius: var(--radio);
+  background: var(--superficie);
+  box-shadow: 0 20px 50px rgba(18, 48, 62, .28);
+}
+.ventana__cabecera { margin-bottom: 14px; }
+.ventana__titulo { margin: 0; font-size: 18px; }
+.ventana__sub {
+  margin: 4px 0 0;
+  color: var(--texto-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* Dentro del modal el selector se estira: hay sitio y se lee mejor. */
+.ventana .poner-en-dia {
+  display: grid;
+  gap: 10px;
+  position: static;
+  width: auto;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.ventana .poner-en-dia select,
+.ventana .poner-en-dia input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--texto);
+}
+.poner-en-dia__pie { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.poner-en-dia__pie .boton { flex: 1 1 auto; justify-content: center; }
+
+/* Con el modal abierto, el fondo no se desplaza detrás. */
+body.con-ventana { overflow: hidden; }
