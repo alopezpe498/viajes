@@ -315,6 +315,10 @@ export function migrarEsquema() {
   migracionFichaActividadYFiltrosTramo();
   migracionDosier();
   migracionAdjuntos();
+  migracionDistanciasCiudades();
+  migracionMovilidad();
+  migracionTrasladosYDirecciones();
+  migracionComer();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -324,6 +328,492 @@ export function migrarEsquema() {
     CREATE INDEX IF NOT EXISTS idx_candidatos_transp ON candidatos(transporte_id);
     CREATE INDEX IF NOT EXISTS idx_itinerario_etapa  ON itinerario(etapa_id, dia);
   `);
+}
+
+/**
+ * Migracion 18: bares y restaurantes.
+ *
+ * EL HUECO YA ESTABA HECHO. `lienzo.js` lleva desde su primera version con
+ * `comer` entre los tipos de la mochila y con su icono; lo que faltaba era de
+ * donde salen las fichas.
+ *
+ * ES CATALOGO, COMO LAS EXCURSIONES. Que la Casa Botin este en la calle
+ * Cuchilleros y tenga 4,3 de nota no depende de mi viaje: se busca una vez por
+ * ciudad y sirve para el siguiente. Por eso va por `ciudad_norm` y no por etapa,
+ * igual que `catalogo_actividades`.
+ *
+ * Y ESO IMPORTA MAS AQUI QUE EN NINGUN SITIO, porque la fuente es Google Places
+ * (New), que es la API CARA de las tres que usamos. Cada llamada se paga. La
+ * regla es la misma que con Civitatis y hay que cumplirla a rajatabla:
+ *
+ *   - La busqueda pide los campos JUSTOS (field mask minima).
+ *   - Lo que vuelve se guarda ENTERO en el catalogo.
+ *   - Un sitio ya guardado NO se vuelve a pedir nunca.
+ *   - Los detalles (telefono, web, horarios) solo BAJO DEMANDA, al abrir la
+ *     ficha, y una sola vez. `detalles_en` es la marca de "esto ya se pidio":
+ *     sin ella no se distinguiria un bar sin telefono de uno que no se ha
+ *     mirado.
+ *
+ * `clave_unica` es el `place_id` de Google cuando viene de ahi, y `nombre:...`
+ * cuando lo escribe la IA o yo a mano. Asi la misma busqueda repetida actualiza
+ * la fila en vez de duplicarla, y una ficha escrita a mano no choca con nada.
+ *
+ * LAS COORDENADAS VIENEN PUESTAS. Places las devuelve, asi que un restaurante
+ * de Google no necesita geocodificarse. Uno escrito a mano si, y por eso su
+ * direccion vive donde la de todo lo demas: en la tabla `direcciones`.
+ */
+function migracionComer() {
+  const CLAVE = '2026-09-comer';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS catalogo_comer (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      ciudad        TEXT NOT NULL,
+      ciudad_norm   TEXT NOT NULL,
+      -- place_id de Google, o "nombre:..." si lo dijo la IA o lo escribi yo.
+      clave_unica   TEXT NOT NULL,
+      nombre        TEXT NOT NULL,
+      cocina        TEXT,               -- "tapas", "italiano", "de mercado"
+      precio_nivel  INTEGER,            -- 1..4, como los simbolos de moneda
+      precio_texto  TEXT,               -- "20-30 €" cuando alguien lo dice asi
+      valoracion    REAL,
+      num_opiniones INTEGER,
+      direccion     TEXT,               -- la que da la fuente, tal cual
+      telefono      TEXT,               -- se pinta SIEMPRE como enlace tel:
+      web           TEXT,
+      url_mapa      TEXT,               -- la ficha en Google Maps
+      -- Places las trae puestas: un restaurante suyo no hay que geocodificarlo.
+      lat           REAL,
+      lng           REAL,
+      horarios      TEXT,
+      nota          TEXT,
+      origen        TEXT NOT NULL DEFAULT 'places',   -- places / ia / manual
+      -- La marca de "los detalles ya se pidieron". Sin ella no se sabria si un
+      -- bar no tiene telefono o si es que nadie lo ha preguntado.
+      detalles_en   TEXT,
+      visto_en      TEXT NOT NULL DEFAULT (datetime('now')),
+      creado_en     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (ciudad_norm, clave_unica)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_comer_ciudad ON catalogo_comer(ciudad_norm);
+  `);
+
+  // -------------------------------------------------------------------------
+  // Ensanchar el CHECK de `direcciones` para que admita 'comer'.
+  //
+  // ESTO ES UNA RECONSTRUCCION, y conviene decirlo claro en vez de disimularlo:
+  // SQLite no sabe modificar un CHECK, asi que la unica via es tabla nueva,
+  // copiar y renombrar. Se hace aqui porque la alternativa —un restaurante que
+  // no puede tener direccion— dejaria fuera justo lo que da sentido a la
+  // pestaña: calcular cuanto hay del hotel al sitio donde vas a cenar.
+  //
+  // Es una tabla mia, de la tanda anterior, y las filas se copian todas. Va en
+  // una transaccion: o se rehace entera o se queda como estaba.
+  // -------------------------------------------------------------------------
+  const tieneComer = String(
+    db.prepare("SELECT sql FROM sqlite_master WHERE name = 'direcciones'").get()?.sql ?? ''
+  ).includes("'comer'");
+
+  if (!tieneComer) {
+    db.exec('BEGIN');
+    try {
+      db.exec(`
+        CREATE TABLE direcciones_nueva (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          tipo_elemento TEXT NOT NULL
+                        CHECK (tipo_elemento IN
+                          ('hotel','punto','sitio','actividad','movilidad','comer')),
+          elemento_id   INTEGER NOT NULL,
+          direccion     TEXT NOT NULL,
+          lat           REAL,
+          lng           REAL,
+          estado        TEXT NOT NULL DEFAULT 'pendiente'
+                        CHECK (estado IN ('pendiente','buscando','ok','sin_resultado','error')),
+          fuente        TEXT,
+          mensaje       TEXT,
+          buscada_en    TEXT,
+          creado_en     TEXT NOT NULL DEFAULT (datetime('now')),
+          actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE (tipo_elemento, elemento_id)
+        );
+
+        INSERT INTO direcciones_nueva
+          (id, tipo_elemento, elemento_id, direccion, lat, lng, estado, fuente,
+           mensaje, buscada_en, creado_en, actualizado_en)
+        SELECT id, tipo_elemento, elemento_id, direccion, lat, lng, estado, fuente,
+               mensaje, buscada_en, creado_en, actualizado_en
+          FROM direcciones;
+
+        DROP TABLE direcciones;
+        ALTER TABLE direcciones_nueva RENAME TO direcciones;
+      `);
+      db.exec('COMMIT');
+      console.log('[bd] `direcciones` rehecha para admitir restaurantes.');
+    } catch (err) {
+      try { db.exec('ROLLBACK'); } catch { /* ya estaba cerrada */ }
+      throw err;
+    }
+  }
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: bares y restaurantes.');
+  return true;
+}
+
+/**
+ * Migracion 17: direcciones y traslados guardados.
+ *
+ * LA PREGUNTA QUE QUITA: "¿cuanto hay de aqui a alla?". Se hace veinte veces
+ * planificando un dia y hasta ahora habia que salir a Google Maps, mirarlo y
+ * volver, sin que quedara constancia de nada.
+ *
+ * ============================================================================
+ * A) UNA TABLA DE DIRECCIONES, NO UNA COLUMNA EN CADA SITIO
+ * ============================================================================
+ * Las cosas que tienen direccion viven en cinco tablas distintas: el hotel en
+ * `candidatos`, los sitios en `puntos_interes` y `sitios_lugar`, las
+ * excursiones en `catalogo_actividades` y el transporte urbano en
+ * `catalogo_movilidad`. Cinco ALTER y cinco sitios donde acordarse de leerla.
+ *
+ * Va aparte, con el mismo patron de (tipo_elemento, elemento_id) que ya usa
+ * `adjuntos` y que funciona. Una sola tabla, un solo servicio, y anadir manana
+ * los restaurantes es anadir un valor al CHECK.
+ *
+ * EL ALCANCE LO DA EL TIPO, y eso es lo que hace que la eleccion sea correcta:
+ *
+ *   'hotel'      -> candidatos.id            Es del VIAJE. Mi hotel en Mostar
+ *                                            es mio; el del ano que viene sera
+ *                                            otro.
+ *   'punto'      -> puntos_interes.id        Es CATALOGO. La direccion del
+ *   'sitio'      -> sitios_lugar.id          Prado no cambia entre viajes, asi
+ *   'actividad'  -> catalogo_actividades.id  que se teclea una vez y sirve
+ *   'movilidad'  -> catalogo_movilidad.id    siempre.
+ *
+ * LAS COORDENADAS SON INTERNAS. El usuario piensa en direcciones y en nombres;
+ * lat/lng son el combustible del calculo y no se ensenan en ninguna pantalla.
+ * Por eso van aqui dentro y no en un campo de formulario.
+ *
+ * ============================================================================
+ * B) LOS TRASLADOS SON MATERIAL DE INVESTIGACION
+ * ============================================================================
+ * Un traslado consultado NO se borra porque la actividad salga del lienzo.
+ * Saber que del hotel al centro hay 20 minutos andando sigue siendo verdad y
+ * sigue sirviendo, aunque ese dia se decida no ir. Por eso los traslados
+ * cuelgan de la ETAPA y no de la tarjeta.
+ *
+ * Los extremos se guardan CONGELADOS (texto y coordenadas), no como referencia
+ * al elemento. Si manana borro la excursion o le cambio la direccion, la
+ * consulta que hice sigue diciendo lo que decia cuando la hice. Ademas se
+ * apunta de donde salio cada extremo (`origen_tipo`/`origen_id`) para poder
+ * recalcular, pero eso es un extra, no la fuente de verdad.
+ */
+function migracionTrasladosYDirecciones() {
+  const CLAVE = '2026-09-traslados-y-direcciones';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    -- ---------------------------------------------------------------- A) ----
+    CREATE TABLE IF NOT EXISTS direcciones (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo_elemento TEXT NOT NULL
+                    CHECK (tipo_elemento IN ('hotel','punto','sitio','actividad','movilidad')),
+      elemento_id   INTEGER NOT NULL,
+      direccion     TEXT NOT NULL,          -- tal y como se escribe, texto libre
+      -- Internas: alimentan el calculo y NO se ensenan en ninguna pantalla.
+      lat           REAL,
+      lng           REAL,
+      estado        TEXT NOT NULL DEFAULT 'pendiente'
+                    CHECK (estado IN ('pendiente','buscando','ok','sin_resultado','error')),
+      fuente        TEXT,                   -- google / nominatim
+      mensaje       TEXT,                   -- por que no se encontro, para decirlo con suavidad
+      buscada_en    TEXT,
+      creado_en     TEXT NOT NULL DEFAULT (datetime('now')),
+      actualizado_en TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (tipo_elemento, elemento_id)
+    );
+
+    -- ---------------------------------------------------------------- B) ----
+    CREATE TABLE IF NOT EXISTS traslados (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      viaje_id      INTEGER NOT NULL REFERENCES viajes(id) ON DELETE CASCADE,
+      etapa_id      INTEGER NOT NULL REFERENCES etapas(id) ON DELETE CASCADE,
+
+      -- Los extremos, congelados: lo que valia cuando se consulto.
+      origen_texto   TEXT NOT NULL,
+      origen_tipo    TEXT,                  -- de que elemento salio, si salio de uno
+      origen_id      INTEGER,
+      origen_lat     REAL,
+      origen_lng     REAL,
+
+      destino_texto  TEXT NOT NULL,
+      destino_tipo   TEXT,
+      destino_id     INTEGER,
+      destino_lat    REAL,
+      destino_lng    REAL,
+
+      -- JSON: [{ modo, minutos, km, fuente }]. Google da tres modos, el plan B
+      -- da dos: se guarda lo que haya y la pantalla ensena lo que hay.
+      resultados     TEXT,
+      fuente         TEXT,                  -- google / osrm / mixto
+      estado         TEXT NOT NULL DEFAULT 'pendiente'
+                     CHECK (estado IN ('pendiente','calculando','ok','error')),
+      mensaje        TEXT,
+      calculado_en   TEXT,
+      creado_en      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_traslados_etapa ON traslados(etapa_id);
+    CREATE INDEX IF NOT EXISTS idx_traslados_viaje ON traslados(viaje_id);
+  `);
+
+  // Una tarjeta del lienzo puede venir de un traslado consultado. `medio` dice
+  // en que se va (andando/coche/publico), que es lo que decide su icono y sus
+  // minutos; sin el, la tarjeta no sabria cual de los tres tiempos es el suyo.
+  const cols = db.prepare('PRAGMA table_info(itinerario)').all().map((c) => c.name);
+  if (!cols.includes('traslado_id')) {
+    db.exec('ALTER TABLE itinerario ADD COLUMN traslado_id INTEGER');
+  }
+  if (!cols.includes('medio')) {
+    db.exec('ALTER TABLE itinerario ADD COLUMN medio TEXT');
+  }
+
+  // Un traslado nuevo o borrado cambia el viaje: el dosier tiene que enterarse.
+  db.exec(`
+    DROP TRIGGER IF EXISTS tocar_por_traslados_ins;
+    CREATE TRIGGER tocar_por_traslados_ins AFTER INSERT ON traslados
+    BEGIN
+      UPDATE viajes SET modificado_en = datetime('now') WHERE id = NEW.viaje_id;
+    END;
+
+    DROP TRIGGER IF EXISTS tocar_por_traslados_del;
+    CREATE TRIGGER tocar_por_traslados_del AFTER DELETE ON traslados
+    BEGIN
+      UPDATE viajes SET modificado_en = datetime('now') WHERE id = OLD.viaje_id;
+    END;
+  `);
+
+  // Civitatis ya trae el punto de encuentro de muchas excursiones, escrito por
+  // ellos. Volcarlo aqui ahorra teclearlo, y como la direccion es editable, si
+  // viene mal se corrige. Solo las que ya lo tienen: no se inventa nada.
+  const conPunto = db
+    .prepare(
+      `SELECT id, punto_encuentro FROM catalogo_actividades
+        WHERE punto_encuentro IS NOT NULL AND TRIM(punto_encuentro) <> ''`
+    )
+    .all();
+  const meter = db.prepare(
+    `INSERT OR IGNORE INTO direcciones (tipo_elemento, elemento_id, direccion, estado)
+     VALUES ('actividad', ?, ?, 'pendiente')`
+  );
+  let volcadas = 0;
+  for (const a of conPunto) {
+    const limpio = puntoDeEncuentroLimpio(a.punto_encuentro);
+    if (!limpio) continue;
+    meter.run(a.id, limpio);
+    volcadas += 1;
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migración: direcciones y traslados guardados` +
+      (volcadas ? ` (${volcadas} puntos de encuentro volcados).` : '.')
+  );
+  return true;
+}
+
+/**
+ * El punto de encuentro de Civitatis, sin la morralla de alrededor.
+ *
+ * Lo que raspa el scraper viene asi:
+ *
+ *   "Alexanderplatz, frente a la entrada de la torre de TV.
+ *
+ *    Ver mapa
+ *
+ *    Segun la fecha y hora seleccionadas, tu punto de encuentro podria variar."
+ *
+ * La direccion es la PRIMERA linea. Lo demas es el enlace de su mapa y una
+ * advertencia legal que sale en todas las fichas. Metido tal cual en el campo
+ * quedaria feo y, sobre todo, el geocodificador no encontraria nada: le estarias
+ * pidiendo que busque un parrafo.
+ */
+function puntoDeEncuentroLimpio(bruto) {
+  const primera = String(bruto ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .find((l) => l.toLowerCase() !== 'ver mapa' && !/^seg[uú]n la fecha/i.test(l));
+
+  return primera ? primera.slice(0, 400) : null;
+}
+
+/**
+ * Migracion 16: movilidad. Dos cosas que faltaban y que no son la misma.
+ *
+ * A) COMO IR DE UNA CIUDAD A OTRA (`catalogo_transporte_tramo`).
+ *    Hasta ahora el enlace del tramo llevaba SIEMPRE al buscador de vuelos,
+ *    tambien en Sarajevo → Mostar, que se hace en bus por 8 euros. Ahora cada
+ *    pareja de ciudades tiene sus medios: bus, tren, ferry, coche...
+ *
+ * B) COMO MOVERSE DENTRO (`catalogo_movilidad`).
+ *    El metro, el bono de tres dias, el telefono del taxi. Eso no tenia sitio en
+ *    ninguna parte y acababa en una nota suelta o en el movil de alguien.
+ *
+ * LAS DOS SON CATALOGO. Los medios entre Sarajevo y Mostar y el precio del bus
+ * urbano de Mostar no dependen de mi viaje: se consultan una vez y sirven para
+ * el que venga. Por eso van por NOMBRE NORMALIZADO de ciudad y no por etapa: la
+ * etapa es de un viaje, la ciudad es del mundo.
+ *
+ * EL PAR DE CIUDADES NO TIENE DIRECCION, como en las distancias: se guarda con
+ * el nombre menor delante y una fila sirve para los dos sentidos. Cuando algun
+ * dato SI depende del sentido —un ferry que solo sale por la mañana en una
+ * direccion— se dice en `nota_sentido`, que para eso esta.
+ *
+ * LO ELEGIDO ES DEL VIAJE, NO DEL CATALOGO. Que yo coja el bus de las 9:15 con
+ * la reserva ABC123 no le importa a nadie mas, asi que va en `transporte_datos`,
+ * una fila por (tramo, ficha). Que sea por FICHA y no por tramo es lo que
+ * permite cambiar de idea sin perder lo tecleado: si apunte el horario del tren
+ * y luego me decido por el bus, el del tren sigue ahi cuando vuelva.
+ *
+ * TODO ADITIVO: tablas nuevas y columnas nuevas. No se borra ni se renombra
+ * nada de lo que ya habia.
+ */
+function migracionMovilidad() {
+  const CLAVE = '2026-09-movilidad';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    -- ---------------------------------------------------------------- A) ----
+    CREATE TABLE IF NOT EXISTS catalogo_transporte_tramo (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      -- El par, con el nombre normalizado menor delante: una fila, dos sentidos.
+      ciudad_a_norm TEXT NOT NULL,
+      ciudad_b_norm TEXT NOT NULL,
+      ciudad_a      TEXT NOT NULL,     -- tal y como se escriben, para enseñarlos
+      ciudad_b      TEXT NOT NULL,
+      medio         TEXT NOT NULL,     -- bus / tren / ferry / coche / traslado / avion / otro
+      nombre        TEXT NOT NULL,     -- "Autobús Centrotrans", "Tren regional"
+      duracion      TEXT,
+      frecuencia    TEXT,
+      precio        TEXT,              -- texto: "8-12 €" dice más que un número
+      nota          TEXT,
+      nota_sentido  TEXT,              -- lo que SÍ cambia según la dirección
+      web           TEXT,
+      orden         INTEGER NOT NULL DEFAULT 0,
+      origen        TEXT NOT NULL DEFAULT 'ia',   -- 'ia' o 'manual'
+      creado_en     TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK (ciudad_a_norm <= ciudad_b_norm)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_transporte_tramo_par
+      ON catalogo_transporte_tramo(ciudad_a_norm, ciudad_b_norm);
+
+    -- Lo que yo elijo y tecleo para ESTE viaje. Una fila por (tramo, ficha).
+    CREATE TABLE IF NOT EXISTS transporte_datos (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      transporte_id INTEGER NOT NULL REFERENCES transportes(id) ON DELETE CASCADE,
+      ficha_id      INTEGER NOT NULL REFERENCES catalogo_transporte_tramo(id) ON DELETE CASCADE,
+      horario       TEXT,
+      precio_real   TEXT,
+      referencia    TEXT,
+      nota          TEXT,
+      creado_en     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (transporte_id, ficha_id)
+    );
+
+    -- ---------------------------------------------------------------- B) ----
+    CREATE TABLE IF NOT EXISTS catalogo_movilidad (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      ciudad_norm TEXT NOT NULL,
+      ciudad      TEXT NOT NULL,
+      tipo        TEXT NOT NULL,   -- metro / bus / taxi / app / tarjeta / especial / otro
+      nombre      TEXT NOT NULL,
+      descripcion TEXT,
+      precio      TEXT,
+      telefono    TEXT,            -- se pinta SIEMPRE como enlace tel:
+      web         TEXT,
+      nota        TEXT,
+      orden       INTEGER NOT NULL DEFAULT 0,
+      origen      TEXT NOT NULL DEFAULT 'ia',
+      creado_en   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_movilidad_ciudad ON catalogo_movilidad(ciudad_norm);
+  `);
+
+  // El medio elegido de cada tramo. Nullable: un tramo sin decidir es lo normal.
+  const cols = db.prepare('PRAGMA table_info(transportes)').all().map((c) => c.name);
+  if (!cols.includes('ficha_transporte_id')) {
+    db.exec('ALTER TABLE transportes ADD COLUMN ficha_transporte_id INTEGER');
+  }
+
+  // Un traslado colocado en el lienzo apunta a su ficha de movilidad. La tarjeta
+  // se pinta FINA: un trayecto en metro no ocupa lo que una visita al Prado.
+  const colsIt = db.prepare('PRAGMA table_info(itinerario)').all().map((c) => c.name);
+  if (!colsIt.includes('movilidad_id')) {
+    db.exec('ALTER TABLE itinerario ADD COLUMN movilidad_id INTEGER');
+  }
+  if (!colsIt.includes('duracion_min')) {
+    db.exec('ALTER TABLE itinerario ADD COLUMN duracion_min INTEGER');
+  }
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: movilidad (transporte entre ciudades y dentro de ellas).');
+  return true;
+}
+
+/**
+ * Migracion 15: cuanto hay de una ciudad a otra.
+ *
+ * PARA DECIDIR LA RUTA, NO PARA NAVEGAR. Al mirar Italia hay que poder saber si
+ * Florencia esta a tiro de Roma para un fin de semana o si es meterse tres horas
+ * de carretera. Eso se decide ANTES de armar la ruta, mirando el mapa.
+ *
+ * ESTO NO CADUCA. La distancia de Roma a Florencia era la misma el año pasado y
+ * sera la misma el que viene: se calcula UNA vez y se reutiliza siempre. Por eso
+ * es catalogo y no dato de viaje, y por eso `fecha_calculo` esta ahi para saber
+ * cuando se supo, no para invalidarlo.
+ *
+ * EL PAR NO TIENE DIRECCION. Ir de Roma a Florencia y volver son los mismos
+ * kilometros, asi que se guarda una sola fila con el id menor primero. El indice
+ * unico sobre ese par ordenado es lo que impide que se dupliquen: sin el, dos
+ * consultas simultaneas guardarian A→B y B→A y despues habria dos verdades.
+ *
+ * LAS CIUDADES SON `puntos_interes`. Es lo que hay en el mapa de exploracion de
+ * un pais —los resultados de Italia son Roma, Florencia, Venecia— y lo que
+ * apunta cada etapa que sale de ahi. Una parada que no venga del mapa (un viaje
+ * de una sola ciudad) no tiene punto, y para esa la distancia de su tramo sigue
+ * viviendo donde vivia: en la propia fila de `transportes`.
+ */
+function migracionDistanciasCiudades() {
+  const CLAVE = '2026-09-distancias-ciudades';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS distancias_ciudades (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      ciudad_origen_id  INTEGER NOT NULL REFERENCES puntos_interes(id) ON DELETE CASCADE,
+      ciudad_destino_id INTEGER NOT NULL REFERENCES puntos_interes(id) ON DELETE CASCADE,
+      km                REAL,
+      minutos_coche     INTEGER,
+      -- 'carretera' o 'recta': entre islas no hay coche que valga, y decir
+      -- "8 h en coche" de Palermo a Napoles seria mentira.
+      fuente            TEXT NOT NULL DEFAULT 'carretera',
+      fecha_calculo     TEXT NOT NULL DEFAULT (datetime('now')),
+      -- El par va SIEMPRE con el id menor delante: asi una sola fila sirve para
+      -- los dos sentidos y el unico de abajo puede hacer su trabajo.
+      CHECK (ciudad_origen_id < ciudad_destino_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_distancias_par
+      ON distancias_ciudades(ciudad_origen_id, ciudad_destino_id);
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: caché de distancias entre ciudades.');
+  return true;
 }
 
 /**

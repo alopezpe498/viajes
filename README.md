@@ -63,6 +63,13 @@ services/distancias.js  OSRM y Haversine para los tramos
 services/lienzo.js      Los días del viaje y lo que hay puesto en cada uno
 services/portada.js     Los billetes de la home y el borrado en cascada
 services/descubrir.js   Investigar un destino: IA + Wikipedia
+services/movilidad.js   Cómo se va de una ciudad a otra y cómo se mueve uno dentro
+services/direcciones.js Dónde está cada cosa: dirección editable + coordenadas internas
+services/traslados.js   "¿Cuánto hay de aquí a allá?": Google Routes, OSRM de respaldo
+services/comer.js       Bares y restaurantes: Google Places, IA con web de respaldo
+lib/google.js           La única puerta a Google Maps (Geocoding y Routes)
+services/adjuntos.js    Los papeles del viaje: billetes, bonos y confirmaciones
+services/dosier.js      El dosier: HTML autocontenido y ZIP con los adjuntos
 lib/ia.js               La única puerta a la API de Anthropic
 public/js/descubrir.js  Mapa (Leaflet) y carrusel de la pantalla de descubrir
 public/js/sitio.js      Pestañas y sondeo de la ficha profunda
@@ -72,6 +79,10 @@ public/js/etapa.js      La etapa: pestañas, apuntar, notas y tramos
 public/js/lienzo.js     El lienzo: mochila, días y arrastre
 public/js/home.js       La portada: menú, renombrar y borrar
 .env.ejemplo            Plantilla: cópiala a .env y pon tu clave
+public/manifest.webmanifest  Manifest de la PWA (instalable)
+public/sw.js            Service worker: red primero, cachea solo estáticos
+public/js/pwa.js        Registra el service worker
+tools/generar-iconos.js Dibuja los iconos PNG sin dependencias
 jobs/cola.js            Cola de trabajos (tabla SQLite)
 jobs/worker.js          Ejecuta los trabajos de uno en uno, dentro de Express
 views/                  Plantillas EJS (una por pantalla + parciales)
@@ -295,6 +306,611 @@ para forzarlo a mano.
 
 ---
 
+## Distancias entre ciudades
+
+Mirando Italia hay que poder saber si Florencia está a tiro de Roma para un fin
+de semana o si son tres horas de carretera. Hasta ahora el mapa solo decoraba.
+
+**Se calcula una vez y ya.** La distancia de Roma a Florencia no cambia, así que
+vive en el CATÁLOGO (`distancias_ciudades`) y no caduca. La segunda vez que
+alguien mire Italia —en este viaje o en otro— no se le pregunta nada a nadie.
+
+El par **no tiene dirección**: se guarda una sola fila con el id menor delante,
+y un índice único sobre ese par ordenado es lo que impide que dos consultas
+simultáneas dejen A→B y B→A y después haya dos verdades.
+
+Las ciudades son `puntos_interes`, que es lo que hay en el mapa de exploración de
+un país y lo que apunta cada etapa que sale de ahí. Una parada que no venga del
+mapa no tiene punto, y para esa la distancia de su tramo sigue viviendo donde
+vivía: en la propia fila de `transportes`.
+
+### El punto de referencia
+
+Desde dónde se miden, en orden de "lo que ya se sabe seguro":
+
+1. La **primera parada** de la ruta.
+2. La ciudad a la que **llega el vuelo** de ida, si ese tramo existe.
+3. La **primera ciudad seleccionada**, aunque siga siendo candidata. Al elegir la
+   primera en el mapa todavía no está confirmada, y esperar a que lo esté dejaría
+   la pantalla sin distancias justo cuando más hacen falta.
+4. Nada: sin referencia no se pinta ninguna distancia.
+
+### Los umbrales
+
+| | Color |
+|---|---|
+| hasta 400 km y 4 h | sin color |
+| más de 400 km **o** 4 h | ámbar |
+| más de 700 km **o** 7 h | rojo |
+
+Basta con pasarse en uno de los dos: 526 km en 5 h 30 ya es medio día.
+
+### Nada bloquea la pantalla
+
+El endpoint devuelve **solo lo que hay en caché** y encola el cálculo de lo que
+falte. El mapa pinta lo que tiene, sondea cada 4 s y va rellenando. Un par que
+falla se queda con un guión y se reintenta al volver a abrir el mapa.
+
+Y las peticiones van **de una en una**: `porCarretera` ya serializa con su pausa,
+y el bucle es un bucle, no un `Promise.all`. Veinte peticiones a la vez a un
+servidor que nos deja usarlo gratis es la forma de que dejen de dejarnos.
+
+### En el mapa y en la ruta
+
+Cada ficha de ciudad dice *"A 273 km · 3 h en coche de Roma"*. El mapa dibuja una
+línea punteada de la referencia a cada ciudad **ya elegida** —solo a esas: una a
+cada candidata sería una telaraña— con los km a media línea.
+
+En "Mi ruta", cada salto lleva sus km en el chip y al final va el total. Solo los
+saltos de en medio: la ida y la vuelta son vuelos, y sumarlos convertiría
+cualquier viaje a Italia en "4.000 km de coche".
+
+### El aviso de viabilidad
+
+Hora y media de carretera al día. Es una regla de servilleta y no pretende otra
+cosa: solo avisa, no impide nada. Un viaje de tres días con seis horas de coche
+se puede hacer; lo que no se puede es no haberse dado cuenta.
+
+---
+
+## App instalable (PWA)
+
+Se instala desde Chrome y se abre en su propia ventana, sin barra de URL, con
+su icono. Igual que menusemanal y gastos.
+
+```
+public/manifest.webmanifest   Nombre, colores, iconos, start_url
+public/sw.js                  El service worker
+public/js/pwa.js              Lo registra. Cuatro líneas y nada más
+public/icons/*.png            Los iconos, PNG de verdad
+tools/generar-iconos.js       Los dibuja. Se ejecuta a mano si hay que rehacerlos
+```
+
+### Un solo `<head>` para diecisiete pantallas
+
+Todas las vistas de la aplicación incluyen `parciales/cabecera.ejs`, así que el
+`<link rel="manifest">`, el `theme-color` y el `apple-touch-icon` se ponen una
+vez y quedan en todas.
+
+**El dosier no lleva nada de esto, y es a propósito.** Tiene su propio `<head>`
+porque es un archivo que se descarga y se abre desde un ZIP, muchas veces sin
+servidor detrás. Un manifest o un service worker ahí no tendrían a qué agarrarse.
+
+### Los iconos se dibujan, no se descargan
+
+`tools/generar-iconos.js` los genera sin dependencias: un PNG es una firma, tres
+trozos y un CRC32, y `node:zlib` ya viene en Node. Meter `sharp` —doscientos
+megas de binarios nativos— para pintar un avión blanco sobre un cuadrado azul
+sería desproporcionado.
+
+**La zona segura de los maskable importa.** Android recorta el icono con la
+forma que le dé la gana: círculo, cuadrado redondeado, *squircle*. Lo único
+garantizado es el círculo central del 80 % del ancho. Por eso hay dos dibujos:
+
+- `any` — el avión ocupa el 76 %. Nadie lo va a recortar, así que se ve grande.
+- `maskable` — el avión al 52 %, para caber en ese círculo. Suelto parece
+  pequeño; recortado en el móvil queda igual que los demás.
+
+Ninguno tiene transparencia: un maskable con agujeros se ve fatal recortado.
+
+### El service worker es prudente, y tiene que serlo
+
+**Esta app vive de datos vivos.** Los precios de un vuelo, las plazas de un
+hotel, el horario de un autobús: todo lo que enseña puede haber cambiado desde
+ayer. Un service worker alegre convierte una herramienta de planificar en una
+fuente de datos viejos sin avisar, que es peor que no tener nada.
+
+La regla es siempre la misma: **primero la red**. La caché solo entra cuando la
+red ha fallado de verdad, y entonces es un apaño de emergencia —el metro, un
+pueblo sin cobertura, el avión— y no el camino normal.
+
+| Qué | Estrategia |
+|---|---|
+| css, js, iconos, manifest | Caché primero. Son míos y los versiono yo |
+| Páginas | **Red primero**, caché de respaldo |
+| API (GET) | **Red primero**, caché de respaldo |
+| Búsquedas, estados, detalles, adjuntos | **Nunca** se guardan |
+| POST, PUT, DELETE | **Nunca**. Ni pasan por el service worker |
+
+Lo de la lista `NUNCA` no es una precaución vaga. Guardar `/estado` sería lo
+peor que podría hacer ese archivo: la pantalla se quedaría con un "buscando…"
+eterno porque nunca vería que el trabajo ya terminó.
+
+En el precache **no va ninguna página**: una página lleva datos del viaje
+dentro, y precacharla sería congelar el viaje del día que se instaló.
+
+**Para publicar cambios, subir `VERSION` en `sw.js`.** El nombre de la caché la
+lleva dentro, así que al activarse la versión nueva borra las viejas enteras.
+
+### Cómo se comprueba que Chrome la da por instalable
+
+`pwa.js` escucha `beforeinstallprompt`, que es el evento que Chrome dispara
+cuando ha verificado **todo** lo suyo: manifest válido, iconos de 192 y 512,
+`display: standalone`, service worker con manejador de `fetch` y origen seguro.
+Que salte es la única confirmación de verdad; lo demás es mirar el código y
+suponer.
+
+Abre la consola y busca:
+
+```
+[pwa] service worker registrado, ámbito: https://viajes.es-consultingdream.uk/
+[pwa] Chrome la da por instalable: aparece "Instalar app" en el menú.
+```
+
+Si sale la segunda línea, el menú de Chrome (⋮) tiene **Instalar app** y se abre
+en ventana propia. No se llama a `prompt()` en ningún momento: instalar lo decide
+la persona desde ese menú, no una ventana que salta sola nada más entrar.
+
+---
+
+## Comer: bares y restaurantes
+
+El hueco llevaba puesto desde la primera versión del lienzo: `comer` ya estaba
+entre los tipos de la mochila, con su icono y su color. Lo que faltaba era de
+dónde salen las fichas.
+
+### Places es la API cara, y todo está escrito con eso en mente
+
+Geocoding y Routes son baratas. Places se paga por llamada **y por campo**, y un
+campo de más sube el tramo de precio de toda la petición. La disciplina es la
+misma que ya probamos con las fichas de Civitatis:
+
+1. La búsqueda pide la **máscara mínima**: id, nombre, dirección, coordenadas,
+   nota, número de opiniones, nivel de precio y tipo. Nada más.
+2. Lo que vuelve se guarda **entero** en el catálogo de la ciudad.
+3. Un sitio ya guardado **no se vuelve a pedir**.
+4. El teléfono, la web y los horarios van en una llamada **aparte, bajo demanda,
+   al abrir una ficha, y una sola vez**. De veinte resultados se abren dos:
+   pedirlos todos al buscar es pagar dieciocho veces por lo que nadie va a leer.
+
+`detalles_en` es la marca de "esto ya se pidió". Sin ella no se distinguiría un
+bar sin teléfono de uno que nadie ha mirado, y se pagaría por el mismo silencio
+en cada visita. Si los escribes tú a mano, también cuenta: la ficha deja de
+ofrecer el botón.
+
+### Dos fuentes, y se nota cuál contestó
+
+En local la clave de servidor está restringida por IP, así que Places falla
+siempre y entra **la IA con búsqueda web**, que devuelve los mismos campos.
+
+Pero **la IA no cuenta opiniones: recuerda**. Un número suyo con dos decimales
+al lado de uno de Google sería dar por medido lo que no lo está, así que sus
+fichas salen **sin nota** y con una marca discreta que lo dice. Preferimos un
+hueco honesto a un 4,7 inventado.
+
+```
+[google] places:buscar: The provided API key has an IP address restriction…
+[comer] Places no dio resultados: pregunto a la IA con búsqueda web.
+[comer] 12 sitio/s de la IA para «cenar tranquilo cerca del hotel» en Madrid.
+```
+
+La nota que **ordena** es la ponderada de siempre, `(nota·n + 7,5·50)/(n+50)`:
+un 5,0 con tres opiniones no puede ganarle a un 4,6 con ochocientas.
+
+### El campo libre es lo que hace útil la búsqueda
+
+"Cenar tranquilo cerca del hotel" no se puede pedir con filtros; se escribe.
+Places entiende lenguaje natural y la IA todavía más. Al lado hay un botón para
+lo mejor de la ciudad sin escribir nada, que es el otro noventa por ciento de
+las veces.
+
+Y una ficha a mano siempre es posible: el bar que te recomendó un amigo no está
+en ninguna API.
+
+### Distancias por ficha: la misma pieza, mirada al revés
+
+"¿A cuánto está de…?" en restaurantes, sitios y excursiones. **No hay tabla
+nueva**: un traslado ya guarda de qué elemento es cada extremo, así que
+preguntar "¿cuáles tocan a esta ficha?" es una consulta, no un modelo.
+
+Por eso borrar una distancia desde la ficha la borra de la lista de "Moverse", y
+es lo correcto: es el mismo dato.
+
+Se lee siempre "desde esta ficha hacia el otro" aunque la consulta se hiciera al
+revés. En la ficha del restaurante uno quiere leer "Al hotel: 12 min", no "Del
+hotel: 12 min".
+
+### El "+" del lienzo gana "Comer"
+
+Busca **alrededor del punto medio** de los dos vecinos, con radio proporcional a
+lo que los separa: la mitad de la distancia, con suelo de 400 m y techo de 3 km,
+que es lo que uno acepta desviarse por comer. Un radio fijo daría lo mismo para
+dos sitios pegados que para dos en barrios opuestos.
+
+**El desvío es el dato.** Cada resultado dice cuánto hay de él a cada extremo,
+porque un sitio buenísimo a quince minutos del camino no pilla de paso por muy
+céntrico que sea el punto medio. Y ordena por eso.
+
+Aquí hubo que resolver dos cosas para que el desvío existiera de verdad:
+
+- **El sesgo por coordenadas solo lo entiende Places.** A la IA hay que
+  contárselo con palabras, así que la consulta le menciona entre qué dos sitios
+  está buscando. Sin eso devolvía buenos restaurantes de todo Madrid.
+- **Las fichas de la IA llegan sin coordenadas**, y sin ellas no hay desvío que
+  calcular. Se sitúan **ahí mismo**, antes de contestar, en vez de dejarlo para
+  la cola. Cuesta unos segundos —Nominatim va a una petición por segundo— y se
+  paga una sola vez por sitio.
+
+Al elegir uno entra como **tarjeta de altura normal**: una comida es una
+actividad, no un traslado. Con su hora y su duración editables, porque una
+comida y un traslado son las dos cosas del día que se planean por la hora.
+
+### Dos fallos que salieron probando esto
+
+**`enLineaRecta` redondeaba a kilómetros enteros.** Nació para tramos entre
+ciudades, donde 460 y 460,3 son lo mismo. Dentro de una ciudad es un desastre:
+del hotel al bar hay 328 metros, que redondeados son **cero**, y de ahí salía "1
+min andando" para un paseo de seis. Ahora hay `distanciaKm()` sin redondear, que
+es la que usan los traslados urbanos y el desvío.
+
+**"Calle Huertas 18, Madrid" caía en Torrelaguna.** Madrid es también la
+provincia, y Nominatim devolvía primero una calle de un pueblo a sesenta
+kilómetros. Es una respuesta correcta a una pregunta ambigua, y colarla por
+buena pone tu cena a una hora de coche sin avisar. Ahora se piden cinco
+resultados con `addressdetails` y se prefiere el que cae en el municipio que se
+pidió; el log dice qué descartó.
+
+### En el dosier
+
+- Las **comidas colocadas** salen en su día y su franja con la cocina, la hora,
+  la duración, la dirección y el teléfono como enlace tocable.
+- Lo **apuntado sin día** va en un bloque "Dónde comer" al final del día, con sus
+  distancias guardadas. Es lo que uno mira a las dos de la tarde sin plan:
+  "¿qué tenía yo apuntado por aquí?".
+
+### La migración
+
+Migración 18: la tabla `catalogo_comer`, y una **reconstrucción** de
+`direcciones` para ensanchar su `CHECK` y que admita `'comer'`. SQLite no sabe
+modificar un CHECK, así que la única vía es tabla nueva, copiar y renombrar; se
+hace en una transacción y se dice claro en el código, porque la alternativa —un
+restaurante que no puede tener dirección— dejaría fuera justo lo que da sentido
+a la pestaña.
+
+---
+
+## Traslados: "¿cuánto hay de aquí a allá?"
+
+Es la pregunta que más se repite planificando un día. Se hace veinte veces, y
+hasta ahora había que salir a Google Maps, mirarla y volver sin que quedara
+constancia de nada: a la media hora ya no te acuerdas de si eran 20 minutos o
+40, y la vuelves a mirar.
+
+### Dos claves de Google, y no se mezclan
+
+```
+GOOGLE_MAPS_SERVER_KEY    Geocoding, Routes y Places. Restringida por IP.
+                          Es la única que toca el servidor.
+GOOGLE_MAPS_BROWSER_KEY   Maps JavaScript API, para pintar mapas.
+                          NO se usa todavía y NO está en ninguna vista.
+```
+
+**La clave de servidor no funciona desde casa, y eso está bien.** Está
+restringida a la IP del servidor, así que en local Google contesta *"This IP is
+not authorized"* con toda la razón. No es un fallo que arreglar: es la
+restricción haciendo su trabajo.
+
+Por eso `lib/google.js` **nunca lanza**: devuelve `null` y quien llama se va al
+plan B. En local se desarrolla contra el plan B; en el servidor entra Google y
+se nota **porque aparece el transporte público**, que es lo único que OSRM no
+sabe dar.
+
+Se rinde sola: a los **tres noes seguidos** deja de preguntar y va directa al
+respaldo. Preguntar igualmente son ocho segundos de espera por traslado delante
+de alguien que está planificando. Se reactiva al reiniciar.
+
+**El log siempre dice quién contestó**, y hace falta: "12 min en coche" se ve
+exactamente igual lo diga Google o lo diga OSRM.
+
+```
+[google] geocoding: This IP, site or mobile application is not authorized…
+[nominatim] OK: «Calle de la Cruz 6, Madrid» → 6, Calle de la Cruz, Sol, Madrid…
+[direcciones] situada con nominatim: «Calle de la Cruz 6»
+[traslados] Sin Google (clave restringida o ausente): OSRM y estimación.
+[traslados] Retiro Park → Museo Reina Sofía: andando 17 min · coche 5 min (osrm)
+```
+
+### El OSRM público ignora el perfil
+
+Cuesta media hora descubrirlo, así que queda escrito: pedirle
+`/route/v1/foot/...` devuelve **exactamente los mismos números** que
+`/driving/...` — 1,7 km en 3 minutos, o sea 34 km/h andando.
+
+Así que el tiempo a pie **no se le pregunta**: se estima aquí, a 4,5 km/h sobre
+la línea recta con un 30 % de margen de calles. Y se marca con un `~` delante,
+porque una cosa es un dato y otra un cálculo de servilleta.
+
+### A) Las direcciones: una tabla, no una columna en cada sitio
+
+Las cosas que tienen dirección viven en cinco tablas distintas. Cinco `ALTER` y
+cinco sitios donde acordarse de leerla. Va aparte, con el mismo patrón de
+`(tipo_elemento, elemento_id)` que ya usa `adjuntos` y que funciona.
+
+**El alcance lo da el tipo**, y eso es lo que hace que la elección sea correcta:
+
+| tipo | apunta a | alcance |
+|---|---|---|
+| `hotel` | `candidatos.id` | **Del viaje.** Mi hotel en Madrid es mío. |
+| `punto` | `puntos_interes.id` | **Catálogo.** La dirección del Prado no |
+| `sitio` | `sitios_lugar.id` | cambia entre viajes: se teclea una vez |
+| `actividad` | `catalogo_actividades.id` | y sirve siempre. |
+| `movilidad` | `catalogo_movilidad.id` | |
+
+**Las coordenadas son internas.** El usuario piensa en direcciones y en nombres;
+`lat`/`lng` son el combustible del cálculo. No salen a ninguna pantalla, y el
+endpoint de lugares las quita en una función aparte (`paraLaVista`) para que ese
+borrado esté en **un** sitio y sea difícil olvidárselo.
+
+**Se geocodifica en segundo plano.** Guardar es instantáneo —la persona escribe,
+pulsa y ya está— y la búsqueda va por la cola, con la ficha diciendo "situando…".
+Si no se encuentra, se avisa con suavidad y se deja editar; nunca se rechaza lo
+que ha escrito la persona.
+
+**Dos formas de la misma dirección.** Un punto de encuentro de Civitatis viene
+así: *"Plaza de Oriente (junto a la estatua ecuestre de Felipe IV)."*. El
+paréntesis le sirve a una persona y le estorba a un geocodificador. Se prueba
+entera primero —a veces el paréntesis es parte del nombre, y lo que escribió la
+persona merece el primer intento— y si no aparece se reintenta sin él.
+
+Los puntos de encuentro que ya estaban raspados **se vuelcan en la migración**,
+quedándose con la primera línea: lo demás es el "Ver mapa" y una advertencia
+legal que sale en todas las fichas.
+
+### B) Los traslados son material de investigación
+
+Un traslado consultado **no se borra** porque la actividad salga del lienzo.
+Saber que del hotel al centro hay 20 minutos andando sigue siendo verdad aunque
+ese día se decida no ir. Por eso cuelgan de la **etapa** y no de la tarjeta.
+
+Los extremos se guardan **congelados** —texto y coordenadas de ahora—, no como
+referencia al elemento: si mañana borro la excursión, la consulta que hice sigue
+diciendo lo que decía. Se apunta además de dónde salió cada extremo, pero eso es
+para poder recalcular, no la fuente de verdad.
+
+Los dos campos del buscador aceptan **dos cosas**: el nombre de algo del viaje
+(y entonces viaja su tipo y su id) o cualquier dirección tecleada —el
+aeropuerto, una calle—, que se geocodifica al vuelo y no se guarda como
+dirección de nadie, porque no es de nadie.
+
+Lo que todavía no tiene dirección se dice una vez, sin dramatismo: es más útil
+saber por qué el Prado no sale en la lista que no verlo y no saber.
+
+### C) El "+" entre tarjetas del lienzo
+
+Entre cada par de tarjetas y en los dos bordes de cada franja. **Casi
+invisible**: son cinco o seis por franja, y si se vieran todos el día parecería
+un formulario. Se insinúan al acercar el ratón; en el móvil se dejan muy tenues.
+
+Quién está a cada lado **lo decide el servidor** (`vecinosDeHueco`), y no el
+navegador, porque los vecinos no siempre están en la misma franja:
+
+- En medio de una franja, las tarjetas de al lado.
+- Al principio de la tarde, el de antes es la última tarjeta de la mañana.
+- **En los bordes del día no hay tarjeta: es el hotel.** Se sale de dormir y se
+  vuelve a dormir, y ese es justo el traslado que uno quiere calcular.
+
+Las tarjetas que ya **son** un traslado se saltan: enlazar un traslado con otro
+no dice nada, y saltándolo se llega a los dos sitios de verdad. Si eso da un
+traslado que ya existe, se devuelve el que hay en vez de duplicarlo.
+
+Se coloca **en el hueco**, no al final de la franja: se empuja hacia abajo lo que
+venga después. Un traslado entre dos tarjetas solo significa algo si queda entre
+esas dos.
+
+Si a un extremo le falta la dirección, el "+" **dice cuál** y ofrece ir a
+ponérsela. Un "no se puede" a secas deja a la persona buscando por la pantalla.
+
+Y la consulta se guarda **también** en la lista de la etapa: es la misma pieza,
+dos entradas.
+
+### D) En el dosier
+
+- Las **tarjetas de traslado** salen en su día y su franja, finas, con el medio y
+  los minutos: "17 min andando". El medio importa tanto como el número.
+- La **chuleta** de cada parada va al final del día, en un bloque compacto. No es
+  el plan —eso son las tarjetas de arriba—, es la referencia de "cuánto hay" para
+  cuando el plan se tuerce y hay que decidir en la calle. Se repite en todos los
+  días de la misma parada a propósito: el dosier enseña un día cada vez, y una
+  chuleta que solo saliera el primer día no estaría cuando hace falta.
+
+### La migración es solo aditiva
+
+Migración 17: dos tablas nuevas (`direcciones`, `traslados`) y dos columnas en
+`itinerario` (`traslado_id`, `medio`). Nada borrado, nada renombrado.
+
+---
+
+## Movilidad: cómo se llega y cómo se mueve uno
+
+Hasta esta tanda el tramo entre dos paradas tenía un solo botón: **Buscar
+vuelos**. También en Sarajevo → Mostar, que se hace en autobús en dos horas y
+media por diez euros. Y una vez en la ciudad no había ningún sitio donde
+apuntar el metro, el bono de tres días o el teléfono del taxi: acababa en una
+nota suelta o en el móvil de otro.
+
+Son **dos piezas** que comparten el patrón de ficha de sitios y excursiones:
+
+- **Cómo llegar** (en el tramo): los medios de esa pareja de ciudades.
+- **Moverse** (subpestaña de la etapa): el transporte urbano de la ciudad.
+
+### Las dos preguntan CON BÚSQUEDA WEB
+
+`lib/ia.js` acepta `conWeb: true` y añade la herramienta `web_search` de la API.
+No es un capricho: un horario de autobús o el precio de un billete de metro
+cambian, y de memoria un modelo se los inventa con toda la seguridad del mundo.
+Si la herramienta no está disponible en la cuenta, la consulta **se reintenta
+sin web** en vez de fallar; se ve en el log cuántas búsquedas hizo.
+
+Los dos prompts dicen lo mismo en su primera línea: *si un dato no lo
+encuentras, deja la cadena vacía; no te lo inventes*. Una ficha con la duración
+en blanco es útil. Una con una duración inventada es peor que nada.
+
+### Las dos son CATÁLOGO
+
+Los autobuses entre Sarajevo y Mostar no dependen de mi viaje. Se consultan una
+vez, y el año que viene —o en el viaje de otro— ya están:
+
+- `catalogo_transporte_tramo`, por **pareja de ciudades sin dirección**: el
+  nombre normalizado menor delante, un `CHECK (ciudad_a_norm <= ciudad_b_norm)`
+  y un índice sobre el par. Sarajevo → Mostar y Mostar → Sarajevo son la misma
+  fila, que es lo que hace que la parada de vuelta no vuelva a preguntar nada.
+  Lo que sí cambia según el sentido va en su propio campo, `nota_sentido`, y se
+  pinta aparte con una flecha de doble punta.
+- `catalogo_movilidad`, por ciudad normalizada.
+
+### Lo elegido y lo tecleado SÍ es del viaje
+
+`transportes.ficha_transporte_id` dice cuál está elegido en **este** tramo, y
+`transporte_datos` guarda lo concreto —horario, precio real, localizador, nota—
+con una fila **por (tramo, ficha)**.
+
+Por ficha y no por tramo a propósito: si apunté el horario del tren y después me
+decido por el autobús, lo del tren sigue ahí cuando vuelva. Y por eso elegir
+**no recarga la pantalla**: repinta las clases y una clase `oculto`. Una recarga
+se llevaría por delante lo que estuviera a medio escribir en otra ficha.
+
+### El avión sigue estando
+
+Hay tramos largos donde sí se vuela. El avión aparece **siempre** como una ficha
+más, con borde punteado para que no parezca un dato investigado, y su botón
+lleva al buscador de Kayak de siempre. No se guarda en el catálogo: no es un
+dato sobre el mundo, es una puerta a otra pantalla de esta aplicación.
+
+Por eso `comoLlegarDeTramo()` devuelve además `delCatalogo`, que es cuántas
+fichas hay **sin contar el avión**. Es lo que decide si la pantalla dice
+"todavía no se ha mirado cómo ir de Sarajevo a Mostar".
+
+### A mano, siempre
+
+Si la IA no devuelve nada útil —o falla, o no hay clave— hay un botón **A mano**
+con todos los campos editables, en las dos piezas y junto a las generadas. Es el
+mismo formulario que sale al pulsar **Editar** en una ficha existente.
+
+Borrar sí pregunta: la ficha es del catálogo, y se la quita también a los demás
+viajes que pasen por ahí.
+
+### El teléfono, siempre como `tel:`
+
+Es el dato más útil de la pestaña y se usa en la calle, con una mano y con
+prisa. Un número que hay que copiar no sirve de nada. Se pinta como pastilla
+verde, no como texto: en el móvil la diferencia entre "un número" y "llamar" es
+exactamente esa. En el href van solo dígitos y el `+` —un `tel:` con espacios no
+marca en algunos móviles—, pero a la vista queda el número tal cual se escribió.
+
+### El traslado en el lienzo: tarjeta fina
+
+Una ficha de "Moverse" se puede poner en un día como cualquier otra cosa, pero
+allí se pinta **más fina**: coger el metro no pesa lo que una mañana en un
+museo, y si se pintaran igual el día parecería el doble de lleno de lo que está.
+
+Lleva su hora y su duración **a la vista y tecleables ahí mismo**, porque en un
+traslado eso es todo lo que hay que saber. El icono es el del medio (taxi,
+metro, bus), no uno genérico: en una tarjeta tan pequeña el icono es medio
+mensaje.
+
+Dos detalles que salieron al probarlo:
+
+- La tarjeta es `draggable`, así que el navegador empezaba a arrastrarla en
+  cuanto pinchabas en la casilla de la hora y no había forma de escribir nada.
+  El `dragstart` sale antes si el clic viene de dentro del reloj.
+- Un traslado guarda su nombre en `texto_manual` y su ficha en `movilidad_id`.
+  El `CHECK` de `itinerario` exige que haya candidato **o** texto, nunca los
+  dos, y así se cumple sin tocar la tabla.
+
+### Al dosier
+
+- El **medio elegido** va con los demás transportes del viaje. Primero lo
+  tecleado —el horario que cogí, el localizador—, que es lo que se mira en la
+  estación con la mochila al hombro; después lo del catálogo, que es contexto.
+- Los **traslados** salen en su día y su franja, finos, con su hora, su duración
+  y el teléfono como enlace tocable.
+- Un tramo con medio elegido **cuenta como resuelto** en el check de "viaje
+  listo". El autobús de las 9:15 con el billete comprado no es menos tramo
+  cerrado que un vuelo elegido.
+
+### La migración es solo aditiva
+
+Migración 16: tres tablas nuevas, `transportes.ficha_transporte_id`, y
+`itinerario.movilidad_id` y `.duracion_min`. Nada borrado, nada renombrado.
+
+---
+
+## Clonar una parada
+
+El caso que lo pide: Barcelona → Sarajevo → Mostar, pero el vuelo de vuelta sale
+de Sarajevo. La ruta de verdad es **Sarajevo → Mostar → Sarajevo**, y esa segunda
+vez suele ser de cero noches: se pasa por allí a coger el avión.
+
+El botón "Clonar" de cada tarjeta crea una parada nueva al final:
+
+- **Enganchada al mismo destino del catálogo**, así que nace con los sitios y las
+  excursiones ya investigados. Ni una búsqueda repetida: eso es conocimiento
+  sobre la ciudad, no sobre el viaje.
+- **Vacía de todo lo demás**: sin hotel, sin transporte, sin nada apuntado ni
+  colocado, sin cotizaciones. Volver a pasar por Sarajevo no es dormir otra vez
+  en el mismo hotel.
+- **Cero noches**, que en la tarjeta se lee *"de paso"*. Se edita como cualquier
+  otra: a veces sí se duerme esa última noche.
+
+Las dos son paradas independientes: se arrastran, se borran y se abren por
+separado, y el catálogo que comparten no se toca.
+
+### Cero noches es un estado válido
+
+`cambiarNoches` tenía el suelo en uno —"una parada de cero noches no es una
+parada"—, y para el caso normal está bien. Pero la parada de paso existe. Ahora
+el suelo es cero.
+
+### Nada impide repetir ciudad
+
+No hay `UNIQUE` en `etapas` ni filtro que las esconda. Los tramos se generan por
+**id de etapa**, no por ciudad, así que Mostar → Sarajevo sale como un salto más
+y la vuelta a casa parte siempre de la última parada de la ruta, sea clonada o
+no: no hay ninguna lógica de "la última ciudad distinta" que simplificar, nunca
+la hubo.
+
+### Dos efectos que salieron al probarlo
+
+Elegir una **segunda ciudad** en el mapa estaba roto de antes, y con la ciudad
+repetida se veía:
+
+- `sincronizarEtapaUnica` **renombraba** la parada existente con el destino del
+  viaje, así que elegir Mostar convertía la parada de Sarajevo en "Mostar" y
+  Sarajevo desaparecía. Ahora solo se ejecuta con la ruta vacía; a partir de la
+  segunda ciudad manda `asegurarEtapaDeCiudad`, que la añade al final sin tocar
+  lo que hay. Y adopta la parada suelta que aquella crea, para no duplicarla.
+- `viajes.destino` se sobrescribía con la última ciudad tocada, y el chip de "Mi
+  ruta" acababa diciendo "Mostar" en un viaje a Sarajevo. El ámbito se pone una
+  vez y se queda.
+
+### Con la ciudad repetida, el mapa lleva a la ruta
+
+Entrar "en Sarajevo" desde el mapa ya no quiere decir nada concreto cuando hay
+dos: son dos paradas distintas, con sus fechas y su hotel. Así que se va a la
+ruta, que es donde se ve cuál es cuál, en vez de elegir una a ciegas.
+
+---
+
 ## Los adjuntos
 
 El billete, la confirmación del hotel, el bono de la excursión. Todo eso llega
@@ -322,6 +938,32 @@ conserva solo para enseñarlo. Se aceptan PDF, JPG, PNG y HEIC hasta 15 MB.
 navegador puede mandar un `File` tal cual y el servidor lo recibe con
 `express.raw`, así que no hace falta meter una librería de multipart para subir
 de uno en uno, que es como se suben estas cosas.
+
+**Dónde va el cajón en cada sitio.** El componente es el mismo y el
+comportamiento también —subir, arrastrar, ver, borrar—; lo que cambia es cómo se
+abre, según lo que haya alrededor:
+
+| Sitio | Título | Presentación |
+|---|---|---|
+| Tramo | Billetes y tarjetas de embarque | píldora plegada en la tarjeta |
+| Alojamiento | Reserva e instrucciones | píldora plegada en la caja del hotel |
+| Excursión | Bonos y entradas | sección final del desplegable "Ver detalles" |
+
+En la excursión va dentro del desplegable porque fuera quedaba flotando entre una
+tarjeta y la siguiente, sin que se viera de cuál era. Con la tarjeta cerrada, si
+hay papeles, aparece un **clip pequeño con el número** junto a los botones que
+abre el desplegable directamente por esa sección; con cero, la tarjeta se queda
+limpia y el cajón espera dentro.
+
+Ese clip es una entrada aparte de "Ver detalles" a propósito: ese botón, cuando
+la ficha no está descargada, se va a Civitatis a buscarla, y para mirar un bono
+que ya tienes no hace falta abrir un navegador. Por lo mismo, pulsar "Ver
+detalles" en una excursión apuntada abre el panel **ya**, aunque la ficha tarde:
+si no, no habría forma de subir un papel a una excursión cuya búsqueda falla.
+
+Dentro de un desplegable el cajón va **sin píldora** (`abierto: true`), con la
+etiqueta de encabezado y la lista a la vista: hacerte pulsar dos veces para ver
+un bono sería absurdo.
 
 **Desapuntar una excursión con adjuntos pregunta antes.** El servidor los borra
 al quitar el candidato —si no, se quedarían colgando de algo que ya no está en el
@@ -359,10 +1001,44 @@ funcionan— se romperían.
 el disco se omite y se cuenta en el resultado: que falte un billete no puede
 dejarte sin el resto del viaje.
 
-**Compartir** usa la Web Share API, que abre el selector del sistema con lo que
-haya instalado. Chrome de escritorio no comparte archivos y algunos navegadores
-no traen la API: en los dos casos descarga el ZIP y dice que lo compartas desde
-el gestor de archivos. Nada de integraciones propias con cada aplicación.
+### Compartir: el orden importa
+
+`navigator.share()` exige **activación transitoria**: el permiso que da el
+navegador durante unos segundos después de que toques algo. La primera versión
+hacía `await fetch(zip)` dentro del manejador del clic y llamaba a `share`
+después — para entonces, en un móvil con el ZIP viniendo por la red, la
+activación ya había caducado y `share` fallaba con
+`NotAllowedError: Must be handling a user gesture`. En un escritorio con el
+servidor en localhost la petición tarda milisegundos y la activación aguanta, así
+que el fallo **solo se veía en el móvil**.
+
+Ahora el ZIP se pide **al abrir el menú**, y el clic de "Compartir" no espera a
+nada: llama a `share` como primera cosa, con `.then()` en vez de `await` (un
+`await` por delante deja el resto del manejador para el siguiente turno y vuelve
+a perder la activación). Mientras el ZIP viene, el botón dice "Preparando…" con
+el icono girando y no se deja pulsar.
+
+Y si aun así se pulsara antes de tiempo, **no se llama a `share` cuando el ZIP
+llega**: para entonces ya no habría gesto y volveríamos al mismo error. Se avisa,
+se sigue trayendo y el botón se habilita para un segundo toque, que sí trae su
+propio gesto.
+
+Regenerar el dosier tira el ZIP precargado y trae el nuevo: compartir uno viejo
+sería peor que no compartir nada.
+
+Y no, el tipo de archivo no era el problema: `canShare({files})` con un
+`application/zip` devuelve `true`.
+
+**Tres escalones**. El motivo exacto va al log —`NotAllowedError`, qué dijo
+`canShare`— y en pantalla solo lo accionable: a quien quiere mandar su dosier por
+WhatsApp no le sirve de nada leer el nombre de una excepción.
+
+1. Compartir el ZIP.
+2. Si el navegador no traga ese archivo, compartir el texto y descargar el ZIP
+   aparte: al menos el mensaje sale por el selector del sistema.
+3. Sin API, descargar y decir qué hacer.
+
+Cancelar el selector lanza `AbortError` y no es un fallo: no se avisa de nada.
 
 ### El control, en una línea
 

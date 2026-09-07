@@ -89,8 +89,11 @@ const textoFalta = pendientes.length
           <a role="menuitem" href="/viaje/<%= viajeId %>/dosier/descargar" id="dosier-descargar">
             <i class="ti ti-download" aria-hidden="true"></i> Descargar
           </a>
+          <%# El texto va en su propio <span> para poder decir "Preparando…"
+              mientras se trae el ZIP: compartir no puede esperar a nada, así
+              que el archivo tiene que estar listo ANTES de que lo pulses. %>
           <button type="button" role="menuitem" id="dosier-compartir">
-            <i class="ti ti-share" aria-hidden="true"></i> Compartir
+            <i class="ti ti-share" aria-hidden="true"></i> <span>Compartir</span>
           </button>
         </span>
       </div>

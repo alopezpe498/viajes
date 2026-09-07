@@ -1,0 +1,139 @@
+<%
+/**
+ * TRASLADOS: la chuleta de "cuánto hay de aquí a allá".
+ *
+ * Va ARRIBA del todo en "Moverse" porque es lo que más se usa: planificando un
+ * día esta pregunta se hace veinte veces, y hasta ahora había que salir a Google
+ * Maps, mirarla y volver sin que quedara constancia de nada.
+ *
+ * DOS CAMPOS Y UN BOTÓN. Cada campo autocompleta con lo que hay en el viaje
+ * —el hotel, lo apuntado, las paradas de transporte— y además admite cualquier
+ * cosa tecleada: el aeropuerto, una calle, un restaurante que todavía no está
+ * en ningún sitio.
+ *
+ * LO CONSULTADO SE QUEDA. La lista de abajo no se limpia sola ni se borra
+ * porque una actividad salga del lienzo: es material de investigación, y que
+ * del hotel al centro haya 20 minutos andando sigue siendo verdad mañana.
+ *
+ * Espera: traslados (la lista), lugares (para el autocompletado), etapa,
+ *         viaje, diasDeLaEtapa.
+ */
+%>
+<section class="traslados" data-traslados-de="<%= etapa.id %>">
+
+  <div class="titulo-con-accion">
+    <div>
+      <h3 class="traslados__titulo">
+        <i class="ti ti-route" aria-hidden="true"></i> Traslados
+      </h3>
+      <p class="secundario" style="margin:2px 0 0">
+        ¿Cuánto hay de aquí a allá? Lo que consultes se queda apuntado.
+      </p>
+    </div>
+  </div>
+
+  <%# --- El buscador ------------------------------------------------------ %>
+  <form class="traslados__buscador" id="buscador-traslado" data-etapa="<%= etapa.id %>">
+    <%# Los dos campos usan la MISMA lista: de cualquier sitio se puede ir a
+        cualquier sitio, y duplicarla sería tener que acordarse dos veces. %>
+    <datalist id="lugares-<%= etapa.id %>">
+      <% lugares.filter(l => l.situada).forEach(l => { %>
+        <option value="<%= l.nombre %>"><%= l.etiqueta %><% if (l.direccion) { %> · <%= l.direccion %><% } %></option>
+      <% }) %>
+    </datalist>
+
+    <label class="traslados__campo">
+      <span>Desde</span>
+      <input type="text" name="origen" list="lugares-<%= etapa.id %>" autocomplete="off"
+             placeholder="Hotel, un sitio, o escribe una dirección" required>
+    </label>
+
+    <span class="traslados__flecha" aria-hidden="true"><i class="ti ti-arrow-right"></i></span>
+
+    <label class="traslados__campo">
+      <span>Hasta</span>
+      <input type="text" name="destino" list="lugares-<%= etapa.id %>" autocomplete="off"
+             placeholder="Hotel, un sitio, o escribe una dirección" required>
+    </label>
+
+    <button class="boton boton--primario" type="submit">
+      <i class="ti ti-calculator" aria-hidden="true"></i> Calcular
+    </button>
+  </form>
+
+  <%# Los que todavía no se pueden usar, dichos una vez y sin dramatismo: es
+      más útil saber por qué no salen en la lista que no verlos y no saber. %>
+  <% const sinSituar = lugares.filter(l => !l.situada); %>
+  <% if (sinSituar.length) { %>
+    <p class="traslados__pendientes secundario">
+      <i class="ti ti-map-pin-off" aria-hidden="true"></i>
+      Sin dirección todavía: <%= sinSituar.slice(0, 4).map(l => l.nombre).join(', ') %><%
+        if (sinSituar.length > 4) { %> y <%= sinSituar.length - 4 %> más<% } %>.
+      Pónsela en su ficha y aparecerán aquí.
+    </p>
+  <% } %>
+
+  <div class="traslados__error aviso aviso--alerta" id="traslado-error" hidden>
+    <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+    <div>
+      <p class="aviso__texto" data-mensaje></p>
+      <button class="boton boton--secundario boton--pequeno" type="button" data-ir-a-direccion hidden>
+        Poner esa dirección
+      </button>
+    </div>
+  </div>
+
+  <%# --- La lista, una línea por traslado --------------------------------- %>
+  <ul class="traslados__lista" id="lista-traslados">
+    <% traslados.forEach(t => { %>
+      <li class="traslado <%= t.calculando ? 'traslado--calculando' : '' %>"
+          data-traslado="<%= t.id %>">
+
+        <div class="traslado__linea">
+          <span class="traslado__recorrido"><%= t.recorrido %></span>
+
+          <span class="traslado__tiempos">
+            <% if (t.calculando) { %>
+              <span class="traslado__esperando">
+                <i class="ti ti-loader-2 girando" aria-hidden="true"></i> calculando…
+              </span>
+            <% } else if (t.resultados.length) { %>
+              <% t.resultados.forEach(r => { %>
+                <span class="traslado__medio" data-modo="<%= r.modo %>"
+                      title="<%= r.fuente === 'estimado' ? 'Estimado sobre la distancia' : 'Según ' + r.fuente %>">
+                  <i class="ti <%= r.icono %>" aria-hidden="true"></i>
+                  <strong><%= r.texto %></strong> <%= r.etiqueta %>
+                </span>
+              <% }) %>
+            <% } else { %>
+              <span class="traslado__esperando"><%= t.mensaje ?? 'sin resultado' %></span>
+            <% } %>
+          </span>
+        </div>
+
+        <div class="traslado__acciones">
+          <% if (t.resultados.length && diasDeLaEtapa.length) { %>
+            <button class="apuntar" type="button" data-al-lienzo="<%= t.id %>">
+              <i class="ti ti-calendar-plus" aria-hidden="true"></i> Al lienzo
+            </button>
+          <% } %>
+          <button class="apuntar" type="button" data-recalcular="<%= t.id %>"
+                  title="Volver a consultarlo">
+            <i class="ti ti-refresh" aria-hidden="true"></i>
+          </button>
+          <button class="apuntar apuntar--peligro" type="button"
+                  data-borrar-traslado="<%= t.id %>" data-nombre="<%= t.recorrido %>"
+                  title="Borrarlo de la lista">
+            <i class="ti ti-trash" aria-hidden="true"></i>
+          </button>
+        </div>
+      </li>
+    <% }) %>
+  </ul>
+
+  <% if (!traslados.length) { %>
+    <p class="candidatos__vacio">
+      Todavía no has consultado ningún traslado en <%= etapa.nombre_ciudad %>.
+    </p>
+  <% } %>
+</section>

@@ -1,0 +1,73 @@
+<%
+/**
+ * La dirección de una cosa del viaje: el hotel, un sitio, una excursión.
+ *
+ * UN SOLO PARCIAL PARA LOS CUATRO SITIOS, igual que el de adjuntos. Cambia el
+ * `tipo` y el id; lo demás —cómo se ve, cómo se edita, qué dice mientras se
+ * busca— es idéntico, y tenerlo cuatro veces sería tenerlo mal en tres.
+ *
+ * AQUÍ NO SE ENSEÑAN COORDENADAS. Ni en un título, ni en un `title`, ni en un
+ * data-. La persona escribe "Zelenih beretki 12" y eso es lo único que ve; las
+ * coordenadas son el combustible del cálculo y viven en la base de datos.
+ *
+ * Espera: tipo ('hotel'|'punto'|'sitio'|'actividad'|'movilidad'),
+ *         elementoId, direccion (la ficha o null), viaje.
+ * Opcional: compacto (true para la fila fina de una tarjeta pequeña).
+ */
+const d = typeof direccion !== 'undefined' ? direccion : null;
+const fino = typeof compacto !== 'undefined' && compacto;
+%>
+<div class="direccion <%= fino ? 'direccion--fina' : '' %>"
+     data-direccion-de="<%= tipo %>:<%= elementoId %>"
+     data-viaje="<%= viaje.id %>">
+
+  <%# --- Lo que hay, cuando hay algo --- %>
+  <div class="direccion__vista" <%= d ? '' : 'hidden' %>>
+    <i class="ti ti-map-pin-2 direccion__pin" aria-hidden="true"></i>
+    <span class="direccion__texto" data-texto><%= d?.direccion ?? '' %></span>
+
+    <%# El estado, en una palabra. Solo se dice cuando no es "ya está": una
+        dirección situada no necesita anunciarlo. %>
+    <span class="direccion__estado" data-estado>
+      <% if (d?.buscando) { %>
+        <span class="direccion__situando"><i class="ti ti-loader-2 girando" aria-hidden="true"></i> situando…</span>
+      <% } else if (d && !d.situada) { %>
+        <span class="direccion__aviso" title="<%= d.mensaje ?? '' %>">
+          <i class="ti ti-help-circle" aria-hidden="true"></i> sin localizar
+        </span>
+      <% } %>
+    </span>
+
+    <button class="direccion__editar" type="button" data-editar-direccion
+            aria-label="Cambiar la dirección">
+      <i class="ti ti-pencil" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <%# --- Cuando no hay ninguna: una invitación discreta --- %>
+  <button class="direccion__poner" type="button" data-editar-direccion <%= d ? 'hidden' : '' %>>
+    <i class="ti ti-map-pin-plus" aria-hidden="true"></i> Añadir dirección
+  </button>
+
+  <%# --- El formulario, plegado hasta que hace falta --- %>
+  <form class="direccion__form" data-form-direccion hidden>
+    <label class="direccion__campo">
+      <span class="direccion__etiqueta">Dirección</span>
+      <input type="text" name="direccion" maxlength="400" autocomplete="off"
+             value="<%= d?.direccion ?? '' %>"
+             placeholder="Calle y número, o el nombre del sitio">
+    </label>
+    <div class="direccion__botones">
+      <button class="boton boton--primario boton--pequeno" type="submit">Guardar</button>
+      <button class="boton boton--secundario boton--pequeno" type="button" data-cancelar-direccion>
+        Cancelar
+      </button>
+      <% if (d) { %>
+        <button class="direccion__quitar" type="button" data-borrar-direccion>Quitarla</button>
+      <% } %>
+    </div>
+    <p class="direccion__pista secundario">
+      Se busca sola en segundo plano. Si no aparece, afínala y vuelve a guardar.
+    </p>
+  </form>
+</div>

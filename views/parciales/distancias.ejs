@@ -1,0 +1,62 @@
+<%
+/**
+ * Las distancias guardadas de una ficha: "Al hotel: 12 min andando".
+ *
+ * NO ES UNA PIEZA NUEVA. Son los mismos traslados de la pestaña "Moverse",
+ * mirados desde el otro lado: un traslado ya guarda de qué elemento sale cada
+ * extremo, así que preguntar "¿cuáles tocan a esta ficha?" es una consulta y no
+ * un modelo aparte. Borrar uno desde aquí lo borra allí, y es lo correcto: es
+ * el mismo dato.
+ *
+ * Se lee siempre "desde esta ficha hacia el otro" aunque la consulta se hiciera
+ * al revés: en la ficha del restaurante uno quiere leer "Al hotel: 12 min", no
+ * "Del hotel: 12 min".
+ *
+ * Espera: tipo, elementoId, nombre (el de la ficha, para el selector),
+ *         distancias (la lista), situada (si la ficha tiene dirección).
+ */
+const lista = typeof distancias !== 'undefined' ? distancias : [];
+const tieneSitio = typeof situada !== 'undefined' ? situada : true;
+%>
+<div class="distancias" data-distancias-de="<%= tipo %>:<%= elementoId %>"
+     data-nombre="<%= nombre %>">
+
+  <% if (lista.length) { %>
+    <ul class="distancias__lista">
+      <% lista.forEach(d => { %>
+        <li class="distancia" data-traslado="<%= d.id %>">
+          <span class="distancia__adonde"><%= d.linea %></span>
+          <span class="distancia__tiempos">
+            <% if (d.resultados.length) { %>
+              <% d.resultados.forEach(r => { %>
+                <span class="distancia__medio">
+                  <i class="ti <%= r.icono %>" aria-hidden="true"></i>
+                  <strong><%= r.texto %></strong> <%= r.etiqueta %>
+                </span>
+              <% }) %>
+            <% } else { %>
+              <span class="secundario"><%= d.estado === 'calculando' ? 'calculando…' : (d.mensaje ?? 'sin resultado') %></span>
+            <% } %>
+          </span>
+          <button class="distancia__quitar" type="button" data-borrar-distancia="<%= d.id %>"
+                  aria-label="Quitar esta distancia" title="Quitarla">
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
+        </li>
+      <% }) %>
+    </ul>
+  <% } %>
+
+  <%# Sin dirección no hay desde dónde medir. Se dice, en vez de ofrecer un
+      botón que solo puede dar un error. %>
+  <% if (tieneSitio) { %>
+    <button class="apuntar apuntar--ancho" type="button" data-anadir-distancia>
+      <i class="ti ti-ruler-measure" aria-hidden="true"></i> ¿A cuánto está de…?
+    </button>
+  <% } else { %>
+    <p class="distancias__sin-sitio secundario">
+      <i class="ti ti-map-pin-off" aria-hidden="true"></i>
+      Ponle una dirección y podrás medir distancias desde aquí.
+    </p>
+  <% } %>
+</div>

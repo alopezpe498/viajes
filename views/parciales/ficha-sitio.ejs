@@ -68,6 +68,30 @@ const hayDetalle = Boolean(s.porQue || s.comoMoverse || s.dentro.length || s.wik
       <% } %>
     </div>
 
+    <%# Dónde está. Hace falta para poder calcular traslados hasta aquí, y de
+        paso es lo que uno quiere ver al llegar a la puerta. %>
+    <%- include('direccion', {
+          tipo: s.origen === 'punto' ? 'punto' : 'sitio',
+          elementoId: s.id, direccion: s.direccion, viaje, compacto: true,
+        }) %>
+
+    <%# A cuánto está de las demás cosas del viaje. En la calle es oro: saber
+        que del hotel al Prado hay 12 minutos decide la mañana. %>
+    <details class="ficha-sitio__distancias">
+      <summary>
+        <i class="ti ti-ruler-measure" aria-hidden="true"></i>
+        Distancias<% if ((distanciasSitios.get(s.origen + ':' + s.id) ?? []).length) { %>
+          <span class="pastilla"><%= (distanciasSitios.get(s.origen + ':' + s.id) ?? []).length %></span>
+        <% } %>
+      </summary>
+      <%- include('distancias', {
+            tipo: s.origen === 'punto' ? 'punto' : 'sitio',
+            elementoId: s.id, nombre: s.nombre,
+            distancias: distanciasSitios.get(s.origen + ':' + s.id) ?? [],
+            situada: Boolean(s.direccion?.situada),
+          }) %>
+    </details>
+
     <%# Solo tiene sentido colocar lo que ya está apuntado. %>
     <% if (s.apuntado && s.candidatoId) { %>
       <% if (puesto) { %>

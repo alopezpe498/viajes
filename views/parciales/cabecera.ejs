@@ -45,6 +45,25 @@ const avionPct = typeof pasoActual !== 'undefined' && pasoActual
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><%= typeof titulo !== 'undefined' ? titulo : 'Generador de viajes' %></title>
+
+  <%# ---------- APP INSTALABLE ----------
+      Este es el ÚNICO <head> de la aplicación: lo incluyen las diecisiete
+      pantallas, así que con ponerlo aquí queda enlazado en todas.
+
+      El dosier tiene el suyo aparte y NO lleva nada de esto a propósito: es un
+      archivo que se descarga y se abre desde un ZIP, muchas veces sin servidor
+      detrás. Un manifest o un service worker ahí no tendrían a qué agarrarse. %>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1B7FA6">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icono-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icons/icono-512.png">
+  <%# iOS no lee el manifest para el icono de la pantalla de inicio: pide el suyo. %>
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Viajes">
+  <script src="/js/pwa.js" defer></script>
+
   <%# Iconos Tabler como webfont. Necesita conexión: si no hay, el resto se ve igual. %>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/estilo.css">

@@ -35,6 +35,10 @@ import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { lienzoDeViaje, FRANJAS } from './lienzo.js';
 import { fichaDeFila } from './catalogo.js';
 import { adjuntosDe, rutaDe, comoTamano, limpiarAdjuntosHuerfanos } from './adjuntos.js';
+import { medioElegidoDeTramo } from './movilidad.js';
+import { trasladosDeEtapa, trasladosDeElementos } from './traslados.js';
+import { fichasDeComer } from './comer.js';
+import { direccionDeCandidato, direccionDe } from './direcciones.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RAIZ = path.join(__dirname, '..');
@@ -311,6 +315,70 @@ function detalleDeVuelo(candidatoId) {
   };
 }
 
+/**
+ * La dirección y el teléfono de una comida puesta en el lienzo.
+ *
+ * La tarjeta del lienzo solo guarda el candidato; los datos del sitio viven en
+ * el catálogo, y se cruzan por nombre —que es la misma llave con la que se
+ * apuntó—.
+ */
+function datosDeComida(candidatoId) {
+  const c = una('SELECT * FROM candidatos WHERE id = ?', Number(candidatoId));
+  if (!c) return {};
+
+  const etapa = una('SELECT nombre_ciudad FROM etapas WHERE id = ?', c.etapa_id);
+  if (!etapa) return {};
+
+  const f = fichasDeComer(etapa.nombre_ciudad).find((x) => x.nombre === c.titulo);
+  if (!f) return {};
+
+  return {
+    direccion: f.direccion,
+    telefono: f.telefono,
+    telefonoMarcable: f.telefonoMarcable,
+    cocina: f.cocina,
+  };
+}
+
+/** Cómo se dice cada medio en el papel. */
+const ETIQUETA_MEDIO = {
+  andando: 'andando',
+  coche: 'en coche',
+  publico: 'en transporte público',
+  metro: 'en metro',
+  bus: 'en bus',
+  taxi: 'en taxi',
+  app: 'con la app',
+  tarjeta: 'con la tarjeta',
+  especial: '',
+  otro: '',
+};
+
+/**
+ * El medio elegido de un tramo, ya listo para el dosier.
+ *
+ * Lo del CATÁLOGO (duración, frecuencia, precio orientativo) y LO MÍO (el
+ * horario que cogí, lo que pagué, el localizador) van juntos pero separados: en
+ * el papel se lee primero lo mío, que es lo que necesito en la estación.
+ */
+function medioDelDosier(transporteId) {
+  const m = medioElegidoDeTramo(transporteId);
+  if (!m) return null;
+  return {
+    etiqueta: m.etiquetaMedio,
+    nombre: m.nombre,
+    duracion: m.duracion,
+    frecuencia: m.frecuencia,
+    precio: m.precio,
+    nota: m.nota,
+    notaSentido: m.nota_sentido,
+    horario: m.horario,
+    precioReal: m.precioReal,
+    referencia: m.referencia,
+    notaPropia: m.notaPropia,
+  };
+}
+
 /** El alojamiento elegido de una etapa, con su dirección si se sabe. */
 function hotelDeEtapa(etapaId) {
   const h = una(
@@ -346,7 +414,10 @@ export function loQueFalta(viajeId) {
   const tramos = todas(
     'SELECT * FROM transportes WHERE viaje_id = ? ORDER BY id',
     viajeId
-  ).filter((t) => !t.candidato_id && !t.notas);
+    // Un tramo también queda resuelto eligiendo su medio en "Cómo llegar": el
+    // bus de las 9:15 con el billete comprado no es menos tramo cerrado que un
+    // vuelo elegido, y sin esto el dosier seguía pidiéndolo.
+  ).filter((t) => !t.candidato_id && !t.notas && !t.ficha_transporte_id);
 
   const etapas = todas(
     "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden, id",
@@ -429,6 +500,11 @@ export function datosDelDosier(viajeId) {
       notas: t.notas,
       precio: t.precio_estimado,
       vuelo: detalleDeVuelo(t.candidato_id),
+      // El medio elegido en "Cómo llegar", con lo que se tecleó debajo: el
+      // horario real, lo que costó y el localizador. En un viaje que se hace en
+      // bus, esto ES el transporte del viaje, y sin esto el dosier salía vacío
+      // en la mitad de los tramos.
+      medio: medioDelDosier(t.id),
       adjuntos: adjuntosParaElDosier(
         'transporte',
         t.id,
@@ -465,6 +541,21 @@ export function datosDelDosier(viajeId) {
           hora: c.hora,
           manual: c.manual,
           texto: c.nombre,
+          // Los traslados del lienzo: el metro de las 9:00, el taxi al
+          // aeropuerto. Van finos también aquí, y con el teléfono a mano.
+          traslado: c.tipo === 'traslado',
+          medio: c.medio ?? null,
+          // "andando", "coche", "público": en el papel hay que decir CÓMO se
+          // va, porque el mismo trayecto son 20 minutos o son 8.
+          medioEtiqueta: ETIQUETA_MEDIO[c.medio] ?? null,
+          // La duración tecleada en el lienzo: la llevan los traslados y las
+          // comidas, que son las dos cosas que se planean por la hora.
+          duracion: c.tipo === 'traslado' || c.tipo === 'comer' ? c.duracion : null,
+          telefono: c.telefono ?? null,
+          telefonoMarcable: c.telefono ? String(c.telefono).replace(/[^+\d]/g, '') : null,
+          // Una comida colocada: dónde es y a qué número se llama para
+          // reservar. En la calle es lo único que hace falta.
+          ...(c.tipo === 'comer' ? datosDeComida(c.candidatoId) : {}),
           ficha: c.manual ? null : fichaDeCandidato(c.candidatoId, d.ciudad),
           // Los bonos y las entradas de esa excursión.
           adjuntos: c.manual ? [] : adjuntosParaElDosier('excursion', c.candidatoId, c.nombre),
@@ -485,6 +576,9 @@ export function datosDelDosier(viajeId) {
       fechaLarga: enLargo(d.fecha),
       fechaCorta: d.fechaCorta,
       ciudad: d.ciudad,
+      // De qué parada es este día: es lo que empareja el día con su chuleta de
+      // traslados, que va al final.
+      etapaId: d.etapaId ?? null,
       // El hotel de ESA noche. El último día ya no se duerme allí: se vuelve.
       hotel: d.n === (lienzo?.dias?.length ?? 0) ? null : (hoteles.get(d.etapaId) ?? null),
       franjas: franjas.filter((f) => f.cosas.length || f.transportes.length),
@@ -492,16 +586,84 @@ export function datosDelDosier(viajeId) {
     };
   });
 
+  // --- La chuleta de traslados de cada parada ----------------------------
+  // Va al final de la etapa porque en la calle es justo lo que se consulta:
+  // "¿cuánto hay de aquí a allá?". No es el plan del día, es la referencia que
+  // uno mira cuando el plan se tuerce.
+  const chuletas = etapas.map((e) => {
+    const suyos = trasladosDeEtapa(e.id).traslados.filter((t) => t.resultados.length);
+    return {
+      etapaId: e.id,
+      ciudad: e.nombre_ciudad,
+      traslados: suyos.map((t) => ({
+        recorrido: t.recorrido,
+        medios: t.resultados.map((r) => ({
+          etiqueta: r.etiqueta,
+          texto: r.texto,
+        })),
+      })),
+    };
+  }).filter((c) => c.traslados.length);
+
+  // --- Dónde comer: lo apuntado de cada parada ---------------------------
+  // Lo que está APUNTADO pero no puesto en un día. En el lienzo no sale porque
+  // no tiene día, y es justo lo que uno mira a las dos de la tarde sin plan:
+  // "¿qué tenía yo apuntado por aquí?". Con sus distancias, que en la calle son
+  // lo que decide.
+  const colocadosIds = new Set(
+    (lienzo?.colocados ?? []).map((c) => c.candidatoId).filter(Boolean)
+  );
+
+  const dondeComer = etapas
+    .map((e) => {
+      const apuntados = todas(
+        "SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = 'comer' ORDER BY id",
+        e.id
+      ).filter((c) => !colocadosIds.has(c.id));
+
+      const fichas = fichasDeComer(e.nombre_ciudad);
+      const distancias = trasladosDeElementos('comer', fichas.map((f) => f.id));
+
+      return {
+        etapaId: e.id,
+        ciudad: e.nombre_ciudad,
+        sitios: apuntados
+          .map((c) => {
+            const f = fichas.find((x) => x.nombre === c.titulo);
+            if (!f) return null;
+            return {
+              nombre: f.nombre,
+              cocina: f.cocina,
+              precio: f.precioSimbolo ?? f.precioTexto,
+              valoracion: f.valoracion,
+              direccion: f.direccion,
+              telefono: f.telefono,
+              telefonoMarcable: f.telefonoMarcable,
+              nota: f.nota,
+              distancias: (distancias.get(f.id) ?? [])
+                .filter((d) => d.resultados.length)
+                .map((d) => ({
+                  linea: d.linea,
+                  tiempos: d.resultados.map((r) => `${r.texto} ${r.etiqueta}`).join(' · '),
+                })),
+            };
+          })
+          .filter(Boolean),
+      };
+    })
+    .filter((x) => x.sitios.length);
+
   // --- Reservas: todo lo cerrado, junto y a mano -------------------------
   const reservas = {
     vuelos: tramos
       // Un tramo con billetes adjuntos entra en Reservas aunque no tenga vuelo
       // elegido: si has guardado el billete, es que ese trayecto está cerrado.
-      .filter((t) => t.vuelo || t.notas || t.adjuntos.length)
+      .filter((t) => t.vuelo || t.notas || t.medio || t.adjuntos.length)
       .map((t) => ({
         recorrido: `${t.origen} → ${t.destino}`,
         donde: t.donde,
         vuelo: t.vuelo,
+        medio: t.medio,
         notas: t.notas,
         precio: t.precio,
         adjuntos: t.adjuntos,
@@ -533,6 +695,8 @@ export function datosDelDosier(viajeId) {
     })),
     dias,
     reservas,
+    chuletas,
+    dondeComer,
     generadoEn: new Date().toISOString(),
   };
 }

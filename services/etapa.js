@@ -33,6 +33,8 @@ import {
 import { referenciaDeTramo, comoTexto, comoDuracion } from './distancias.js';
 import { borrarAdjuntosDe, adjuntosDe } from './adjuntos.js';
 import { sincronizarEtapaUnica } from './etapas.js';
+import { medioElegidoDeTramo } from './movilidad.js';
+import { direccionesDe, direccionDe } from './direcciones.js';
 
 /** Los tipos de transporte que se pueden apuntar a mano. */
 export const TIPOS_TRANSPORTE = [
@@ -230,12 +232,22 @@ export function queVerDeEtapa(contexto) {
     return { apuntado: Boolean(c), candidatoId: c?.id ?? null };
   };
 
+  // Las direcciones, de una tacada y por tabla de origen. Una consulta por
+  // ficha serían veinte para pintar una pestaña, que es el mismo motivo por el
+  // que los adjuntos ya se piden así.
+  const dirPuntos = direccionesDe('punto', delDestino.map((x) => x.id));
+  const dirSitios = direccionesDe('sitio', delPunto.map((x) => x.id));
+  const dirActividades = direccionesDe('actividad', excursiones.map((x) => x.id));
+
   return {
     // Hay ficha que enseñar si la parada trae sitios de cualquiera de las dos
     // fuentes; que el punto esté "investigado" ya no es la única vía.
     investigada: Boolean(punto?.investigado_en) || delDestino.length > 0,
     sitios: sitios.map((s) => ({
       ...s,
+      // La dirección vive con la fila del CATÁLOGO de la que sale la tarjeta, y
+      // `origen` dice de cuál de las dos tablas es.
+      direccion: (s.origen === 'punto' ? dirPuntos : dirSitios).get(s.id) ?? null,
       ...conEstado(sitios, s.wikipedia_url, s.nombre),
     })),
     excursiones: excursiones.map((a) => {
@@ -248,6 +260,10 @@ export function queVerDeEtapa(contexto) {
 
       return {
         ...a,
+        // El punto de encuentro es la dirección de una excursión. Muchas lo
+        // traen ya de Civitatis: la migración lo volcó y aquí se lee como una
+        // dirección más, editable como todas.
+        direccion: dirActividades.get(a.id) ?? null,
         // La nota bayesiana es la que ya usa el catálogo: no se cambia el
         // criterio solo porque la caja esté en otra pantalla.
         notaPonderada: notaPonderada(a.valoracion, a.num_opiniones),
@@ -277,9 +293,12 @@ export function queVerDeEtapa(contexto) {
  *   'punto'     -> puntos_interes  (lo que ver en un destino de nivel ciudad)
  *   'sitio'     -> sitios_lugar    (la ficha profunda de un punto)
  *   'actividad' -> catalogo_actividades (las excursiones de Civitatis)
+ *   'comer'     -> catalogo_comer  (bares y restaurantes)
  *
  * Los dos primeros acaban siendo un candidato de tipo 'sitio': para el viaje
- * son lo mismo, una cosa que ver en esa parada.
+ * son lo mismo, una cosa que ver en esa parada. Comer es su propio tipo porque
+ * en el lienzo se comporta distinto —tiene su hora y su franja natural— y
+ * porque en la mochila conviene poder filtrarlo aparte.
  */
 export function alternarApuntado(etapaId, que, id) {
   const etapa = una('SELECT * FROM etapas WHERE id = ?', etapaId);
@@ -290,24 +309,36 @@ export function alternarApuntado(etapaId, que, id) {
       ? una('SELECT * FROM sitios_lugar WHERE id = ?', id)
       : que === 'punto'
         ? una('SELECT * FROM puntos_interes WHERE id = ?', id)
-        : una('SELECT * FROM catalogo_actividades WHERE id = ?', id);
+        : que === 'comer'
+          ? una('SELECT * FROM catalogo_comer WHERE id = ?', id)
+          : una('SELECT * FROM catalogo_actividades WHERE id = ?', id);
   if (!origen) return null;
 
-  // En candidatos solo hay dos tipos: 'sitio' y 'actividad'.
-  const tipo = que === 'actividad' ? 'actividad' : 'sitio';
+  const tipo = que === 'actividad' ? 'actividad' : que === 'comer' ? 'comer' : 'sitio';
 
-  const url = origen.url ?? origen.wikipedia_url ?? null;
+  const url = origen.url ?? origen.web ?? origen.wikipedia_url ?? null;
   const titulo = origen.nombre ?? origen.titulo;
 
-  const yaEsta = una(
-    `SELECT * FROM candidatos
-      WHERE etapa_id = ? AND tipo = ?
-        AND (url IS ? OR (url IS NULL AND titulo = ?))`,
-    etapaId,
-    tipo,
-    url,
-    titulo
-  );
+  // CON URL SE BUSCA POR URL; SIN ELLA, POR TÍTULO. Y no las dos cosas a la vez.
+  //
+  // Antes esto era un solo SELECT con `url IS ? OR (url IS NULL AND titulo = ?)`,
+  // y con la url a NULL la primera mitad se convierte en `url IS NULL`, que casa
+  // con CUALQUIER fila sin url de esa parada. Con sitios y excursiones no se
+  // notaba —casi todas traen enlace—, pero los restaurantes que encuentra la IA
+  // no tienen ninguno: apuntar el segundo desapuntaba el primero.
+  const yaEsta = url
+    ? una(
+        'SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ? AND url = ?',
+        etapaId,
+        tipo,
+        url
+      )
+    : una(
+        'SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ? AND url IS NULL AND titulo = ?',
+        etapaId,
+        tipo,
+        titulo
+      );
 
   if (yaEsta) {
     // Desapuntar borra el candidato, así que sus adjuntos se quedarían sueltos:
@@ -335,7 +366,7 @@ export function alternarApuntado(etapaId, que, id) {
     origen.num_opiniones ?? null,
     url,
     origen.imagen_url ?? null,
-    tipo === 'sitio' ? 'catalogo' : 'civitatis',
+    tipo === 'comer' ? (origen.origen ?? 'comer') : tipo === 'sitio' ? 'catalogo' : 'civitatis',
     JSON.stringify({ de: que, deId: origen.id })
   );
 
@@ -372,6 +403,9 @@ export function hotelesDeEtapa(contexto, { orden = 'recomendados' } = {}) {
   }));
 
   const elegido = guardados.find((h) => h.marcado) ?? null;
+  // El hotel es la excepción de las direcciones: no sale de ningún catálogo, es
+  // una reserva de ESTE viaje, así que su dirección va con el candidato.
+  if (elegido) elegido.direccion = direccionDe('hotel', elegido.id);
 
   if (guardados.length) {
     const filtros = filtrosHotelesDe(viaje);
@@ -495,6 +529,12 @@ export function describirTramo(t) {
     ? una('SELECT * FROM candidatos WHERE id = ?', t.candidato_id)
     : null;
 
+  // El medio elegido en "Cómo llegar". Un tramo también se resuelve así: elegir
+  // el bus de las 9:15 es tan resolutivo como elegir un vuelo, y hasta ahora la
+  // tarjeta seguía diciendo "¿Cómo vas de Sarajevo a Mostar?" con el billete ya
+  // comprado.
+  const medio = medioElegidoDeTramo(t.id);
+
   // La fecha del tramo: se sale el día en que acaba la etapa de origen, o el
   // día en que empieza la de destino cuando se viene de casa.
   const fecha = origen?.fecha_fin ?? destino?.fecha_inicio ?? null;
@@ -518,8 +558,9 @@ export function describirTramo(t) {
     etapaOrigenId: t.etapa_origen_id,
     etapaDestinoId: t.etapa_destino_id,
     fecha,
-    // Un tramo está resuelto si se eligió un vuelo o si se apuntó a mano.
-    resuelto: Boolean(t.candidato_id || t.notas),
+    // Un tramo está resuelto si se eligió un vuelo, un medio, o se apuntó a mano.
+    resuelto: Boolean(t.candidato_id || t.notas || medio),
+    medio,
     vuelo: vuelo ? { id: vuelo.id, titulo: vuelo.titulo, precio: vuelo.precio, moneda: vuelo.moneda } : null,
     notas: t.notas,
     precioEstimado: t.precio_estimado,
@@ -530,12 +571,20 @@ export function describirTramo(t) {
     fechaIda: fecha ?? viaje?.fecha_inicio ?? null,
     fechaVuelta: viaje?.fecha_fin ?? null,
     // Para el chip de la pantalla de ruta.
-    resumen: resumenDeTramo(t, nombreOrigen, nombreDestino, donde, vuelo, casa),
+    resumen: resumenDeTramo(t, nombreOrigen, nombreDestino, donde, vuelo, casa, medio),
   };
 }
 
 /** El texto del chip: lo que se lee de un vistazo en la pantalla de ruta. */
-export function resumenDeTramo(t, nombreOrigen, nombreDestino, donde, vuelo, casa) {
+export function resumenDeTramo(t, nombreOrigen, nombreDestino, donde, vuelo, casa, medio = null) {
+  // El medio elegido manda: es lo más concreto que hay, y lo tecleado debajo
+  // —"sale 9:15"— es justo lo que uno quiere leer de un vistazo.
+  if (medio) {
+    return [medio.etiquetaMedio, medio.horario || medio.duracion, medio.precioReal || medio.precio]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
   if (!t.candidato_id && !t.notas) {
     return donde === 'ida'
       ? `Vuelo ${casa} → ${nombreDestino} · pendiente`
@@ -751,13 +800,63 @@ export { comoDuracion };
  * "Qué ver" sepa de dónde sacar los sitios.
  */
 export function asegurarEtapaDeCiudad(viajeId, destino) {
-  const etapa = sincronizarEtapaUnica(viajeId);
-  if (!etapa) return null;
+  // ¿Ya hay parada(s) de este destino? Puede haber MÁS DE UNA: clonar una etapa
+  // repite la ciudad a propósito (Sarajevo → Mostar → Sarajevo). Se devuelven
+  // todas para que quien llame decida; aquí no se elige por nadie.
+  const suyas = todas(
+    'SELECT * FROM etapas WHERE viaje_id = ? AND destino_id = ? ORDER BY orden, id',
+    viajeId,
+    destino.id
+  );
+  if (suyas.length) return { etapa: suyas[0], cuantas: suyas.length, nueva: false };
 
-  if (etapa.destino_id !== destino.id) {
+  const existentes = todas('SELECT id FROM etapas WHERE viaje_id = ?', viajeId);
+
+  // Viaje sin ruta todavía: su parada única ES esta ciudad.
+  if (!existentes.length) {
+    const etapa = sincronizarEtapaUnica(viajeId);
+    if (!etapa) return null;
     ejecutar('UPDATE etapas SET destino_id = ? WHERE id = ?', destino.id, etapa.id);
+    return { etapa: una('SELECT * FROM etapas WHERE id = ?', etapa.id), cuantas: 1, nueva: true };
   }
-  return una('SELECT * FROM etapas WHERE id = ?', etapa.id);
+
+  // LA PARADA SIN ENGANCHAR QUE ACABA DE NACER.
+  //
+  // `sincronizarEtapaUnica` crea una parada con el nombre del destino del viaje
+  // y sin `destino_id` —todavía no sabe a qué fila del catálogo apunta—, y se
+  // ejecuta justo antes que esto. Si no se adoptara aquí, el viaje acabaría con
+  // dos "Sarajevo" desde el primer clic: la de ella y la que crearíamos abajo.
+  const suelta = una(
+    'SELECT * FROM etapas WHERE viaje_id = ? AND destino_id IS NULL AND nombre_ciudad = ? ORDER BY orden, id LIMIT 1',
+    viajeId,
+    destino.nombre
+  );
+  if (suelta) {
+    ejecutar('UPDATE etapas SET destino_id = ? WHERE id = ?', destino.id, suelta.id);
+    return { etapa: una('SELECT * FROM etapas WHERE id = ?', suelta.id), cuantas: 1, nueva: false };
+  }
+
+  // El viaje YA tiene ruta y esta ciudad no está en ella: se añade al final.
+  //
+  // Antes esto reapuntaba la primera parada al destino nuevo, que es de las
+  // cosas que peor sientan: entras al mapa a añadir una ciudad y te cambia la
+  // que ya tenías. Ahora la ruta que hay no se toca.
+  const ultimo = una(
+    "SELECT MAX(orden) AS n FROM etapas WHERE viaje_id = ? AND estado = 'confirmada'",
+    viajeId
+  );
+  const r = ejecutar(
+    `INSERT INTO etapas (viaje_id, destino_id, nombre_ciudad, orden, noches, estado)
+     VALUES (?, ?, ?, ?, 1, 'confirmada')`,
+    viajeId,
+    destino.id,
+    destino.nombre,
+    (ultimo?.n ?? 0) + 1
+  );
+  // El recálculo de la ruta (fechas y tramos) lo hace quien llama: importarlo
+  // aquí cerraría un ciclo entre este servicio y el de la ruta, que ya usa
+  // `resumenDeTramo` de aquí.
+  return { etapa: una('SELECT * FROM etapas WHERE id = ?', Number(r.lastInsertRowid)), cuantas: 1, nueva: true };
 }
 
 /**

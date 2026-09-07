@@ -178,6 +178,103 @@ export async function sitioPorTexto(texto) {
 }
 
 // =============================================================================
+// DE UNA DIRECCIÓN A UN PUNTO
+// =============================================================================
+/**
+ * Una DIRECCIÓN, no una ciudad: "Zelenih beretki 12, Sarajevo".
+ *
+ * `sitioPorTexto()` no vale para esto. Aquel resume a ciudad o país porque lo
+ * usa el mapamundi, donde lo que se elige es un destino. Aquí hace falta el
+ * portal exacto, así que se devuelve el punto tal cual y la dirección tal y
+ * como Nominatim la escribe.
+ *
+ * Aprovecha el MISMO turno de una petición por segundo y la MISMA caché: es el
+ * mismo servicio público y el límite es de todos, no de cada función.
+ *
+ * Devuelve `{ direccion, lat, lng, fuente: 'nominatim' }` o `null`.
+ */
+export async function geocodificarDireccion(texto, { cerca = null } = {}) {
+  const base = String(texto ?? '').trim();
+  if (!base) return null;
+
+  // La ciudad de la parada pegada al final: "Calle Mayor 3" sin ciudad puede
+  // estar en media España.
+  const ciudad = String(cerca ?? '').trim();
+  const consulta =
+    ciudad && !base.toLowerCase().includes(ciudad.toLowerCase()) ? `${base}, ${ciudad}` : base;
+
+  const clave = `d|${consulta.toLowerCase()}`;
+  const guardado = deCache(clave);
+  if (guardado !== undefined) return guardado;
+
+  try {
+    // SE PIDEN VARIOS Y SE ELIGE, no el primero a ciegas.
+    //
+    // "Calle Huertas 18, Madrid" devuelve como primer resultado una calle de
+    // Torrelaguna, que está en la PROVINCIA de Madrid y a sesenta kilómetros
+    // del centro. Es una respuesta correcta a una pregunta ambigua, y colar esa
+    // por buena pone tu cena a una hora de coche sin avisar.
+    //
+    // Con `addressdetails` cada resultado dice en qué municipio cae, así que
+    // basta con preferir el que esté en la ciudad que se pidió.
+    const datos = await pedir('/search', { q: consulta, limit: 5, addressdetails: 1 });
+    const lista = Array.isArray(datos) ? datos : [];
+    if (!lista.length) {
+      console.log(`[nominatim] sin resultados para «${consulta}»`);
+      return aCache(clave, null);
+    }
+
+    const elegido = enLaCiudad(lista, ciudad) ?? lista[0];
+    if (ciudad && elegido !== lista[0]) {
+      console.log(`[nominatim] descarto «${lista[0].display_name}»: no está en ${ciudad}.`);
+    }
+
+    console.log(`[nominatim] OK: «${consulta}» → ${elegido.display_name}`);
+    return aCache(clave, {
+      direccion: elegido.display_name ?? consulta,
+      lat: Number(elegido.lat),
+      lng: Number(elegido.lon),
+      fuente: 'nominatim',
+    });
+  } catch (err) {
+    // Un fallo de red no se cachea: la próxima vez puede ir bien.
+    console.warn(`[nominatim] falló «${consulta}»: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * El primer resultado que de verdad cae en esa ciudad.
+ *
+ * El municipio puede venir con cuatro nombres distintos según el sitio —`city`
+ * en una capital, `town` en un pueblo grande, `village` en uno pequeño,
+ * `municipality` a veces—, así que se miran todos. Sin ciudad de referencia no
+ * hay nada que preferir y se devuelve `null` para que mande el orden original.
+ */
+function enLaCiudad(lista, ciudad) {
+  const objetivo = normalizar(ciudad);
+  if (!objetivo) return null;
+
+  return (
+    lista.find((r) => {
+      const a = r.address ?? {};
+      return [a.city, a.town, a.village, a.municipality]
+        .filter(Boolean)
+        .some((n) => normalizar(n) === objetivo);
+    }) ?? null
+  );
+}
+
+/** Sin acentos ni mayúsculas: "Málaga" y "malaga" son la misma ciudad. */
+function normalizar(s) {
+  return String(s ?? '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+// =============================================================================
 // INTERPRETAR LO QUE CONTESTA NOMINATIM
 // =============================================================================
 /**

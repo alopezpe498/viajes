@@ -238,6 +238,8 @@
       //    "investigando" y sondear. Ahí hay ciudades entre las que elegir.
       //  - Ciudad: no hay nada que elegir. Nos quedamos AQUÍ contando lo que se
       //    está buscando y, cuando está, se entra directamente en su parada.
+      // 'explorar' (país o región) y 'ruta' (la ciudad ya está más de una vez en
+      // el viaje) se resuelven igual: se va a donde diga el servidor.
       if (datos.modo !== 'ciudad') {
         location.href = datos.url;
         return;

@@ -28,6 +28,20 @@ import { iataDe } from '../lib/iata.js';
 import { reunirAvisos } from '../services/avisos.js';
 import { sincronizarEtapaUnica } from '../services/etapas.js';
 import { filtrosVuelosDeTramo } from '../services/etapa.js';
+import { calcularDesde, referenciaDelViaje } from '../services/distancias-ciudades.js';
+import {
+  investigarTramo,
+  investigarMovilidad,
+  fichasDeTramo,
+  fichasDeMovilidad,
+} from '../services/movilidad.js';
+import { geocodificarFila } from '../services/direcciones.js';
+import { calcularTraslado } from '../services/traslados.js';
+import {
+  investigarComer,
+  investigarDetallesDeComer,
+  consultaPendiente,
+} from '../services/comer.js';
 import {
   guardarActividadesEnCatalogo,
   estadoCacheCiudad,
@@ -505,11 +519,268 @@ async function ejecutarPrepararEtapa(trabajo) {
   );
 }
 
+/**
+ * Ejecuta un trabajo de tipo 'distancias': cuánto hay de la ciudad de entrada a
+ * cada candidata de un destino.
+ *
+ * `referencia_id` es el id del destino (el país o la región que se está
+ * mirando en el mapa).
+ *
+ * NO ABRE NAVEGADOR. Son peticiones a OSRM, que van de una en una con su pausa
+ * y tardan décimas. Por eso no compite con los scrapers por el perfil de Chrome
+ * y puede correr mientras se mira el mapa.
+ *
+ * Un par que falla NO tumba el trabajo: se queda sin dato, la ficha enseña un
+ * guión y se reintenta la próxima vez que se abra el mapa. Es exactamente lo que
+ * hace `calcularDesde`.
+ */
+async function ejecutarDistancias(trabajo) {
+  const referencia = referenciaDelViaje(trabajo.viaje_id);
+  if (!referencia) {
+    console.log(`[worker] Trabajo #${trabajo.id}: el viaje no tiene ciudad de referencia todavía.`);
+    return;
+  }
+
+  const candidatas = todas(
+    `SELECT id, nombre FROM puntos_interes
+      WHERE destino_id = ? AND categoria = 'ciudad' AND lat IS NOT NULL AND lon IS NOT NULL`,
+    trabajo.referencia_id
+  );
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: distancias desde «${referencia.nombre}» ` +
+      `a ${candidatas.length} ciudad/es.`
+  );
+
+  const { hechas, fallidas } = await calcularDesde(referencia.ciudadId, candidatas.map((c) => c.id));
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ${hechas} distancia/s calculada/s` +
+      (fallidas ? ` · ${fallidas} sin dato (se reintentan al volver al mapa)` : '')
+  );
+}
+
+/**
+ * Ejecuta un trabajo de tipo 'transporte_tramo': cómo se va de una ciudad a la
+ * siguiente. `referencia_id` es el id del tramo.
+ *
+ * PREGUNTA CON BÚSQUEDA WEB. Los horarios y los precios de un autobús cambian, y
+ * un modelo sin buscar te los da igual de convencido. Vale más un campo vacío
+ * que un dato falso con el que alguien pierda el bus.
+ *
+ * Lo que salga va al CATÁLOGO, por pareja de ciudades: el próximo viaje que
+ * pase por Sarajevo → Mostar ya lo tiene.
+ */
+async function ejecutarTransporteTramo(trabajo) {
+  const tramo = una('SELECT * FROM transportes WHERE id = ?', trabajo.referencia_id);
+  if (!tramo) throw new Error('Ese tramo ya no existe.');
+
+  const origen = tramo.etapa_origen_id
+    ? una('SELECT nombre_ciudad FROM etapas WHERE id = ?', tramo.etapa_origen_id)
+    : null;
+  const destino = tramo.etapa_destino_id
+    ? una('SELECT nombre_ciudad FROM etapas WHERE id = ?', tramo.etapa_destino_id)
+    : null;
+
+  if (!origen || !destino) {
+    throw new Error('Este tramo va a casa o viene de casa: eso se resuelve con el buscador de vuelos.');
+  }
+
+  const a = origen.nombre_ciudad;
+  const b = destino.nombre_ciudad;
+
+  // Si el catálogo ya lo sabe, no se pregunta: es conocimiento sobre el mundo.
+  const yaHay = fichasDeTramo(a, b);
+  if (yaHay.length) {
+    console.log(`[worker] Trabajo #${trabajo.id}: ${a} → ${b} ya tenía ${yaHay.length} medio/s. No pregunto.`);
+    return;
+  }
+
+  console.log(`[worker] Trabajo #${trabajo.id}: buscando cómo ir de ${a} a ${b} (IA + web).`);
+  const fichas = await investigarTramo(a, b);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ${fichas.length} medio/s guardado/s` +
+      (fichas.length ? ` (${fichas.map((f) => f.medio).join(', ')})` : ' — ninguno; se podrá crear a mano')
+  );
+}
+
+/**
+ * Ejecuta un trabajo de tipo 'movilidad_ciudad': cómo moverse por una ciudad.
+ * `referencia_id` es el id de la etapa, pero lo que se guarda va por CIUDAD.
+ *
+ * El dato más útil de todos es el teléfono de un taxi, y es justo el que hay que
+ * pedir con búsqueda: inventado no sirve para nada y encima es peligroso.
+ */
+async function ejecutarMovilidadCiudad(trabajo) {
+  const etapa = una('SELECT * FROM etapas WHERE id = ?', trabajo.referencia_id);
+  if (!etapa) throw new Error('Esa parada ya no existe.');
+
+  const yaHay = fichasDeMovilidad(etapa.nombre_ciudad);
+  if (yaHay.length) {
+    console.log(
+      `[worker] Trabajo #${trabajo.id}: ${etapa.nombre_ciudad} ya tenía ${yaHay.length} opción/es de movilidad.`
+    );
+    return;
+  }
+
+  console.log(`[worker] Trabajo #${trabajo.id}: buscando cómo moverse por ${etapa.nombre_ciudad} (IA + web).`);
+  const fichas = await investigarMovilidad(etapa.nombre_ciudad);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ${fichas.length} opción/es guardada/s` +
+      (fichas.filter((f) => f.telefono).length
+        ? ` · ${fichas.filter((f) => f.telefono).length} con teléfono`
+        : '')
+  );
+}
+
+/**
+ * Buscar las coordenadas de una dirección.
+ *
+ * Va por la cola y no en la petición que la guarda porque geocodificar es lento
+ * —Nominatim tiene turno de una petición por segundo— y guardar una dirección
+ * tiene que ser instantáneo: se escribe, se guarda y la ficha dice "situando…".
+ *
+ * La ciudad de la parada se pasa como contexto: "Calle Mayor 3" a secas puede
+ * estar en media España, y con la ciudad detrás no.
+ */
+async function ejecutarGeocodificar(trabajo) {
+  const fila = una('SELECT * FROM direcciones WHERE id = ?', trabajo.referencia_id);
+  if (!fila) throw new Error('Esa dirección ya no existe.');
+
+  // De qué ciudad es. Se saca de la parada que la usa, que es lo único que
+  // convierte una calle suelta en una dirección buscable.
+  const cerca = ciudadDeLaDireccion(fila);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: situando «${fila.direccion}»` +
+      (cerca ? ` (en ${cerca})` : '')
+  );
+  const r = await geocodificarFila(fila.id, { cerca });
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ` +
+      (r?.situada ? `situada con ${r.fuente}.` : 'no se ha encontrado.')
+  );
+}
+
+/**
+ * De qué ciudad es una dirección.
+ *
+ * Cada tipo vive en una tabla distinta y llega a la ciudad por un camino
+ * distinto. Si no se averigua no pasa nada: se busca sin contexto, que es lo que
+ * se hacía antes de tener esto.
+ */
+function ciudadDeLaDireccion(fila) {
+  const { tipo_elemento: tipo, elemento_id: id } = fila;
+
+  if (tipo === 'hotel') {
+    return una(
+      `SELECT e.nombre_ciudad AS c FROM candidatos k
+         JOIN etapas e ON e.id = k.etapa_id WHERE k.id = ?`,
+      id
+    )?.c ?? null;
+  }
+  if (tipo === 'movilidad') {
+    return una('SELECT ciudad AS c FROM catalogo_movilidad WHERE id = ?', id)?.c ?? null;
+  }
+  if (tipo === 'comer') {
+    return una('SELECT ciudad AS c FROM catalogo_comer WHERE id = ?', id)?.c ?? null;
+  }
+  if (tipo === 'actividad') {
+    return una('SELECT ciudad AS c FROM catalogo_actividades WHERE id = ?', id)?.c ?? null;
+  }
+  if (tipo === 'punto') {
+    return una('SELECT ciudad_base AS c FROM puntos_interes WHERE id = ?', id)?.c ?? null;
+  }
+  if (tipo === 'sitio') {
+    return una(
+      `SELECT p.ciudad_base AS c FROM sitios_lugar s
+         JOIN puntos_interes p ON p.id = s.punto_interes_id WHERE s.id = ?`,
+      id
+    )?.c ?? null;
+  }
+  return null;
+}
+
+/**
+ * Calcular un traslado: cuánto hay de un sitio a otro.
+ *
+ * Google primero (que es el único que sabe de transporte público) y OSRM detrás.
+ * Nunca lanza por un fallo de la fuente: el traslado se queda con su mensaje y
+ * un botón de recalcular, que es más útil que un trabajo en rojo.
+ */
+async function ejecutarTraslado(trabajo) {
+  const fila = una('SELECT * FROM traslados WHERE id = ?', trabajo.referencia_id);
+  if (!fila) throw new Error('Ese traslado ya no existe.');
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: calculando ${fila.origen_texto} → ${fila.destino_texto}.`
+  );
+  const r = await calcularTraslado(fila.id);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ` +
+      (r?.resultados?.length
+        ? `${r.resultados.length} medio/s (fuente: ${r.fuente}).`
+        : 'sin resultado.')
+  );
+}
+
+/**
+ * Buscar dónde comer en la ciudad de una parada.
+ *
+ * Places primero (que es quien tiene notas y opiniones de verdad) y la IA con
+ * búsqueda web detrás. Lo que vuelve se guarda en el CATÁLOGO por ciudad, así
+ * que la próxima vez que alguien pase por aquí ya está.
+ */
+async function ejecutarComerBuscar(trabajo) {
+  const etapa = una('SELECT * FROM etapas WHERE id = ?', trabajo.referencia_id);
+  if (!etapa) throw new Error('Esa parada ya no existe.');
+
+  // Lo que se tecleó en el buscador. Si no hay nada, la búsqueda rápida.
+  const consulta = consultaPendiente(etapa.id);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: buscando dónde comer en ${etapa.nombre_ciudad}` +
+      (consulta ? ` («${consulta}»).` : ' (los mejores).')
+  );
+  const r = await investigarComer(etapa.nombre_ciudad, consulta);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ${r.sitios.length} sitio/s (fuente: ${r.fuente}).`
+  );
+}
+
+/**
+ * Los detalles de UN sitio: teléfono, web y horarios.
+ *
+ * Solo bajo demanda, al abrir su ficha, y una sola vez. Es la parte cara de
+ * Places: de veinte resultados se abren dos, y pedirlos todos al buscar sería
+ * pagar diez veces por lo que nadie va a leer.
+ */
+async function ejecutarComerDetalles(trabajo) {
+  const f = una('SELECT * FROM catalogo_comer WHERE id = ?', trabajo.referencia_id);
+  if (!f) throw new Error('Ese sitio ya no está en el catálogo.');
+
+  console.log(`[worker] Trabajo #${trabajo.id}: datos de «${f.nombre}».`);
+  const ficha = await investigarDetallesDeComer(f.id);
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ` +
+      (ficha?.telefono || ficha?.web || ficha?.horarios ? 'datos guardados.' : 'sin datos.')
+  );
+}
+
 /** Los tipos de trabajo que ESTE worker sabe ejecutar. */
 const TIPOS_CONOCIDOS = [
   'actividades', 'hoteles', 'vuelos', 'avisos',
   'descubrir_destino', 'investigar_ciudad', 'opinar_lienzo',
-  'ficha_actividad', 'preparar_etapa',
+  'ficha_actividad', 'preparar_etapa', 'distancias',
+  'transporte_tramo', 'movilidad_ciudad',
+  'geocodificar', 'traslado',
+  'comer_buscar', 'comer_detalles',
 ];
 
 /**
@@ -1010,6 +1281,13 @@ async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'vuelos') return ejecutarVuelos(trabajo);
   if (trabajo.tipo === 'ficha_actividad') return ejecutarFichaActividad(trabajo);
   if (trabajo.tipo === 'preparar_etapa') return ejecutarPrepararEtapa(trabajo);
+  if (trabajo.tipo === 'distancias') return ejecutarDistancias(trabajo);
+  if (trabajo.tipo === 'transporte_tramo') return ejecutarTransporteTramo(trabajo);
+  if (trabajo.tipo === 'movilidad_ciudad') return ejecutarMovilidadCiudad(trabajo);
+  if (trabajo.tipo === 'geocodificar') return ejecutarGeocodificar(trabajo);
+  if (trabajo.tipo === 'traslado') return ejecutarTraslado(trabajo);
+  if (trabajo.tipo === 'comer_buscar') return ejecutarComerBuscar(trabajo);
+  if (trabajo.tipo === 'comer_detalles') return ejecutarComerDetalles(trabajo);
   throw new Error(`Tipo de trabajo desconocido: ${trabajo.tipo}`);
 }
 

@@ -37,6 +37,9 @@
 
   const noches = (n) => `${n} ${n === 1 ? 'noche' : 'noches'}`;
 
+  /** Las noches de UNA parada. Cero noches no es "0 noches": es una de paso. */
+  const nochesDeEtapa = (n) => (n > 0 ? noches(n) : 'de paso');
+
   /** Escapa lo que venga de la base: los nombres los ha escrito la IA o el usuario. */
   function esc(t) {
     const d = document.createElement('div');
@@ -172,7 +175,9 @@
     return `
       <div class="ruta-tramo">
         <a class="chip-transporte ${clase}" href="/etapa/${donde}#llegar">
-          <i class="ti ${icono}" aria-hidden="true"></i> ${esc(tramo.texto)}
+          <i class="ti ${icono}" aria-hidden="true"></i> ${esc(tramo.texto)}${
+            tramo.km ? `<span class="chip-transporte__km">${esc(tramo.km)}</span>` : ''
+          }
         </a>
       </div>`;
   }
@@ -189,12 +194,17 @@
         </span>
         <span class="etapa__noches">
           <button type="button" data-accion="noches" data-id="${e.id}" data-delta="-1"
-                  aria-label="Una noche menos" ${e.noches <= 1 ? 'disabled' : ''}>−</button>
-          <span class="etapa__valor">${noches(e.noches)}</span>
+                  aria-label="Una noche menos" ${e.noches <= 0 ? 'disabled' : ''}>−</button>
+          <span class="etapa__valor">${nochesDeEtapa(e.noches)}</span>
           <button type="button" data-accion="noches" data-id="${e.id}" data-delta="1"
                   aria-label="Una noche más">+</button>
         </span>
         <a class="etapa__abrir" href="/etapa/${e.id}">Abrir etapa</a>
+        <button class="etapa__clonar" type="button" data-accion="clonar"
+                data-id="${e.id}" data-nombre="${esc(e.nombre)}"
+                title="Volver a pasar por ${esc(e.nombre)} al final de la ruta">
+          <i class="ti ti-copy" aria-hidden="true"></i> Clonar
+        </button>
         <button class="etapa__quitar" type="button" data-accion="quitar"
                 data-id="${e.id}" data-nombre="${esc(e.nombre)}" data-confirmada="1"
                 aria-label="Quitar ${esc(e.nombre)} de la ruta" title="Quitar de la ruta">
@@ -215,6 +225,8 @@
       llamar(`/api/etapas/${id}/confirmar`);
     } else if (boton.dataset.accion === 'noches') {
       llamar(`/api/etapas/${id}/noches`, { delta: Number(boton.dataset.delta) });
+    } else if (boton.dataset.accion === 'clonar') {
+      llamar(`/api/etapas/${id}/clonar`);
     } else if (boton.dataset.accion === 'quitar') {
       // Un candidato se quita sin más; una parada confirmada de la ruta pregunta
       // antes, que quitarla mueve las fechas de todo lo que venga detrás.

@@ -20,7 +20,7 @@
  */
 
 import express from 'express';
-import { todas, una, ejecutar } from '../db/index.js';
+import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import {
   obtenerActividades,
   obtenerVuelos,
@@ -54,6 +54,7 @@ import {
   recalcularRuta,
   rutaDeViaje,
   confirmarEtapa,
+  clonarEtapa,
   quitarEtapa,
   cambiarNoches,
   reordenar,
@@ -85,6 +86,8 @@ import {
   colocar,
   mover,
   quitar,
+  retocar,
+  vecinosDeHueco,
   colocacionesDeEtapa,
   FRANJAS,
 } from '../services/lienzo.js';
@@ -94,6 +97,54 @@ import {
   zipDelViaje,
   estadoDelDosier,
 } from '../services/dosier.js';
+import {
+  comerDeEtapa,
+  fichaDeComer,
+  pedirBusquedaDeComer,
+  guardarFichaManual,
+  actualizarFichaDeComer,
+  borrarFichaDeComer,
+  pedirDetallesDeComer,
+  estadoDetallesDeComer,
+  buscarEntre,
+} from '../services/comer.js';
+import {
+  TIPOS_CON_DIRECCION,
+  direccionDe,
+  guardarDireccion,
+  pedirGeocodificar,
+  lugaresDeEtapa,
+  paraLaVista,
+} from '../services/direcciones.js';
+import {
+  trasladosDeEtapa,
+  crearTraslado,
+  recalcularTraslado,
+  borrarTraslado,
+  trasladoPorId,
+  calcularTraslado,
+  trasladosDeElemento,
+  trasladosDeElementos,
+} from '../services/traslados.js';
+import {
+  comoLlegarDeTramo,
+  pedirTransporteDeTramo,
+  elegirMedio,
+  guardarDatosDelTramo,
+  guardarFichaTramo,
+  actualizarFichaTramo,
+  borrarFichaTramo,
+  moverseDeEtapa,
+  pedirMovilidadDeCiudad,
+  guardarFichaMovilidad,
+  actualizarFichaMovilidad,
+  borrarFichaMovilidad,
+} from '../services/movilidad.js';
+import {
+  distanciasDelMapa,
+  trasladosDeLaRuta,
+  avisoDeTraslados,
+} from '../services/distancias-ciudades.js';
 import {
   guardarAdjunto,
   adjuntosDe,
@@ -1143,15 +1194,30 @@ router.post('/api/destinos/elegir', async (req, res) => {
     //    hace: fichas de ciudades y zonas, y solo las añadidas seran paradas.
     if (tipo === 'ciudad') {
       const destino = una('SELECT * FROM destinos WHERE id = ?', destinoId);
-      const etapa = asegurarEtapaDeCiudad(viaje.id, destino);
-      if (!etapa) return res.status(500).json({ error: 'No se pudo crear la parada.' });
+      const r = asegurarEtapaDeCiudad(viaje.id, destino);
+      if (!r) return res.status(500).json({ error: 'No se pudo crear la parada.' });
 
-      const estado = prepararEtapa(etapa.id);
+      // Si acaba de nacer una parada, la ruta necesita sus fechas y sus tramos.
+      if (r.nueva) recalcularRuta(viaje.id);
+
+      // CON LA CIUDAD REPETIDA NO SE ADIVINA. Clonar una etapa deja la misma
+      // ciudad dos veces en la ruta —Sarajevo al principio y Sarajevo de paso al
+      // final—, y entrar "en Sarajevo" ya no quiere decir nada concreto: son dos
+      // paradas distintas, con sus fechas y su hotel. Así que se lleva a la
+      // ruta, que es donde se ve cuál es cuál, en vez de elegir una a ciegas.
+      if (r.cuantas > 1) {
+        console.log(
+          `[rutas] Viaje #${viaje.id}: «${destino.nombre}» está ${r.cuantas} veces en la ruta; a la ruta.`
+        );
+        return res.json({ modo: 'ruta', url: `/viaje/${viaje.id}/ruta`, listo: true });
+      }
+
+      const estado = prepararEtapa(r.etapa.id);
       return res.json({
         modo: 'ciudad',
-        etapaId: etapa.id,
-        url: `/etapa/${etapa.id}`,
-        urlEstado: `/api/etapas/${etapa.id}/preparacion`,
+        etapaId: r.etapa.id,
+        url: `/etapa/${r.etapa.id}`,
+        urlEstado: `/api/etapas/${r.etapa.id}/preparacion`,
         listo: !estado.trabajando,
         mensaje: estado.mensaje,
       });
@@ -1182,9 +1248,23 @@ router.post('/api/destinos/elegir', async (req, res) => {
  */
 async function elegirDestinoParaViaje(viaje, { nombre, tipo = 'pais', lat = null, lon = null }) {
   const nombreViaje = viaje.nombre === 'Viaje sin nombre' ? `Viaje a ${nombre}` : viaje.nombre;
-  const cambioDestino = nombre !== viaje.destino;
 
-  ejecutar('UPDATE viajes SET destino = ?, nombre = ? WHERE id = ?', nombre, nombreViaje, viaje.id);
+  // EL DESTINO DEL VIAJE SOLO SE PONE UNA VEZ.
+  //
+  // `viajes.destino` es el ámbito del viaje —lo que se lee en el chip de "Mi
+  // ruta"— y no la última ciudad que se ha tocado en el mapa. Añadir Mostar a un
+  // viaje que ya pasa por Sarajevo no convierte el viaje en "un viaje a Mostar":
+  // sigue siendo el mismo, con una parada más.
+  const yaTieneRuta = Boolean(una('SELECT 1 FROM etapas WHERE viaje_id = ?', viaje.id));
+  const destinoDelViaje = yaTieneRuta && viaje.destino ? viaje.destino : nombre;
+  const cambioDestino = destinoDelViaje !== viaje.destino;
+
+  ejecutar(
+    'UPDATE viajes SET destino = ?, nombre = ? WHERE id = ?',
+    destinoDelViaje,
+    nombreViaje,
+    viaje.id
+  );
 
   // UN PAIS NO ES UNA PARADA.
   //
@@ -1197,7 +1277,15 @@ async function elegirDestinoParaViaje(viaje, { nombre, tipo = 'pais', lat = null
   // entero. Las paradas de un viaje a Portugal son las ciudades que se elijan
   // en el mapa, y solo esas: hasta que se elija la primera, la ruta está vacía,
   // que es exactamente lo que pasa.
-  if (tipo === 'ciudad') sincronizarEtapaUnica(viaje.id);
+  // Solo cuando el viaje NO tiene ninguna parada todavía.
+  //
+  // `sincronizarEtapaUnica` renombra la parada única con el destino del viaje, y
+  // eso está bien mientras haya una sola. Con una ruta ya empezada es
+  // destructivo: elegir Mostar en el mapa renombraba la parada de Sarajevo a
+  // "Mostar" y Sarajevo desaparecía. A partir de la segunda ciudad manda
+  // `asegurarEtapaDeCiudad`, que la añade al final sin tocar lo que hay.
+  const sinParadas = !una('SELECT 1 FROM etapas WHERE viaje_id = ?', viaje.id);
+  if (tipo === 'ciudad' && sinParadas) sincronizarEtapaUnica(viaje.id);
 
   // Los avisos (clima, seguridad, festivos) son del destino: cambiarlo los
   // caduca. Se piden solos porque en su pantalla no hay nada que configurar.
@@ -1253,10 +1341,17 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
   const destino = viaje.destino ? destinoPorNombre(viaje.destino) : null;
   const explorable = destino && destino.tipo !== 'ciudad';
 
+  // Cuánta carretera hay dentro del viaje, y si es demasiada para los días que
+  // dura. Solo informa: la decisión sigue siendo mía.
+  const traslados = trasladosDeLaRuta(viajeId);
+  const dias = nochesEntre(viaje.fecha_inicio, viaje.fecha_fin) + 1;
+
   res.render('ruta', {
     ruta: rutaDeViaje(viajeId),
     urlExplorar: explorable ? `/descubrir/${destino.id}?viaje=${viajeId}` : null,
     dosier: estadoDelDosier(viaje),
+    traslados,
+    avisoTraslados: viaje.fecha_inicio ? avisoDeTraslados(traslados.minutos, dias) : null,
   });
 });
 
@@ -1274,6 +1369,20 @@ router.post('/api/etapas/:id/confirmar', (req, res) => {
 });
 
 /** Fuera esa parada. */
+/**
+ * Clonar una etapa: la misma ciudad otra vez, al final de la ruta.
+ *
+ * Para el viaje que sale de una ciudad distinta de la última que se visita:
+ * Sarajevo → Mostar → Sarajevo, donde esa segunda vez es de paso, a coger el
+ * avión. Nace enganchada al mismo destino del catálogo —con sus sitios y sus
+ * excursiones ya investigados— y vacía de todo lo demás.
+ */
+router.post('/api/etapas/:id/clonar', (req, res) => {
+  const r = clonarEtapa(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json({ ...rutaDeViaje(r.viajeId), etapaNueva: r.etapaId });
+});
+
 router.post('/api/etapas/:id/quitar', (req, res) => {
   const viajeId = quitarEtapa(Number(req.params.id));
   if (!viajeId) return res.status(404).json({ error: 'Esa etapa ya no existe.' });
@@ -1361,7 +1470,16 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
     resultados: vuelosDeTramo(t.id, { orden: ordenVuelos }),
     filtros: filtrosVuelosDeTramo(una('SELECT * FROM transportes WHERE id = ?', t.id)),
     adjuntos: adjuntosDe('transporte', t.id),
+    // Cómo se va de una ciudad a la siguiente. Solo en los saltos de en medio:
+    // de casa y a casa se vuela, y para eso está el buscador.
+    medios: t.donde === 'salto' ? comoLlegarDeTramo(t.id, t.nombreOrigen, t.nombreDestino) : null,
   }));
+
+  // Se calculan UNA vez y se reparten. Pedirlos dentro del objeto que se pinta
+  // los volvía a calcular por cada sitio donde se mencionaban —tres consultas
+  // completas al catálogo para pintar la misma pantalla—.
+  const queVer = queVerDeEtapa(contexto);
+  const comer = comerDeEtapa(etapa);
 
   res.render('etapa', {
     ...contexto,
@@ -1375,7 +1493,22 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
     colocaciones: colocacionesDeEtapa(etapa.id),
     diasDeLaEtapa: lienzoDeLaEtapa?.dias ?? [],
     franjas: FRANJAS,
-    queVer: queVerDeEtapa(contexto),
+    queVer,
+    moverse: moverseDeEtapa(etapa),
+    // Los traslados consultados y a dónde se puede ir desde aquí. Los lugares
+    // salen SIN coordenadas: al navegador no le hacen falta y no se enseñan.
+    traslados: trasladosDeEtapa(etapa.id),
+    lugares: paraLaVista(lugaresDeEtapa(etapa.id)),
+    comer,
+    // Las distancias guardadas de cada ficha, en un mapa por tipo. Salen de la
+    // MISMA tabla de traslados: preguntar "¿cuáles tocan a esta ficha?" es una
+    // consulta, no un modelo aparte.
+    distanciasComer: trasladosDeElementos('comer', comer.fichas.map((c) => c.id)),
+    distanciasSitios: distanciasDeSitios(queVer.sitios),
+    distanciasActividades: trasladosDeElementos(
+      'actividad',
+      queVer.excursiones.map((a) => a.id)
+    ),
     dormir: conAdjuntosDelHotel(hotelesDeEtapa(contexto, { orden: req.query.orden || 'recomendados' })),
     tramos: tramosConVuelos,
     tiposTransporte: TIPOS_TRANSPORTE,
@@ -1407,14 +1540,25 @@ router.get('/etapa/:etapaId/estado', cargarContextoEtapa, (req, res) => {
   const tramos = {};
   for (const t of tramosDeEtapa(contexto)) {
     const r = vuelosDeTramo(t.id);
+    // Los medios del tramo son otra cosa que puede estar en marcha aquí: si no
+    // se contaran, "Buscando cómo llegar…" se quedaría colgado igual que le
+    // pasaba a los vuelos antes de unificar el sondeo.
+    const m = t.donde === 'salto' ? comoLlegarDeTramo(t.id, t.nombreOrigen, t.nombreDestino) : null;
     tramos[t.id] = {
       estado: r.estado,
       total: r.vuelos.length,
       mensaje_error: r.mensaje_error,
+      medios: m ? { buscando: m.buscando, total: m.fichas.length } : null,
     };
   }
 
-  const algunTramoBuscando = Object.values(tramos).some((t) => t.estado === 'buscando');
+  const movilidad = moverseDeEtapa(etapa);
+  const misTraslados = trasladosDeEtapa(etapa.id);
+  const miComer = comerDeEtapa(etapa);
+
+  const algunTramoBuscando = Object.values(tramos).some(
+    (t) => t.estado === 'buscando' || t.medios?.buscando
+  );
 
   res.json({
     preparacion,
@@ -1422,15 +1566,24 @@ router.get('/etapa/:etapaId/estado', cargarContextoEtapa, (req, res) => {
     hotelesTotal: hoteles.total,
     mensaje_error: hoteles.mensaje_error,
     tramos,
+    movilidad: { buscando: movilidad.buscando, total: movilidad.fichas.length },
+    traslados: { calculando: misTraslados.calculando, total: misTraslados.traslados.length },
+    comer: { buscando: miComer.buscando, total: miComer.fichas.length },
     // La pantalla recarga cuando NADA sigue en marcha.
-    trabajando: preparacion.trabajando || hoteles.estado === 'buscando' || algunTramoBuscando,
+    trabajando:
+      preparacion.trabajando ||
+      hoteles.estado === 'buscando' ||
+      movilidad.buscando ||
+      misTraslados.calculando ||
+      miComer.buscando ||
+      algunTramoBuscando,
   });
 });
 
-/** "Me lo apunto": interruptor de un sitio o de una excursión. */
+/** "Me lo apunto": interruptor de un sitio, una excursión o un restaurante. */
 router.post('/etapa/:etapaId/apuntar', cargarContextoEtapa, (req, res) => {
-  // Tres tablas con ids que se solapan: hay que decir de cuál viene.
-  const validos = ['sitio', 'punto', 'actividad'];
+  // Cuatro tablas con ids que se solapan: hay que decir de cuál viene.
+  const validos = ['sitio', 'punto', 'actividad', 'comer'];
   const que = validos.includes(req.body?.que) ? req.body.que : 'actividad';
   const r = alternarApuntado(req.contexto.etapa.id, que, Number(req.body?.id));
   if (!r) return res.status(404).json({ error: 'Eso ya no está en el catálogo.' });
@@ -1531,6 +1684,28 @@ router.get('/etapa/:etapaId/actividad/:actividadId/detalles', cargarContextoEtap
     estado: ultimo?.estado === 'error' ? 'error' : 'sin_datos',
     mensaje_error: ultimo?.estado === 'error' ? ultimo.mensaje_error : null,
   });
+});
+
+/**
+ * Las distancias de un destino desde la ciudad de entrada del viaje.
+ *
+ * Devuelve lo que YA está en caché y encola el cálculo de lo que falte. La
+ * pantalla no espera a OSRM: pinta lo que hay, sondea, y va rellenando.
+ */
+router.get('/api/destinos/:destinoId/distancias', (req, res) => {
+  const destinoId = Number(req.params.destinoId);
+  const viajeId = Number(req.query.viaje) || null;
+  if (!viajeId) return res.json({ referencia: null, distancias: {}, faltan: 0, total: 0 });
+
+  const datos = distanciasDelMapa(destinoId, viajeId);
+
+  // Si falta alguna, que se vaya calculando por detrás. Uno cada vez: si ya hay
+  // trabajo en marcha para este destino no se encola otro.
+  if (datos.faltan && !trabajoActivo(viajeId, 'distancias', destinoId)) {
+    encolar(viajeId, 'distancias', destinoId);
+  }
+
+  res.json({ ...datos, calculando: datos.faltan > 0 });
 });
 
 /**
@@ -1711,6 +1886,497 @@ router.post('/tramo/:id/olvidar', (req, res) => {
   const t = olvidarTransporteManual(Number(req.params.id));
   if (!t) return res.status(404).json({ error: 'Ese tramo ya no existe.' });
   res.json({ tramo: describirTramo(t) });
+});
+
+/**
+ * Las distancias de los sitios de una parada, en UN mapa.
+ *
+ * Un sitio puede venir de dos tablas distintas —`puntos_interes` y
+ * `sitios_lugar`— y sus ids se solapan: el 42 es el Prado en una y otra cosa en
+ * la otra. Por eso la clave del mapa lleva el origen delante.
+ */
+function distanciasDeSitios(sitios) {
+  const dePuntos = trasladosDeElementos('punto', sitios.filter((x) => x.origen === 'punto').map((x) => x.id));
+  const deSitios = trasladosDeElementos('sitio', sitios.filter((x) => x.origen === 'sitio').map((x) => x.id));
+
+  const juntos = new Map();
+  for (const [id, lista] of dePuntos) juntos.set(`punto:${id}`, lista);
+  for (const [id, lista] of deSitios) juntos.set(`sitio:${id}`, lista);
+  return juntos;
+}
+
+// =============================================================================
+// COMER — bares y restaurantes
+// =============================================================================
+/** Buscar. El texto libre es el matiz: "cenar tranquilo cerca del hotel". */
+router.post('/api/etapas/:etapaId/comer/buscar', (req, res) => {
+  const r = pedirBusquedaDeComer(Number(req.params.etapaId), req.body?.consulta);
+  if (!r) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json(r);
+});
+
+/** Sondeo de la pestaña. */
+router.get('/api/etapas/:etapaId/comer', (req, res) => {
+  const e = una('SELECT * FROM etapas WHERE id = ?', Number(req.params.etapaId));
+  if (!e) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json(comerDeEtapa(e));
+});
+
+/** El bar que te recomendó un amigo, escrito a mano. */
+router.post('/api/etapas/:etapaId/comer', (req, res) => {
+  const e = una('SELECT * FROM etapas WHERE id = ?', Number(req.params.etapaId));
+  if (!e) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+
+  const ficha = guardarFichaManual(e.nombre_ciudad, req.body ?? {});
+  if (!ficha) return res.status(400).json({ error: 'No se pudo guardar esa ficha.' });
+  res.json({ ficha });
+});
+
+router.put('/api/comer/:fichaId', (req, res) => {
+  const f = actualizarFichaDeComer(Number(req.params.fichaId), req.body ?? {});
+  if (!f) return res.status(404).json({ error: 'Ese sitio ya no está.' });
+  res.json({ ficha: f });
+});
+
+router.delete('/api/comer/:fichaId', (req, res) => {
+  if (!borrarFichaDeComer(Number(req.params.fichaId))) {
+    return res.status(404).json({ error: 'Ese sitio ya no está.' });
+  }
+  res.json({ borrado: true });
+});
+
+/**
+ * Los datos de contacto de UN sitio, bajo demanda.
+ *
+ * Es la parte cara de Places, así que se piden al abrir la ficha y solo una
+ * vez: exactamente el mismo camino que las fichas de Civitatis. Un sitio que ya
+ * los tiene contesta al instante sin salir a ningún sitio.
+ */
+router.post('/api/comer/:fichaId/detalles', (req, res) => {
+  const r = pedirDetallesDeComer(Number(req.params.fichaId), Number(req.body?.viajeId));
+  if (!r) return res.status(404).json({ error: 'Ese sitio ya no está.' });
+  res.json(r);
+});
+
+router.get('/api/comer/:fichaId/detalles', (req, res) => {
+  res.json(estadoDetallesDeComer(Number(req.params.fichaId), Number(req.query.viaje)));
+});
+
+/**
+ * Las distancias guardadas de una ficha cualquiera.
+ *
+ * Sale de la MISMA tabla de traslados: un traslado ya sabe de qué elemento es
+ * cada extremo, así que preguntar "¿cuáles tocan a esta ficha?" es una consulta
+ * y no un modelo nuevo.
+ */
+router.get('/api/distancias/:tipo/:elementoId', (req, res) => {
+  res.json({ traslados: trasladosDeElemento(req.params.tipo, Number(req.params.elementoId)) });
+});
+
+// =============================================================================
+// COMER DESDE EL LIENZO
+// =============================================================================
+/**
+ * Qué hay para comer ENTRE las dos tarjetas de un hueco.
+ *
+ * Se busca alrededor del punto medio con un radio proporcional a lo que separa
+ * los extremos, y cada resultado dice su desvío. Sin ese desvío, "de paso" no
+ * significa nada: un sitio buenísimo a quince minutos del camino no pilla de
+ * paso por muy céntrico que sea el punto medio.
+ */
+router.post('/api/viaje/:viajeId/hueco/comer', async (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const hueco = vecinosDeHueco(viajeId, {
+    dia: Number(req.body?.dia),
+    franja: String(req.body?.franja ?? ''),
+    indice: Number(req.body?.indice),
+  });
+  if (!hueco) return res.status(404).json({ error: 'Ese hueco no existe.' });
+  if (!hueco.origen || !hueco.destino) {
+    return res.status(400).json({ error: 'Aquí no hay nada antes o después entre lo que buscar.' });
+  }
+
+  const sinSitio = [hueco.origen, hueco.destino].find((x) => !x.situada);
+  if (sinSitio) {
+    return res.status(400).json({
+      error: `Falta la dirección de «${sinSitio.nombre}».`,
+      falta: sinSitio,
+    });
+  }
+
+  const a = puntoDeLugar(hueco.origen);
+  const b = puntoDeLugar(hueco.destino);
+  if (!a || !b) {
+    return res.status(400).json({ error: 'No se sabe dónde caen esos dos puntos.' });
+  }
+
+  try {
+    const r = await buscarEntre(hueco.ciudad, a, b, {
+      consulta: req.body?.consulta,
+      // Los nombres de los dos extremos: es lo que le dice a la IA de qué zona
+      // se está hablando, porque el sesgo por coordenadas solo lo entiende
+      // Places.
+      entre: { origen: hueco.origen.nombre, destino: hueco.destino.nombre },
+    });
+    res.json({ ...r, hueco });
+  } catch (err) {
+    console.error('[rutas] al buscar dónde comer entre dos puntos:', err);
+    res.status(500).json({ error: err.message || 'No se pudo buscar.' });
+  }
+});
+
+/** Coloca en el hueco el sitio elegido, como tarjeta de comida. */
+router.post('/api/viaje/:viajeId/hueco/comer/colocar', (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const hueco = vecinosDeHueco(viajeId, {
+    dia: Number(req.body?.dia),
+    franja: String(req.body?.franja ?? ''),
+    indice: Number(req.body?.indice),
+  });
+  if (!hueco?.etapaId) return res.status(404).json({ error: 'Ese hueco no existe.' });
+
+  const ficha = fichaDeComer(Number(req.body?.fichaId));
+  if (!ficha) return res.status(404).json({ error: 'Ese sitio ya no está.' });
+
+  // Apuntarlo primero: una comida en el lienzo es una cosa apuntada del viaje,
+  // igual que una excursión. Si ya estaba apuntado se reutiliza su candidato.
+  const yaEsta = una(
+    "SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = 'comer' AND titulo = ?",
+    hueco.etapaId,
+    ficha.nombre
+  );
+  if (!yaEsta) alternarApuntado(hueco.etapaId, 'comer', ficha.id);
+
+  const candidato = una(
+    "SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = 'comer' AND titulo = ?",
+    hueco.etapaId,
+    ficha.nombre
+  );
+  if (!candidato) return res.status(500).json({ error: 'No se pudo apuntar ese sitio.' });
+
+  const fila = colocar(viajeId, {
+    candidatoId: candidato.id,
+    dia: Number(req.body?.dia),
+    franja: String(req.body?.franja ?? ''),
+    hora: req.body?.hora ?? null,
+    // UNA COMIDA ES UNA ACTIVIDAD: tarjeta de altura normal, no la fina de los
+    // traslados. Se le da una duración de partida razonable y editable.
+    duracionMin: Number(req.body?.duracionMin) || 90,
+    orden: hueco.orden,
+  });
+  if (!fila) return res.status(400).json({ error: 'No se pudo colocar ahí.' });
+
+  res.json(lienzoDeViaje(viajeId, { etapaId: Number(req.body?.etapa) || null }));
+});
+
+/** El punto de un lugar del hueco, que es lo único que necesita la búsqueda. */
+function puntoDeLugar(lugar) {
+  if (!lugar?.tipo || !lugar?.id) return null;
+  const d = direccionDe(lugar.tipo, lugar.id);
+  return d?.situada ? d.punto : null;
+}
+
+// =============================================================================
+// DIRECCIONES — dónde está cada cosa
+// =============================================================================
+/**
+ * Guardar la dirección de algo. Contesta al instante.
+ *
+ * Buscar las coordenadas va por la cola: geocodificar tarda —Nominatim tiene
+ * turno de una petición por segundo— y quien acaba de teclear una calle no
+ * tiene por qué esperar a nadie. La ficha dice "situando…" mientras tanto.
+ */
+router.post('/api/direcciones/:tipo/:elementoId', (req, res) => {
+  if (!Object.hasOwn(TIPOS_CON_DIRECCION, req.params.tipo)) {
+    return res.status(400).json({ error: 'Eso no puede tener dirección.' });
+  }
+
+  const d = guardarDireccion(req.params.tipo, Number(req.params.elementoId), req.body?.direccion, {
+    viajeId: Number(req.body?.viajeId) || null,
+  });
+  res.json({ guardado: true, direccion: d });
+});
+
+/** Cómo va la búsqueda de una dirección. Lo sondea la ficha. */
+router.get('/api/direcciones/:tipo/:elementoId', (req, res) => {
+  res.json({ direccion: direccionDe(req.params.tipo, Number(req.params.elementoId)) });
+});
+
+/** Volver a buscarla sin cambiar el texto: para cuando falló la red. */
+router.post('/api/direcciones/:tipo/:elementoId/situar', (req, res) => {
+  const r = pedirGeocodificar(req.params.tipo, Number(req.params.elementoId), {
+    viajeId: Number(req.body?.viajeId) || null,
+  });
+  if (!r) return res.status(404).json({ error: 'Esa dirección ya no está.' });
+  res.json(r);
+});
+
+// =============================================================================
+// TRASLADOS — cuánto hay de aquí a allá
+// =============================================================================
+/**
+ * A dónde se puede ir desde esta parada.
+ *
+ * Alimenta el autocompletado de los dos campos del buscador. Sale SIN
+ * coordenadas: el usuario piensa en direcciones y en nombres, y lat/lng no
+ * pintan nada en el navegador.
+ */
+router.get('/api/etapas/:etapaId/lugares', (req, res) => {
+  res.json({ lugares: paraLaVista(lugaresDeEtapa(Number(req.params.etapaId))) });
+});
+
+/** La lista de traslados consultados de una parada. */
+router.get('/api/etapas/:etapaId/traslados', (req, res) => {
+  res.json(trasladosDeEtapa(Number(req.params.etapaId)));
+});
+
+/** Consultar uno nuevo. Los extremos pueden ser del viaje o tecleados. */
+router.post('/api/etapas/:etapaId/traslados', (req, res) => {
+  const r = crearTraslado(Number(req.params.etapaId), req.body?.origen, req.body?.destino);
+  if (!r) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  // `falta` dice QUÉ elemento se quedó sin dirección, para que la pantalla
+  // pueda ofrecer abrir su edición en vez de dejar a la persona adivinando.
+  if (r.error) return res.status(400).json({ error: r.error, falta: r.falta ?? null });
+  res.json(r);
+});
+
+router.post('/api/traslados/:id/recalcular', (req, res) => {
+  const t = recalcularTraslado(Number(req.params.id));
+  if (!t) return res.status(404).json({ error: 'Ese traslado ya no está.' });
+  res.json({ traslado: t });
+});
+
+router.delete('/api/traslados/:id', (req, res) => {
+  if (!borrarTraslado(Number(req.params.id))) {
+    return res.status(404).json({ error: 'Ese traslado ya no está.' });
+  }
+  res.json({ borrado: true });
+});
+
+/**
+ * Poner un traslado consultado en el lienzo, con el medio que se elija.
+ *
+ * El medio decide los minutos y el icono: el mismo traslado son 20 andando o 8
+ * en coche, y la tarjeta tiene que decir cuál de los dos se va a hacer.
+ */
+router.post('/api/traslados/:id/al-lienzo', (req, res) => {
+  const t = trasladoPorId(Number(req.params.id));
+  if (!t) return res.status(404).json({ error: 'Ese traslado ya no está.' });
+
+  const medio = String(req.body?.medio ?? '');
+  const elegido = t.resultados.find((r) => r.modo === medio) ?? t.resultados[0];
+  if (!elegido) return res.status(400).json({ error: 'Ese traslado todavía no tiene resultado.' });
+
+  const fila = colocar(t.viajeId, {
+    textoManual: t.recorrido,
+    dia: req.body?.dia,
+    franja: req.body?.franja,
+    hora: req.body?.hora ?? null,
+    trasladoId: t.id,
+    medio: elegido.modo,
+    duracionMin: elegido.minutos,
+  });
+  if (!fila) return res.status(400).json({ error: 'No se pudo colocar ahí.' });
+
+  res.json(lienzoDeViaje(t.viajeId, { etapaId: Number(req.body?.etapa) || null }));
+});
+
+/**
+ * El "+" del lienzo: qué hay a un lado y a otro de un hueco.
+ *
+ * Lo contesta el servidor y no el navegador porque los vecinos no siempre están
+ * en la misma franja —el de antes puede ser la última tarjeta de la mañana, y
+ * en el borde del día es el hotel—, y esa lógica no puede vivir en dos sitios.
+ */
+router.get('/api/viaje/:viajeId/hueco', (req, res) => {
+  const r = vecinosDeHueco(Number(req.params.viajeId), {
+    dia: Number(req.query.dia),
+    franja: String(req.query.franja ?? ''),
+    indice: Number(req.query.indice),
+  });
+  if (!r) return res.status(404).json({ error: 'Ese hueco no existe.' });
+  res.json(r);
+});
+
+/**
+ * Calcular y colocar un traslado desde el lienzo, de un tirón.
+ *
+ * Es el camino del punto 7: se pulsa el "+", se toman los vecinos y sale la
+ * tarjeta. La consulta se guarda TAMBIÉN en la lista de la etapa, porque es la
+ * misma pieza: una consulta hecha es una consulta que quiero volver a leer.
+ */
+router.post('/api/viaje/:viajeId/hueco/traslado', async (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const hueco = vecinosDeHueco(viajeId, {
+    dia: Number(req.body?.dia),
+    franja: String(req.body?.franja ?? ''),
+    indice: Number(req.body?.indice),
+  });
+  if (!hueco) return res.status(404).json({ error: 'Ese hueco no existe.' });
+
+  if (!hueco.origen || !hueco.destino) {
+    return res.status(400).json({
+      error: 'Aquí no hay nada antes o después que enlazar.',
+    });
+  }
+  // Si a un extremo le falta la dirección se dice CUÁL y de qué elemento, para
+  // poder ofrecer abrir su edición ahí mismo.
+  const sinSitio = [hueco.origen, hueco.destino].find((x) => !x.situada);
+  if (sinSitio) {
+    return res.status(400).json({
+      error: `Falta la dirección de «${sinSitio.nombre}».`,
+      falta: sinSitio,
+    });
+  }
+
+  const creado = crearTraslado(hueco.etapaId, hueco.origen, hueco.destino);
+  if (!creado || creado.error) {
+    return res.status(400).json({ error: creado?.error ?? 'No se pudo consultar.' });
+  }
+
+  // Se espera al cálculo: aquí SÍ, porque el resultado es la tarjeta que hay
+  // que colocar. En la lista de la etapa se puede enseñar "calculando…"; una
+  // tarjeta sin minutos en el lienzo no dice nada.
+  const listo = await calcularTraslado(creado.traslado.id);
+  const elegido = listo?.resultados?.[0];
+  if (!elegido) {
+    return res.status(400).json({
+      error: listo?.mensaje ?? 'No se ha podido calcular ese traslado.',
+      trasladoId: creado.traslado.id,
+    });
+  }
+
+  const fila = colocar(viajeId, {
+    textoManual: listo.recorrido,
+    dia: Number(req.body?.dia),
+    franja: String(req.body?.franja ?? ''),
+    trasladoId: listo.id,
+    medio: elegido.modo,
+    duracionMin: elegido.minutos,
+    // Se mete justo en el hueco, no al final de la franja: el orden es lo que
+    // hace que un traslado signifique algo.
+    orden: hueco.orden,
+  });
+  if (!fila) return res.status(400).json({ error: 'No se pudo colocar ahí.' });
+
+  res.json({
+    ...lienzoDeViaje(viajeId, { etapaId: Number(req.body?.etapa) || null }),
+    traslado: listo,
+  });
+});
+
+// =============================================================================
+// MOVILIDAD — cómo ir de una ciudad a otra, y cómo moverse dentro
+// =============================================================================
+
+/** Pedir a la IA (con búsqueda web) los medios de un tramo. */
+router.post('/api/tramos/:id/transporte/buscar', (req, res) => {
+  const r = pedirTransporteDeTramo(Number(req.params.id), { forzar: true });
+  if (!r) return res.status(404).json({ error: 'Ese tramo ya no existe.' });
+  res.json(r);
+});
+
+/** Sondeo: ¿ya están las fichas del tramo? */
+router.get('/api/tramos/:id/transporte', (req, res) => {
+  const t = una('SELECT * FROM transportes WHERE id = ?', Number(req.params.id));
+  if (!t) return res.status(404).json({ error: 'Ese tramo ya no existe.' });
+
+  const origen = t.etapa_origen_id
+    ? una('SELECT nombre_ciudad FROM etapas WHERE id = ?', t.etapa_origen_id)
+    : null;
+  const destino = t.etapa_destino_id
+    ? una('SELECT nombre_ciudad FROM etapas WHERE id = ?', t.etapa_destino_id)
+    : null;
+
+  res.json(
+    comoLlegarDeTramo(t.id, origen?.nombre_ciudad ?? null, destino?.nombre_ciudad ?? null) ?? {}
+  );
+});
+
+/** Elegir (o soltar) el medio de un tramo. */
+router.post('/api/tramos/:id/transporte/:fichaId/elegir', (req, res) => {
+  const r = elegirMedio(Number(req.params.id), Number(req.params.fichaId));
+  if (!r) return res.status(404).json({ error: 'Ese medio ya no está.' });
+  res.json(r);
+});
+
+/** Lo tecleado de un medio en un tramo: horario, precio, reserva y nota. */
+router.post('/api/tramos/:id/transporte/:fichaId/datos', (req, res) => {
+  const r = guardarDatosDelTramo(Number(req.params.id), Number(req.params.fichaId), req.body ?? {});
+  res.json({ guardado: true, datos: r });
+});
+
+/** Crear una ficha de medio a mano. Siempre disponible, con IA o sin ella. */
+router.post('/api/tramos/:id/transporte', (req, res) => {
+  const t = una('SELECT * FROM transportes WHERE id = ?', Number(req.params.id));
+  if (!t) return res.status(404).json({ error: 'Ese tramo ya no existe.' });
+
+  const origen = t.etapa_origen_id
+    ? una('SELECT nombre_ciudad FROM etapas WHERE id = ?', t.etapa_origen_id)
+    : null;
+  const destino = t.etapa_destino_id
+    ? una('SELECT nombre_ciudad FROM etapas WHERE id = ?', t.etapa_destino_id)
+    : null;
+  if (!origen || !destino) {
+    return res.status(400).json({ error: 'Este tramo va a casa o viene de casa.' });
+  }
+
+  const ficha = guardarFichaTramo(
+    origen.nombre_ciudad,
+    destino.nombre_ciudad,
+    req.body ?? {},
+    'manual'
+  );
+  res.json({ ficha });
+});
+
+router.put('/api/transporte-tramo/:fichaId', (req, res) => {
+  const f = actualizarFichaTramo(Number(req.params.fichaId), req.body ?? {});
+  if (!f) return res.status(404).json({ error: 'Esa ficha ya no está.' });
+  res.json({ ficha: f });
+});
+
+router.delete('/api/transporte-tramo/:fichaId', (req, res) => {
+  if (!borrarFichaTramo(Number(req.params.fichaId))) {
+    return res.status(404).json({ error: 'Esa ficha ya no está.' });
+  }
+  res.json({ borrado: true });
+});
+
+// --- Moverse por la ciudad ---------------------------------------------------
+
+/** Pedir a la IA (con búsqueda web) cómo moverse por la ciudad de una etapa. */
+router.post('/api/etapas/:etapaId/movilidad/buscar', (req, res) => {
+  const r = pedirMovilidadDeCiudad(Number(req.params.etapaId));
+  if (!r) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json(r);
+});
+
+/** Sondeo de la pestaña "Moverse". */
+router.get('/api/etapas/:etapaId/movilidad', (req, res) => {
+  const e = una('SELECT * FROM etapas WHERE id = ?', Number(req.params.etapaId));
+  if (!e) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json(moverseDeEtapa(e));
+});
+
+/** Crear una ficha de movilidad a mano. */
+router.post('/api/etapas/:etapaId/movilidad', (req, res) => {
+  const e = una('SELECT * FROM etapas WHERE id = ?', Number(req.params.etapaId));
+  if (!e) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json({ ficha: guardarFichaMovilidad(e.nombre_ciudad, req.body ?? {}, 'manual') });
+});
+
+router.put('/api/movilidad/:fichaId', (req, res) => {
+  const f = actualizarFichaMovilidad(Number(req.params.fichaId), req.body ?? {});
+  if (!f) return res.status(404).json({ error: 'Esa ficha ya no está.' });
+  res.json({ ficha: f });
+});
+
+router.delete('/api/movilidad/:fichaId', (req, res) => {
+  if (!borrarFichaMovilidad(Number(req.params.fichaId))) {
+    return res.status(404).json({ error: 'Esa ficha ya no está.' });
+  }
+  res.json({ borrado: true });
 });
 
 // =============================================================================
@@ -1982,6 +2648,10 @@ router.post('/api/itinerario', (req, res) => {
     dia: req.body?.dia,
     franja: req.body?.franja,
     hora: req.body?.hora ?? null,
+    // Un traslado viaja como texto_manual + movilidad_id: el CHECK de la tabla
+    // solo admite una de las dos columnas de contenido, y el nombre va en esa.
+    movilidadId: Number(req.body?.movilidadId) || null,
+    duracionMin: Number(req.body?.duracionMin) || null,
   });
   if (!fila) return res.status(400).json({ error: 'No se pudo colocar ahí.' });
 
@@ -1993,6 +2663,17 @@ router.post('/api/itinerario/:id/mover', (req, res) => {
   const fila = mover(Number(req.params.id), {
     dia: req.body?.dia,
     franja: req.body?.franja,
+  });
+  if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
+
+  res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.body?.etapa) || null }));
+});
+
+/** Cambiar la hora o la duración de algo, sin sacarlo del día. */
+router.post('/api/itinerario/:id/retocar', (req, res) => {
+  const fila = retocar(Number(req.params.id), {
+    hora: 'hora' in (req.body ?? {}) ? req.body.hora : undefined,
+    duracionMin: 'duracionMin' in (req.body ?? {}) ? req.body.duracionMin : undefined,
   });
   if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
 

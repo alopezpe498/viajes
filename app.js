@@ -16,6 +16,7 @@ import { sembrarSiHaceFalta } from './db/seed.js';
 import { router } from './routes/viajes.js';
 import { arrancarWorker } from './jobs/worker.js';
 import { hayClaveIA } from './lib/ia.js';
+import { hayClaveGoogle } from './lib/google.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -72,6 +73,20 @@ const servidor = app.listen(PUERTO, () => {
     console.log('      pon tu clave y reinicia. Lo demas funciona igual.');
     console.log('');
   }
+
+  // Con que fuente se van a calcular direcciones y traslados. Se dice al
+  // arrancar porque desde fuera no hay forma de saberlo mirando la pantalla:
+  // "12 min en coche" se ve igual lo diga Google o lo diga OSRM.
+  if (hayClaveGoogle()) {
+    console.log('  Direcciones y traslados: Google primero (clave de servidor),');
+    console.log('  con Nominatim y OSRM de respaldo. En local la clave esta');
+    console.log('  restringida por IP y fallara: se vera en el log y se usara');
+    console.log('  el respaldo, que no da transporte publico.');
+  } else {
+    console.log('  Direcciones y traslados: Nominatim y OSRM (sin clave de Google).');
+    console.log('  Sin transporte publico: eso solo lo sabe Google.');
+  }
+  console.log('');
 });
 
 // Si el puerto ya está pillado, un mensaje util en vez de un volcado de pila.

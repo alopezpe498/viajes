@@ -12,6 +12,14 @@
  * que es lo que usa el resto de la app.
  */
 const pieExtra = '<script src="/js/ruta.js"></script><script src="/js/dosier.js"></script>';
+
+/** 330 -> "5 h 30". El mismo formato que usan los tramos. */
+const comoDuracion = (m) => {
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  if (!h) return `${min} min`;
+  return min ? `${h} h ${String(min).padStart(2, '0')}` : `${h} h`;
+};
 const { viaje } = ruta;
 %>
 <%- include('parciales/cabecera', {
@@ -74,6 +82,33 @@ const { viaje } = ruta;
       Ruta confirmada <span class="seccion-titulo__num" id="num-etapas">0</span>
     </h2>
     <div class="ruta-lista" id="zona-ruta"></div>
+
+    <%# ---------------------- Traslados ----------------------
+        Cuánta carretera hay DENTRO del viaje. La ida y la vuelta a casa no
+        cuentan: son vuelos, y sumarlos convertiría cualquier viaje a Italia en
+        "4.000 km de coche". %>
+    <% if (traslados.saltos.length) { %>
+      <p class="ruta-traslados">
+        <i class="ti ti-car" aria-hidden="true"></i>
+        <span class="ruta-traslados__total">
+          Total traslados: <%= traslados.km.toLocaleString('es-ES') %> km<%
+            if (traslados.minutos) { %> · <%= comoDuracion(traslados.minutos) %> en coche<% }
+          %>
+        </span>
+        <% if (traslados.incompletos) { %>
+          <span class="ruta-traslados__falta">
+            (<%= traslados.incompletos %> <%= traslados.incompletos === 1 ? 'tramo' : 'tramos' %> sin calcular)
+          </span>
+        <% } %>
+      </p>
+
+      <% if (avisoTraslados) { %>
+        <p class="ruta-traslados__aviso">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          <%= avisoTraslados.texto %> — <%= avisoTraslados.horas %> h de carretera.
+        </p>
+      <% } %>
+    <% } %>
 
     <%# ---------------------- Pie ---------------------- %>
     <div class="ruta-pie">

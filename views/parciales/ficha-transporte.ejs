@@ -1,0 +1,116 @@
+<%
+/**
+ * Un medio de transporte para llegar de una ciudad a la siguiente.
+ *
+ * MISMO PATRÓN QUE LAS FICHAS DE SIEMPRE: caja, datos, y un botón de elegir. Lo
+ * que cambia es que aquí "elegir" no es apuntar algo que tal vez hagas, es
+ * decidir CÓMO vas: solo uno puede estar elegido, y el elegido despliega los
+ * campos donde se teclea lo concreto —el horario que cogí, lo que pagué, la
+ * referencia de la reserva—.
+ *
+ * ESOS CAMPOS SON POR FICHA, no por tramo. Si apunté el horario del tren y
+ * después me decido por el bus, lo del tren sigue ahí cuando vuelva.
+ *
+ * Espera: f (la ficha, con .elegida y .datos), transporteId.
+ */
+const d = f.datos ?? {};
+%>
+<article class="ficha-transporte <%= f.elegida ? 'ficha-transporte--elegida' : '' %> <%= f.esAvion ? 'ficha-transporte--avion' : '' %>"
+         data-ficha="<%= f.id %>"
+         data-medio="<%= f.medio %>"
+         data-nota-sentido="<%= f.nota_sentido ?? '' %>"
+         data-web="<%= f.web ?? '' %>">
+
+  <div class="ficha-transporte__cabecera">
+    <span class="ficha-transporte__medio">
+      <i class="ti <%= f.icono %>" aria-hidden="true"></i>
+      <%= f.etiquetaMedio %>
+    </span>
+    <span class="ficha-transporte__nombre"><%= f.nombre %></span>
+    <% if (f.origen === 'manual') { %>
+      <span class="ficha-transporte__manual" title="La escribiste tú">a mano</span>
+    <% } %>
+  </div>
+
+  <dl class="ficha-transporte__datos">
+    <% [['Duración', f.duracion], ['Frecuencia', f.frecuencia], ['Precio', f.precio]]
+         .filter(([, v]) => v).forEach(([k, v]) => { %>
+      <div><dt><%= k %></dt><dd><%= v %></dd></div>
+    <% }) %>
+  </dl>
+
+  <% if (f.nota) { %><p class="ficha-transporte__nota"><%= f.nota %></p><% } %>
+
+  <%# Lo que cambia según la dirección. Se dice aparte porque la ficha del par
+      sirve para los dos sentidos y esto es la excepción. %>
+  <% if (f.nota_sentido) { %>
+    <p class="ficha-transporte__sentido">
+      <i class="ti ti-arrows-left-right" aria-hidden="true"></i>
+      <%= f.nota_sentido %>
+    </p>
+  <% } %>
+
+  <div class="ficha-transporte__acciones">
+    <%# EL AVIÓN ES OTRA COSA. No se elige aquí: elegir un vuelo es elegir UN
+        vuelo concreto, con su hora y su precio, y para eso ya está el buscador
+        de siempre. Esta ficha es la puerta, no la elección. %>
+    <% if (f.esAvion) { %>
+      <button class="apuntar <%= f.elegida ? 'apuntar--si' : '' %>" type="button"
+              data-vuelos="<%= transporteId %>">
+        <i class="ti <%= f.elegida ? 'ti-check' : 'ti-search' %>" aria-hidden="true"></i>
+        <span><%= f.elegida ? 'Vuelo elegido' : 'Buscar vuelos' %></span>
+      </button>
+    <% } else { %>
+      <button class="apuntar <%= f.elegida ? 'apuntar--si' : '' %>" type="button"
+              data-elegir-medio="<%= f.id %>" data-tramo="<%= transporteId %>">
+        <i class="ti <%= f.elegida ? 'ti-check' : 'ti-circle' %>" aria-hidden="true"></i>
+        <span><%= f.elegida ? 'Elegido' : 'Elegir' %></span>
+      </button>
+
+      <% if (f.web) { %>
+        <a class="apuntar" href="<%= f.web %>" target="_blank" rel="noopener noreferrer">
+          <i class="ti ti-external-link" aria-hidden="true"></i> Web
+        </a>
+      <% } %>
+
+      <button class="apuntar" type="button" data-editar-medio="<%= f.id %>">
+        <i class="ti ti-pencil" aria-hidden="true"></i> Editar
+      </button>
+      <button class="apuntar apuntar--peligro" type="button"
+              data-borrar-medio="<%= f.id %>" data-nombre="<%= f.nombre %>">
+        <i class="ti ti-trash" aria-hidden="true"></i>
+      </button>
+    <% } %>
+  </div>
+
+  <%# Los campos de lo concreto. Solo se ven en la elegida: en las demás no hay
+      nada que apuntar todavía, pero lo tecleado se guarda igual por si vuelvo. %>
+  <% if (!f.esAvion) { %>
+  <form class="ficha-transporte__mios <%= f.elegida ? '' : 'oculto' %>"
+        data-datos-medio="<%= f.id %>" data-tramo="<%= transporteId %>">
+    <div class="ficha-transporte__campos">
+      <label>
+        <span>Horario</span>
+        <input type="text" name="horario" value="<%= d.horario ?? '' %>"
+               placeholder="Sale 9:15, llega 11:45" maxlength="120">
+      </label>
+      <label>
+        <span>Precio real</span>
+        <input type="text" name="precioReal" value="<%= d.precio_real ?? '' %>"
+               placeholder="16 € los dos" maxlength="60">
+      </label>
+      <label>
+        <span>Reserva</span>
+        <input type="text" name="referencia" value="<%= d.referencia ?? '' %>"
+               placeholder="Localizador o nº de billete" maxlength="80">
+      </label>
+    </div>
+    <label class="ficha-transporte__nota-campo">
+      <span>Nota</span>
+      <input type="text" name="nota" value="<%= d.nota ?? '' %>"
+             placeholder="Se coge en la estación de autobuses, andén 3" maxlength="200">
+    </label>
+    <span class="ficha-transporte__guardado" data-guardado></span>
+  </form>
+  <% } %>
+</article>

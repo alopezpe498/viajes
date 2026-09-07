@@ -89,7 +89,7 @@
       );
     }
 
-    marcadores.set(p.id, { marcador, estado: p.estado, ficha: p.ficha ?? null });
+    marcadores.set(p.id, { marcador, estado: p.estado, ficha: p.ficha ?? null, enRuta: Boolean(p.enRuta) });
   }
 
   // Encuadre inicial: que quepan todos, con hueco abajo para el carrusel.
@@ -457,4 +457,122 @@
   if (carrusel && [...carrusel.children].some((t) => t.dataset.estado === 'investigando')) {
     arrancarSondeo();
   }
+
+  // ===========================================================================
+  // DISTANCIAS DESDE LA CIUDAD DE ENTRADA
+  // ---------------------------------------------------------------------------
+  // Para decidir la ruta hace falta saber si Florencia está a tiro de Roma o si
+  // son tres horas de carretera. El mapa hasta ahora solo decoraba.
+  //
+  // NO SE ESPERA A NADIE. Se pide lo que hay en caché, se pinta, y si falta algo
+  // el servidor lo va calculando por detrás mientras se sondea. Una distancia
+  // que tarda deja un guión; nunca deja la pantalla en blanco.
+  //
+  // Las LÍNEAS solo se dibujan a las ciudades SELECCIONADAS —las que ya están en
+  // la ruta—: una a cada candidata sería una telaraña sobre el mapa.
+  // ===========================================================================
+  const viajeId = datos.viaje?.id ?? null;
+  const destinoId = datos.destino?.id ?? null;
+
+  /** id de ciudad -> lo que sabemos de su distancia. */
+  let distancias = {};
+  let referencia = null;
+
+  /** Las líneas dibujadas, para poder rehacerlas sin duplicar. */
+  const capaLineas = L.layerGroup().addTo(mapa);
+
+  function pintarDistanciaEnFicha(id, dato) {
+    const linea = carrusel?.querySelector(`[data-distancia-de="${id}"]`);
+    if (!linea) return;
+
+    if (!dato) {
+      linea.hidden = false;
+      linea.querySelector('[data-distancia-texto]').textContent = '—';
+      linea.className = 'tarjeta-punto__distancia';
+      return;
+    }
+    linea.hidden = false;
+    linea.querySelector('[data-distancia-texto]').textContent = dato.texto;
+    linea.className =
+      'tarjeta-punto__distancia' +
+      (dato.gravedad === 'cerca' ? '' : ` tarjeta-punto__distancia--${dato.gravedad}`);
+  }
+
+  /** Las líneas punteadas de la referencia a lo que ya está en la ruta. */
+  function pintarLineas() {
+    capaLineas.clearLayers();
+    if (!referencia) return;
+
+    const origen = marcadores.get(referencia.ciudadId);
+    if (!origen) return;
+    const desde = origen.marcador.getLatLng();
+
+    for (const [id, m] of marcadores) {
+      if (id === referencia.ciudadId) continue;
+      // Solo las elegidas: las candidatas sin elegir llenarían el mapa de rayas.
+      if (!m.enRuta) continue;
+
+      const dato = distancias[id];
+      const hasta = m.marcador.getLatLng();
+
+      L.polyline([desde, hasta], {
+        color: '#1B7FA6',
+        weight: 1.5,
+        opacity: 0.55,
+        dashArray: '4 6',
+        interactive: false,
+      }).addTo(capaLineas);
+
+      if (!dato?.etiqueta) continue;
+
+      const medio = L.latLng((desde.lat + hasta.lat) / 2, (desde.lng + hasta.lng) / 2);
+      L.marker(medio, {
+        interactive: false,
+        icon: L.divIcon({
+          className: '',
+          html:
+            `<span class="etiqueta-distancia${dato.gravedad === 'cerca' ? '' : ' etiqueta-distancia--' + dato.gravedad}">` +
+            `${dato.etiqueta}</span>`,
+          iconSize: null,
+        }),
+      }).addTo(capaLineas);
+    }
+  }
+
+  let sondeoDistancias = null;
+
+  async function traerDistancias() {
+    if (!viajeId || !destinoId) return;
+
+    try {
+      const r = await fetch(`/api/destinos/${destinoId}/distancias?viaje=${viajeId}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!r.ok) return;
+      const datosD = await r.json();
+
+      referencia = datosD.referencia;
+      distancias = datosD.distancias ?? {};
+
+      for (const [id, m] of marcadores) {
+        if (id === referencia?.ciudadId) continue;
+        pintarDistanciaEnFicha(id, distancias[id] ?? null);
+      }
+      pintarLineas();
+
+      // Mientras queden pares por calcular se vuelve a preguntar. Cuando no
+      // quede ninguno —o cuando los que faltan sean los que OSRM no sabe
+      // resolver— se para: esos se reintentarán al volver a abrir el mapa.
+      if (datosD.calculando) {
+        clearTimeout(sondeoDistancias);
+        sondeoDistancias = setTimeout(traerDistancias, 4000);
+      } else {
+        clearTimeout(sondeoDistancias);
+      }
+    } catch (err) {
+      console.warn('[descubrir] no se pudieron traer las distancias:', err.message);
+    }
+  }
+
+  traerDistancias();
 })();

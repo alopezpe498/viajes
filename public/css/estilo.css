@@ -56,6 +56,13 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* `hidden` gana SIEMPRE.
+   Sin esto, cualquier regla con `display` lo pisa: `.aviso` es flex, `.boton`
+   es inline-flex, y las dos tienen la misma especificidad que `[hidden]`, así
+   que decide el orden del archivo. El resultado era un recuadro de error vacío
+   plantado en medio de la pantalla con un botón que no venía a cuento. */
+[hidden] { display: none !important; }
+
 h1, h2, h3 { margin: 0 0 8px; line-height: 1.25; }
 h1 { font-size: 24px; font-weight: 650; letter-spacing: -.01em; }
 h2 { font-size: 22px; font-weight: 650; }
@@ -2456,8 +2463,16 @@ a  { color: var(--acento); }
 /* La caja de la excursión y su botón "Me lo apunto" debajo. La tarjeta estira
    para que el botón quede siempre abajo del todo: sin esto, cada tarjeta lo
    dejaba a una altura distinta según lo largo que fuera su título. */
-.excursion { display: flex; flex-direction: column; }
-.excursion .tarjeta { flex: 1; }
+.excursion {
+  display: flex;
+  flex-direction: column;
+  /* Todo lo que va DEBAJO de la tarjeta se alinea con su título y su
+     descripción. Antes la fila de botones colgaba a ras del borde de la
+     rejilla, con margen a la izquierda y pegada a la derecha. */
+  padding: 0 15px 15px;
+}
+/* La tarjeta sale a sangre: su foto tiene que llegar a los bordes. */
+.excursion > .tarjeta { flex: 1; margin: 0 -15px; }
 
 /* --- El hotel elegido, destacado ------------------------------------------ */
 .elegido {
@@ -3220,12 +3235,33 @@ a  { color: var(--acento); }
    había. Ahora se ven todas bajando con la página, que es como se mira una
    lista.
    ========================================================================== */
-.excursion__acciones {
+/* =============================================================================
+   LAS FILAS DE BOTONES DE UNA FICHA
+   El detalle que las hacía desbordarse: con `flex: 1` la base es 0, así que el
+   navegador cree que TODO cabe y no envuelve nunca; y como los botones llevan
+   `white-space: nowrap`, tampoco pueden encoger por debajo de su texto. El
+   resultado era que se salían por la derecha.
+   Con `flex: 1 1 auto` la base es el contenido, así que cuando no caben pasan a
+   la línea siguiente en vez de salirse. Y `min-width: 0` permite que además se
+   estrechen un poco antes de partir la fila.
+   ========================================================================== */
+.excursion__acciones,
+.tarjeta-punto--ficha .tarjeta-punto__acciones {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 6px;
 }
-.excursion__acciones .apuntar { flex: 1; justify-content: center; }
+.excursion__acciones .apuntar,
+.tarjeta-punto--ficha .tarjeta-punto__acciones .apuntar {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+/* Con la tarjeta estrecha, los botones aprietan un poco antes de partirse. */
+@media (max-width: 1400px) {
+  .excursion__acciones .apuntar,
+  .tarjeta-punto--ficha .tarjeta-punto__acciones .apuntar { padding: 6px 9px; }
+}
 
 .excursion__buscando {
   display: flex;
@@ -3378,10 +3414,6 @@ a  { color: var(--acento); }
 .tarjeta-punto--apuntada .tarjeta-punto__texto { color: var(--tinte-texto); }
 
 /* Dentro de la etapa las acciones son botones de apuntar, no los del mapa. */
-.tarjeta-punto--ficha .tarjeta-punto__acciones .apuntar {
-  flex: 1;
-  justify-content: center;
-}
 .tarjeta-punto--ficha .colocado--ancho,
 .tarjeta-punto--ficha .apuntar--ancho { margin-top: 8px; }
 
@@ -3693,3 +3725,1060 @@ a  { color: var(--acento); }
   color: var(--verde-tx);
 }
 .adjuntos__aviso--error { color: var(--alerta-tx); }
+
+/* =============================================================================
+   EL CLIP DE UNA EXCURSIÓN
+   Con la tarjeta cerrada dice cuántos papeles hay y abre el desplegable por su
+   sección. Solo sale si hay alguno: con cero, la tarjeta queda limpia.
+   ========================================================================== */
+.clip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--superficie);
+  color: var(--texto-2);
+  font: 600 13px/1 inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+.clip:hover,
+.clip--abierto {
+  border-color: var(--acento);
+  color: var(--acento);
+}
+.clip__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--acento);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* =============================================================================
+   LOS ADJUNTOS DENTRO DE UN DESPLEGABLE
+   Ya has abierto tú el desplegable: hacerte pulsar otra vez para ver un bono
+   sería absurdo. Así que aquí el cajón va sin píldora y con la lista a la
+   vista, con la etiqueta haciendo de encabezado de sección.
+   ========================================================================== */
+.ficha-excursion__adjuntos {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--borde);
+}
+.ficha-excursion__adjuntos .adjuntos { margin-top: 0; }
+
+.adjuntos__titulo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.adjuntos__titulo i { color: var(--acento); }
+
+/* Abierto no necesita la caja de fondo: ya está dentro de una. */
+.adjuntos--abierto > .adjuntos__cuerpo {
+  margin-top: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+/* =============================================================================
+   CLONAR UNA PARADA
+   Discreto a propósito: la acción principal de una parada es abrirla, no
+   duplicarla. Clonar es para el caso raro de volver a pasar por la misma
+   ciudad, casi siempre a coger el avión de vuelta.
+   ========================================================================== */
+.etapa__clonar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-2);
+  font: 600 13px/1 inherit;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.etapa__clonar:hover {
+  border-color: var(--borde);
+  background: var(--superficie);
+  color: var(--acento);
+}
+.etapa__clonar i { font-size: 15px; }
+
+/* Una parada de paso: se cruza para coger el avión, no se duerme en ella. */
+.etapa__valor { white-space: nowrap; }
+
+/* =============================================================================
+   DISTANCIAS EN EL MAPA DE EXPLORACIÓN
+   "A 280 km · 3 h en coche de Roma". Lo que hace falta para saber si una ciudad
+   cabe en el viaje o es meterse media jornada de carretera.
+   ========================================================================== */
+.tarjeta-punto__distancia {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--texto-2);
+}
+.tarjeta-punto__distancia i { font-size: 14px; color: var(--texto-3); }
+/* `display: flex` gana al `[hidden] { display: none }` del navegador, así que
+   hay que decirlo aquí. Sin esto, la ciudad de referencia —que no tiene
+   distancia a sí misma— enseñaba un guión suelto. */
+.tarjeta-punto__distancia[hidden] { display: none; }
+
+/* Los tres escalones. Verde no se pinta: lo normal no necesita color. */
+.tarjeta-punto__distancia--aviso { color: var(--prec-tx); }
+.tarjeta-punto__distancia--aviso i { color: var(--prec-tx); }
+.tarjeta-punto__distancia--mucho { color: var(--alerta-tx); }
+.tarjeta-punto__distancia--mucho i { color: var(--alerta-tx); }
+
+/* La etiqueta de km/tiempo a media línea, sobre el mapa. */
+.etiqueta-distancia {
+  background: var(--superficie);
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font: 700 11px/1.6 inherit;
+  color: var(--texto-2);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(18, 48, 62, .14);
+}
+.etiqueta-distancia--aviso { border-color: var(--prec-tx); color: var(--prec-tx); }
+.etiqueta-distancia--mucho { border-color: var(--alerta-tx); color: var(--alerta-tx); }
+
+/* =============================================================================
+   TRASLADOS EN "MI RUTA"
+   ========================================================================== */
+.ruta-traslados {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  font-size: 14px;
+}
+.ruta-traslados__total { font-weight: 700; }
+.ruta-traslados i { color: var(--texto-3); }
+.ruta-traslados__falta { color: var(--texto-3); font-size: 13px; }
+
+.ruta-traslados__aviso {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 9px 13px;
+  border-radius: var(--radio-sm);
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* El km/tiempo dentro del chip de un tramo de la ruta. */
+.chip-transporte__km {
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid currentColor;
+  opacity: .75;
+  font-weight: 600;
+}
+
+/* ===========================================================================
+   MOVILIDAD
+   ---------------------------------------------------------------------------
+   Dos familias de ficha con la misma cara que las de sitios y excursiones: caja
+   blanca, borde suave y la fila de botones abajo. Lo único propio es que la
+   ficha de transporte ELEGIDA se marca y despliega sus campos, y que el
+   teléfono de un taxi se ve como lo que es: algo que se toca.
+   =========================================================================== */
+.medios-tramo {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--borde-fuerte);
+  display: grid;
+  gap: 12px;
+}
+.moverse-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* --- La ficha de un medio del tramo --------------------------------------- */
+.ficha-transporte {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+.ficha-transporte--elegida { border-color: var(--acento); background: var(--tinte); }
+/* El avión no es una opción del catálogo: es una puerta a otra pantalla. Se
+   distingue con el borde punteado para que no parezca un dato investigado. */
+.ficha-transporte--avion { border-style: dashed; }
+
+.ficha-transporte__cabecera {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ficha-transporte__medio,
+.ficha-movilidad__tipo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info-tx);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  flex-shrink: 0;
+}
+.ficha-transporte--elegida .ficha-transporte__medio { background: var(--superficie); }
+.ficha-transporte__medio i, .ficha-movilidad__tipo i { font-size: 14px; }
+
+.ficha-transporte__nombre { font-weight: 650; min-width: 0; }
+.ficha-transporte__manual {
+  font-size: 11px;
+  color: var(--texto-3);
+  font-style: italic;
+  margin-left: auto;
+}
+
+.ficha-transporte__datos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+}
+.ficha-transporte__datos dt {
+  font-size: 11px;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.ficha-transporte__datos dd { margin: 0; font-weight: 650; font-size: 13px; }
+
+.ficha-transporte__nota,
+.ficha-movilidad__texto,
+.ficha-movilidad__nota {
+  margin: 0;
+  font-size: 13px;
+  color: var(--texto-2);
+  line-height: 1.45;
+}
+.ficha-transporte__sentido {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 10px;
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ficha-transporte__sentido i { flex-shrink: 0; margin-top: 1px; }
+
+.ficha-transporte__acciones,
+.ficha-movilidad__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+/* Mismo remedio que en las fichas de sitios: pueden encoger y pueden partirse,
+   pero nunca se salen de la caja. */
+.ficha-transporte__acciones .apuntar,
+.ficha-movilidad__acciones .apuntar { flex: 1 1 auto; min-width: 0; justify-content: center; }
+.ficha-transporte__acciones .apuntar--peligro,
+.ficha-movilidad__acciones .apuntar--peligro { flex: 0 0 auto; }
+.apuntar--peligro:hover { border-color: #C0563B; color: #C0563B; }
+
+/* --- Lo tecleado en el medio elegido -------------------------------------- */
+.ficha-transporte__mios {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--borde-fuerte);
+}
+.ficha-transporte__campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.ficha-transporte__mios label { display: grid; gap: 3px; min-width: 0; }
+.ficha-transporte__mios label span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.ficha-transporte__mios input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+}
+.ficha-transporte__mios input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.ficha-transporte__guardado {
+  font-size: 11px;
+  color: var(--texto-2);
+  min-height: 14px;
+}
+
+/* --- La ficha de movilidad urbana ----------------------------------------- */
+.ficha-movilidad {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+.ficha-movilidad__cabecera { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ficha-movilidad__nombre { margin: 0; font-size: 15px; font-weight: 650; min-width: 0; }
+
+.ficha-movilidad__datos { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.ficha-movilidad__dato {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--texto-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.ficha-movilidad__dato { color: var(--acento); text-decoration: none; }
+a.ficha-movilidad__dato:hover { text-decoration: underline; }
+
+/* EL TELÉFONO SE TOCA. Se pinta como un botón y no como texto porque en el
+   móvil, que es donde se usa, la diferencia entre "un número" y "llamar" es
+   justo esta. */
+.ficha-movilidad__telefono {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ficha-movilidad__telefono:hover { text-decoration: underline; }
+.ficha-movilidad__telefono i { font-size: 15px; }
+
+/* --- El formulario de una ficha a mano ------------------------------------ */
+.ficha-manual {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: var(--tinte);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio-sm);
+}
+.ficha-manual__titulo { margin: 0; font-size: 15px; }
+.ficha-manual__campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.ficha-manual__campos label { display: grid; gap: 3px; min-width: 0; }
+.ficha-manual__campos label.ancho { grid-column: 1 / -1; }
+.ficha-manual__campos label span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.ficha-manual__campos input,
+.ficha-manual__campos select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+}
+.ficha-manual__pie { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* El medio elegido, bajo el resumen del tramo. */
+.tramo-caja__medio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+
+/* ---------------------------------------------------------------------------
+   EL TRASLADO EN EL LIENZO
+   ---------------------------------------------------------------------------
+   MÁS FINO QUE UNA ACTIVIDAD, a propósito: coger el metro no pesa lo que una
+   mañana en un museo, y si se pintaran igual el día parecería el doble de
+   lleno de lo que está. Pero lleva su hora y su duración a la vista, porque un
+   traslado sin hora no sirve de nada.
+   ------------------------------------------------------------------------- */
+.item--traslado {
+  border-left: 3px solid var(--acento);
+  background: color-mix(in srgb, var(--superficie) 88%, var(--fondo));
+  padding: 5px 9px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.item--traslado .item__fila > i { color: var(--acento); font-size: 14px; }
+.item--traslado .item__meta { margin-top: 0; font-size: 11px; }
+
+/* Los dos campitos de hora y duración, dentro de la propia tarjeta. */
+.item__reloj {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+}
+.item__reloj input {
+  padding: 2px 5px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 7px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--texto);
+  min-width: 0;
+}
+.item__reloj input[type="time"] { width: 76px; }
+.item__reloj input[type="number"] { width: 54px; }
+.item__reloj span { font-size: 11px; color: var(--texto-3); }
+
+/* ===========================================================================
+   DIRECCIONES Y TRASLADOS
+   ---------------------------------------------------------------------------
+   La dirección es una LÍNEA DISCRETA dentro de la ficha, no un bloque: es un
+   dato de apoyo, no el titular. Y los traslados son una lista de una línea por
+   consulta, que es como se lee una chuleta.
+   =========================================================================== */
+
+/* --- La dirección, dentro de cualquier ficha ------------------------------ */
+.direccion { margin-top: 8px; }
+
+.direccion__vista {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--texto-2);
+  line-height: 1.4;
+}
+.direccion__pin { color: var(--acento); flex-shrink: 0; font-size: 14px; }
+.direccion__texto { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.direccion__estado:empty { display: none; }
+.direccion__situando,
+.direccion__aviso {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.direccion__situando { color: var(--texto-3); }
+.direccion__aviso {
+  color: var(--prec-tx);
+  background: var(--prec-bg);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.direccion__editar {
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  color: var(--texto-3);
+  cursor: pointer;
+  border-radius: 6px;
+  line-height: 1;
+}
+.direccion__editar:hover { color: var(--acento); background: var(--tinte); }
+
+/* Sin dirección: una invitación que no compite con nada de la ficha. */
+.direccion__poner {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px dashed var(--borde-fuerte);
+  background: none;
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--texto-2);
+  cursor: pointer;
+}
+.direccion__poner:hover { border-color: var(--acento); color: var(--acento); }
+
+.direccion__form { display: grid; gap: 8px; margin-top: 4px; }
+.direccion__campo { display: grid; gap: 3px; }
+.direccion__etiqueta {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.direccion__form input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+}
+.direccion__form input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.direccion__botones { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.direccion__quitar {
+  border: 0;
+  background: none;
+  color: var(--texto-3);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+.direccion__quitar:hover { color: #C0563B; }
+.direccion__pista { font-size: 11px; margin: 0; }
+
+.boton--pequeno { padding: 6px 12px; font-size: 12px; }
+
+/* --- El bloque de traslados ----------------------------------------------- */
+.traslados { display: grid; gap: 12px; }
+.traslados__titulo {
+  margin: 0;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.traslados__titulo i { color: var(--acento); }
+
+.separador-suave {
+  border: 0;
+  border-top: 1px solid var(--borde);
+  margin: 22px 0 18px;
+}
+
+/* Los dos campos y el botón, en una fila que se parte bien en el móvil. */
+.traslados__buscador {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+.traslados__campo { display: grid; gap: 3px; flex: 1 1 200px; min-width: 0; }
+.traslados__campo span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.traslados__campo input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--texto);
+}
+.traslados__campo input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.traslados__flecha { color: var(--texto-3); padding-bottom: 10px; flex-shrink: 0; }
+@media (max-width: 620px) {
+  .traslados__flecha { display: none; }
+  .traslados__buscador .boton { width: 100%; justify-content: center; }
+}
+
+.traslados__pendientes { font-size: 12px; margin: 0; display: flex; gap: 6px; align-items: baseline; }
+.traslados__pendientes i { flex-shrink: 0; }
+
+/* --- Una línea por traslado ------------------------------------------------ */
+.traslados__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+.traslado {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 13px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+}
+.traslado--calculando { border-style: dashed; }
+
+.traslado__linea {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.traslado__recorrido { font-weight: 650; font-size: 14px; }
+
+.traslado__tiempos { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.traslado__medio {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--texto-2);
+  white-space: nowrap;
+}
+.traslado__medio i { color: var(--acento); align-self: center; }
+.traslado__medio strong { color: var(--texto); font-variant-numeric: tabular-nums; }
+.traslado__esperando { font-size: 12px; color: var(--texto-3); }
+
+.traslado__acciones { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ---------------------------------------------------------------------------
+   EL "+" ENTRE TARJETAS DEL LIENZO
+   ---------------------------------------------------------------------------
+   CASI INVISIBLE, y a propósito. Hay uno entre cada par de tarjetas y en los
+   dos bordes de cada franja: si se vieran todos, un día con cuatro cosas
+   parecería un formulario. Se insinúan al acercar el ratón.
+   ------------------------------------------------------------------------- */
+.hueco {
+  position: relative;
+  height: 10px;
+  margin: -2px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hueco__mas {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  transition: color .12s, background .12s, border-color .12s;
+}
+.hueco__mas i { font-size: 12px; }
+
+/* Se enseña al pasar por encima del hueco, no solo del botón: acertar en 18
+   píxeles con el ratón es pedir demasiado. */
+.hueco:hover .hueco__mas,
+.hueco--abierto .hueco__mas,
+.hueco__mas:focus-visible {
+  color: var(--acento);
+  background: var(--superficie);
+  border-color: var(--borde-fuerte);
+}
+/* En el móvil no hay hover: se deja una pista permanente pero muy tenue. */
+@media (hover: none) {
+  .hueco__mas { color: var(--texto-3); border-color: var(--borde); }
+}
+
+/* Y una rayita que aparece con él, para que se lea como "aquí cabe algo". */
+.hueco::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px dashed var(--borde-fuerte);
+  opacity: 0;
+  transition: opacity .12s;
+}
+.hueco:hover::before, .hueco--abierto::before { opacity: 1; }
+
+.hueco__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--superficie);
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(18, 48, 62, .14);
+  display: grid;
+  gap: 4px;
+}
+.hueco__opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.hueco__opcion:hover { background: var(--tinte); }
+.hueco__opcion i { color: var(--acento); flex-shrink: 0; }
+.hueco__opcion > span { display: grid; min-width: 0; }
+.hueco__extremos {
+  font-size: 11px;
+  color: var(--texto-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hueco__cargando, .hueco__aviso {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  font-size: 12px;
+  color: var(--texto-2);
+  line-height: 1.35;
+}
+.hueco__aviso i { color: var(--prec-tx); flex-shrink: 0; }
+
+/* ===========================================================================
+   COMER
+   ---------------------------------------------------------------------------
+   La misma caja de siempre. Lo propio de estas fichas es la nota —que se lee
+   de un vistazo— y el teléfono, que se toca.
+   =========================================================================== */
+.comer-buscador {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+.comer-buscador__campo { display: grid; gap: 3px; flex: 1 1 260px; min-width: 0; }
+.comer-buscador__campo span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.comer-buscador__campo input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--texto);
+}
+.comer-buscador__campo input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+@media (max-width: 620px) {
+  .comer-buscador .boton { width: 100%; justify-content: center; }
+}
+
+.ficha-comer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+}
+.ficha-comer--apuntada { border-color: var(--acento); background: var(--tinte); }
+
+.ficha-comer__cabecera { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ficha-comer__nombre { margin: 0; font-size: 16px; font-weight: 650; min-width: 0; flex: 1; }
+.ficha-comer__marca {
+  font-size: 11px;
+  color: var(--texto-3);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.ficha-comer__datos { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.ficha-comer__cocina {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info-tx);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.ficha-comer--apuntada .ficha-comer__cocina { background: var(--superficie); }
+.ficha-comer__precio { font-weight: 700; color: var(--texto); font-size: 14px; }
+.ficha-comer__precio .secundario { font-weight: 400; }
+
+.ficha-comer__nota {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.ficha-comer__nota i { color: #C98A2B; align-self: center; }
+.ficha-comer__nota strong { color: var(--texto); font-size: 14px; }
+
+.ficha-comer__texto, .ficha-comer__horarios {
+  margin: 0;
+  font-size: 13px;
+  color: var(--texto-2);
+  line-height: 1.45;
+}
+.ficha-comer__horarios { display: flex; gap: 6px; align-items: baseline; }
+.ficha-comer__horarios i { flex-shrink: 0; }
+
+.ficha-comer__contacto { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ficha-comer__contacto:empty { display: none; }
+
+/* El teléfono se toca. En la calle, con una mano y con prisa, la diferencia
+   entre "un número" y "llamar" es exactamente esta. */
+.ficha-comer__telefono {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ficha-comer__telefono:hover { text-decoration: underline; }
+.ficha-comer__enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--acento);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ficha-comer__enlace:hover { text-decoration: underline; }
+
+.ficha-comer__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+.ficha-comer__acciones .apuntar { flex: 1 1 auto; min-width: 0; justify-content: center; }
+.ficha-comer__acciones .apuntar--peligro { flex: 0 0 auto; }
+
+/* --- Las distancias de una ficha ------------------------------------------ */
+.ficha-comer__distancias,
+.ficha-sitio__distancias,
+.ficha-excursion__distancias {
+  border-top: 1px solid var(--borde);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+.ficha-comer__distancias > summary,
+.ficha-sitio__distancias > summary,
+.ficha-excursion__distancias > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  list-style: none;
+}
+.ficha-comer__distancias > summary::-webkit-details-marker,
+.ficha-sitio__distancias > summary::-webkit-details-marker,
+.ficha-excursion__distancias > summary::-webkit-details-marker { display: none; }
+.ficha-comer__distancias > summary i,
+.ficha-sitio__distancias > summary i,
+.ficha-excursion__distancias > summary i { color: var(--acento); font-size: 14px; }
+
+.pastilla {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.distancias { display: grid; gap: 8px; margin-top: 8px; }
+.distancias__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.distancia {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--superficie) 60%, var(--fondo));
+  font-size: 13px;
+}
+.distancia__adonde { font-weight: 650; flex: 1 1 120px; min-width: 0; }
+.distancia__tiempos { display: flex; gap: 8px; flex-wrap: wrap; }
+.distancia__medio {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--texto-2);
+  white-space: nowrap;
+}
+.distancia__medio i { color: var(--acento); align-self: center; font-size: 13px; }
+.distancia__medio strong { color: var(--texto); font-variant-numeric: tabular-nums; }
+.distancia__quitar {
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--texto-3);
+  cursor: pointer;
+  line-height: 1;
+}
+.distancia__quitar:hover { color: #C0563B; }
+
+.distancias__form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--tinte);
+}
+.distancias__campo { display: grid; gap: 3px; flex: 1 1 180px; min-width: 0; }
+.distancias__campo span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.distancias__campo input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 9px;
+  background: var(--superficie);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--texto);
+}
+.distancias__sin-sitio { font-size: 12px; margin: 0; display: flex; gap: 6px; align-items: baseline; }
+
+/* --- Los sitios para comer dentro del menú del "+" ------------------------- */
+.hueco__menu--ancho { min-width: 260px; max-height: 340px; overflow-y: auto; }
+.hueco__titulo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px 6px;
+  border-bottom: 1px solid var(--borde);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-2);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.hueco__fuente {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 10px;
+}
+.hueco__sitio {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hueco__sitio:hover { background: var(--tinte); }
+.hueco__sitio-nombre { font-size: 13px; font-weight: 650; color: var(--texto); }
+.hueco__sitio-datos { font-size: 11px; color: var(--texto-2); }
+/* EL DESVÍO ES LO QUE DECIDE: un sitio buenísimo a quince minutos del camino no
+   pilla de paso por muy céntrico que sea el punto medio. */
+.hueco__desvio { font-size: 11px; color: var(--acento); font-weight: 650; }
+.hueco__desvio--sin { color: var(--texto-3); font-weight: 400; font-style: italic; }

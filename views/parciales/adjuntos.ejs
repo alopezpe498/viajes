@@ -9,22 +9,46 @@
  * desplegada todo el rato sería lo que más ocupa y lo que menos se usa. El
  * número de al lado ya dice si hay algo dentro.
  *
+ * DOS PRESENTACIONES, EL MISMO COMPONENTE. Lo que cambia es solo cómo se abre:
+ *
+ *   - Plegado (por defecto): la píldora "📎 Etiqueta (N)" que despliega. Es lo
+ *     que va en una tarjeta de tramo o en la caja del hotel, donde el cajón es
+ *     una cosa más entre varias.
+ *   - Abierto (`abierto: true`): sin píldora, con la etiqueta de encabezado y la
+ *     lista siempre a la vista. Es lo que va DENTRO de un desplegable que ya has
+ *     abierto tú: hacerte pulsar dos veces para ver un bono sería absurdo.
+ *
+ * El comportamiento por debajo es idéntico en las dos: mismo backend, mismo
+ * subir, arrastrar, ver y borrar.
+ *
  * Espera: tipo ('transporte' | 'alojamiento' | 'excursion'), elementoId,
- *         adjuntos (la lista ya cargada) y opcionalmente etiqueta.
+ *         adjuntos (la lista ya cargada), y opcionalmente etiqueta y abierto.
  */
 const n = adjuntos.length;
 const id = `adjuntos-${tipo}-${elementoId}`;
+const siempreAbierto = typeof abierto !== 'undefined' && abierto;
+const titulo = typeof etiqueta !== 'undefined' ? etiqueta : 'Adjuntos';
 %>
-<div class="adjuntos" data-tipo="<%= tipo %>" data-elemento="<%= elementoId %>">
-  <button class="adjuntos__disparador" type="button"
-          aria-expanded="false" aria-controls="<%= id %>">
-    <i class="ti ti-paperclip" aria-hidden="true"></i>
-    <%= typeof etiqueta !== 'undefined' ? etiqueta : 'Adjuntos' %>
-    <span class="adjuntos__n <%= n ? '' : 'adjuntos__n--cero' %>"><%= n %></span>
-    <i class="ti ti-chevron-down adjuntos__flecha" aria-hidden="true"></i>
-  </button>
+<div class="adjuntos <%= siempreAbierto ? 'adjuntos--abierto' : '' %>"
+     data-tipo="<%= tipo %>" data-elemento="<%= elementoId %>">
 
-  <div class="adjuntos__cuerpo" id="<%= id %>" hidden>
+  <% if (siempreAbierto) { %>
+    <h4 class="adjuntos__titulo">
+      <i class="ti ti-paperclip" aria-hidden="true"></i>
+      <%= titulo %>
+      <span class="adjuntos__n <%= n ? '' : 'adjuntos__n--cero' %>"><%= n %></span>
+    </h4>
+  <% } else { %>
+    <button class="adjuntos__disparador" type="button"
+            aria-expanded="false" aria-controls="<%= id %>">
+      <i class="ti ti-paperclip" aria-hidden="true"></i>
+      <%= titulo %>
+      <span class="adjuntos__n <%= n ? '' : 'adjuntos__n--cero' %>"><%= n %></span>
+      <i class="ti ti-chevron-down adjuntos__flecha" aria-hidden="true"></i>
+    </button>
+  <% } %>
+
+  <div class="adjuntos__cuerpo" id="<%= id %>" <%= siempreAbierto ? '' : 'hidden' %>>
     <%# La lista. La repinta el JS después de cada subida o borrado, así que su
         forma vive en un solo sitio: public/js/adjuntos.js. %>
     <ul class="adjuntos__lista" data-lista>

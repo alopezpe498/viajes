@@ -18,6 +18,10 @@
  *         viaje, etapa, colocaciones, diasDeLaEtapa.
  */
 const puesto = c.apuntado && c.candidatoId ? colocaciones.get(c.candidatoId) : null;
+
+// Cuántos papeles tiene. Solo una excursión apuntada puede tenerlos: sin
+// candidato no hay de qué colgarlos.
+const nAdjuntos = c.apuntado && c.candidatoId ? (c.adjuntos ?? []).length : 0;
 %>
 <div class="excursion <%= c.apuntado ? 'excursion--apuntada' : '' %>"
      data-actividad="<%= c.id %>"
@@ -41,6 +45,20 @@ const puesto = c.apuntado && c.candidatoId ? colocaciones.get(c.candidatoId) : n
       <i class="ti <%= c.buscandoFicha ? 'ti-loader-2' : 'ti-list-details' %>" aria-hidden="true"></i>
       <span><%= c.buscandoFicha ? 'Buscando detalles…' : 'Ver detalles' %></span>
     </button>
+
+    <%# El clip solo aparece si HAY papeles. Con la tarjeta cerrada dice cuántos
+        y abre el desplegable directamente por su sección; con cero, la tarjeta
+        se queda limpia con sus botones y el cajón espera dentro. %>
+    <% if (nAdjuntos) { %>
+      <button class="clip" type="button"
+              data-clip="<%= c.id %>"
+              aria-controls="ficha-<%= c.id %>"
+              title="<%= nAdjuntos %> <%= nAdjuntos === 1 ? 'bono o entrada' : 'bonos y entradas' %>"
+              aria-label="Ver los <%= nAdjuntos %> adjuntos de esta excursión">
+        <i class="ti ti-paperclip" aria-hidden="true"></i>
+        <span class="clip__n"><%= nAdjuntos %></span>
+      </button>
+    <% } %>
   </div>
 
   <% if (c.apuntado && c.candidatoId) { %>
@@ -53,15 +71,6 @@ const puesto = c.apuntado && c.candidatoId ? colocaciones.get(c.candidatoId) : n
         <i class="ti ti-calendar-plus" aria-hidden="true"></i> Ponerlo en un día
       </button>
     <% } %>
-  <% } %>
-
-  <%# Los bonos y las entradas. Solo si está apuntada: si no lo está, no hay
-      candidato del que colgarlos. %>
-  <% if (c.apuntado && c.candidatoId) { %>
-    <%- include('adjuntos', {
-          tipo: 'excursion', elementoId: c.candidatoId,
-          adjuntos: c.adjuntos ?? [], etiqueta: 'Bonos y entradas',
-        }) %>
   <% } %>
 
   <%# Mientras se busca, el aviso ocupa el sitio de la ficha. %>
@@ -77,9 +86,48 @@ const puesto = c.apuntado && c.candidatoId ? colocaciones.get(c.candidatoId) : n
     </p>
   <% } %>
 
+  <%# EL DESPLEGABLE: la ficha de Civitatis y, al final, los papeles.
+      Antes el cajón de adjuntos era hermano de la tarjeta y quedaba flotando
+      entre una excursión y la siguiente, sin que se viera de cuál era. Aquí
+      dentro no hay duda posible: se abre desde la propia tarjeta. %>
   <div class="ficha-excursion" id="ficha-<%= c.id %>" hidden>
     <% if (c.ficha) { %>
       <%- include('ficha-actividad', { f: c.ficha }) %>
+    <% } %>
+
+    <%# EL PUNTO DE ENCUENTRO. Va fuera del "si está apuntada" a propósito: la
+        dirección es del CATÁLOGO, no de mi viaje, y saber dónde queda la cita
+        es justo lo que ayuda a decidir si me la apunto o no. Muchas la traen ya
+        escrita por Civitatis. %>
+    <%- include('direccion', {
+          tipo: 'actividad', elementoId: c.id, direccion: c.direccion,
+          viaje, compacto: true,
+        }) %>
+
+    <%# A cuánto está del hotel y de lo demás. Para una excursión con punto de
+        encuentro y hora fija, esto es lo que decide a qué hora hay que salir. %>
+    <details class="ficha-excursion__distancias">
+      <summary>
+        <i class="ti ti-ruler-measure" aria-hidden="true"></i>
+        Distancias<% if ((distanciasActividades.get(c.id) ?? []).length) { %>
+          <span class="pastilla"><%= (distanciasActividades.get(c.id) ?? []).length %></span>
+        <% } %>
+      </summary>
+      <%- include('distancias', {
+            tipo: 'actividad', elementoId: c.id, nombre: c.titulo,
+            distancias: distanciasActividades.get(c.id) ?? [],
+            situada: Boolean(c.direccion?.situada),
+          }) %>
+    </details>
+
+    <% if (c.apuntado && c.candidatoId) { %>
+      <div class="ficha-excursion__adjuntos" data-seccion-adjuntos>
+        <%- include('adjuntos', {
+              tipo: 'excursion', elementoId: c.candidatoId,
+              adjuntos: c.adjuntos ?? [], etiqueta: 'Bonos y entradas',
+              abierto: true,
+            }) %>
+      </div>
     <% } %>
   </div>
 </div>

@@ -100,13 +100,28 @@ async function porCarretera(a, b) {
  * falta —saber si son 400 km o 9.000— sobra de largo.
  */
 export function enLineaRecta(a, b) {
+  return Math.round(distanciaKm(a, b));
+}
+
+/**
+ * Lo mismo, SIN REDONDEAR.
+ *
+ * `enLineaRecta` devuelve kilómetros enteros porque nació para tramos entre
+ * ciudades, donde "460 km" y "460,3 km" son lo mismo. Dentro de una ciudad eso
+ * es un desastre: del hotel al restaurante hay 328 metros, que redondeados son
+ * CERO kilómetros, y de ahí salía "1 min andando" para un paseo de seis.
+ *
+ * Quien mide distancias urbanas —los traslados y el desvío de un sitio para
+ * comer— usa esta.
+ */
+export function distanciaKm(a, b) {
   const rad = (g) => (g * Math.PI) / 180;
   const dLat = rad(b.lat - a.lat);
   const dLon = rad(b.lon - a.lon);
   const s =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return Math.round(RADIO_TIERRA_KM * 2 * Math.asin(Math.sqrt(s)));
+  return RADIO_TIERRA_KM * 2 * Math.asin(Math.sqrt(s));
 }
 
 /**

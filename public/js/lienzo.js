@@ -34,6 +34,23 @@
     actividad: 'ti-ticket',
     comer: 'ti-tools-kitchen-2',
     manual: 'ti-pencil',
+    traslado: 'ti-arrow-right',
+  };
+
+  /* Un traslado enseña SU medio: un taxi y un metro no son lo mismo de un
+     vistazo, y en una tarjeta tan fina el icono es medio mensaje. */
+  const ICONO_MEDIO = {
+    // Los tres de un traslado consultado.
+    andando: 'ti-walk',
+    coche: 'ti-car',
+    publico: 'ti-bus',
+    // Y los de una ficha de "Moverse".
+    metro: 'ti-train-filled',
+    bus: 'ti-bus',
+    taxi: 'ti-car',
+    app: 'ti-device-mobile',
+    tarjeta: 'ti-credit-card',
+    especial: 'ti-sparkles',
   };
 
   function esc(t) {
@@ -222,7 +239,34 @@
           )
           .join('')}
 
-        ${cosas.map((c) => tarjetaColocada(c, enConflicto.has(c.id))).join('')}
+        ${cosas
+          .map(
+            (c, i) =>
+              hueco(d.n, f.clave, i) + tarjetaColocada(c, enConflicto.has(c.id))
+          )
+          .join('')}
+        ${hueco(d.n, f.clave, cosas.length)}
+      </div>`;
+  }
+
+  /**
+   * El hueco entre dos tarjetas: una raya finísima con un "+" que solo se ve al
+   * pasar por encima.
+   *
+   * TIENE QUE SER CASI INVISIBLE. Hay uno entre cada par de tarjetas y en los
+   * dos bordes de cada franja, o sea cinco o seis por franja: si se vieran
+   * todos, el día parecería un formulario. Se insinúa al acercar el ratón, y en
+   * el móvil basta con que la zona sea tocable.
+   *
+   * De momento ofrece una sola cosa —calcular el traslado entre lo de antes y
+   * lo de después—, pero el menú ya está para lo que venga.
+   */
+  function hueco(dia, franja, indice) {
+    return `
+      <div class="hueco" data-hueco="${dia}:${franja}:${indice}">
+        <button class="hueco__mas" type="button" aria-label="Añadir algo aquí">
+          <i class="ti ti-plus" aria-hidden="true"></i>
+        </button>
       </div>`;
   }
 
@@ -231,7 +275,7 @@
       <article class="item item--${c.tipo} ${conflicto ? 'item--conflicto' : ''}"
                draggable="true" data-fila="${c.id}">
         <div class="item__fila">
-          <i class="ti ${ICONO_TIPO[c.tipo] || 'ti-point'}" aria-hidden="true"></i>
+          <i class="ti ${(c.tipo === 'traslado' && ICONO_MEDIO[c.medio]) || ICONO_TIPO[c.tipo] || 'ti-point'}" aria-hidden="true"></i>
           <span class="item__nombre">${esc(c.nombre)}</span>
           <button class="item__quitar" type="button" data-quitar="${c.id}"
                   title="${c.manual ? 'Borrar' : 'Devolver a la mochila'}"
@@ -239,8 +283,39 @@
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
         </div>
-        ${meta(c)}
+        ${LLEVAN_RELOJ.has(c.tipo) ? reloj(c) : meta(c)}
       </article>`;
+  }
+
+  /**
+   * Qué tarjetas llevan hora y duración a la vista.
+   *
+   * Un traslado y una comida son las dos cosas del día que se planean POR LA
+   * HORA: el bus sale a las 9:15, la mesa es a las 14:30. En una visita a un
+   * museo la hora es opcional y la duración la dice el catálogo.
+   */
+  const LLEVAN_RELOJ = new Set(['traslado', 'comer']);
+
+  /**
+   * La hora y la duración, tecleables ahí mismo.
+   *
+   * En el resto de tarjetas la hora es un dato que se lee. En un traslado es el
+   * dato: "el bus sale a las 9:15 y son 2 h 30" es TODO lo que hay que saber, y
+   * mandar a otra pantalla a escribirlo sería absurdo. Por eso son dos casillas
+   * y no una etiqueta.
+   */
+  function reloj(c) {
+    // Sin línea de meta: repetiría la hora y la duración que están justo debajo
+    // en sus propias casillas.
+    return `
+      <div class="item__reloj">
+        <input type="time" value="${esc(c.hora)}" data-hora="${c.id}"
+               aria-label="Hora de salida" title="Hora de salida">
+        <input type="number" min="1" max="1440" step="5" placeholder="min"
+               value="${c.duracionMin ?? ''}" data-duracion="${c.id}"
+               aria-label="Duración en minutos" title="Duración en minutos">
+        <span>${c.duracionMin >= 60 ? esc(c.duracion) : 'min'}</span>
+      </div>`;
   }
 
   // ===========================================================================
@@ -288,6 +363,23 @@
     const sufijo = lienzo.etapaId ? `?etapa=${lienzo.etapaId}` : '';
     return llamar(`/api/itinerario/${id}${sufijo}`, { method: 'DELETE' });
   }
+
+  // --- La hora y la duración de un traslado ---------------------------------
+  // Se guardan al salir del campo, como las notas de la etapa: son dos casillas
+  // que uno rellena y deja, no un formulario que se envía.
+  pantalla.addEventListener('change', (ev) => {
+    const hora = ev.target.closest('[data-hora]');
+    const duracion = ev.target.closest('[data-duracion]');
+    if (!hora && !duracion) return;
+
+    const id = (hora ?? duracion).dataset.hora ?? duracion.dataset.duracion;
+    llamar(`/api/itinerario/${id}/retocar`, {
+      method: 'POST',
+      body: JSON.stringify(
+        conEtapa(hora ? { hora: hora.value || null } : { duracionMin: Number(duracion.value) || null })
+      ),
+    });
+  });
 
   // ===========================================================================
   // CLICS
@@ -355,6 +447,235 @@
     form.texto.focus();
   }
 
+// ===========================================================================
+  // EL "+" ENTRE TARJETAS
+  // ---------------------------------------------------------------------------
+  // Al tocarlo se pregunta al servidor QUÉ HAY a un lado y a otro, y con eso se
+  // arma el menú. Los vecinos no siempre están en la misma franja —el de antes
+  // puede ser la última tarjeta de la mañana— y en los bordes del día no hay
+  // tarjeta: es el hotel, que es justo el traslado que uno quiere calcular.
+  //
+  // Esa lógica vive en el servidor a propósito: repetirla aquí sería tenerla
+  // dos veces y que se separaran a la primera de cambio.
+  // ===========================================================================
+  pantalla.addEventListener('click', async (ev) => {
+    const mas = ev.target.closest('.hueco__mas');
+    if (!mas) return;
+
+    const caja = mas.closest('.hueco');
+    // Segundo toque en el mismo: se cierra. El botón es un interruptor.
+    if (caja.querySelector('.hueco__menu')) return cerrarHuecos();
+
+    cerrarHuecos();
+    const [dia, franja, indice] = caja.dataset.hueco.split(':');
+
+    caja.classList.add('hueco--abierto');
+    const menu = document.createElement('div');
+    menu.className = 'hueco__menu';
+    menu.innerHTML = '<span class="hueco__cargando"><i class="ti ti-loader-2 girando"></i> mirando…</span>';
+    caja.appendChild(menu);
+
+    try {
+      const r = await fetch(
+        `/api/viaje/${viajeId}/hueco?dia=${dia}&franja=${franja}&indice=${indice}`,
+        { headers: { Accept: 'application/json' } }
+      );
+      const datos = await r.json();
+      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+      menu.innerHTML = pintarMenuHueco(datos);
+      menu.dataset.dia = dia;
+      menu.dataset.franja = franja;
+      menu.dataset.indice = indice;
+    } catch (err) {
+      console.error('[lienzo] no se pudo mirar el hueco:', err);
+      menu.innerHTML = `<span class="hueco__aviso">${esc(err.message)}</span>`;
+    }
+  });
+
+  /**
+   * El menú, que dice de dónde a dónde iría el traslado ANTES de calcularlo.
+   *
+   * Enseñar los dos extremos es lo que convierte un botón críptico en algo
+   * obvio: "Traslado · Hotel → Museo del Prado" no necesita explicación.
+   */
+  function pintarMenuHueco(h) {
+    if (!h.origen || !h.destino) {
+      return `<span class="hueco__aviso">
+                <i class="ti ti-info-circle"></i>
+                ${h.hayHotel ? 'Aquí no hay nada que enlazar.'
+                             : 'Elige alojamiento en esta parada para poder enlazar con él.'}
+              </span>`;
+    }
+
+    // Si a un extremo le falta la dirección se dice CUÁL, y se ofrece ir a
+    // ponérsela: es más útil que un "no se puede" a secas.
+    const sinSitio = [h.origen, h.destino].find((x) => !x.situada);
+    if (sinSitio) {
+      return `<span class="hueco__aviso">
+                <i class="ti ti-map-pin-off"></i>
+                Falta la dirección de <strong>${esc(sinSitio.nombre)}</strong>.
+              </span>
+              <a class="hueco__opcion" href="/etapa/${h.etapaId}#ver">
+                <i class="ti ti-pencil"></i> Ponérsela
+              </a>`;
+    }
+
+    return `
+      <button class="hueco__opcion" type="button" data-hueco-traslado>
+        <i class="ti ti-route" aria-hidden="true"></i>
+        <span>
+          <strong>Traslado</strong>
+          <span class="hueco__extremos">${esc(h.origen.nombre)} → ${esc(h.destino.nombre)}</span>
+        </span>
+      </button>
+      <button class="hueco__opcion" type="button" data-hueco-comer>
+        <i class="ti ti-tools-kitchen-2" aria-hidden="true"></i>
+        <span>
+          <strong>Comer</strong>
+          <span class="hueco__extremos">Entre esos dos puntos</span>
+        </span>
+      </button>`;
+  }
+
+  function cerrarHuecos() {
+    for (const c of pantalla.querySelectorAll('.hueco--abierto')) {
+      c.classList.remove('hueco--abierto');
+      c.querySelector('.hueco__menu')?.remove();
+    }
+  }
+
+  // Un clic en cualquier otro sitio cierra el menú abierto.
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('.hueco')) cerrarHuecos();
+  });
+
+  /** Calcular y colocar, de un tirón. La consulta se guarda en la etapa. */
+  pantalla.addEventListener('click', async (ev) => {
+    const boton = ev.target.closest('[data-hueco-traslado]');
+    if (!boton) return;
+
+    const menu = boton.closest('.hueco__menu');
+    menu.innerHTML = '<span class="hueco__cargando"><i class="ti ti-loader-2 girando"></i> calculando…</span>';
+
+    try {
+      await llamar(`/api/viaje/${viajeId}/hueco/traslado`, {
+        method: 'POST',
+        body: JSON.stringify(
+          conEtapa({
+            dia: Number(menu.dataset.dia),
+            franja: menu.dataset.franja,
+            indice: Number(menu.dataset.indice),
+          })
+        ),
+      });
+    } finally {
+      cerrarHuecos();
+    }
+  });
+
+// --- Comer entre esos dos puntos ------------------------------------------
+  // Se busca alrededor del punto medio con un radio proporcional a lo que
+  // separa los extremos, y cada resultado dice SU DESVÍO. Sin el desvío, "de
+  // paso" no significa nada: un sitio buenísimo a quince minutos del camino no
+  // pilla de paso por muy céntrico que sea el punto medio.
+  pantalla.addEventListener('click', async (ev) => {
+    const boton = ev.target.closest('[data-hueco-comer]');
+    if (!boton) return;
+
+    const menu = boton.closest('.hueco__menu');
+    const donde = { dia: Number(menu.dataset.dia), franja: menu.dataset.franja, indice: Number(menu.dataset.indice) };
+    menu.innerHTML = '<span class="hueco__cargando"><i class="ti ti-loader-2 girando"></i> buscando dónde comer…</span>';
+
+    try {
+      const r = await fetch(`/api/viaje/${viajeId}/hueco/comer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(donde),
+      });
+      const datos = await r.json();
+      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+
+      menu.classList.add('hueco__menu--ancho');
+      menu.innerHTML = pintarSitiosDeComer(datos);
+      menu.dataset.dia = donde.dia;
+      menu.dataset.franja = donde.franja;
+      menu.dataset.indice = donde.indice;
+    } catch (err) {
+      console.error('[lienzo] no se pudo buscar dónde comer:', err);
+      menu.innerHTML = `<span class="hueco__aviso"><i class="ti ti-alert-triangle"></i> ${esc(err.message)}</span>`;
+    }
+  });
+
+  function pintarSitiosDeComer(datos) {
+    if (!datos.sitios?.length) {
+      return '<span class="hueco__aviso"><i class="ti ti-info-circle"></i> No se ha encontrado nada por ahí.</span>';
+    }
+
+    const cabecera =
+      `<div class="hueco__titulo">Entre ${esc(datos.hueco.origen.nombre)} y ` +
+      `${esc(datos.hueco.destino.nombre)}` +
+      `<span class="hueco__fuente">${datos.fuente === 'places' ? 'Google' : 'IA'}</span></div>`;
+
+    return (
+      cabecera +
+      datos.sitios
+        .slice(0, 8)
+        .map((s) => {
+          const datosSitio = [
+            s.cocina,
+            s.precioSimbolo,
+            s.valoracion != null ? `★ ${s.valoracion}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+
+          // El desvío es lo que decide: cuánto hay de él a cada extremo.
+          const desvio = s.desvio
+            ? `<span class="hueco__desvio">${km(s.desvio.aOrigen)} y ${km(s.desvio.aDestino)} de los extremos</span>`
+            : '<span class="hueco__desvio hueco__desvio--sin">sin situar: no se sabe el desvío</span>';
+
+          return `
+            <button class="hueco__sitio" type="button" data-elegir-comer="${s.id}">
+              <span class="hueco__sitio-nombre">${esc(s.nombre)}</span>
+              ${datosSitio ? `<span class="hueco__sitio-datos">${esc(datosSitio)}</span>` : ''}
+              ${desvio}
+            </button>`;
+        })
+        .join('')
+    );
+  }
+
+  /** 0,4 -> "400 m"; 2,3 -> "2,3 km". Lo que uno diría. */
+  function km(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '—';
+    return n < 1 ? `${Math.round(n * 1000)} m` : `${n.toFixed(1).replace('.', ',')} km`;
+  }
+
+  pantalla.addEventListener('click', async (ev) => {
+    const boton = ev.target.closest('[data-elegir-comer]');
+    if (!boton) return;
+
+    const menu = boton.closest('.hueco__menu');
+    menu.innerHTML = '<span class="hueco__cargando"><i class="ti ti-loader-2 girando"></i> colocando…</span>';
+
+    try {
+      await llamar(`/api/viaje/${viajeId}/hueco/comer/colocar`, {
+        method: 'POST',
+        body: JSON.stringify(
+          conEtapa({
+            dia: Number(menu.dataset.dia),
+            franja: menu.dataset.franja,
+            indice: Number(menu.dataset.indice),
+            fichaId: Number(boton.dataset.elegirComer),
+          })
+        ),
+      });
+    } finally {
+      cerrarHuecos();
+    }
+  });
+
   // ===========================================================================
   // ARRASTRAR
   // ===========================================================================
@@ -364,6 +685,11 @@
   pantalla.addEventListener('dragstart', (ev) => {
     const item = ev.target.closest('.item');
     if (!item) return;
+
+    // Las casillas de hora y duración van DENTRO de una tarjeta arrastrable, y
+    // sin esto el navegador empieza a arrastrarla en cuanto pinchas en una y no
+    // hay forma de escribir nada.
+    if (ev.target.closest('.item__reloj')) { ev.preventDefault(); return; }
 
     // Lo que viaja: de dónde sale la tarjeta y qué es.
     const carga = item.dataset.fila

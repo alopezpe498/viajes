@@ -1,0 +1,83 @@
+<%
+/**
+ * Una opción de transporte urbano: el metro, el bono, el teléfono de un taxi.
+ *
+ * EL TELÉFONO SIEMPRE COMO ENLACE `tel:`. Es el dato más útil de toda la
+ * pestaña y se usa en la calle, con una mano y con prisa: un número que hay que
+ * copiar a mano no sirve de nada.
+ *
+ * Se puede añadir al lienzo como cualquier otra cosa, pero allí se pinta como
+ * tarjeta FINA: un trayecto en metro no ocupa lo que una visita al Prado.
+ *
+ * Espera: m (la ficha), etapa, diasDeLaEtapa.
+ */
+%>
+<article class="ficha-movilidad" data-movilidad="<%= m.id %>"
+         data-tipo="<%= m.tipo %>"
+         data-precio="<%= m.precio ?? '' %>"
+         data-telefono="<%= m.telefono ?? '' %>"
+         data-web="<%= m.web ?? '' %>">
+
+  <div class="ficha-movilidad__cabecera">
+    <span class="ficha-movilidad__tipo">
+      <i class="ti <%= m.icono %>" aria-hidden="true"></i>
+      <%= m.etiquetaTipo %>
+    </span>
+    <h4 class="ficha-movilidad__nombre"><%= m.nombre %></h4>
+    <% if (m.origen === 'manual') { %>
+      <span class="ficha-transporte__manual" title="La escribiste tú">a mano</span>
+    <% } %>
+  </div>
+
+  <% if (m.descripcion) { %>
+    <p class="ficha-movilidad__texto"><%= m.descripcion %></p>
+  <% } %>
+
+  <div class="ficha-movilidad__datos">
+    <% if (m.precio) { %>
+      <span class="ficha-movilidad__dato">
+        <i class="ti ti-coin" aria-hidden="true"></i> <%= m.precio %>
+      </span>
+    <% } %>
+
+    <%# El teléfono, tocable. Sin espacios ni guiones en el href: un tel: con
+        espacios no marca en algunos móviles. %>
+    <% if (m.telefonoMarcable) { %>
+      <a class="ficha-movilidad__telefono" href="tel:<%= m.telefonoMarcable %>">
+        <i class="ti ti-phone" aria-hidden="true"></i> <%= m.telefono %>
+      </a>
+    <% } %>
+
+    <% if (m.web) { %>
+      <a class="ficha-movilidad__dato" href="<%= /^https?:\/\//i.test(m.web) ? m.web : '#' %>"
+         <%= /^https?:\/\//i.test(m.web) ? 'target="_blank" rel="noopener noreferrer"' : '' %>>
+        <i class="ti ti-external-link" aria-hidden="true"></i> <%= m.web %>
+      </a>
+    <% } %>
+  </div>
+
+  <% if (m.nota) { %><p class="ficha-movilidad__nota"><%= m.nota %></p><% } %>
+
+  <%# La parada del funicular o la oficina de los taxis es un sitio al que se
+      va: con dirección puede ser un extremo de un traslado. %>
+  <%- include('direccion', {
+        tipo: 'movilidad', elementoId: m.id, direccion: m.direccion,
+        viaje: { id: etapa.viaje_id }, compacto: true,
+      }) %>
+
+  <div class="ficha-movilidad__acciones">
+    <% if (diasDeLaEtapa.length) { %>
+      <button class="apuntar" type="button" data-poner-traslado="<%= m.id %>"
+              data-nombre="<%= m.nombre %>">
+        <i class="ti ti-calendar-plus" aria-hidden="true"></i> Ponerlo en un día
+      </button>
+    <% } %>
+    <button class="apuntar" type="button" data-editar-movilidad="<%= m.id %>">
+      <i class="ti ti-pencil" aria-hidden="true"></i> Editar
+    </button>
+    <button class="apuntar apuntar--peligro" type="button"
+            data-borrar-movilidad="<%= m.id %>" data-nombre="<%= m.nombre %>">
+      <i class="ti ti-trash" aria-hidden="true"></i>
+    </button>
+  </div>
+</article>

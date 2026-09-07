@@ -56,7 +56,11 @@ const ICONO_TIPO = {
            se quedaba colgado aunque el trabajo hubiera terminado bien. %>
        data-trabajando="<%= preparando.trabajando
              || dormir.estado === 'buscando'
-             || tramos.some((t) => t.resultados.estado === 'buscando') ? '1' : '' %>">
+             || moverse.buscando
+             || traslados.calculando
+             || comer.buscando
+             || tramos.some((t) => t.resultados.estado === 'buscando')
+             || tramos.some((t) => t.medios?.buscando) ? '1' : '' %>">
 
     <%# ======================= CABECERA ======================= %>
     <header class="ruta-cabecera">
@@ -174,6 +178,8 @@ const ICONO_TIPO = {
       <% const SUBVISTAS = [
            { clave: 'sitios',      etiqueta: 'Sitios',      icono: 'ti-map-pin', n: queVer.sitios.length },
            { clave: 'excursiones', etiqueta: 'Excursiones', icono: 'ti-ticket',  n: queVer.excursiones.length },
+           { clave: 'comer',       etiqueta: 'Comer',       icono: 'ti-tools-kitchen-2', n: comer.fichas.length },
+           { clave: 'moverse',     etiqueta: 'Moverse',     icono: 'ti-bus',     n: moverse.fichas.length },
          ]; %>
 
       <div class="subpestanas" role="tablist" aria-label="Qué ver en <%= etapa.nombre_ciudad %>">
@@ -217,6 +223,135 @@ const ICONO_TIPO = {
         <div class="rejilla-fichas">
           <% queVer.excursiones.forEach(c => { %>
             <%- include('parciales/excursion', { c, viaje, etapa, colocaciones, diasDeLaEtapa }) %>
+          <% }) %>
+        </div>
+      </section>
+
+      <%# --- Comer: bares y restaurantes --- %>
+      <section class="subpanel" id="sub-comer" role="tabpanel" hidden>
+        <div class="titulo-con-accion">
+          <p class="secundario" style="margin:0">
+            Dónde comer y dónde tomar algo en <%= etapa.nombre_ciudad %>.
+          </p>
+          <button class="boton boton--secundario" type="button" id="nueva-comer">
+            <i class="ti ti-plus" aria-hidden="true"></i> A mano
+          </button>
+        </div>
+
+        <%# EL CAMPO LIBRE ES LO QUE HACE ÚTIL LA BÚSQUEDA. "Cenar tranquilo
+            cerca del hotel" no se puede pedir con filtros; se escribe. Y el
+            botón de al lado busca lo mejor sin más, que es el otro 90 %. %>
+        <form class="comer-buscador" id="buscador-comer" data-etapa="<%= etapa.id %>">
+          <label class="comer-buscador__campo">
+            <span>Qué te apetece</span>
+            <input type="text" name="consulta" maxlength="200" autocomplete="off"
+                   placeholder="Cenar tranquilo cerca del hotel, de tapas por el centro…"
+                   <%= comer.buscando ? 'disabled' : '' %>>
+          </label>
+          <button class="boton boton--primario" type="submit" <%= comer.buscando ? 'disabled' : '' %>>
+            <i class="ti <%= comer.buscando ? 'ti-loader-2 girando' : 'ti-search' %>" aria-hidden="true"></i>
+            <span><%= comer.buscando ? 'Buscando…' : 'Buscar' %></span>
+          </button>
+          <button class="boton boton--secundario" type="button" id="comer-rapido"
+                  <%= comer.buscando ? 'disabled' : '' %>>
+            <i class="ti ti-star" aria-hidden="true"></i>
+            Los mejores de <%= etapa.nombre_ciudad %>
+          </button>
+        </form>
+
+        <% if (comer.buscando) { %>
+          <div class="franja franja--trabajando">
+            <span class="rueda" aria-hidden="true"></span>
+            <span>Buscando dónde comer en <%= etapa.nombre_ciudad %>…</span>
+            <span class="franja__pista secundario">Se recarga sola cuando esté.</span>
+          </div>
+        <% } else if (comer.mensajeError) { %>
+          <div class="aviso aviso--alerta">
+            <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+            <div>
+              <p class="aviso__texto"><%= comer.mensajeError %></p>
+              <p class="aviso__texto secundario">Puedes escribir fichas a mano igualmente.</p>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (!comer.fichas.length && !comer.buscando) { %>
+          <p class="candidatos__vacio">
+            Todavía no has buscado dónde comer en <%= etapa.nombre_ciudad %>.
+          </p>
+        <% } %>
+
+        <div class="rejilla-fichas" id="lista-comer">
+          <% comer.fichas.forEach(c => { %>
+            <%- include('parciales/ficha-comer', {
+                  c, etapa, viaje, colocaciones, diasDeLaEtapa,
+                  distancias: distanciasComer.get(c.id) ?? [],
+                }) %>
+          <% }) %>
+        </div>
+      </section>
+
+      <%# --- Moverse: el transporte urbano de la ciudad --- %>
+      <section class="subpanel" id="sub-moverse" role="tabpanel" hidden>
+
+        <%# LOS TRASLADOS VAN ARRIBA. Es lo que más se usa de esta pestaña:
+            "¿cuánto hay del hotel al centro?" se pregunta veinte veces
+            planificando un día, y las fichas de metro y taxi se miran una. %>
+        <%# A dónde se puede ir desde aquí, para que el buscador sepa si lo
+            tecleado es algo del viaje o una dirección suelta. SIN COORDENADAS:
+            el servidor ya las quita, y aquí no harían ninguna falta. %>
+        <script type="application/json" id="datos-lugares"><%- JSON.stringify(lugares) %></script>
+
+        <%- include('parciales/traslados', {
+              traslados: traslados.traslados, lugares, etapa, viaje, diasDeLaEtapa,
+            }) %>
+
+        <hr class="separador-suave">
+
+        <div class="titulo-con-accion">
+          <p class="secundario" style="margin:0">
+            Metro, buses, taxis con su teléfono y lo peculiar de <%= etapa.nombre_ciudad %>.
+          </p>
+          <span class="moverse-acciones">
+            <button class="boton boton--secundario" type="button" id="buscar-movilidad"
+                    data-etapa="<%= etapa.id %>" <%= moverse.buscando ? 'disabled' : '' %>>
+              <i class="ti <%= moverse.buscando ? 'ti-loader-2 girando' : 'ti-sparkles' %>" aria-hidden="true"></i>
+              <span><%= moverse.buscando ? 'Buscando…' : (moverse.fichas.length ? 'Buscar otra vez' : 'Buscar cómo moverse') %></span>
+            </button>
+            <button class="boton boton--secundario" type="button" id="nueva-movilidad">
+              <i class="ti ti-plus" aria-hidden="true"></i> A mano
+            </button>
+          </span>
+        </div>
+
+        <% if (moverse.buscando) { %>
+          <div class="franja franja--trabajando" id="movilidad-trabajando"
+               data-etapa="<%= etapa.id %>">
+            <span class="rueda" aria-hidden="true"></span>
+            <span>Buscando en la web cómo moverse por <%= etapa.nombre_ciudad %>…</span>
+            <span class="franja__pista secundario">Se recarga sola cuando esté.</span>
+          </div>
+        <% } else if (moverse.mensajeError) { %>
+          <div class="aviso aviso--alerta">
+            <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+            <div>
+              <div class="aviso__titulo">No se pudo consultar</div>
+              <p class="aviso__texto"><%= moverse.mensajeError %></p>
+              <p class="aviso__texto secundario">Puedes crear las fichas a mano igualmente.</p>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (!moverse.fichas.length && !moverse.buscando) { %>
+          <p class="candidatos__vacio">
+            Todavía no hay nada sobre cómo moverse por <%= etapa.nombre_ciudad %>.
+            Búscalo con la IA o crea una ficha a mano.
+          </p>
+        <% } %>
+
+        <div class="rejilla-fichas" id="lista-movilidad">
+          <% moverse.fichas.forEach(m => { %>
+            <%- include('parciales/ficha-movilidad', { m, etapa, diasDeLaEtapa }) %>
           <% }) %>
         </div>
       </section>
@@ -324,12 +459,19 @@ const ICONO_TIPO = {
                 </button>
               </div>
 
+              <%# Dónde está. Es el extremo de casi todos los traslados del día:
+                  se sale de dormir y se vuelve a dormir. %>
+              <%- include('parciales/direccion', {
+                    tipo: 'hotel', elementoId: dormir.elegido.id,
+                    direccion: dormir.elegido.direccion, viaje,
+                  }) %>
+
               <%# La confirmación de la reserva y el correo con las instrucciones
                   de entrada, que es justo lo que hace falta al llegar. %>
               <%- include('parciales/adjuntos', {
                     tipo: 'alojamiento', elementoId: dormir.elegido.id,
                     adjuntos: dormir.elegido.adjuntos ?? [],
-                    etiqueta: 'Reserva y documentos',
+                    etiqueta: 'Reserva e instrucciones',
                   }) %>
             </div>
           <% } %>
@@ -392,7 +534,17 @@ const ICONO_TIPO = {
 
           <% if (t.resuelto) { %>
             <div class="tramo-caja__resuelto">
-              <strong><%= t.resumen %></strong>
+              <strong data-resumen-tramo="<%= t.id %>"><%= t.resumen %></strong>
+              <% if (t.medio) { %>
+                <p class="tramo-caja__medio">
+                  <i class="ti <%= t.medio.icono %>" aria-hidden="true"></i>
+                  <%= [t.medio.nombre, t.medio.referencia && `reserva ${t.medio.referencia}`]
+                        .filter(Boolean).join(' · ') %>
+                </p>
+                <% if (t.medio.notaPropia) { %>
+                  <p class="secundario" style="margin:2px 0 0"><%= t.medio.notaPropia %></p>
+                <% } %>
+              <% } %>
               <% if (t.notas) { %><p class="secundario" style="margin:4px 0 0"><%= t.notas %></p><% } %>
               <% if (t.precioEstimado) { %>
                 <p class="secundario" style="margin:2px 0 0"><%= t.precioEstimado %> € aprox.</p>
@@ -401,13 +553,24 @@ const ICONO_TIPO = {
           <% } %>
 
           <div class="tramo-caja__acciones">
-            <%# Los extremos son vuelos: ahí sí tiene sentido abrir Kayak. %>
+            <%# EL AVIÓN YA NO ES LA ÚNICA PUERTA.
+                Antes este botón era lo único que había, también en Sarajevo →
+                Mostar, que se hace en bus por unos euros. Sigue estando —hay
+                tramos largos donde sí se vuela— pero ahora al lado de "Cómo
+                llegar", que es lo que hace falta en la mayoría de los saltos. %>
             <% if (t.donde !== 'salto' || t.tipo === 'vuelo') { %>
               <button class="boton boton--secundario" type="button" data-vuelos="<%= t.id %>">
                 <i class="ti ti-plane" aria-hidden="true"></i>
                 <%= t.resultados.estado === 'hecho' && t.resultados.vuelos.length
                       ? `Ver vuelos (${t.resultados.vuelos.length})`
                       : 'Buscar vuelos' %>
+              </button>
+            <% } %>
+
+            <% if (t.medios) { %>
+              <button class="boton boton--secundario" type="button" data-medios="<%= t.id %>">
+                <i class="ti ti-route-2" aria-hidden="true"></i>
+                Cómo llegar<% if (t.medios.delCatalogo) { %> (<%= t.medios.delCatalogo %>)<% } %>
               </button>
             <% } %>
             <button class="boton boton--secundario" type="button" data-manual="<%= t.id %>">
@@ -424,7 +587,7 @@ const ICONO_TIPO = {
               siguen valiendo aunque cambie de vuelo dentro del mismo trayecto. %>
           <%- include('parciales/adjuntos', {
                 tipo: 'transporte', elementoId: t.id, adjuntos: t.adjuntos,
-                etiqueta: 'Billetes y tarjetas',
+                etiqueta: 'Billetes y tarjetas de embarque',
               }) %>
 
           <%# Formulario manual, plegado hasta que se pide. %>
@@ -454,6 +617,59 @@ const ICONO_TIPO = {
               <button class="boton boton--secundario" type="button" data-cancelar-manual>Cancelar</button>
             </div>
           </form>
+
+          <%# CÓMO LLEGAR: los medios por tierra o mar de esta pareja de ciudades.
+              Vienen del CATÁLOGO, así que el próximo viaje que pase por aquí ya
+              los tiene. El avión no está en esta lista: tiene su propio botón,
+              que lleva al buscador de Kayak. %>
+          <% if (t.medios) { %>
+            <div class="medios-tramo" data-medios-de="<%= t.id %>"
+                 <%= t.medios.delCatalogo || t.medios.elegidaId ? '' : 'hidden' %>>
+
+              <div class="titulo-con-accion">
+                <p class="secundario" style="margin:0">
+                  De <strong><%= t.nombreOrigen %></strong> a <strong><%= t.nombreDestino %></strong>
+                </p>
+                <span class="moverse-acciones">
+                  <button class="boton boton--secundario" type="button"
+                          data-buscar-medios="<%= t.id %>" <%= t.medios.buscando ? 'disabled' : '' %>>
+                    <i class="ti <%= t.medios.buscando ? 'ti-loader-2 girando' : 'ti-sparkles' %>" aria-hidden="true"></i>
+                    <span><%= t.medios.buscando ? 'Buscando…' : (t.medios.delCatalogo ? 'Buscar otra vez' : 'Buscar cómo llegar') %></span>
+                  </button>
+                  <button class="boton boton--secundario" type="button" data-nuevo-medio="<%= t.id %>">
+                    <i class="ti ti-plus" aria-hidden="true"></i> A mano
+                  </button>
+                </span>
+              </div>
+
+              <% if (t.medios.buscando) { %>
+                <div class="franja franja--trabajando" data-medios-trabajando="<%= t.id %>">
+                  <span class="rueda" aria-hidden="true"></span>
+                  <span>Buscando en la web cómo ir de <%= t.nombreOrigen %> a <%= t.nombreDestino %>…</span>
+                </div>
+              <% } else if (t.medios.mensajeError) { %>
+                <div class="aviso aviso--alerta">
+                  <i class="ti ti-alert-octagon" aria-hidden="true"></i>
+                  <div>
+                    <p class="aviso__texto"><%= t.medios.mensajeError %></p>
+                    <p class="aviso__texto secundario">Puedes crear las fichas a mano igualmente.</p>
+                  </div>
+                </div>
+              <% } %>
+
+              <% if (!t.medios.delCatalogo && !t.medios.buscando) { %>
+                <p class="candidatos__vacio">
+                  Todavía no se ha mirado cómo ir de <%= t.nombreOrigen %> a <%= t.nombreDestino %>.
+                </p>
+              <% } %>
+
+              <div class="rejilla-fichas">
+                <% t.medios.fichas.forEach(f => { %>
+                  <%- include('parciales/ficha-transporte', { f, transporteId: t.id }) %>
+                <% }) %>
+              </div>
+            </div>
+          <% } %>
 
           <%# LOS VUELOS DE ESTE TRAMO.
               Se busca SOLO ESTE SENTIDO y SOLO ESTA FECHA: BCN→Madrid del 11 y

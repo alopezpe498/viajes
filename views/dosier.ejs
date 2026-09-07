@@ -142,6 +142,56 @@ body{
   padding:13px 15px;margin-bottom:8px;
 }
 .transporte__titulo{font-weight:700;color:var(--amba-tx);margin-bottom:2px}
+.transporte__medio{font-weight:650;margin-bottom:2px}
+.transporte__mio{font-weight:700;font-variant-numeric:tabular-nums}
+
+/* EL TRASLADO: la misma tarjeta, más fina. Coger el metro no pesa lo que una
+   mañana en un museo, y si se pintaran igual el día parecería el doble de
+   lleno de lo que está. */
+.cosa--traslado{background:transparent;border-style:dashed;padding:0}
+
+/* LA CHULETA DE TRASLADOS. Una línea por consulta y sin adornos: se mira de
+   pie, en la calle, buscando un número. */
+.chuleta{
+  margin-top:16px;padding:12px 14px;border:1px dashed var(--bd,#DCE7EC);
+  border-radius:var(--radio);background:transparent;
+}
+.chuleta__titulo{
+  font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--tx2);margin-bottom:8px;
+}
+.chuleta__lista{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.chuleta__fila{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:13px}
+.chuleta__recorrido{font-weight:650;flex:1 1 200px;min-width:0}
+.chuleta__medios{color:var(--tx2);font-variant-numeric:tabular-nums}
+
+/* DÓNDE COMER: lo apuntado que no tiene día. Es lo que uno mira a las dos de
+   la tarde sin plan, así que va con su dirección y su teléfono a mano. */
+.comer{
+  margin-top:16px;padding:12px 14px;border:1px dashed var(--bd,#DCE7EC);
+  border-radius:var(--radio);
+}
+.comer__titulo{
+  font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--tx2);margin-bottom:8px;
+}
+.comer__sitio{padding:8px 0;border-top:1px solid var(--bd,#EDF3F5)}
+.comer__sitio:first-of-type{border-top:0}
+.comer__nombre{font-weight:700}
+.comer__datos{font-size:13px;color:var(--tx2)}
+.comer__distancias{font-size:12px;color:var(--tx2);margin-top:3px}
+.cosa__direccion{font-size:12px;color:var(--tx2);margin-top:2px}
+.cosa--traslado .cosa__cabecera{padding:7px 12px}
+.cosa--traslado .cosa__nombre{font-weight:600;font-size:14px}
+.cosa--traslado .cosa__meta{font-size:12px}
+
+/* El teléfono se toca: en el móvil, que es donde se lee el dosier, la
+   diferencia entre "un número" y "llamar" es exactamente esta. */
+.tel{
+  display:inline-block;margin-top:3px;padding:3px 10px;border-radius:999px;
+  background:var(--verde-bg,#E1F2E7);color:var(--verde-tx,#1E6B3C);
+  font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap;
+}
 .trayecto{
   display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px dashed #E0CDA6;
   font-size:14px;flex-wrap:wrap;
@@ -416,13 +466,23 @@ body{
     if (f && (f.duracionDetalle || f.duracion)) meta.push(f.duracionDetalle || f.duracion);
     if (f && f.precio === 0) meta.push('Gratis');
     else if (f && f.precio != null) meta.push(f.precio + ' ' + (f.moneda || 'EUR'));
+    // "12 min andando". El medio importa tanto como los minutos: el mismo
+    // trayecto son 20 a pie u 8 en coche.
+    if (c.duracion) meta.push(c.duracion + (c.medioEtiqueta ? ' ' + c.medioEtiqueta : ''));
+    if (c.cocina) meta.push(c.cocina);
 
-    var h = '<article class="cosa" data-nombre="' + esc((c.texto || '').toLowerCase()) + '">';
+    var h = '<article class="cosa' + (c.traslado ? ' cosa--traslado' : '') +
+      '" data-nombre="' + esc((c.texto || '').toLowerCase()) + '">';
     h += '<div class="cosa__cabecera' + (abrible ? '' : ' cosa__cabecera--plana') + '"' +
       (abrible ? ' role="button" tabindex="0"' : '') + '>';
     if (img) h += '<img class="cosa__foto" src="' + img + '" alt="">';
     h += '<div class="cosa__texto"><div class="cosa__nombre">' + esc(c.texto) + '</div>';
     if (meta.length) h += '<div class="cosa__meta">' + esc(meta.join(' · ')) + '</div>';
+    // La dirección de una comida: en la calle es lo primero que se busca.
+    if (c.direccion) h += '<div class="cosa__direccion">' + esc(c.direccion) + '</div>';
+    if (c.telefonoMarcable) {
+      h += '<a class="tel" href="tel:' + esc(c.telefonoMarcable) + '">☎ ' + esc(c.telefono) + '</a>';
+    }
     h += '</div>';
     if (c.hora) h += '<span class="cosa__hora">' + esc(c.hora) + '</span>';
     if (abrible) h += '<span class="cosa__mas" aria-hidden="true">+</span>';
@@ -460,6 +520,29 @@ body{
         h += '<div class="secundario" style="margin-top:6px">' +
           esc(d.vuelo.precio) + ' ' + esc(d.vuelo.moneda || 'EUR') + '</div>';
       }
+    } else if (d && d.medio) {
+      /* EL MEDIO ELEGIDO. Primero lo tecleado —el horario que cogí, el
+         localizador—, que es lo que se mira en la estación con la mochila al
+         hombro; después lo del catálogo, que es contexto. */
+      var m = d.medio;
+      h += '<div class="transporte__medio">' + esc(m.etiqueta) +
+        (m.nombre ? ' · ' + esc(m.nombre) : '') + '</div>';
+
+      var mio = [];
+      if (m.horario) mio.push(m.horario);
+      if (m.precioReal) mio.push(m.precioReal);
+      if (m.referencia) mio.push('reserva ' + m.referencia);
+      if (mio.length) h += '<div class="transporte__mio">' + esc(mio.join(' · ')) + '</div>';
+      if (m.notaPropia) h += '<div class="secundario">' + esc(m.notaPropia) + '</div>';
+
+      var suyo = [];
+      if (m.duracion) suyo.push(m.duracion);
+      if (m.frecuencia) suyo.push(m.frecuencia);
+      if (!m.precioReal && m.precio) suyo.push(m.precio);
+      if (suyo.length) h += '<div class="secundario">' + esc(suyo.join(' · ')) + '</div>';
+      if (m.nota) h += '<div class="secundario">' + esc(m.nota) + '</div>';
+      if (m.notaSentido) h += '<div class="secundario">' + esc(m.notaSentido) + '</div>';
+      if (d.notas) h += '<div class="secundario">' + esc(d.notas) + '</div>';
     } else if (d && d.notas) {
       h += '<div class="secundario">' + esc(d.notas) + '</div>';
       if (d.precio) h += '<div class="secundario">' + esc(d.precio) + ' € aprox.</div>';
@@ -512,6 +595,8 @@ body{
     }
 
     if (d.hotel) h += pintarHotel(d.hotel, 'Esta noche duermes en');
+    h += pintarDondeComer(d.etapaId);
+    h += pintarChuleta(d.etapaId);
     document.getElementById('dia').innerHTML = h;
 
     var pestanas = document.querySelectorAll('#dias .pestana');
@@ -526,6 +611,75 @@ body{
     document.getElementById('anterior').disabled = i === 0;
     document.getElementById('siguiente').disabled = i === DATOS.dias.length - 1;
     actual = i;
+  }
+
+  /**
+   * La chuleta de traslados de una parada.
+   *
+   * Va al final del día porque es lo que se consulta EN LA CALLE: no es el plan
+   * —eso son las tarjetas de arriba—, es la referencia de "cuánto hay" para
+   * cuando el plan se tuerce y hay que decidir sobre la marcha.
+   *
+   * Se repite en todos los días de la misma parada a propósito: el dosier
+   * enseña un día cada vez, y una chuleta que solo saliera el primer día no
+   * estaría cuando hace falta.
+   */
+  function pintarChuleta(etapaId) {
+    var c = (DATOS.chuletas || []).find(function (x) { return x.etapaId === etapaId; });
+    if (!c || !c.traslados.length) return '';
+
+    var h = '<div class="chuleta"><div class="chuleta__titulo">Cuánto hay · ' +
+      esc(c.ciudad) + '</div><ul class="chuleta__lista">';
+    c.traslados.forEach(function (t) {
+      h += '<li class="chuleta__fila">' +
+        '<span class="chuleta__recorrido">' + esc(t.recorrido) + '</span>' +
+        '<span class="chuleta__medios">' +
+        t.medios.map(function (m) { return esc(m.texto + ' ' + m.etiqueta); }).join(' · ') +
+        '</span></li>';
+    });
+    return h + '</ul></div>';
+  }
+
+  /**
+   * Lo apuntado para comer que NO tiene día.
+   *
+   * En el lienzo no sale porque no está colocado, y es justo lo que se mira a
+   * las dos de la tarde sin plan: "¿qué tenía yo apuntado por aquí?". Va con la
+   * dirección, el teléfono tocable y las distancias guardadas, que es lo que
+   * decide sobre la marcha.
+   */
+  function pintarDondeComer(etapaId) {
+    var b = (DATOS.dondeComer || []).find(function (x) { return x.etapaId === etapaId; });
+    if (!b || !b.sitios.length) return '';
+
+    var h = '<div class="comer"><div class="comer__titulo">Dónde comer · ' +
+      esc(b.ciudad) + '</div>';
+
+    b.sitios.forEach(function (s) {
+      h += '<div class="comer__sitio">';
+      h += '<div class="comer__nombre">' + esc(s.nombre) + '</div>';
+
+      var datos = [];
+      if (s.cocina) datos.push(s.cocina);
+      if (s.precio) datos.push(s.precio);
+      if (s.valoracion != null) datos.push('★ ' + s.valoracion);
+      if (datos.length) h += '<div class="comer__datos">' + esc(datos.join(' · ')) + '</div>';
+
+      if (s.direccion) h += '<div class="comer__datos">' + esc(s.direccion) + '</div>';
+      if (s.telefonoMarcable) {
+        h += '<a class="tel" href="tel:' + esc(s.telefonoMarcable) + '">☎ ' +
+          esc(s.telefono) + '</a>';
+      }
+      if (s.nota) h += '<div class="comer__datos">' + esc(s.nota) + '</div>';
+
+      s.distancias.forEach(function (d) {
+        h += '<div class="comer__distancias">' + esc(d.linea + ': ' + d.tiempos) + '</div>';
+      });
+
+      h += '</div>';
+    });
+
+    return h + '</div>';
   }
 
   /* ===========================================================================

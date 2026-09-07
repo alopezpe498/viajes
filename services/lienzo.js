@@ -17,6 +17,7 @@
  */
 
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
+import { direccionDe, claveDeCandidato } from './direcciones.js';
 import { ciudadDeCasa } from './proveedores.js';
 
 /** Las cuatro franjas, con sus horas orientativas. */
@@ -134,9 +135,13 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
   // --- 2) Lo colocado -----------------------------------------------------
   const colocadas = todas(
     `SELECT i.*, c.tipo AS c_tipo, c.titulo AS c_titulo, c.precio, c.moneda,
-            c.duracion, c.url, e.nombre_ciudad
+            c.duracion, c.url, e.nombre_ciudad,
+            m.tipo AS m_tipo, m.nombre AS m_nombre, m.telefono AS m_telefono,
+            t.origen_texto AS t_origen, t.destino_texto AS t_destino
        FROM itinerario i
        LEFT JOIN candidatos c ON c.id = i.candidato_id
+       LEFT JOIN catalogo_movilidad m ON m.id = i.movilidad_id
+       LEFT JOIN traslados t ON t.id = i.traslado_id
        LEFT JOIN etapas e ON e.id = i.etapa_id
       WHERE i.viaje_id = ?
       ORDER BY i.dia, i.orden, i.id`,
@@ -157,11 +162,26 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
     ciudad: f.nombre_ciudad,
     candidatoId: f.candidato_id,
     manual: f.candidato_id == null,
-    tipo: f.candidato_id == null ? 'manual' : f.c_tipo,
+    // UN TRASLADO NO ES UNA ACTIVIDAD. Guarda su nombre en texto_manual —el
+    // CHECK de la tabla no admite otra cosa— pero lleva movilidad_id, y por eso
+    // se le puede dar su propio tipo en vez de pasar por "manual" a secas.
+    tipo: esTraslado(f) ? 'traslado' : f.candidato_id == null ? 'manual' : f.c_tipo,
     nombre: f.candidato_id == null ? f.texto_manual : f.c_titulo,
     precio: f.precio,
     moneda: f.moneda,
-    duracion: f.duracion,
+    // La duración en minutos manda cuando la hay: la teclea uno en el propio
+    // lienzo. Un traslado siempre la lleva; una comida también, porque cuánto
+    // dura una cena es cosa de la cena, no del restaurante. Para lo demás vale
+    // la del catálogo ("2 horas" de una excursión).
+    duracion: minutosLargos(f.duracion_min) ?? (esTraslado(f) ? null : f.duracion),
+    duracionMin: f.duracion_min ?? null,
+    movilidadId: f.movilidad_id ?? null,
+    trasladoId: f.traslado_id ?? null,
+    // Dos orígenes para el medio, y no se pisan: una ficha de "Moverse" trae su
+    // tipo (metro, taxi), y un traslado consultado trae el suyo (andando,
+    // coche, público). La columna `medio` es la del segundo.
+    medio: f.medio ?? f.m_tipo ?? null,
+    telefono: f.m_telefono ?? null,
     url: f.url,
   }));
 
@@ -498,7 +518,21 @@ function etapaDelDia(viajeId, dia) {
 }
 
 /** Pone algo en un día y una franja. Devuelve la fila creada, o null. */
-export function colocar(viajeId, { candidatoId = null, textoManual = null, dia, franja, hora = null }) {
+export function colocar(
+  viajeId,
+  {
+    candidatoId = null,
+    textoManual = null,
+    dia,
+    franja,
+    hora = null,
+    movilidadId = null,
+    trasladoId = null,
+    medio = null,
+    duracionMin = null,
+    orden = null,
+  }
+) {
   if (!CLAVES_FRANJA.includes(franja)) return null;
   const n = Number(dia);
   if (!Number.isInteger(n) || n < 1) return null;
@@ -522,9 +556,18 @@ export function colocar(viajeId, { candidatoId = null, textoManual = null, dia, 
     if (yaEsta) return mover(yaEsta.id, { dia: n, franja });
   }
 
+  // Con `orden` se mete EN MEDIO, no al final: un traslado entre dos tarjetas
+  // solo significa algo si queda entre esas dos. Se hace sitio empujando lo que
+  // hay de ahí en adelante.
+  const posicion = Number.isFinite(Number(orden))
+    ? hacerSitio(viajeId, n, franja, Number(orden))
+    : siguienteOrden(viajeId, n, franja);
+
   const r = ejecutar(
-    `INSERT INTO itinerario (viaje_id, etapa_id, dia, franja, candidato_id, texto_manual, hora, orden)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO itinerario
+       (viaje_id, etapa_id, dia, franja, candidato_id, texto_manual, hora, orden,
+        movilidad_id, duracion_min, traslado_id, medio)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     viajeId,
     etapa?.id ?? null,
     n,
@@ -532,7 +575,11 @@ export function colocar(viajeId, { candidatoId = null, textoManual = null, dia, 
     candidatoId || null,
     candidatoId ? null : texto.slice(0, 300),
     normalizarHora(hora),
-    siguienteOrden(viajeId, n, franja)
+    posicion,
+    Number(movilidadId) || null,
+    Number(duracionMin) || null,
+    Number(trasladoId) || null,
+    medio || null
   );
   return una('SELECT * FROM itinerario WHERE id = ?', Number(r.lastInsertRowid));
 }
@@ -558,12 +605,213 @@ export function mover(id, { dia, franja }) {
   return una('SELECT * FROM itinerario WHERE id = ?', id);
 }
 
+/**
+ * Cambia la hora o la duración de algo ya colocado, sin moverlo de sitio.
+ *
+ * Los traslados la necesitan de verdad —"el bus sale a las 9:15 y son 2 h 30"—
+ * pero no se restringe a ellos: cualquier fila puede llevar hora, y una vez
+ * hay dónde teclearla no tiene sentido que unas se dejen y otras no.
+ */
+export function retocar(id, { hora, duracionMin }) {
+  const fila = una('SELECT * FROM itinerario WHERE id = ?', id);
+  if (!fila) return null;
+
+  // undefined es "no lo toques"; null o cadena vacía es "bórralo".
+  if (hora !== undefined) {
+    ejecutar('UPDATE itinerario SET hora = ? WHERE id = ?', normalizarHora(hora), id);
+  }
+  if (duracionMin !== undefined) {
+    const m = Number(duracionMin);
+    ejecutar(
+      'UPDATE itinerario SET duracion_min = ? WHERE id = ?',
+      Number.isFinite(m) && m > 0 ? Math.min(Math.round(m), 24 * 60) : null,
+      id
+    );
+  }
+  return una('SELECT * FROM itinerario WHERE id = ?', id);
+}
+
+/** 95 → "1 h 35". Lo que uno diría en voz alta, no "95 min". */
+function minutosLargos(min) {
+  const n = Number(min);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m}` : `${h} h`;
+}
+
 /** Lo saca del lienzo. Si era un candidato, vuelve solo a la mochila. */
 export function quitar(id) {
   const fila = una('SELECT * FROM itinerario WHERE id = ?', id);
   if (!fila) return null;
   ejecutar('DELETE FROM itinerario WHERE id = ?', id);
   return fila;
+}
+
+/** Una fila del itinerario es un traslado si viene de una ficha o de una consulta. */
+function esTraslado(f) {
+  return Boolean(f.movilidad_id || f.traslado_id);
+}
+
+/**
+ * Abre un hueco en `posicion` empujando hacia abajo lo que hay de ahí en
+ * adelante, y devuelve el orden que le toca al recién llegado.
+ */
+function hacerSitio(viajeId, dia, franja, posicion) {
+  ejecutar(
+    `UPDATE itinerario SET orden = orden + 1
+      WHERE viaje_id = ? AND dia = ? AND franja = ? AND orden >= ?`,
+    viajeId,
+    dia,
+    franja,
+    posicion
+  );
+  return posicion;
+}
+
+/**
+ * Qué hay justo antes y justo después de un hueco del lienzo.
+ *
+ * Es lo que contesta el "+" que sale entre dos tarjetas. Vive en el servidor y
+ * no en el navegador porque los vecinos NO siempre están en la misma franja:
+ *
+ *  - En medio de una franja son las tarjetas de al lado, sin más.
+ *  - Al principio de la tarde, el de antes es la última tarjeta de la mañana.
+ *  - En los bordes del día no hay tarjeta: es EL HOTEL. Se sale de dormir y se
+ *    vuelve a dormir, y ese es justo el traslado que uno quiere calcular.
+ *
+ * Las tarjetas que YA SON un traslado se saltan: enlazar un traslado con otro
+ * no dice nada, y saltándolo se llega a los dos sitios de verdad.
+ */
+export function vecinosDeHueco(viajeId, { dia, franja, indice }) {
+  const n = Number(dia);
+  if (!Number.isInteger(n) || !CLAVES_FRANJA.includes(franja)) return null;
+
+  const etapa = etapaDelDia(viajeId, n);
+
+  const delDia = todas(
+    `SELECT * FROM itinerario
+      WHERE viaje_id = ? AND dia = ?
+      ORDER BY orden, id`,
+    viajeId,
+    n
+  );
+
+  const deLaFranja = delDia.filter((f) => f.franja === franja);
+  const i = Math.max(0, Math.min(Number(indice) || 0, deLaFranja.length));
+
+  // El orden que le tocará a la tarjeta nueva: el de la que está ahora en esa
+  // posición, o el siguiente libre si el hueco es el final.
+  const orden = i < deLaFranja.length ? deLaFranja[i].orden : siguienteOrden(viajeId, n, franja);
+
+  // Las franjas van en un orden fijo, y "antes" y "después" del día se miden
+  // con él: la mañana va antes que la tarde aunque las filas digan otra cosa.
+  const posicionFranja = (f) => CLAVES_FRANJA.indexOf(f);
+  const aplanado = [...delDia].sort(
+    (a, b) => posicionFranja(a.franja) - posicionFranja(b.franja) || a.orden - b.orden || a.id - b.id
+  );
+
+  // Dónde cae el hueco dentro del día entero.
+  const corte =
+    i < deLaFranja.length
+      ? aplanado.findIndex((x) => x.id === deLaFranja[i].id)
+      : (() => {
+          const ultima = deLaFranja[deLaFranja.length - 1];
+          if (ultima) return aplanado.findIndex((x) => x.id === ultima.id) + 1;
+          // Franja vacía: el corte va detrás de todo lo de las franjas anteriores.
+          return aplanado.filter((x) => posicionFranja(x.franja) < posicionFranja(franja)).length;
+        })();
+
+  const antes = [...aplanado.slice(0, corte)].reverse().find((x) => !esTraslado(x)) ?? null;
+  const despues = aplanado.slice(corte).find((x) => !esTraslado(x)) ?? null;
+
+  const hotel = etapa ? lugarDelHotel(etapa.id) : null;
+
+  return {
+    viajeId,
+    dia: n,
+    franja,
+    indice: i,
+    orden,
+    etapaId: etapa?.id ?? null,
+    ciudad: etapa?.nombre_ciudad ?? null,
+    // Sin vecino de un lado se usa el hotel: es de donde se sale por la mañana
+    // y a donde se vuelve por la noche.
+    origen: antes ? lugarDeFila(antes) : hotel,
+    destino: despues ? lugarDeFila(despues) : hotel,
+    hayHotel: Boolean(hotel),
+  };
+}
+
+/**
+ * Una tarjeta del lienzo, traducida a "un sitio al que se puede ir".
+ *
+ * La dirección no vive en la tarjeta: vive con el elemento del catálogo del que
+ * la tarjeta es copia. `direccionDeCandidato` es quien sabe dar ese salto.
+ */
+function lugarDeFila(fila) {
+  if (fila.movilidad_id) {
+    const m = una('SELECT * FROM catalogo_movilidad WHERE id = ?', fila.movilidad_id);
+    if (!m) return null;
+    const d = direccionDe('movilidad', m.id);
+    return {
+      tipo: 'movilidad',
+      id: m.id,
+      nombre: m.nombre,
+      texto: m.nombre,
+      direccion: d?.direccion ?? null,
+      situada: Boolean(d?.situada),
+    };
+  }
+
+  if (fila.candidato_id) {
+    const c = una('SELECT * FROM candidatos WHERE id = ?', fila.candidato_id);
+    if (!c) return null;
+    const clave = claveDeCandidato(c);
+    const d = clave ? direccionDe(clave.tipo, clave.id) : null;
+    return {
+      tipo: clave?.tipo ?? null,
+      id: clave?.id ?? null,
+      nombre: c.titulo,
+      texto: c.titulo,
+      direccion: d?.direccion ?? null,
+      situada: Boolean(d?.situada),
+    };
+  }
+
+  // Una tarjeta escrita a mano no tiene dónde guardar una dirección: se ofrece
+  // como texto libre y el geocodificador hará lo que pueda con ella.
+  return {
+    tipo: null,
+    id: null,
+    nombre: fila.texto_manual,
+    texto: fila.texto_manual,
+    direccion: null,
+    // Se da por situable: el texto libre se busca al calcular.
+    situada: true,
+    libre: true,
+  };
+}
+
+/** El hotel elegido de una parada, como sitio al que se va. */
+function lugarDelHotel(etapaId) {
+  const h = una(
+    "SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
+    etapaId
+  );
+  if (!h) return null;
+
+  const d = direccionDe('hotel', h.id);
+  return {
+    tipo: 'hotel',
+    id: h.id,
+    nombre: h.titulo,
+    texto: h.titulo,
+    direccion: d?.direccion ?? null,
+    situada: Boolean(d?.situada),
+    esHotel: true,
+  };
 }
 
 /** Al final de su franja, que es donde uno espera que aparezca lo que suelta. */

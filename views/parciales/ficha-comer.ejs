@@ -1,0 +1,150 @@
+<%
+/**
+ * Un sitio donde comer o tomar algo.
+ *
+ * MISMA CARA QUE LAS DEMÁS FICHAS: caja blanca, datos, y la fila de botones
+ * abajo. Lo propio de esta es que la nota que manda es la PONDERADA —la misma
+ * fórmula que ya usan hoteles y excursiones— porque un 5,0 con tres opiniones
+ * no puede ganarle a un 4,6 con ochocientas.
+ *
+ * Y CUANDO LA FICHA VIENE DE LA IA SE DICE. La IA no cuenta opiniones: recuerda.
+ * Enseñar un número suyo con dos decimales al lado de uno de Google sería dar
+ * por medido lo que no lo está, así que las suyas salen sin nota y con una
+ * marca discreta.
+ *
+ * Espera: c (la ficha), etapa, viaje, colocaciones, diasDeLaEtapa, distancias.
+ */
+const puesto = c.apuntado && c.candidatoId ? colocaciones.get(c.candidatoId) : null;
+const estrellas = c.valoracion != null ? Number(c.valoracion).toFixed(1) : null;
+%>
+<article class="ficha-comer <%= c.apuntado ? 'ficha-comer--apuntada' : '' %>"
+         data-comer="<%= c.id %>"
+         data-nombre="<%= c.nombre %>"
+         data-cocina="<%= c.cocina ?? '' %>"
+         data-precio-texto="<%= c.precioTexto ?? '' %>"
+         data-telefono="<%= c.telefono ?? '' %>"
+         data-web="<%= c.web ?? '' %>"
+         data-nota-texto="<%= c.nota ?? '' %>"
+         data-tiene-detalles="<%= c.tieneDetalles ? '1' : '' %>">
+
+  <div class="ficha-comer__cabecera">
+    <h4 class="ficha-comer__nombre"><%= c.nombre %></h4>
+    <% if (c.origen === 'manual') { %>
+      <span class="ficha-comer__marca" title="La escribiste tú">a mano</span>
+    <% } else if (c.origen === 'ia') { %>
+      <span class="ficha-comer__marca" title="Lo encontró la IA buscando en la web: la nota no es medida">
+        sin nota medida
+      </span>
+    <% } %>
+  </div>
+
+  <div class="ficha-comer__datos">
+    <% if (c.cocina) { %>
+      <span class="ficha-comer__cocina"><%= c.cocina %></span>
+    <% } %>
+    <% if (c.precioSimbolo || c.precioTexto) { %>
+      <span class="ficha-comer__precio">
+        <%= c.precioSimbolo ?? '' %><% if (c.precioTexto) { %>
+          <span class="secundario"><%= c.precioTexto %></span>
+        <% } %>
+      </span>
+    <% } %>
+
+    <%# La nota, con la ponderada como criterio y la cruda a la vista: enseñar
+        solo la ponderada confundiría al comparar con Google. %>
+    <% if (estrellas) { %>
+      <span class="ficha-comer__nota" title="Ponderada: <%= c.ponderada != null ? c.ponderada.toFixed(2) : '—' %>">
+        <i class="ti ti-star-filled" aria-hidden="true"></i>
+        <strong><%= estrellas %></strong>
+        <% if (c.numOpiniones) { %>
+          <span class="secundario"><%= Number(c.numOpiniones).toLocaleString('es-ES') %> opiniones</span>
+        <% } %>
+      </span>
+    <% } %>
+  </div>
+
+  <% if (c.nota) { %><p class="ficha-comer__texto"><%= c.nota %></p><% } %>
+
+  <%# El teléfono, tocable. Sin espacios ni guiones en el href: un tel: con
+      espacios no marca en algunos móviles. %>
+  <div class="ficha-comer__contacto">
+    <% if (c.telefonoMarcable) { %>
+      <a class="ficha-comer__telefono" href="tel:<%= c.telefonoMarcable %>">
+        <i class="ti ti-phone" aria-hidden="true"></i> <%= c.telefono %>
+      </a>
+    <% } %>
+    <% if (c.web) { %>
+      <a class="ficha-comer__enlace" href="<%= c.web %>" target="_blank" rel="noopener noreferrer">
+        <i class="ti ti-external-link" aria-hidden="true"></i> Su web
+      </a>
+    <% } %>
+    <% if (c.urlMapa) { %>
+      <a class="ficha-comer__enlace" href="<%= c.urlMapa %>" target="_blank" rel="noopener noreferrer">
+        <i class="ti ti-map-2" aria-hidden="true"></i> En el mapa
+      </a>
+    <% } %>
+  </div>
+
+  <% if (c.horarios) { %>
+    <p class="ficha-comer__horarios">
+      <i class="ti ti-clock-hour-4" aria-hidden="true"></i> <%= c.horarios %>
+    </p>
+  <% } %>
+
+  <%# Dónde está. La de Places viene ya puesta y situada; la de la IA o la
+      escrita a mano se busca como cualquier otra. %>
+  <%- include('direccion', {
+        tipo: 'comer', elementoId: c.id, direccion: c.direccionFicha, viaje, compacto: true,
+      }) %>
+
+  <div class="ficha-comer__acciones">
+    <button class="apuntar <%= c.apuntado ? 'apuntar--si' : '' %>" type="button"
+            data-marcar-comer="<%= c.id %>">
+      <i class="ti <%= c.apuntado ? 'ti-bookmark-filled' : 'ti-bookmark' %>" aria-hidden="true"></i>
+      <span><%= c.apuntado ? 'Apuntado' : 'Me lo apunto' %></span>
+    </button>
+
+    <%# Los datos de contacto son la parte CARA de Places: se piden al abrir la
+        ficha, nunca al buscar, y solo una vez. %>
+    <% if (!c.tieneDetalles) { %>
+      <button class="apuntar" type="button" data-detalles-comer="<%= c.id %>">
+        <i class="ti ti-address-book" aria-hidden="true"></i>
+        <span>Teléfono y horarios</span>
+      </button>
+    <% } %>
+
+    <button class="apuntar" type="button" data-editar-comer="<%= c.id %>">
+      <i class="ti ti-pencil" aria-hidden="true"></i> Editar
+    </button>
+    <button class="apuntar apuntar--peligro" type="button"
+            data-borrar-comer="<%= c.id %>" data-nombre="<%= c.nombre %>">
+      <i class="ti ti-trash" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <%# --- Lo que solo tiene sentido cuando está apuntado --- %>
+  <% if (c.apuntado && c.candidatoId) { %>
+    <% if (puesto) { %>
+      <a class="colocado colocado--ancho" href="/viaje/<%= viaje.id %>/lienzo?etapa=<%= etapa.id %>"
+         title="Verlo en el lienzo">
+        <i class="ti ti-calendar-check" aria-hidden="true"></i> <%= puesto.etiqueta %>
+      </a>
+    <% } else if (diasDeLaEtapa.length) { %>
+      <button class="apuntar apuntar--ancho" type="button" data-poner="<%= c.candidatoId %>">
+        <i class="ti ti-calendar-plus" aria-hidden="true"></i> Ponerlo en un día
+      </button>
+    <% } %>
+  <% } %>
+
+  <%# --- Distancias: lo que en la calle es oro --- %>
+  <details class="ficha-comer__distancias">
+    <summary>
+      <i class="ti ti-ruler-measure" aria-hidden="true"></i>
+      Distancias<% if (distancias.length) { %> <span class="pastilla"><%= distancias.length %></span><% } %>
+    </summary>
+    <%- include('distancias', {
+          tipo: 'comer', elementoId: c.id, nombre: c.nombre,
+          distancias, situada: Boolean(c.direccionFicha?.situada),
+        }) %>
+  </details>
+</article>

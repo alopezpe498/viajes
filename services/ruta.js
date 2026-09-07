@@ -23,6 +23,7 @@
 import { todas, una, ejecutar, db, nochesEntre } from '../db/index.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { resumenDeTramo } from './etapa.js';
+import { distanciaGuardada, comoEtiqueta } from './distancias-ciudades.js';
 
 // Se reexporta para no romper a quien ya la importaba de aquí.
 export { ciudadDeCasa };
@@ -243,6 +244,13 @@ export function rutaDeViaje(viajeId) {
  * el nombre del sitio del que se sale o al que se vuelve; los de en medio
  * preguntan directamente cómo se va de una parada a la siguiente.
  */
+/** La distancia guardada entre dos ciudades del catálogo, en la forma que
+ *  esperan los textos. Null si todavía no se ha calculado. */
+function refDeCiudades(a, b) {
+  const g = distanciaGuardada(a, b);
+  return g ? { km: g.km, minutos: g.minutos_coche, fuente: g.fuente } : null;
+}
+
 function tramosParaPintar(viajeId, confirmadas) {
   if (!confirmadas.length) return [];
 
@@ -288,6 +296,12 @@ function tramosParaPintar(viajeId, confirmadas) {
         tipo: t.tipo,
         resuelto: Boolean(t.candidato_id || t.notas),
         texto,
+        // Los km y el tiempo de coche del salto, de la caché de ciudades. Solo
+        // en los saltos de en medio: en la ida y la vuelta se vuela, y poner
+        // "1.400 km · 14 h en coche" al lado de un vuelo no informa de nada.
+        km: donde === 'salto' && origen?.punto_interes_id && destino?.punto_interes_id
+          ? comoEtiqueta(refDeCiudades(origen.punto_interes_id, destino.punto_interes_id))
+          : null,
       };
     })
     .filter(Boolean)
@@ -324,6 +338,56 @@ export function confirmarEtapa(etapaId) {
   return etapa.viaje_id;
 }
 
+/**
+ * Clona una etapa al final de la ruta.
+ *
+ * EL CASO QUE LO PIDE: Barcelona → Sarajevo → Mostar, pero el vuelo de vuelta
+ * sale de Sarajevo. La ruta de verdad es Sarajevo → Mostar → Sarajevo, y esa
+ * segunda parada en Sarajevo suele ser de cero noches: se pasa por allí a coger
+ * el avión.
+ *
+ * QUÉ SE COPIA Y QUÉ NO. Se copia el enganche al CATÁLOGO —el destino y, si lo
+ * tiene, el punto— y nada más. Por eso la clonada nace con sus sitios y sus
+ * excursiones ya investigados, sin repetir una sola búsqueda: eso es
+ * conocimiento sobre la ciudad, no sobre el viaje.
+ *
+ * No se copia NADA del viaje: ni hotel elegido, ni transporte, ni lo apuntado,
+ * ni lo colocado en el lienzo, ni las cotizaciones. Volver a pasar por Sarajevo
+ * no significa dormir otra vez en el mismo hotel ni repetir el free tour.
+ *
+ * Las dos son etapas independientes: borrar una no toca a la otra, y el
+ * catálogo que comparten no se duplica ni se toca.
+ */
+export function clonarEtapa(etapaId) {
+  const etapa = una('SELECT * FROM etapas WHERE id = ?', etapaId);
+  if (!etapa) return null;
+
+  const ultimo = una(
+    "SELECT MAX(orden) AS n FROM etapas WHERE viaje_id = ? AND estado = 'confirmada'",
+    etapa.viaje_id
+  );
+
+  const r = ejecutar(
+    `INSERT INTO etapas
+       (viaje_id, destino_id, punto_interes_id, nombre_ciudad, orden, noches, estado)
+     VALUES (?, ?, ?, ?, ?, 0, 'confirmada')`,
+    etapa.viaje_id,
+    etapa.destino_id,
+    etapa.punto_interes_id,
+    etapa.nombre_ciudad,
+    (ultimo?.n ?? 0) + 1
+  );
+
+  // El recálculo crea los tramos que ahora hacen falta: el salto desde la
+  // parada anterior y la vuelta a casa, que pasa a salir de esta.
+  recalcularRuta(etapa.viaje_id);
+
+  console.log(
+    `[ruta] Viaje #${etapa.viaje_id}: «${etapa.nombre_ciudad}» clonada al final de la ruta (0 noches).`
+  );
+  return { viajeId: etapa.viaje_id, etapaId: Number(r.lastInsertRowid) };
+}
+
 /** Fuera una etapa, esté confirmada o no. Sus tramos se van con ella. */
 export function quitarEtapa(etapaId) {
   const etapa = una('SELECT * FROM etapas WHERE id = ?', etapaId);
@@ -337,12 +401,20 @@ export function quitarEtapa(etapaId) {
   return etapa.viaje_id;
 }
 
-/** Una noche más o una menos. Nunca menos de una: una parada de cero noches no es una parada. */
+/**
+ * Una noche más o una menos.
+ *
+ * El suelo es CERO, no uno. Antes era uno —"una parada de cero noches no es una
+ * parada"—, y para el caso normal está bien; pero una parada de paso, esa por la
+ * que se cruza para coger el avión de vuelta, existe y no se duerme en ella. Es
+ * exactamente lo que crea "Clonar", y tenía que poder volver a cero después de
+ * haberle puesto una noche por error.
+ */
 export function cambiarNoches(etapaId, delta) {
   const etapa = una('SELECT * FROM etapas WHERE id = ?', etapaId);
   if (!etapa) return null;
 
-  const nuevas = Math.max(1, (etapa.noches ?? 0) + (Number(delta) || 0));
+  const nuevas = Math.max(0, (etapa.noches ?? 0) + (Number(delta) || 0));
   ejecutar('UPDATE etapas SET noches = ? WHERE id = ?', nuevas, etapaId);
 
   recalcularRuta(etapa.viaje_id);
