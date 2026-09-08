@@ -66,7 +66,32 @@
     }
   }
 
-  function mostrar(indice, { conAncla = true } = {}) {
+  /**
+   * LA PESTAÑA VIVE EN LA URL, Y EN LA QUERY.
+   *
+   * Antes vivía en el ancla (`#dormir`). El ancla vale para navegar dentro de
+   * la página, pero NO llega al servidor: el navegador se la queda. Y como
+   * esta pantalla se recarga entera cada dos por tres —cuando acaba una
+   * búsqueda, al apuntar algo, al elegir un hotel—, el servidor pintaba
+   * siempre "Qué ver" y la tuya solo volvía cuando el JS terminaba de
+   * cargar. Eso era el salto.
+   *
+   * En la query (`?p=dormir`) sí llega, así que la página nace ya con la
+   * pestaña buena y no hay nada que reponer ni nada que parpadee.
+   */
+  function ponerEnLaUrl(cambios) {
+    const url = new URL(location.href);
+    for (const [clave, valor] of Object.entries(cambios)) {
+      if (valor) url.searchParams.set(clave, valor);
+      else url.searchParams.delete(clave);
+    }
+    // El ancla se va: ya no manda ella, y dejarla puesta la haría pelear con
+    // la query en la siguiente recarga.
+    url.hash = '';
+    history.replaceState(null, '', url);
+  }
+
+  function mostrar(indice, { enLaUrl = true } = {}) {
     botones.forEach((b, i) => {
       b.classList.toggle('pestana--activa', i === indice);
       b.setAttribute('aria-selected', String(i === indice));
@@ -74,13 +99,10 @@
     paneles.forEach((p, i) => {
       if (p) p.hidden = i !== indice;
     });
-    // El ancla en la URL: así "#llegar" desde la pantalla de ruta abre
-    // directamente la pestaña del transporte, y recargar no la pierde.
-    if (conAncla && botones[indice]) {
-      history.replaceState(null, '', `#${botones[indice].dataset.ancla}`);
-    }
-    // Y guardada, que es lo que la repone cuando no hay ancla de la que tirar.
-    if (botones[indice]) recordar({ pestana: botones[indice].dataset.ancla });
+    if (!botones[indice]) return;
+    if (enLaUrl) ponerEnLaUrl({ p: botones[indice].dataset.ancla });
+    // Y guardada también, que es de lo que tira si se llega sin nada en la URL.
+    recordar({ pestana: botones[indice].dataset.ancla });
   }
 
   botones.forEach((b, i) => b.addEventListener('click', () => mostrar(i)));
@@ -94,22 +116,41 @@
     ev.preventDefault();
   });
 
-  /** Abre la pestaña que diga el ancla de la URL, si la hay. */
-  function pestanaDelAncla() {
+  /**
+   * Abre la pestaña que diga la URL, sea por query o por ancla.
+   *
+   * El ancla se sigue atendiendo porque los enlaces de la pantalla de ruta
+   * llegan así (`/etapa/15#llegar`) y porque están en marcadores de la gente.
+   * Al atenderlo se pasa a la query, y a partir de ahí ya sobrevive solo.
+   */
+  function pestanaDeLaUrl() {
+    const query = new URLSearchParams(location.search).get('p');
     const ancla = location.hash.slice(1);
-    const i = botones.findIndex((b) => b.dataset.ancla === ancla);
-    if (i >= 0) mostrar(i, { conAncla: false });
-    return i >= 0;
+
+    let i = botones.findIndex((b) => b.dataset.ancla === query);
+    if (i >= 0) {
+      // El servidor ya la ha pintado; aquí solo se sincroniza el estado y se
+      // guarda. Sin tocar la URL, que ya está como toca.
+      mostrar(i, { enLaUrl: false });
+      return true;
+    }
+
+    i = botones.findIndex((b) => b.dataset.ancla === ancla);
+    if (i >= 0) {
+      mostrar(i);   // y de paso el ancla se convierte en query
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Al cargar: manda el ancla y, si no la hay, lo último que se estaba mirando.
+   * Al cargar: manda la URL y, si no dice nada, lo último que se estaba mirando.
    *
-   * En ese orden porque el ancla es una intención explícita —venir de la ruta
+   * En ese orden porque la URL es una intención explícita —venir de la ruta
    * pulsando "cómo llegar"— y lo recordado es solo dónde te quedaste.
    */
   (() => {
-    if (pestanaDelAncla()) return;
+    if (pestanaDeLaUrl()) return;
 
     const { pestana } = leerRecuerdo();
     const i = botones.findIndex((b) => b.dataset.ancla === pestana);
@@ -120,7 +161,7 @@
   // ir de /etapa/15 a /etapa/15#dormir es navegación DENTRO del mismo
   // documento, el navegador no vuelve a pedir la página y sin esto la pestaña
   // se quedaba donde estaba. Los chips de la pantalla de ruta llegan así.
-  window.addEventListener('hashchange', pestanaDelAncla);
+  window.addEventListener('hashchange', pestanaDeLaUrl);
 
 
   // ===========================================================================
@@ -144,17 +185,26 @@
         if (p) p.hidden = i !== indice;
       });
       if (guardar && subBotones[indice]) {
-        recordar({ subpestana: subBotones[indice].dataset.subpanel });
+        const clave = subBotones[indice].dataset.subpanel;
+        ponerEnLaUrl({ sp: clave });
+        recordar({ subpestana: clave });
       }
     };
 
     subBotones.forEach((b, i) => b.addEventListener('click', () => mostrarSub(i)));
 
-    // Y se repone al cargar. Sin esto, cada recarga te devolvía a "Sitios"
-    // aunque estuvieras esperando una búsqueda de restaurantes.
+    // Y se repone al cargar. Esta es la que más se notaba: "Comer" y "Moverse"
+    // son subpestañas, así que buscar un restaurante y esperar el resultado
+    // acababa devolviéndote a "Sitios" en cada recarga.
+    //
+    // Manda la URL —que es lo que el servidor ya ha pintado— y el recuerdo
+    // solo cubre el caso de llegar sin nada puesto.
+    const enLaUrl = new URLSearchParams(location.search).get('sp');
     const { subpestana } = leerRecuerdo();
-    const iSub = subBotones.findIndex((b) => b.dataset.subpanel === subpestana);
-    if (iSub > 0) mostrarSub(iSub, { guardar: false });
+    const iSub = subBotones.findIndex(
+      (b) => b.dataset.subpanel === (enLaUrl || subpestana)
+    );
+    if (iSub > 0) mostrarSub(iSub, { guardar: !enLaUrl });
 
     barraSub.addEventListener('keydown', (ev) => {
       if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
@@ -315,7 +365,11 @@
   function recargarConLaFicha(actividadId) {
     const url = new URL(location.href);
     url.searchParams.set('abrir', actividadId);
-    url.hash = 'ver';
+    // La pestaña y la subpestaña, en la query: son las que el servidor lee para
+    // pintar la pantalla ya abierta por donde toca. Con el ancla no llegaban.
+    url.searchParams.set('p', 'ver');
+    url.searchParams.set('sp', 'sub-excursiones');
+    url.hash = '';
     location.replace(url);
   }
 

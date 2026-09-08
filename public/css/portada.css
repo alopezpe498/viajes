@@ -294,6 +294,25 @@
 .modal__campo:focus { outline: none; border-color: var(--acento); background: var(--superficie); }
 .modal__texto--nota { margin-top: 10px; font-size: 13px; color: var(--texto-3); }
 
+/* --- Escribir el nombre para confirmar el borrado -------------------------
+   El campo no es un adorno: hasta que el nombre no cuadra, el botón rojo está
+   apagado. El verde al acertar es la única señal de que ya se puede. */
+.modal__etiqueta {
+  display: block;
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--texto-2);
+}
+.modal__etiqueta strong { color: var(--texto); }
+.modal__campo--vale {
+  border-color: var(--exito-tx, var(--acento));
+  background: var(--superficie);
+}
+.modal__botones .boton--peligro:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 @media (max-width: 720px) {
   .portada { flex-direction: column; }
   .panel { width: 100%; padding: 30px 24px; }

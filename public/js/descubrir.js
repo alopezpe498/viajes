@@ -43,149 +43,16 @@
   // ===========================================================================
   // LAS TESELAS
   // ---------------------------------------------------------------------------
-  // Google primero, OpenStreetMap de respaldo. Y el respaldo entra SIEMPRE que
-  // algo salga mal: sin clave, con la clave restringida a otro dominio, con la
-  // API caída o con el script bloqueado por una extensión. Nunca se queda el
-  // mapa en gris, que es lo que pasaría si esto se diera por hecho.
+  // Todo esto vivía aquí dentro, y ese era el problema: el OTRO mapa de la app
+  // —el mapamundi de elegir destino— no tenía ni una línea de Google, seguía
+  // con OpenStreetMap y nadie se había enterado. Ahora es de los dos.
+  //
+  // Ver public/js/mapa-teselas.js.
   // ===========================================================================
-
-  /**
-   * El mapa, sin gritar.
-   *
-   * Google trae por defecto todos los negocios, todas las paradas de metro y
-   * los iconos de las carreteras, y encima de eso hay que pintar marcadores,
-   * líneas punteadas y etiquetas de distancia. Se apagan las etiquetas de
-   * puntos de interés y de transporte —lo que sobra— y se baja la saturación,
-   * y quedan a la vista las ciudades, las carreteras y la costa, que es lo que
-   * se está mirando aquí.
-   */
-  const ESTILO_LIMPIO = [
-    { elementType: 'geometry', stylers: [{ saturation: -30 }] },
-    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-    { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
-    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-    { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-    { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
-    { featureType: 'administrative.neighborhood', stylers: [{ visibility: 'off' }] },
-    // El agua, del azul de la casa.
-    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#D3E8F0' }] },
-  ];
-
-  function teselasDeOSM(motivo) {
-    if (motivo) console.warn(`[descubrir] teselas de OpenStreetMap: ${motivo}`);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
-      attribution: '© OpenStreetMap',
-    }).addTo(mapa);
-  }
-
-  /**
-   * Carga la API de Google. Resuelve cuando está lista y falla en cuanto se
-   * tuerza, para poder irse al respaldo sin dejar a nadie esperando.
-   *
-   * Tres formas de enterarse de que no va, y hacen falta las tres:
-   *
-   *   - `gm_authFailure`, que Google llama en ALGUNOS fallos de clave.
-   *   - El `onerror` del script, si ni siquiera se descarga.
-   *   - Un plazo, porque los otros dos no siempre llegan: una extensión que
-   *     bloquee el dominio puede dejar la carga colgada sin decir nada.
-   *
-   * Y aun con las tres no basta, que es lo que costó descubrir: con
-   * `RefererNotAllowedMapError` —la clave no autoriza este dominio— la API
-   * CARGA BIEN, no llama a `gm_authFailure`, escribe el error en la consola y
-   * deja el mapa en gris. Desde el código todo parece haber ido bien. Por eso
-   * después de poner la capa hay que comprobar que de verdad ha pintado algo:
-   * eso lo hace `teselasDeGoogle`.
-   */
-  function cargarGoogle(clave) {
-    return new Promise((listo, falla) => {
-      const CALLBACK = '__mapaListo';
-      const reloj = setTimeout(() => falla(new Error('la API de Google tardó demasiado')), 6000);
-
-      const terminar = (fn, arg) => { clearTimeout(reloj); fn(arg); };
-
-      window[CALLBACK] = () => terminar(listo);
-      window.gm_authFailure = () =>
-        terminar(falla, new Error('la clave no vale para este dominio'));
-
-      const script = document.createElement('script');
-      // `language` y `region` en español: sin esto los nombres salen en el
-      // idioma del país que se esté mirando.
-      script.src =
-        'https://maps.googleapis.com/maps/api/js' +
-        `?key=${encodeURIComponent(clave)}` +
-        `&language=es&region=ES&loading=async&callback=${CALLBACK}`;
-      script.async = true;
-      script.onerror = () => terminar(falla, new Error('no se pudo descargar la API de Google'));
-      document.head.appendChild(script);
-    });
-  }
-
-  /**
-   * Pone las teselas de Google y COMPRUEBA QUE PINTAN.
-   *
-   * La comprobación no es paranoia: es el único modo de detectar
-   * `RefererNotAllowedMapError`. En ese caso la API carga, la capa se añade sin
-   * quejarse y el mapa se queda gris para siempre. Se espera al `tilesloaded`
-   * del mapa de Google —el evento que dice "ya hay imágenes"— y, si no llega a
-   * tiempo, se quita la capa y se vuelve a OpenStreetMap.
-   */
-  function teselasDeGoogle() {
-    return new Promise((listo, falla) => {
-      if (!L.gridLayer?.googleMutant) {
-        return falla(new Error('no cargó el puente con Leaflet'));
-      }
-
-      const capa = L.gridLayer.googleMutant({
-        type: 'roadmap',
-        styles: ESTILO_LIMPIO,
-        maxZoom: 20,
-      });
-      capa.addTo(mapa);
-
-      const reloj = setTimeout(() => {
-        mapa.removeLayer(capa);
-        falla(
-          new Error(
-            'Google no llegó a pintar. Lo normal es que la clave no autorice ' +
-              `«${location.origin}»: mira la consola, ahí lo dice con su nombre.`
-          )
-        );
-      }, 4000);
-
-      // `_mutant` es el mapa de Google que hay por debajo. Su `tilesloaded` es
-      // la señal de que hay imágenes de verdad en pantalla.
-      const alPintar = () => { clearTimeout(reloj); listo(); };
-
-      if (capa._mutant && window.google?.maps?.event) {
-        google.maps.event.addListenerOnce(capa._mutant, 'tilesloaded', alPintar);
-      } else {
-        // Sin acceso al mapa de dentro, se mira si el plugin ha destapado su
-        // contenedor, que es lo que hace cuando Google le contesta.
-        const mirar = setInterval(() => {
-          const div = document.querySelector('.leaflet-google-mutant');
-          if (div && getComputedStyle(div).visibility === 'visible') {
-            clearInterval(mirar);
-            alPintar();
-          }
-        }, 250);
-        setTimeout(() => clearInterval(mirar), 4000);
-      }
-    });
-  }
-
-  (async () => {
-    const clave = datos.claveMapas;
-    if (!clave) return teselasDeOSM('no hay GOOGLE_MAPS_BROWSER_KEY en el .env');
-
-    try {
-      await cargarGoogle(clave);
-      await teselasDeGoogle();
-      console.log('[descubrir] teselas de Google Maps, en español.');
-    } catch (err) {
-      teselasDeOSM(err.message);
-    }
-  })();
+  Teselas.poner(mapa, {
+    clave: datos.claveMapas,
+    contexto: 'descubrir destino',
+  });
 
   /** Escapa lo que va dentro del globo: los nombres vienen de la IA. */
   function escapar(t) {
@@ -385,48 +252,83 @@
     // --- Arrastre con el ratón -------------------------------------------
     // Con pointer events, que valen para ratón y para lápiz sin duplicar código.
     // El táctil se queda fuera a propósito: el navegador ya lo hace mejor.
-    let arrastrando = false;
+    let apuntando = false;      // el ratón está apoyado, aún no se sabe si arrastra
+    let arrastrando = false;    // ya ha pasado del umbral: esto es un arrastre
+    let fueArrastre = false;    // el gesto que acaba de terminar lo fue
     let empezoEn = 0;
     let scrollAlEmpezar = 0;
     let recorrido = 0;
 
+    // Qué se considera arrastre y qué es solo un pulso de la mano.
+    const UMBRAL = 6;
+
     carrusel.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType === 'touch') return;
 
-      // LO QUE SE PULSA NO SE ARRASTRA.
-      //
-      // Aquí faltaban las etiquetas y los campos, y eso tenía roto el "Ciudad
-      // de entrada". Es un `<label>` con una casilla dentro, así que no entraba
-      // en `button, a`: al pulsarlo empezaba un arrastre del carrusel y, con
-      // ocho píxeles de deriva del ratón —lo que hace cualquier mano—, el
-      // guardián de abajo cancelaba el clic con `preventDefault()`. Cancelar el
-      // clic de una casilla impide que cambie de estado, así que no se marcaba,
-      // no había evento `change` y no pasaba absolutamente nada.
-      //
-      // Un clic hecho por código sí funcionaba, porque no mueve el puntero. Por
-      // eso no salió al probarlo en su día.
+      // Los botones, enlaces y campos no se arrastran: se pulsan.
       if (ev.target.closest('button, a, label, input, select, textarea')) return;
 
-      arrastrando = true;
+      apuntando = true;
+      arrastrando = false;
+      fueArrastre = false;
       recorrido = 0;
       empezoEn = ev.clientX;
       scrollAlEmpezar = carrusel.scrollLeft;
-      carrusel.classList.add('carrusel--agarrado');
-      // Sin esto, el scroll suave pelea con el arrastre y da tirones.
-      carrusel.style.scrollBehavior = 'auto';
     });
 
     carrusel.addEventListener('pointermove', (ev) => {
-      if (!arrastrando) return;
+      if (!apuntando) return;
+
       const movido = ev.clientX - empezoEn;
       recorrido = Math.abs(movido);
+
+      // AQUÍ EMPIEZA EL ARRASTRE, Y NI UN PÍXEL ANTES.
+      //
+      // Esta clase pone `pointer-events: none` a las tarjetas (estilo.css), y
+      // eso es imprescindible mientras se arrastra —si no, el navegador
+      // selecciona texto y las tarjetas se tragan el gesto—. Pero antes se
+      // ponía ya en `pointerdown`, es decir, en CUALQUIER pulsación.
+      //
+      // El efecto era que, desde el instante en que apoyabas el ratón, las
+      // tarjetas dejaban de existir para el puntero: el `pointerup` y el
+      // `click` aterrizaban en el `.carrusel` en lugar de en la tarjeta. Y con
+      // eso se caían las dos cosas de golpe. El manejador de la tarjeta hace
+      // `ev.target.closest('.tarjeta-punto')` y le salía `null`, así que
+      // seleccionar una ficha no hacía nada; y un `<label>` que nunca recibe el
+      // clic no cambia su casilla ni dispara `change`, así que "Ciudad de
+      // entrada" tampoco hacía nada.
+      //
+      // En el móvil no pasaba porque el táctil se sale arriba y la clase no
+      // llegaba a ponerse nunca. De ahí lo desconcertante del asunto: el dedo
+      // sí, el ratón no.
+      if (!arrastrando && recorrido > UMBRAL) {
+        arrastrando = true;
+        carrusel.classList.add('carrusel--agarrado');
+        // Sin esto, el scroll suave pelea con el arrastre y da tirones.
+        carrusel.style.scrollBehavior = 'auto';
+      }
+      if (!arrastrando) return;
+
       carrusel.scrollLeft = scrollAlEmpezar - movido;
       ajustarFlechas();
     });
 
+    /**
+     * Fin del gesto, sea como sea: soltando, saliéndose del carrusel o porque
+     * el navegador lo cancele.
+     *
+     * Deja `recorrido` a cero SIEMPRE. Antes no lo hacía, y un arrastre que
+     * acabara fuera del carrusel —que no trae clic detrás— lo dejaba con el
+     * valor viejo: el siguiente clic, ya legítimo, se lo comía el guardián.
+     * Lo que el clic necesita saber viaja aparte, en `fueArrastre`, y eso lo
+     * limpia el `pointerdown` siguiente.
+     */
     const soltar = () => {
-      if (!arrastrando) return;
+      if (!apuntando) return;
+      fueArrastre = arrastrando;
+      apuntando = false;
       arrastrando = false;
+      recorrido = 0;
       carrusel.classList.remove('carrusel--agarrado');
       carrusel.style.scrollBehavior = '';
       ajustarFlechas();
@@ -436,15 +338,18 @@
     carrusel.addEventListener('pointerleave', soltar);
     carrusel.addEventListener('pointercancel', soltar);
 
-    // Un arrastre no debe acabar en clic. Si se ha movido más de unos píxeles,
-    // el clic que viene detrás se anula: si no, arrastrar sobre una tarjeta
+    // Un arrastre no debe acabar en clic: si no, arrastrar sobre una tarjeta
     // acabaría abriendo su ficha.
+    //
+    // Pero solo se anula el clic de lo que NO es un control. Antes cancelaba
+    // todo lo que pillara, botones y casillas incluidos, y eso convertía
+    // cualquier resto de un gesto anterior en un botón muerto.
     carrusel.addEventListener('click', (ev) => {
-      if (recorrido > 6) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        recorrido = 0;
-      }
+      if (!fueArrastre) return;
+      fueArrastre = false;
+      if (ev.target.closest('button, a, label, input, select, textarea')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
     }, true);
   }
 
@@ -704,8 +609,16 @@
   // el servidor lo va calculando por detrás mientras se sondea. Una distancia
   // que tarda deja un guión; nunca deja la pantalla en blanco.
   //
-  // Las LÍNEAS solo se dibujan a las ciudades SELECCIONADAS —las que ya están en
-  // la ruta—: una a cada candidata sería una telaraña sobre el mapa.
+  // LÍNEA A TODA CIUDAD QUE TENGA DISTANCIA, no solo a las de la ruta.
+  //
+  // Antes se dibujaba únicamente a las ya seleccionadas, por miedo a la
+  // telaraña. El resultado era peor que la telaraña: la ficha decía "A 598 km
+  // de Cracovia" y en el mapa no había ni rastro de esa línea, así que el dato
+  // estaba calculado —y pagado— pero no se veía dónde caía. Justo lo que uno
+  // mira el mapa para saber.
+  //
+  // Se distinguen por el trazo: la ruta va marcada y continua, la candidata va
+  // fina y de puntos, que es lo que dice "esta todavía es una posibilidad".
   // ===========================================================================
   const viajeId = datos.viaje?.id ?? null;
   const destinoId = datos.destino?.id ?? null;
@@ -743,32 +656,43 @@
     if (!origen) return;
     const desde = origen.marcador.getLatLng();
 
-    for (const [id, m] of marcadores) {
-      if (id === referencia.ciudadId) continue;
-      // Solo las elegidas: las candidatas sin elegir llenarían el mapa de rayas.
-      if (!m.enRuta) continue;
+    // Las de la ruta se pintan las últimas para que queden por encima de las
+    // candidatas cuando dos líneas se cruzan.
+    const porPintar = [...marcadores]
+      .filter(([id]) => id !== referencia.ciudadId)
+      .filter(([id]) => distancias[id])
+      .sort(([, a], [, b]) => Number(a.enRuta) - Number(b.enRuta));
 
+    for (const [id, m] of porPintar) {
       const dato = distancias[id];
       const hasta = m.marcador.getLatLng();
+      const enRuta = Boolean(m.enRuta);
 
       L.polyline([desde, hasta], {
         color: '#1B7FA6',
-        weight: 1.5,
-        opacity: 0.55,
-        dashArray: '4 6',
+        // La de la ruta pesa; la candidata se insinúa.
+        weight: enRuta ? 2 : 1,
+        opacity: enRuta ? 0.6 : 0.3,
+        dashArray: enRuta ? '5 5' : '1 6',
         interactive: false,
       }).addTo(capaLineas);
 
-      if (!dato?.etiqueta) continue;
+      if (!dato.etiqueta) continue;
+
+      const clases = ['etiqueta-distancia'];
+      if (dato.gravedad && dato.gravedad !== 'cerca') {
+        clases.push(`etiqueta-distancia--${dato.gravedad}`);
+      }
+      // La etiqueta de una candidata va apagada: hay muchas más y no deben
+      // competir con las de la ruta, que son las decisiones ya tomadas.
+      if (!enRuta) clases.push('etiqueta-distancia--candidata');
 
       const medio = L.latLng((desde.lat + hasta.lat) / 2, (desde.lng + hasta.lng) / 2);
       L.marker(medio, {
         interactive: false,
         icon: L.divIcon({
           className: '',
-          html:
-            `<span class="etiqueta-distancia${dato.gravedad === 'cerca' ? '' : ' etiqueta-distancia--' + dato.gravedad}">` +
-            `${dato.etiqueta}</span>`,
+          html: `<span class="${clases.join(' ')}">${dato.etiqueta}</span>`,
           iconSize: null,
         }),
       }).addTo(capaLineas);

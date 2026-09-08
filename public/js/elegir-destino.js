@@ -38,19 +38,26 @@
     worldCopyJump: true,
   }).setView([30, 10], 2.5);
 
-  // Teselas del Humanitarian OSM Team.
+  // LAS TESELAS: Google en español, y OSM si Google falla.
   //
-  // Aquí iba CARTO Voyager, pero ya NO es gratis sin clave: sus teselas siguen
-  // devolviendo 200 y una imagen, solo que la imagen es un cartel de "API KEY
-  // REQUIRED" estampado sobre el mapa. Como este proyecto no usa nada que pida
-  // clave, se cambió por las de HOT, que son libres, no piden registro y tienen
-  // un color más cálido y menos ruido que las estándar de OSM.
-  // La atribución es obligatoria y va abajo a la derecha.
-  L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    subdomains: 'ab',
-    attribution: '© OpenStreetMap · Teselas: Humanitarian OSM Team',
-  }).addTo(mapa);
+  // Aquí no había nada de Google: ni una línea, ni el puente con Leaflet, ni la
+  // clave. El mapa se pintaba con las teselas del Humanitarian OSM Team y ya.
+  // Por eso en esta pantalla no aparecía ningún error de Google en la consola
+  // NI una sola petición a maps.googleapis.com: no es que fallara, es que no
+  // existía el código que la haría.
+  //
+  // En un mapamundi el idioma se nota más que en ningún otro sitio: con OSM los
+  // países salen en su lengua local (Warszawa, Lisboa, Milano) y con Google en
+  // español (Varsovia, Lisboa, Milán). Elegir a dónde vas leyendo topónimos en
+  // polaco es peor de lo que parece.
+  //
+  // El respaldo sigue siendo el de HOT, que es más cálido y con menos ruido que
+  // el OSM estándar, y su atribución es obligatoria: va abajo a la derecha.
+  Teselas.poner(mapa, {
+    clave: document.querySelector('.mundo')?.dataset.claveMapas ?? '',
+    contexto: 'elegir destino (mapamundi)',
+    humanitario: true,
+  });
 
   L.control.zoom({ position: 'bottomright', zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' }).addTo(mapa);
 

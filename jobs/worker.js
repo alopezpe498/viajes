@@ -24,7 +24,7 @@ import {
   resumenFiltrosVuelos,
   ORIGEN_POR_DEFECTO,
 } from '../services/proveedores.js';
-import { iataDe } from '../lib/iata.js';
+import { resolverIata } from '../lib/iata.js';
 import { reunirAvisos } from '../services/avisos.js';
 import { sincronizarEtapaUnica } from '../services/etapas.js';
 import { filtrosVuelosDeTramo } from '../services/etapa.js';
@@ -263,9 +263,12 @@ async function ejecutarActividades(trabajo) {
 }
 
 /**
- * Error de CONFIGURACION, no de scraping: no sabemos el codigo IATA del
- * destino. No sirve de nada reintentar hasta que se añada a lib/iata.js, asi
- * que su mensaje pasa tal cual a la pantalla.
+ * Error de CONFIGURACION, no de scraping: no hay codigo IATA para el destino.
+ *
+ * Ahora esto es raro: lo que no esta en la lista se resuelve solo y se guarda.
+ * Llegar aqui significa que ni siquiera la IA supo por donde se vuela a ese
+ * sitio, y entonces reintentar no arregla nada: su mensaje pasa tal cual a la
+ * pantalla para que se pueda escribir el codigo a mano.
  */
 class ErrorSinIata extends Error {
   constructor(mensaje) {
@@ -891,17 +894,21 @@ async function ejecutarVuelos(trabajo) {
   const nombreOrigen = ciudadOrigen ?? ORIGEN_POR_DEFECTO;
   const nombreDestino = ciudadDestino ?? ORIGEN_POR_DEFECTO;
 
-  const origenIata = ciudadOrigen ? iataDe(ciudadOrigen) : ORIGEN_POR_DEFECTO;
-  const destinoIata = ciudadDestino ? iataDe(ciudadDestino) : ORIGEN_POR_DEFECTO;
+  // Se resuelven de la caché, de la lista de siempre o preguntándolo, por ese
+  // orden. Lo que se aprende queda guardado: cada ciudad se pregunta una vez.
+  const origenIata = ciudadOrigen ? await resolverIata(ciudadOrigen) : ORIGEN_POR_DEFECTO;
+  const destinoIata = ciudadDestino ? await resolverIata(ciudadDestino) : ORIGEN_POR_DEFECTO;
 
   if (!origenIata) {
     throw new ErrorSinIata(
-      `No conozco el código de aeropuerto de «${nombreOrigen}»; añádelo a lib/iata.js`
+      `No he podido averiguar por qué aeropuerto se vuela a «${nombreOrigen}». ` +
+        'Si tiene uno, escríbelo tú en el campo del origen con su código de tres letras.'
     );
   }
   if (!destinoIata) {
     throw new ErrorSinIata(
-      `No conozco el código de aeropuerto de «${nombreDestino}»; añádelo a lib/iata.js`
+      `No he podido averiguar por qué aeropuerto se vuela a «${nombreDestino}». ` +
+        'Si tiene uno, escríbelo tú en el campo del destino con su código de tres letras.'
     );
   }
   if (destinoIata === origenIata) {

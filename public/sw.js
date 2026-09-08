@@ -28,7 +28,7 @@
  * Para publicar cambios, subir VERSION. Al activarse borra las cachés viejas.
  */
 
-const VERSION = 'v6';
+const VERSION = 'v8';
 const CACHE_ESTATICA = `viajes-estatica-${VERSION}`;
 const CACHE_VIVA = `viajes-viva-${VERSION}`;
 
@@ -42,6 +42,7 @@ const ESTATICOS = [
   '/css/estilo.css',
   '/js/app.js',
   '/js/pwa.js',
+  '/js/mapa-teselas.js',
   '/manifest.webmanifest',
   '/icons/icono-192.png',
   '/icons/icono-512.png',

@@ -174,7 +174,7 @@
     const donde = tramo.despuesDe ?? tramo.antesDe;
     return `
       <div class="ruta-tramo">
-        <a class="chip-transporte ${clase}" href="/etapa/${donde}#llegar">
+        <a class="chip-transporte ${clase}" href="/etapa/${donde}?p=llegar">
           <i class="ti ${icono}" aria-hidden="true"></i> ${esc(tramo.texto)}${
             tramo.km ? `<span class="chip-transporte__km">${esc(tramo.km)}</span>` : ''
           }

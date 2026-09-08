@@ -119,19 +119,27 @@ const ICONO_TIPO = {
     </details>
 
     <%# ======================= PESTAÑAS ======================= %>
+    <%# LA PESTAÑA ABIERTA LA MANDA EL SERVIDOR.
+        Aquí estaba clavada "Qué ver" con `pestana--activa` a pelo, y como la
+        pantalla se recarga entera cada vez que termina una búsqueda, cada
+        recarga te devolvía a "Qué ver" antes de que el JS repusiera la tuya.
+        Ahora viene decidida en `vista` y la pantalla nace bien. %>
     <div class="pestanas" role="tablist" id="pestanas">
-      <button class="pestana pestana--activa" type="button" role="tab"
-              aria-selected="true" data-panel="panel-ver" data-ancla="ver">
+      <button class="pestana <%= vista.pestana === 'ver' ? 'pestana--activa' : '' %>"
+              type="button" role="tab"
+              aria-selected="<%= vista.pestana === 'ver' %>" data-panel="panel-ver" data-ancla="ver">
         Qué ver <span class="pestana__n"><%= queVer.apuntados %></span>
       </button>
-      <button class="pestana" type="button" role="tab"
-              aria-selected="false" data-panel="panel-dormir" data-ancla="dormir">Dónde dormir</button>
-      <button class="pestana" type="button" role="tab"
-              aria-selected="false" data-panel="panel-llegar" data-ancla="llegar">Cómo llegar</button>
+      <button class="pestana <%= vista.pestana === 'dormir' ? 'pestana--activa' : '' %>"
+              type="button" role="tab"
+              aria-selected="<%= vista.pestana === 'dormir' %>" data-panel="panel-dormir" data-ancla="dormir">Dónde dormir</button>
+      <button class="pestana <%= vista.pestana === 'llegar' ? 'pestana--activa' : '' %>"
+              type="button" role="tab"
+              aria-selected="<%= vista.pestana === 'llegar' %>" data-panel="panel-llegar" data-ancla="llegar">Cómo llegar</button>
     </div>
 
     <%# ---------------------- 1) QUÉ VER ---------------------- %>
-    <section class="panel" id="panel-ver" role="tabpanel">
+    <section class="panel" id="panel-ver" role="tabpanel" <%= vista.pestana === 'ver' ? '' : 'hidden' %>>
       <%# LA ETAPA NACE LLENA.
           Si la ciudad no tiene nada investigado, al entrar se lanzan solas las
           dos búsquedas (sitios y excursiones) y esto cuenta lo que está
@@ -185,8 +193,12 @@ const ICONO_TIPO = {
 
       <div class="subpestanas" role="tablist" aria-label="Qué ver en <%= etapa.nombre_ciudad %>">
         <% SUBVISTAS.forEach((s, i) => { %>
-          <button class="subpestana <%= i === 0 ? 'subpestana--activa' : '' %>" type="button" role="tab"
-                  aria-selected="<%= i === 0 %>" data-subpanel="sub-<%= s.clave %>">
+          <%# Igual que arriba: la que venga en `vista`, no siempre la primera.
+              Y esta importa aún más, porque "Comer" y "Moverse" viven aquí
+              dentro: buscar un restaurante te devolvía a "Sitios". %>
+          <button class="subpestana <%= vista.subpestana === ('sub-' + s.clave) ? 'subpestana--activa' : '' %>"
+                  type="button" role="tab"
+                  aria-selected="<%= vista.subpestana === ('sub-' + s.clave) %>" data-subpanel="sub-<%= s.clave %>">
             <i class="ti <%= s.icono %>" aria-hidden="true"></i>
             <%= s.etiqueta %>
             <span class="subpestana__n"><%= s.n %></span>
@@ -195,7 +207,7 @@ const ICONO_TIPO = {
       </div>
 
       <%# --- Sitios: los de la ficha profunda de la ciudad --- %>
-      <section class="subpanel" id="sub-sitios" role="tabpanel">
+      <section class="subpanel" id="sub-sitios" role="tabpanel" <%= vista.subpestana === 'sub-sitios' ? '' : 'hidden' %>>
         <% if (!queVer.sitios.length) { %>
           <p class="candidatos__vacio">
             <%= preparando.trabajando
@@ -212,7 +224,7 @@ const ICONO_TIPO = {
       </section>
 
       <%# --- Excursiones: las de Civitatis, en rejilla vertical --- %>
-      <section class="subpanel" id="sub-excursiones" role="tabpanel" hidden>
+      <section class="subpanel" id="sub-excursiones" role="tabpanel" <%= vista.subpestana === 'sub-excursiones' ? '' : 'hidden' %>>
         <% if (!queVer.excursiones.length) { %>
           <p class="candidatos__vacio">
             <%= preparando.trabajando
@@ -229,7 +241,7 @@ const ICONO_TIPO = {
       </section>
 
       <%# --- Comer: bares y restaurantes --- %>
-      <section class="subpanel" id="sub-comer" role="tabpanel" hidden>
+      <section class="subpanel" id="sub-comer" role="tabpanel" <%= vista.subpestana === 'sub-comer' ? '' : 'hidden' %>>
         <div class="titulo-con-accion">
           <p class="secundario" style="margin:0">
             Dónde comer y dónde tomar algo en <%= etapa.nombre_ciudad %>.
@@ -348,7 +360,7 @@ const ICONO_TIPO = {
       </section>
 
       <%# --- Moverse: el transporte urbano de la ciudad --- %>
-      <section class="subpanel" id="sub-moverse" role="tabpanel" hidden>
+      <section class="subpanel" id="sub-moverse" role="tabpanel" <%= vista.subpestana === 'sub-moverse' ? '' : 'hidden' %>>
 
         <%# LOS TRASLADOS VAN ARRIBA. Es lo que más se usa de esta pestaña:
             "¿cuánto hay del hotel al centro?" se pregunta veinte veces
@@ -430,7 +442,7 @@ const ICONO_TIPO = {
     </section>
 
     <%# ---------------------- 2) DÓNDE DORMIR ---------------------- %>
-    <section class="panel" id="panel-dormir" role="tabpanel" hidden>
+    <section class="panel" id="panel-dormir" role="tabpanel" <%= vista.pestana === 'dormir' ? '' : 'hidden' %>>
       <% if (dormir.estado === 'sin_fechas') { %>
         <div class="caja vacio">
           <i class="ti ti-calendar-off" style="font-size:28px;color:var(--texto-3)" aria-hidden="true"></i>
@@ -553,7 +565,7 @@ const ICONO_TIPO = {
               <div class="chips">
                 <% ORDENES.forEach(o => { %>
                   <a class="chip <%= orden === o.valor ? 'chip--activo' : '' %>"
-                     href="/etapa/<%= etapa.id %>?orden=<%= o.valor %>#dormir">
+                     href="/etapa/<%= etapa.id %>?orden=<%= o.valor %>&p=dormir">
                     <i class="ti <%= o.icono %>" aria-hidden="true"></i> <%= o.etiqueta %>
                   </a>
                 <% }) %>
@@ -579,7 +591,7 @@ const ICONO_TIPO = {
     </section>
 
     <%# ---------------------- 3) CÓMO LLEGAR ---------------------- %>
-    <section class="panel" id="panel-llegar" role="tabpanel" hidden>
+    <section class="panel" id="panel-llegar" role="tabpanel" <%= vista.pestana === 'llegar' ? '' : 'hidden' %>>
       <% if (!tramos.length) { %>
         <p class="candidatos__vacio">
           Esta parada todavía no tiene tramos. Confírmala en la ruta y aparecerán.
@@ -779,7 +791,7 @@ const ICONO_TIPO = {
                   <div class="chips">
                     <% [['precio','Precio','ti-coin'], ['duracion','Más rápidos','ti-clock-bolt']].forEach(([valor, etiqueta, icono]) => { %>
                       <a class="chip <%= ordenVuelos === valor ? 'chip--activo' : '' %>"
-                         href="/etapa/<%= etapa.id %>?ordenVuelos=<%= valor %>#llegar">
+                         href="/etapa/<%= etapa.id %>?ordenVuelos=<%= valor %>&p=llegar">
                         <i class="ti <%= icono %>" aria-hidden="true"></i> <%= etiqueta %>
                       </a>
                     <% }) %>
@@ -860,6 +872,55 @@ const ICONO_TIPO = {
     </nav>
   </div>
 </main>
+
+<%# ===========================================================================
+    LA PESTAÑA, REPUESTA ANTES DE PINTAR
+    ---------------------------------------------------------------------------
+    Va aquí, en línea y sin `defer`, a propósito: el navegador lo ejecuta al
+    encontrarlo, ANTES de pintar. Con etapa.js —75 KB que se descargan, se
+    analizan y se ejecutan después— la pestaña buena tardaba en volver lo justo
+    para verse el salto: 214 ms medidos en local, más por la red.
+
+    En el caso normal no hace nada, porque la pestaña viene en la URL y el
+    servidor ya la ha pintado. Esto cubre lo otro: llegar sin nada en la URL
+    —un enlace de fuera, un marcador, un redirect— teniendo guardado dónde
+    estabas. Sin esto, ahí seguiría el parpadeo.
+    =========================================================================== %>
+<script>
+  (() => {
+    try {
+      const url = new URLSearchParams(location.search);
+      // Si la URL ya lo dice, el servidor ya lo ha pintado: nada que hacer.
+      if (url.get('p') && url.get('sp')) return;
+
+      const guardado = JSON.parse(
+        sessionStorage.getItem('etapa:<%= etapa.id %>:vista') ?? '{}'
+      ) ?? {};
+
+      const activar = (botones, paneles, clave, claseActiva, elegido) => {
+        const i = botones.findIndex((b) => b.dataset[clave] === elegido);
+        if (i <= 0) return;   // 0 ya está puesta, y -1 es que no la conocemos
+        botones.forEach((b, n) => {
+          b.classList.toggle(claseActiva, n === i);
+          b.setAttribute('aria-selected', String(n === i));
+        });
+        paneles.forEach((pa, n) => { if (pa) pa.hidden = n !== i; });
+      };
+
+      if (!url.get('p') && guardado.pestana) {
+        const botones = [...document.querySelectorAll('#pestanas .pestana')];
+        activar(botones, botones.map((b) => document.getElementById(b.dataset.panel)),
+                'ancla', 'pestana--activa', guardado.pestana);
+      }
+
+      if (!url.get('sp') && guardado.subpestana) {
+        const botones = [...document.querySelectorAll('.subpestanas .subpestana')];
+        activar(botones, botones.map((b) => document.getElementById(b.dataset.subpanel)),
+                'subpanel', 'subpestana--activa', guardado.subpestana);
+      }
+    } catch { /* sin sessionStorage: se queda la de por defecto y ya está */ }
+  })();
+</script>
 
 <%# Los días y franjas de esta etapa, para el mini-selector de "Ponerlo en un día". %>
 <script type="application/json" id="datos-colocar"><%- JSON.stringify({

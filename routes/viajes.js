@@ -113,6 +113,7 @@ import {
   TIPOS_CON_DIRECCION,
   direccionDe,
   guardarDireccion,
+  volcarDireccionDeHotel,
   pedirGeocodificar,
   lugaresDeEtapa,
   paraLaVista,
@@ -863,47 +864,28 @@ router.get('/descubrir/:destinoId', cargarDestino, (req, res) => {
   });
 });
 
+
 /**
- * Vuelca en el campo "dirección" lo que Booking supiera del hotel.
+ * QUÉ PESTAÑA Y SUBPESTAÑA VIENEN ABIERTAS, leídas de la URL.
  *
- * Se compone con el nombre y la ciudad delante y detrás porque lo que suele dar
- * Booking es el barrio ("Centro de Madrid"), y eso solo no se puede geocodificar:
- * "Blume Cruz Suites, Centro de Madrid, Madrid" sí, y cae donde tiene que caer.
+ * `?p=dormir&sp=sub-comer`. Van en la query y no en el ancla porque el ancla
+ * NO llega al servidor: el navegador se la queda. Y hacía falta que llegase,
+ * porque quien tiene que pintar la pestaña buena es esta casa, no el JS
+ * cuando ya se ha visto la otra.
  *
- * No pisa nada. Si la ficha ya tenía dirección —puesta a mano o de antes— se
- * deja como está: corregir algo y que te lo vuelvan a cambiar es de las cosas
- * que más molestan.
+ * Se valida contra la lista de siempre: cualquier cosa rara cae en la primera,
+ * que es lo que se veía antes de todo esto.
  */
-function volcarDireccionDeHotel(candidato) {
-  if (direccionDe('hotel', candidato.id)) return;
+const PESTANAS = ['ver', 'dormir', 'llegar'];
+const SUBPESTANAS = ['sub-sitios', 'sub-excursiones', 'sub-comer', 'sub-moverse'];
 
-  let extra = {};
-  try {
-    extra = candidato.datos_extra ? JSON.parse(candidato.datos_extra) ?? {} : {};
-  } catch { /* datos_extra corrupto: se sigue con lo que haya */ }
-
-  const ciudad = una('SELECT nombre_ciudad FROM etapas WHERE id = ?', candidato.etapa_id)
-    ?.nombre_ciudad;
-
-  const donde = String(extra.direccion ?? extra.zona ?? '').trim();
-  const nombre = String(candidato.titulo ?? '').trim();
-  const ciudadTexto = String(ciudad ?? '').trim();
-
-  // La ciudad solo se añade si no está ya dentro. Booking suele dar el barrio
-  // CON la ciudad detrás ("Centro de Ámsterdam, Ámsterdam"), y pegándosela otra
-  // vez salía "…, Ámsterdam, Ámsterdam, Ámsterdam", que además de feo confunde
-  // al geocodificador.
-  const yaDiceLaCiudad =
-    ciudadTexto && donde.toLowerCase().includes(ciudadTexto.toLowerCase());
-
-  const texto = [nombre, donde, yaDiceLaCiudad ? null : ciudadTexto]
-    .map((t) => String(t ?? '').trim())
-    .filter(Boolean)
-    .join(', ');
-  if (!texto) return;
-
-  guardarDireccion('hotel', candidato.id, texto, { viajeId: candidato.viaje_id });
-  console.log(`[rutas] Hotel «${candidato.titulo}»: dirección de Booking → «${texto}».`);
+function vistaPedida(query = {}) {
+  const p = String(query.p ?? '').trim();
+  const sp = String(query.sp ?? '').trim();
+  return {
+    pestana: PESTANAS.includes(p) ? p : PESTANAS[0],
+    subpestana: SUBPESTANAS.includes(sp) ? sp : SUBPESTANAS[0],
+  };
 }
 
 /**
@@ -1306,7 +1288,12 @@ router.get('/elegir-destino/:viajeId', (req, res) => {
   if (!viaje) {
     return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
   }
-  res.render('elegir-destino', { viaje });
+  res.render('elegir-destino', {
+    viaje,
+    // La misma clave que usa la pantalla de descubrir. Aquí faltaba, y por eso
+    // este mapa nunca llegó a pedirle nada a Google.
+    claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
+  });
 });
 
 /**
@@ -1667,6 +1654,16 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
 
   res.render('etapa', {
     ...contexto,
+    // QUÉ PESTAÑA VIENE ABIERTA, DECIDIDO AQUÍ.
+    //
+    // Antes esto no existía: la vista pintaba SIEMPRE "Qué ver" y el JS
+    // reponía la buena una vez cargado. Como la pantalla se recarga entera
+    // cada vez que termina una búsqueda —y al apuntar, al elegir, al
+    // borrar…— el resultado era un salto a "Qué ver" cada pocos segundos.
+    //
+    // Ahora la pestaña viaja en la URL y llega ya pintada. El JS solo la
+    // mantiene al día.
+    vista: vistaPedida(req.query),
     ordenVuelos,
     // Los filtros de hotel se pintan DENTRO de la pestaña: el formulario vive
     // donde se usa, no en otra pantalla.
@@ -1794,7 +1791,7 @@ router.post('/etapa/:etapaId/hoteles/filtros', cargarContextoEtapa, (req, res) =
     return res.status(400).send('Esta etapa no tiene fechas: confírmala en la ruta.');
   }
   buscarHotelesDeEtapa(etapa.id);
-  res.redirect(`/etapa/${etapa.id}#dormir`);
+  res.redirect(`/etapa/${etapa.id}?p=dormir`);
 });
 
 /** Cotizar hoteles con las fechas de ESTA etapa. */
@@ -1804,7 +1801,7 @@ router.post('/etapa/:etapaId/hoteles/buscar', cargarContextoEtapa, (req, res) =>
     return res.status(400).send('Esta etapa no tiene fechas: confírmala en la ruta.');
   }
   buscarHotelesDeEtapa(etapa.id);
-  res.redirect(`/etapa/${etapa.id}#dormir`);
+  res.redirect(`/etapa/${etapa.id}?p=dormir`);
 });
 
 /**
@@ -1907,7 +1904,7 @@ router.post('/api/etapas/:etapaId/preparacion', (req, res) => {
   const estado = prepararEtapa(Number(req.params.etapaId), { forzar: true });
   if (!estado) return res.status(404).send('Esa parada ya no existe.');
 
-  if (req.accepts('html') && !req.xhr) return res.redirect(`/etapa/${req.params.etapaId}#ver`);
+  if (req.accepts('html') && !req.xhr) return res.redirect(`/etapa/${req.params.etapaId}?p=ver`);
   res.json(estado);
 });
 
@@ -1991,7 +1988,7 @@ router.post('/tramo/:id/vuelos/buscar', (req, res) => {
   encolar(tramo.viaje_id, 'vuelos', tramo.id);
 
   const volver = req.body?.volverA || `/etapa/${tramo.etapa_origen_id ?? tramo.etapa_destino_id}`;
-  res.redirect(`${volver}#llegar`);
+  res.redirect(`${volver}${volver.includes('?') ? '&' : '?'}p=llegar`);
 });
 
 /** Los vuelos encontrados para un tramo, y su estado. */

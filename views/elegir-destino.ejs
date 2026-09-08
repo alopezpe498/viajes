@@ -12,11 +12,17 @@
  * versiones distintas del mismo mapa en la misma app solo dan problemas.
  */
 const LEAFLET = '1.9.4';
+// El puente entre Leaflet y Google. Misma versión que en descubrir, a
+// propósito: dos versiones del mismo puente en la misma app solo dan
+// problemas, igual que pasaría con dos de Leaflet.
+const MUTANT = '0.14.1';
 
 const cabezaExtra =
   `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">`;
 const pieExtra =
   `<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.js"></script>` +
+  `<script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@${MUTANT}/dist/Leaflet.GoogleMutant.min.js"></script>` +
+  '<script src="/js/mapa-teselas.js"></script>' +
   '<script src="/js/elegir-destino.js"></script>';
 %>
 <%- include('parciales/cabecera', {
@@ -26,7 +32,10 @@ const pieExtra =
       extraCabeza: cabezaExtra
     }) %>
 
-<main class="mundo" data-viaje="<%= viaje.id %>">
+<%# La clave del navegador viaja aquí: es lo que le faltaba a esta pantalla
+    para poder pedirle las teselas a Google. Puede venir vacía, y entonces el
+    módulo se va a OpenStreetMap avisando por consola. %>
+<main class="mundo" data-viaje="<%= viaje.id %>" data-clave-mapas="<%= claveMapas %>">
 
   <%# El mapa ocupa todo; lo demás flota encima. %>
   <div id="mapamundi" class="mundo__mapa"></div>

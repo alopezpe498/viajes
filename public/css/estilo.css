@@ -3110,6 +3110,16 @@ a  { color: var(--acento); }
 
 /* Mientras se arrastra con el ratón: el cursor lo dice y no se selecciona texto. */
 .carrusel--agarrado { cursor: grabbing; user-select: none; }
+
+/* OJO CON ESTA REGLA.
+   Mientras se arrastra hace falta —si no, el navegador selecciona texto y las
+   tarjetas se comen el gesto—, pero apaga el puntero de las tarjetas, así que
+   el `click` deja de aterrizar en ellas y pasa a hacerlo en el carrusel.
+   Si la clase se pone en `pointerdown`, eso ocurre en CUALQUIER pulsación y
+   deja muertos el "Ciudad de entrada" y la selección de ficha en escritorio
+   (en el móvil no, porque el táctil no entra por ahí).
+   La clase se pone al pasar el umbral de arrastre, en descubrir.js, y ese es
+   el único sitio donde debe ponerse. */
 .carrusel--agarrado .tarjeta-punto { pointer-events: none; }
 
 /* --- El atajo permanente a "Mi ruta" -------------------------------------- */
@@ -3865,6 +3875,16 @@ a  { color: var(--acento); }
 }
 .etiqueta-distancia--aviso { border-color: var(--prec-tx); color: var(--prec-tx); }
 .etiqueta-distancia--mucho { border-color: var(--alerta-tx); color: var(--alerta-tx); }
+
+/* La de una ciudad que aún no está en la ruta. Se lee si la buscas y no
+   estorba si no: son bastantes más que las de la ruta. */
+.etiqueta-distancia--candidata {
+  opacity: .68;
+  font-weight: 600;
+  padding: 1px 7px;
+  box-shadow: 0 1px 4px rgba(18, 48, 62, .10);
+  border-style: dashed;
+}
 
 /* =============================================================================
    TRASLADOS EN "MI RUTA"

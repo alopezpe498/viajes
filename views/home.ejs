@@ -183,13 +183,24 @@ const cabezaExtra = '<link rel="stylesheet" href="/css/portada.css">';
   <div class="modal__caja" role="dialog" aria-modal="true" aria-labelledby="borrar-titulo">
     <h2 class="modal__titulo" id="borrar-titulo">¿Borrar este viaje?</h2>
     <p class="modal__texto" id="borrar-texto"></p>
-    <p class="modal__texto modal__texto--nota">
-      Lo que sabemos de los destinos (sitios, fichas, excursiones) se queda: es
-      del catálogo y sirve para el próximo viaje.
-    </p>
+
+    <%# Lo que se limpia del catálogo, cuando lo hay. Lo rellena home.js: solo
+        se enseña si de verdad hay ciudades que se quedan sin nadie. %>
+    <p class="modal__texto modal__texto--nota" id="borrar-catalogo" hidden></p>
+
+    <%# ESCRIBIR EL NOMBRE PARA CONFIRMAR.
+        Esto ya no se puede deshacer y ahora se lleva más por delante que
+        antes: un botón rojo a un clic de distancia es poca ceremonia para
+        eso. Teclear el nombre obliga a mirar cuál es el viaje. %>
+    <label class="modal__etiqueta" for="borrar-nombre">
+      Escribe <strong id="borrar-nombre-eco"></strong> para confirmar
+    </label>
+    <input class="modal__campo" type="text" id="borrar-nombre" autocomplete="off"
+           spellcheck="false" placeholder="Nombre del viaje">
+
     <div class="modal__botones">
       <button class="boton boton--secundario" type="button" data-modal-cerrar>Cancelar</button>
-      <button class="boton boton--peligro" type="button" id="borrar-confirmar">
+      <button class="boton boton--peligro" type="button" id="borrar-confirmar" disabled>
         <i class="ti ti-trash" aria-hidden="true"></i> Borrar
       </button>
     </div>

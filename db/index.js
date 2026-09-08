@@ -320,6 +320,7 @@ export function migrarEsquema() {
   migracionTrasladosYDirecciones();
   migracionComer();
   migracionBusquedasEfimeras();
+  migracionIata();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -359,6 +360,46 @@ export function migrarEsquema() {
  * que una segunda busqueda ACTUALICE en vez de duplicar, que es lo que ya hacen
  * las actividades y los restaurantes.
  */
+/**
+ * Migracion 20: cache de codigos IATA.
+ *
+ * Hasta ahora los codigos vivian en una lista fija de lib/iata.js y punto: si
+ * la ciudad no estaba, la busqueda de vuelos moria con un "añadelo a
+ * lib/iata.js". Eso es pedirle a la persona que edite codigo fuente para
+ * buscar un vuelo a Cadiz.
+ *
+ * La lista se queda como semilla —es correcta, es gratis y sabe cosas que
+ * importan, como que PAR son los tres aeropuertos de Paris y no solo CDG—,
+ * pero lo que no este se resuelve solo y se guarda AQUI, para no volver a
+ * preguntarlo nunca.
+ *
+ * `codigo` puede ser NULL: es la forma de recordar que se pregunto y no habia
+ * respuesta, y asi no se reintenta en bucle. `buscado_en` permite reintentarlo
+ * pasado un tiempo si algun dia interesa.
+ */
+function migracionIata() {
+  const CLAVE = '2026-09-iata-cache';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS iata_ciudades (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ciudad_norm TEXT NOT NULL UNIQUE,   -- sin acentos y en minusculas
+      ciudad      TEXT NOT NULL,          -- tal y como se escribio la primera vez
+      codigo      TEXT,                   -- NULL = se busco y no se encontro
+      aeropuerto  TEXT,                   -- el nombre, para poder explicarlo
+      origen      TEXT NOT NULL,          -- lista/ia/manual
+      buscado_en  TEXT NOT NULL DEFAULT (datetime('now')),
+      creado_en   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_iata_norm ON iata_ciudades (ciudad_norm);
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: caché de códigos IATA.');
+  return true;
+}
+
 function migracionBusquedasEfimeras() {
   const CLAVE = '2026-09-busquedas-efimeras';
   if (yaAplicada(CLAVE)) return false;

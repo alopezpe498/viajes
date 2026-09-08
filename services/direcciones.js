@@ -352,6 +352,61 @@ export function claveDeCandidato(candidato) {
   return null;
 }
 
+/**
+ * VUELCA LA DIRECCIÓN DE UN HOTEL AL ELEGIRLO.
+ *
+ * Vivía en routes/viajes.js y solo la llamaba UNA de las dos formas de elegir
+ * hotel —la del paso 6—. Desde la pantalla de etapa, que es por donde se elige
+ * de verdad, no pasaba nadie: el candidato tenía la dirección de Booking
+ * delante y al marcarlo se quedaba sin ella, así que luego había que teclearla
+ * a mano para cualquier traslado.
+ *
+ * Aquí abajo la ven las dos, que es lo suyo.
+ *
+ * No pisa nada. Si la ficha ya tenía dirección —puesta a mano o de antes— se
+ * deja como está: corregir algo y que te lo vuelvan a cambiar es de las cosas
+ * que más molestan.
+ */
+export function volcarDireccionDeHotel(candidato, { nombreCiudad = null } = {}) {
+  if (!candidato || candidato.tipo !== 'hotel') return null;
+  if (direccionDe('hotel', candidato.id)) return null;
+
+  let extra = {};
+  try {
+    extra = candidato.datos_extra ? JSON.parse(candidato.datos_extra) ?? {} : {};
+  } catch { /* datos_extra corrupto: se sigue con lo que haya */ }
+
+  const ciudad =
+    nombreCiudad ??
+    una('SELECT nombre_ciudad FROM etapas WHERE id = ?', candidato.etapa_id)?.nombre_ciudad;
+
+  // La calle primero y la zona de reserva: Booking da la calle cuando la tiene
+  // y el barrio cuando no. Una zona sitúa peor que una calle, pero sitúa.
+  const donde = String(extra.direccion ?? extra.zona ?? '').trim();
+  const nombre = String(candidato.titulo ?? '').trim();
+  const ciudadTexto = String(ciudad ?? '').trim();
+
+  // La ciudad solo se añade si no está ya dentro. Booking suele dar el barrio
+  // CON la ciudad detrás ("Centro de Ámsterdam, Ámsterdam"), y pegándosela otra
+  // vez salía "…, Ámsterdam, Ámsterdam, Ámsterdam", que además de feo confunde
+  // al geocodificador.
+  const yaDiceLaCiudad =
+    ciudadTexto && donde.toLowerCase().includes(ciudadTexto.toLowerCase());
+
+  const texto = [nombre, donde, yaDiceLaCiudad ? null : ciudadTexto]
+    .map((t) => String(t ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+  if (!texto) return null;
+
+  guardarDireccion('hotel', candidato.id, texto, { viajeId: candidato.viaje_id });
+  console.log(
+    `[direcciones] Hotel «${candidato.titulo}»: dirección de Booking → «${texto}»` +
+      `${extra.direccion ? '' : ' (de la zona, que es lo que había)'}.`
+  );
+  return texto;
+}
+
 /** La dirección de un candidato, saltando a su fila de catálogo si hace falta. */
 export function direccionDeCandidato(candidato) {
   const clave = claveDeCandidato(candidato);

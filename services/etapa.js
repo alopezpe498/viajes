@@ -34,7 +34,7 @@ import { referenciaDeTramo, comoTexto, comoDuracion } from './distancias.js';
 import { borrarAdjuntosDe, adjuntosDe } from './adjuntos.js';
 import { sincronizarEtapaUnica } from './etapas.js';
 import { medioElegidoDeTramo } from './movilidad.js';
-import { direccionesDe, direccionDe } from './direcciones.js';
+import { direccionesDe, direccionDe, volcarDireccionDeHotel } from './direcciones.js';
 
 /** Los tipos de transporte que se pueden apuntar a mano. */
 export const TIPOS_TRANSPORTE = [
@@ -459,17 +459,32 @@ export function elegirHotel(etapaId, candidatoId) {
   );
   if (!candidato) return null;
 
+  const seElige = !candidato.marcado;
+
   db.exec('BEGIN');
   try {
     ejecutar("UPDATE candidatos SET marcado = 0 WHERE etapa_id = ? AND tipo = 'hotel'", etapaId);
     // Volver a pulsar el que ya estaba elegido lo suelta: sirve de "ninguno".
-    if (!candidato.marcado) ejecutar('UPDATE candidatos SET marcado = 1 WHERE id = ?', candidatoId);
+    if (seElige) ejecutar('UPDATE candidatos SET marcado = 1 WHERE id = ?', candidatoId);
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
   }
-  return { elegido: !candidato.marcado };
+
+  // LA DIRECCIÓN SE VIENE CON ÉL.
+  //
+  // Esto faltaba justo aquí. La otra forma de elegir hotel —la del paso 6— sí
+  // la volcaba, pero por esta pantalla, que es por donde se elige de verdad,
+  // no pasaba nadie: el candidato enseñaba su dirección de Booking y al
+  // marcarlo el hotel del viaje se quedaba sin ella. Luego, para cualquier
+  // traslado desde el hotel, había que teclearla a mano.
+  //
+  // Fuera de la transacción a propósito: encola una geocodificación, y eso no
+  // tiene por qué ir dentro del BEGIN de un UPDATE de dos líneas.
+  if (seElige) volcarDireccionDeHotel(candidato);
+
+  return { elegido: seElige };
 }
 
 /** Estado del trabajo de hoteles de una etapa, para el sondeo. */

@@ -37,9 +37,12 @@ const soloNoches = (texto) => {
       <% } %>
     </div>
 
+    <%# La calle si Booking la trae, y el barrio si no. Es el mismo texto que se
+        lleva el hotel al elegirlo, así que lo que se ve aquí es lo que queda
+        guardado: si aquí pone la calle, el traslado sale de la calle. %>
     <div class="secundario" style="margin-top:4px">
       <i class="ti ti-map-pin" aria-hidden="true"></i>
-      <%= h.extra.zona || 'Zona sin indicar' %><% if (h.extra.distanciaCentro) { %> · <%= h.extra.distanciaCentro %><% } %>
+      <%= h.extra.direccion || h.extra.zona || 'Zona sin indicar' %><% if (h.extra.distanciaCentro) { %> · <%= h.extra.distanciaCentro %><% } %>
     </div>
 
     <div class="hotel__insignias">

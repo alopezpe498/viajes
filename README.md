@@ -2516,3 +2516,153 @@ Una sola app que se adapta, no dos versiones. Un único punto de ruptura en
 - **Escritorio (≥900px):** rejilla de 3 columnas, panel lateral derecho de 220px
   con la selección siempre visible, etiquetas de paso en la barra de progreso, y
   la barra de acciones vuelve al flujo normal.
+
+---
+
+## La pestaña abierta la decide el servidor
+
+La pantalla de etapa se recarga entera muchas veces: cada vez que termina una
+búsqueda, al apuntar algo, al elegir un hotel, al ordenar la lista. Unas veinte
+llamadas a `location.reload()` y un sondeo que recarga cuando baja el número de
+trabajos en marcha.
+
+Y hasta ahora la plantilla traía `pestana--activa` **clavada en "Qué ver"**, con
+los otros paneles en `hidden`. La pestaña que estabas mirando volvía después,
+cuando `etapa.js` —75 KB— acababa de descargarse y ejecutarse. Medido en local
+con todo en caché: **214 ms de "Qué ver" en pantalla** antes de recuperar la
+tuya. Por la red, más. Eso era el salto.
+
+Se intentó arreglar dos veces, y las dos se arregló lo mismo: **dónde acabas**.
+Primero con el ancla (`#dormir`), después con `sessionStorage`. Las dos
+funcionan. Pero el salto no es el final del viaje, es el principio.
+
+Ahora la pestaña va en la **query** (`?p=dormir&sp=sub-comer`) y no en el ancla,
+porque el ancla **no llega al servidor**: el navegador se la queda. En la query
+sí llega, así que la página nace ya con la pestaña buena y no hay nada que
+reponer.
+
+Tres piezas:
+
+- `vistaPedida(req.query)` en las rutas valida contra la lista conocida y
+  cualquier cosa rara cae en la primera.
+- La plantilla pinta la activa desde `vista`, pestañas y subpestañas.
+- `mostrar()` y `mostrarSub()` mantienen la URL al día con `replaceState`.
+
+Los enlaces que hacen viaje de ida y vuelta al servidor —ordenar hoteles,
+ordenar vuelos, los redirects— llevan ahora `&p=…`. Con `#dormir` se perdía la
+pestaña en el camino.
+
+Queda un guión en línea, sin `defer`, para el único caso que la URL no cubre:
+llegar sin parámetros teniendo algo guardado. Se ejecuta antes de pintar.
+
+**La subpestaña importaba aún más que la pestaña**, porque "Comer" y "Moverse"
+viven dentro de "Qué ver": buscar un restaurante y esperar el resultado te
+devolvía a "Sitios" en cada recarga.
+
+## Pulsar no es arrastrar
+
+`.carrusel--agarrado .tarjeta-punto { pointer-events: none }` es necesaria
+mientras se arrastra: sin ella el navegador selecciona texto y las tarjetas se
+comen el gesto. El problema era **cuándo** se ponía la clase: en `pointerdown`,
+o sea en cualquier pulsación.
+
+Desde el instante en que apoyabas el ratón, las tarjetas dejaban de existir para
+el puntero. El `pointerup` y el `click` aterrizaban en el `.carrusel` en vez de
+en la tarjeta, y ahí se caían dos cosas de golpe:
+
+- El manejador de la ficha hace `ev.target.closest('.tarjeta-punto')` y le salía
+  `null`: seleccionar una ficha no hacía nada.
+- Un `<label>` que nunca recibe el clic no cambia su casilla ni dispara
+  `change`: "Ciudad de entrada" tampoco hacía nada.
+
+**En el móvil funcionaba** porque el táctil se sale antes (`pointerType ===
+'touch'`) y la clase no llegaba a ponerse. De ahí lo desconcertante: el dedo sí,
+el ratón no.
+
+La clase se pone ahora al pasar el umbral de seis píxeles, cuando ya se sabe que
+es un arrastre. Y de paso: `soltar()` reinicia `recorrido` siempre —un arrastre
+que acabara fuera del carrusel no trae clic detrás y dejaba el valor viejo,
+envenenando el siguiente clic legítimo— y el guardián de clics exime los
+controles en vez de cancelarlo todo.
+
+## Líneas también a las candidatas
+
+Se dibujaban solo a las ciudades ya seleccionadas, por miedo a la telaraña. El
+resultado era peor: la ficha decía "A 598 km de Cracovia" y en el mapa no había
+ni rastro de esa línea. El dato estaba calculado —y pagado— pero no se veía
+dónde caía, que es justo para lo que se mira un mapa.
+
+Ahora la tiene toda ciudad con distancia, y se distinguen por el trazo: la ruta
+va marcada y continua (2 px, `5 5`), la candidata fina y de puntos (1 px,
+`1 6`). Las de la ruta se pintan las últimas para quedar por encima al cruzarse.
+
+## Las teselas, de los dos mapas
+
+Hay DOS pantallas con mapa y solo una tenía código de Google: la de descubrir
+un destino. El mapamundi de elegir destino seguía con OpenStreetMap y no se
+había enterado de nada.
+
+Eso explica un síntoma que despistó mucho: en el mapamundi **no había ningún
+error de Google en consola ni una sola petición a `maps.googleapis.com`**. No
+es lo que se ve cuando algo falla; es lo que se ve cuando el código no existe.
+Buscar la causa en la clave o en la API era buscar donde no estaba.
+
+Ahora las teselas viven en `public/js/mapa-teselas.js` y las usan las dos:
+`Teselas.poner(mapa, { clave, contexto })`. Google en español primero, OSM de
+respaldo, y una sola implementación que mantener.
+
+En un mapamundi el idioma se nota más que en ningún sitio: con OSM los nombres
+salen en su lengua local (Warszawa, Milano) y con Google en español (Varsovia,
+Milán). Elegir a dónde vas leyendo topónimos en polaco es peor de lo que parece.
+
+## Cuando el mapa se cae a OpenStreetMap, se entera todo el mundo
+
+El respaldo funcionaba bien y esa era la trampa: se caía a OSM con un
+`console.warn` de una línea, el mapa se veía "igual que antes" y estuvimos con
+las teselas de Google desactivadas sin saberlo. Ahora el aviso lleva el motivo,
+el dominio y dónde mirar en Google Cloud Console. Es ruido a propósito.
+
+(Con `RefererNotAllowedMapError` la API carga sin quejarse y **no** dispara
+`gm_authFailure`; por eso `teselasDeGoogle` no se fía y comprueba que de verdad
+haya pintado antes de darlo por bueno.)
+
+## Los códigos IATA ya no se escriben a mano
+
+`lib/iata.js` era una lista fija, y si la ciudad no estaba, la búsqueda de
+vuelos moría con un "añádelo a lib/iata.js": pedirle a alguien que edite código
+fuente para buscar un vuelo.
+
+La lista se queda como semilla —es correcta, gratis, sin red, y sabe cosas que
+importan, como que `PAR` son los tres aeropuertos de París y no solo CDG—, pero
+lo que no esté se resuelve solo con la IA y se guarda en `iata_ciudades`. El
+orden es **caché → lista → IA**, con la caché primero para que una corrección
+escrita a mano en la tabla mande sobre todo lo demás.
+
+Cádiz es el caso que lo explica: no tiene aeropuerto, hay que saber que le toca
+Jerez (**XRY**), y eso una lista escrita a mano no lo adivina. Cada ciudad se
+pregunta una vez en la vida de la base de datos; los "no lo sé" también se
+guardan, para no repetir la llamada en cada reintento.
+
+## Borrar un viaje se lo lleva todo lo suyo
+
+Antes se borraba el viaje y se dejaba intacto el catálogo, con el argumento de
+que borrar el viaje a Japón no debe borrar lo que sabemos de Japón.
+
+El argumento sigue valiendo **cuando hay más viajes**. Deja de valer cuando ese
+catálogo lo trajo este viaje y no lo usa nadie más: entonces no es conocimiento
+compartido, es el rastro de una prueba. Y repetir la prueba desde cero era
+imposible, porque la segunda vez todo salía de la caché.
+
+Ahora se limpia también lo huérfano, y **solo** lo huérfano: restaurantes,
+transporte urbano, excursiones y tramos de las ciudades que ya no visita ningún
+viaje; las ciudades investigadas y sus sitios si su destino no lo usa nadie; y
+las direcciones que apuntaban a algo que ya no existe (`direcciones` guarda
+(tipo, id) contra seis tablas, así que SQLite no puede limpiarla sola).
+
+Si otro viaje pisa la misma ciudad, no se toca nada de ella. Es la diferencia
+entre limpiar y romper.
+
+Y como ahora se lleva más por delante, hay que **escribir el nombre del viaje**
+para que se encienda el botón. Se compara sin distinguir mayúsculas ni espacios
+de más: la ceremonia es para obligar a leer cuál es el viaje, no para jugar a
+las adivinanzas.

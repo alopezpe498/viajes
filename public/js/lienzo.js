@@ -590,7 +590,7 @@
                 <i class="ti ti-map-pin-off"></i>
                 Falta la dirección de <strong>${esc(sinSitio.nombre)}</strong>.
               </span>
-              <a class="hueco__opcion" href="/etapa/${h.etapaId}#ver">
+              <a class="hueco__opcion" href="/etapa/${h.etapaId}?p=ver">
                 <i class="ti ti-pencil"></i> <span>Ponérsela</span>
               </a>
               <button class="hueco__opcion hueco__opcion--fina" type="button" data-cambiar-extremos>
