@@ -28,7 +28,7 @@
  * Para publicar cambios, subir VERSION. Al activarse borra las cachés viejas.
  */
 
-const VERSION = 'v13';
+const VERSION = 'v14';
 const CACHE_ESTATICA = `viajes-estatica-${VERSION}`;
 const CACHE_VIVA = `viajes-viva-${VERSION}`;
 
@@ -70,9 +70,20 @@ const NUNCA = [
   '/adjuntos',
 ];
 
-const esEstatico = (url) =>
-  /\.(css|js|png|jpg|jpeg|svg|webp|ico|woff2?)$/i.test(url.pathname) ||
-  url.pathname === '/manifest.webmanifest';
+/**
+ * DOS CLASES DE ESTÁTICO, Y NO SE TRATAN IGUAL.
+ *
+ * El CSS y el JS CAMBIAN con cada despliegue y son los que rompen la página si
+ * se quedan viejos: el HTML llega fresco estrenando clases y el CSS cacheado no
+ * las tiene, así que media pantalla desaparece. Esos van a la red primero.
+ *
+ * Las imágenes, los iconos y las fuentes no cambian casi nunca y pesan. Esas sí
+ * se sirven de la caché, que es de lo que va una PWA.
+ */
+const esCodigo = (url) =>
+  /\.(css|js)$/i.test(url.pathname) || url.pathname === '/manifest.webmanifest';
+
+const esPeso = (url) => /\.(png|jpg|jpeg|svg|webp|ico|woff2?)$/i.test(url.pathname);
 
 const esDeNunca = (url) => NUNCA.some((t) => url.pathname.includes(t));
 
@@ -132,16 +143,27 @@ self.addEventListener('fetch', (ev) => {
   if (url.origin !== self.location.origin) return;
 
   if (esDeNunca(url)) return;                       // ni mirar
-  if (esEstatico(url)) return ev.respondWith(deCacheOSiNoDeRed(request));
+
+  // Lo que pesa y no cambia, de la caché. Lo que cambia, de la red.
+  if (esPeso(url)) return ev.respondWith(deCacheOSiNoDeRed(request));
+  if (esCodigo(url)) return ev.respondWith(deRedOSiNoDeCache(request, CACHE_ESTATICA));
 
   ev.respondWith(deRedOSiNoDeCache(request));
 });
 
 /**
- * Estáticos: de la caché, y si no está, de la red (y se guarda).
+ * De la caché, y si no está, de la red. Solo para lo que no cambia.
  *
- * Se puede confiar porque el nombre de la caché lleva la versión: al subir
- * VERSION, la caché vieja entera se tira y estos vuelven a bajarse.
+ * AQUÍ ESTABAN TAMBIÉN EL CSS Y EL JS, y era un error. La caché lleva la
+ * versión en el nombre, así que en teoría bastaba con subir `VERSION` en cada
+ * despliegue. En la práctica se olvida —se me olvidó a mí varias veces— y
+ * entonces el navegador se queda con un CSS de hace tres semanas para siempre,
+ * mientras el HTML llega fresco. El resultado no es "se ve algo viejo": es que
+ * lo nuevo NO SE VE, porque sus reglas no existen en el CSS cacheado.
+ *
+ * Una regla que hay que recordar en cada despliegue no es una regla, es una
+ * trampa. Ahora esto solo lo usan las imágenes y las fuentes, que cambian de
+ * año en año.
  */
 async function deCacheOSiNoDeRed(request) {
   const guardado = await caches.match(request);
@@ -156,21 +178,21 @@ async function deCacheOSiNoDeRed(request) {
 }
 
 /**
- * Páginas y API: LA RED PRIMERO, siempre.
+ * Páginas, CSS y JS: LA RED PRIMERO, siempre.
  *
  * Solo si la red falla de verdad —sin cobertura, servidor caído— se mira la
  * caché. Y si tampoco hay nada guardado, se contesta con una página que dice
  * claramente que eso es lo último que se vio y que hace falta conexión, en vez
  * del error del navegador.
  */
-async function deRedOSiNoDeCache(request) {
+async function deRedOSiNoDeCache(request, dondeGuardar = CACHE_VIVA) {
   try {
     const respuesta = await fetch(request);
 
     // Se guarda solo lo que salió bien. Un 404 o un 500 en caché sería un
     // fantasma difícil de encontrar.
     if (respuesta.ok && respuesta.type === 'basic') {
-      const cache = await caches.open(CACHE_VIVA);
+      const cache = await caches.open(dondeGuardar);
       cache.put(request, respuesta.clone());
     }
     return respuesta;
