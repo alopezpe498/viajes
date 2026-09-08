@@ -22,8 +22,7 @@ import {
   resumenFiltros,
   filtrosVuelosDe,
   resumenFiltrosVuelos,
-  ORIGEN_POR_DEFECTO,
-} from '../services/proveedores.js';
+  ORIGEN_POR_DEFECTO, ciudadDeCasa } from '../services/proveedores.js';
 import { resolverIata } from '../lib/iata.js';
 import { reunirAvisos } from '../services/avisos.js';
 import { sincronizarEtapaUnica } from '../services/etapas.js';
@@ -35,7 +34,8 @@ import {
   fichasDeTramo,
   fichasDeMovilidad,
 } from '../services/movilidad.js';
-import { geocodificarFila } from '../services/direcciones.js';
+import { geocodificarFila, guardarDireccion } from '../services/direcciones.js';
+import { situarLugarConGoogle } from '../lib/google.js';
 import { calcularTraslado } from '../services/traslados.js';
 import {
   investigarComer,
@@ -530,7 +530,7 @@ async function ejecutarPrepararEtapa(trabajo) {
  * `referencia_id` es el id del destino (el país o la región que se está
  * mirando en el mapa).
  *
- * NO ABRE NAVEGADOR. Son peticiones a OSRM, que van de una en una con su pausa
+ * NO ABRE NAVEGADOR. Son peticiones a Google Routes, que van de una en una
  * y tardan décimas. Por eso no compite con los scrapers por el perfil de Chrome
  * y puede correr mientras se mira el mapa.
  *
@@ -643,7 +643,7 @@ async function ejecutarMovilidadCiudad(trabajo) {
  * Buscar las coordenadas de una dirección.
  *
  * Va por la cola y no en la petición que la guarda porque geocodificar es lento
- * —Nominatim tiene turno de una petición por segundo— y guardar una dirección
+ * —hay que preguntarle a Google— y guardar una dirección
  * tiene que ser instantáneo: se escribe, se guarda y la ficha dice "situando…".
  *
  * La ciudad de la parada se pasa como contexto: "Calle Mayor 3" a secas puede
@@ -711,7 +711,7 @@ function ciudadDeLaDireccion(fila) {
 /**
  * Calcular un traslado: cuánto hay de un sitio a otro.
  *
- * Google primero (que es el único que sabe de transporte público) y OSRM detrás.
+ * Google y solo Google: es el único que sabe de transporte público.
  * Nunca lanza por un fallo de la fuente: el traslado se queda con su mensaje y
  * un botón de recalcular, que es más útil que un trabajo en rojo.
  */
@@ -891,13 +891,18 @@ async function ejecutarVuelos(trabajo) {
   }
 
   // Kayak necesita códigos IATA, no nombres de ciudad.
-  const nombreOrigen = ciudadOrigen ?? ORIGEN_POR_DEFECTO;
-  const nombreDestino = ciudadDestino ?? ORIGEN_POR_DEFECTO;
+  // DE CASA SE SALE Y A CASA SE VUELVE, y "casa" ya no es una constante: es lo
+  // que diga el viaje. El nulo de cada punta es la ciudad de origen.
+  const casa = ciudadDeCasa(viaje);
+  const nombreOrigen = ciudadOrigen ?? casa;
+  const nombreDestino = ciudadDestino ?? casa;
 
   // Se resuelven de la caché, de la lista de siempre o preguntándolo, por ese
   // orden. Lo que se aprende queda guardado: cada ciudad se pregunta una vez.
-  const origenIata = ciudadOrigen ? await resolverIata(ciudadOrigen) : ORIGEN_POR_DEFECTO;
-  const destinoIata = ciudadDestino ? await resolverIata(ciudadDestino) : ORIGEN_POR_DEFECTO;
+  // La ciudad de casa pasa por el mismo resolutor que las demás: si alguien
+  // pone "Cádiz" como origen, tiene que salir XRY igual que en el destino.
+  const origenIata = await resolverIata(nombreOrigen);
+  const destinoIata = await resolverIata(nombreDestino);
 
   if (!origenIata) {
     throw new ErrorSinIata(
@@ -1130,7 +1135,7 @@ async function investigarDestino(trabajo, destino) {
     const sitio = await sitioPorTexto(destino.nombre).catch(() => null);
     tipo = sitio?.tipo ?? 'pais';
     ejecutar('UPDATE destinos SET tipo = ? WHERE id = ?', tipo, destino.id);
-    console.log(`[worker] Trabajo #${trabajo.id}: «${destino.nombre}» no tenía nivel; Nominatim dice "${tipo}".`);
+    console.log(`[worker] Trabajo #${trabajo.id}: «${destino.nombre}» no tenía nivel; Google dice "${tipo}".`);
   }
 
   console.log(
@@ -1214,6 +1219,17 @@ async function investigarPunto(trabajo, punto) {
     `[worker] Trabajo #${trabajo.id}: ${guardados} lugares de ${punto.nombre} (${conFoto} con foto).`
   );
 
+  // --- 3b) Y SITUARLOS. Dirección y coordenada de cada uno, con Places ----
+  //
+  // Hasta ahora los sitios se guardaban con lo que dijera la IA y punto: sin
+  // dirección y con coordenadas aproximadas. En "Comer" sí llegaban, porque
+  // esas fichas nacen de Places; en Sitios y Excursiones no llegaba ninguna, y
+  // sin dirección no hay traslado que calcular ni marcador que pintar.
+  //
+  // Va después de guardar y no antes a propósito: si Places falla, la ficha ya
+  // está hecha y lo único que falta son las direcciones.
+  await situarLosSitios(trabajo, punto);
+
   // --- 4) Excursiones, solo para ciudades -------------------------------
   let excursiones = null;
   if (punto.categoria === 'ciudad') {
@@ -1232,6 +1248,66 @@ async function investigarPunto(trabajo, punto) {
   console.log(
     `[worker] Trabajo #${trabajo.id}: ficha de ${punto.nombre} lista` +
       (excursiones == null ? '' : ` · ${excursiones} excursiones en el catálogo`)
+  );
+}
+
+/**
+ * SITÚA CON PLACES LOS SITIOS DE UNA CIUDAD RECIÉN INVESTIGADA.
+ *
+ * Una llamada a Places por sitio, y solo por los que no tengan ya dirección:
+ * reinvestigar una ciudad no vuelve a pagar por lo que ya se sabía.
+ *
+ * Lo que se guarda es doble y las dos cosas hacen falta:
+ *   · La DIRECCIÓN, en la tabla `direcciones`, que es de donde tira el buscador
+ *     de traslados y el mapa de la parada.
+ *   · Las COORDENADAS, en la propia fila del sitio, porque las de la IA son
+ *     aproximadas y las de Places son las buenas.
+ *
+ * Si Google no contesta no pasa nada grave: el sitio se queda sin dirección y
+ * se puede escribir a mano. Lo que no se hace es dejarlo a medias en silencio.
+ */
+async function situarLosSitios(trabajo, punto) {
+  const sitios = todas(
+    `SELECT s.id, s.nombre, s.lat, s.lon
+       FROM sitios_lugar s
+      WHERE s.punto_interes_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM direcciones d
+           WHERE d.tipo_elemento = 'sitio' AND d.elemento_id = s.id
+        )
+      ORDER BY s.orden, s.id`,
+    punto.id
+  );
+  if (!sitios.length) return;
+
+  const ciudad = punto.ciudad_base || punto.nombre;
+  let situados = 0;
+
+  for (const s of sitios) {
+    const enPlaces = await situarLugarConGoogle(s.nombre, ciudad);
+    if (!enPlaces?.direccion) continue;
+
+    guardarDireccion('sitio', s.id, enPlaces.direccion);
+
+    // La dirección ya viene con su punto: se marca situada sin pasar por la
+    // cola de geocodificación, que sería preguntar dos veces lo mismo.
+    if (enPlaces.lat != null && enPlaces.lng != null) {
+      ejecutar(
+        `UPDATE direcciones
+            SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
+                buscada_en = datetime('now'), actualizado_en = datetime('now')
+          WHERE tipo_elemento = 'sitio' AND elemento_id = ?`,
+        enPlaces.lat,
+        enPlaces.lng,
+        s.id
+      );
+      ejecutar('UPDATE sitios_lugar SET lat = ?, lon = ? WHERE id = ?', enPlaces.lat, enPlaces.lng, s.id);
+    }
+    situados += 1;
+  }
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ${situados} de ${sitios.length} sitios situados con Places.`
   );
 }
 

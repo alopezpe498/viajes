@@ -75,11 +75,17 @@ const { viaje } = ruta;
         que hay que mirar semanas antes de salir, cuando todavía da tiempo a
         pedir un visado o a ponerse una vacuna. Un enlace discreto en un menú
         se descubre el día de antes, que es cuando ya no sirve. %>
-    <button class="antes-boton" type="button" id="abrir-antes">
-      <i class="ti ti-alert-triangle antes-boton__icono" aria-hidden="true"></i>
+    <button class="antes-boton <%= antesRevisado ? 'antes-boton--hecho' : '' %>"
+            type="button" id="abrir-antes" data-revisado="<%= antesRevisado ? '1' : '' %>">
+      <i class="ti <%= antesRevisado ? 'ti-check' : 'ti-alert-triangle' %> antes-boton__icono"
+         aria-hidden="true"></i>
       <span class="antes-boton__texto">
         <strong>Antes de viajar</strong>
-        <span class="antes-boton__pie">Papeles, vacunas, dinero y festivos de cada país</span>
+        <span class="antes-boton__pie">
+          <%= antesRevisado
+                ? 'Revisado. Puedes volver a mirarlo cuando quieras.'
+                : 'Papeles, vacunas, dinero y festivos de cada país' %>
+        </span>
       </span>
       <i class="ti ti-chevron-right antes-boton__flecha" aria-hidden="true"></i>
     </button>
@@ -160,6 +166,20 @@ const { viaje } = ruta;
 
     <div class="antes__paises" id="antes-paises" role="tablist" aria-label="Países del viaje"></div>
     <div class="antes__cuerpo" id="antes-cuerpo"></div>
+
+    <%# YA LO HE REVISADO.
+        Va al pie del panel y no dentro de la pestaña de un país, porque lo que
+        se revisa es el viaje entero: si son dos países, se han mirado los dos. %>
+    <footer class="antes__revisado">
+      <label class="antes-check">
+        <input type="checkbox" id="antes-revisado" <%= antesRevisado ? 'checked' : '' %>>
+        <span class="antes-check__marca" aria-hidden="true"><i class="ti ti-check"></i></span>
+        <span class="antes-check__texto">
+          <strong>Ya lo he revisado</strong>
+          <span class="antes-check__pie" id="antes-revisado-pie"></span>
+        </span>
+      </label>
+    </footer>
   </div>
 </div>
 

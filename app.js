@@ -74,17 +74,16 @@ const servidor = app.listen(PUERTO, () => {
     console.log('');
   }
 
-  // Con que fuente se van a calcular direcciones y traslados. Se dice al
-  // arrancar porque desde fuera no hay forma de saberlo mirando la pantalla:
-  // "12 min en coche" se ve igual lo diga Google o lo diga OSRM.
+  // Con que se van a calcular direcciones, distancias y traslados. Se dice al
+  // arrancar porque YA NO HAY RESPALDO: si esto no va, no va nada de situar ni
+  // de medir, y la pantalla lo dira sitio por sitio en vez de inventarselo.
   if (hayClaveGoogle()) {
-    console.log('  Direcciones y traslados: Google primero (clave de servidor),');
-    console.log('  con Nominatim y OSRM de respaldo. En local la clave esta');
-    console.log('  restringida por IP y fallara: se vera en el log y se usara');
-    console.log('  el respaldo, que no da transporte publico.');
+    console.log('  Geolocalizacion: Google y solo Google (Geocoding, Places, Routes).');
+    console.log('  En local la clave esta restringida por IP y fallara: lo veras');
+    console.log('  en el log y en pantalla ("No he podido situarlo"). Es correcto.');
   } else {
-    console.log('  Direcciones y traslados: Nominatim y OSRM (sin clave de Google).');
-    console.log('  Sin transporte publico: eso solo lo sabe Google.');
+    console.log('  Geolocalizacion: NO HAY CLAVE DE SERVIDOR.');
+    console.log('  No se podra situar nada ni calcular ningun trayecto.');
   }
   console.log('');
 });

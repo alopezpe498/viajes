@@ -12,53 +12,27 @@
  * verdad aunque ese día se decida no ir, así que la lista cuelga de la ETAPA y
  * sobrevive a que la actividad salga del lienzo.
  *
- * DOS FUENTES, Y SE NOTA CUÁL CONTESTÓ
+ * UNA SOLA FUENTE: GOOGLE ROUTES. Andando, coche y transporte público.
  *
- *   1. Google Routes: andando, coche y TRANSPORTE PÚBLICO. El público es lo que
- *      justifica la clave: OSRM no sabe de líneas de metro ni de horarios.
- *   2. OSRM + estimación: solo coche y andando.
+ * Antes había un plan B con OSRM y una estimación a pie, y el plan B era el
+ * problema. Cuando Google no contestaba —la clave está restringida por IP y en
+ * local no vale nunca— la pantalla seguía dando tiempos peores sin decir que lo
+ * eran, y así se podían pasar semanas sin que nadie notase que Google llevaba
+ * caído desde marzo.
  *
- * Y aquí hay una trampa que conviene tener escrita, porque cuesta media hora
- * descubrirla: el OSRM público IGNORA el perfil. Pedirle `/route/v1/foot/...`
- * devuelve exactamente los mismos números que `/driving/...` —1,7 km en 3
- * minutos, o sea 34 km/h andando—. Así que el tiempo a pie NO se le pregunta:
- * se estima aquí, a 4,5 km/h sobre la distancia en línea recta con un margen de
- * calles, y se marca como aproximado para no vender por dato lo que es un
- * cálculo de servilleta.
+ * Ahora hay dos respuestas y las dos son honestas: los tiempos de Google, o un
+ * mensaje diciendo que no se ha podido consultar. Nunca un número inventado.
+ *
+ * (De paso se va una trampa que costó media hora descubrir: el OSRM público
+ * IGNORA el perfil, y pedirle `/route/v1/foot/...` devolvía los mismos números
+ * que `/driving/...` —1,7 km en 3 minutos, o sea 34 km/h andando—.)
  */
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
-import { rutasConGoogle, MODOS, googleDisponible } from '../lib/google.js';
-import { distanciaKm, comoDuracion } from './distancias.js';
+import { rutasConGoogle, MODOS, hayClaveGoogle } from '../lib/google.js';
+import { comoDuracion } from './distancias.js';
 import { direccionDe, TIPOS_CON_DIRECCION } from './direcciones.js';
-
-const URL_OSRM = 'https://router.project-osrm.org/route/v1/driving';
-const TIMEOUT_MS = 8_000;
-const PAUSA_MS = 400;
-const AGENTE = 'CreadorViajes/1.0 (uso personal)';
-
-/** A qué velocidad anda una persona por una ciudad, con sus semáforos. */
-const KMH_ANDANDO = 4.5;
-
-/**
- * Cuánto se alarga un trayecto a pie respecto a la línea recta.
- *
- * Las calles no van en diagonal. 1,3 es el factor que se usa habitualmente para
- * trama urbana y para lo que hace falta —saber si son 10 minutos o 40— sobra.
- */
-const RODEO_CALLES = 1.3;
-
-/** Más allá de esto, "andando" deja de ser una opción y es ruido en la ficha. */
-const TOPE_ANDANDO_KM = 12;
-
-let turno = Promise.resolve();
-const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function esperarTurno() {
-  turno = turno.then(() => dormir(PAUSA_MS));
-  return turno;
-}
 
 const punto = (p) => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng));
 
@@ -77,38 +51,33 @@ export async function calcularRutas(a, b) {
     return { resultados: [], fuente: null, mensaje: 'Faltan las coordenadas de algún extremo.' };
   }
 
-  // --- 1) Google, que es el único que sabe de transporte público -----------
+  // SOLO GOOGLE. Aquí había un plan B con OSRM y una estimación a pie, y el
+  // plan B era el problema: cuando Google no contestaba, la pantalla seguía
+  // enseñando tiempos —peores, y sin decir que lo eran— y nadie se enteraba de
+  // que la clave llevaba semanas sin funcionar. Un respaldo silencioso es un
+  // fallo que no existe hasta que alguien lo mira a ojo.
+  //
+  // Ahora hay dos respuestas posibles y las dos son honestas: los tiempos de
+  // Google, o un mensaje diciendo que no se ha podido.
   const deGoogle = await rutasConGoogle(a, b);
+
   if (deGoogle && deGoogle.length) {
-    return { resultados: deGoogle, fuente: 'google' };
+    // Andando delante: en ciudad es lo primero que uno mira.
+    const resultados = [...deGoogle].sort((x, y) => orden(x.modo) - orden(y.modo));
+    return { resultados, fuente: 'google' };
   }
 
-  // --- 2) El plan B --------------------------------------------------------
-  console.log(
-    googleDisponible()
-      ? '[traslados] Google no dio rutas: tiro de OSRM.'
-      : '[traslados] Sin Google (clave restringida o ausente): OSRM y estimación.'
-  );
+  // `null` es "no he podido preguntar"; un array vacío es "he preguntado y no
+  // hay forma de ir". Son cosas distintas y merecen mensajes distintos.
+  const mensaje =
+    deGoogle === null
+      ? (hayClaveGoogle()
+          ? 'No he podido consultar el trayecto: Google no contestó.'
+          : 'No he podido consultar el trayecto: falta la clave de Google.')
+      : 'No hay forma de ir entre esos dos puntos por ninguno de los medios.';
 
-  const resultados = [];
-
-  const coche = await porCarretera(a, b);
-  if (coche) resultados.push(coche);
-
-  const andando = aPie(a, b);
-  if (andando) resultados.push(andando);
-
-  if (!resultados.length) {
-    return {
-      resultados: [],
-      fuente: null,
-      mensaje: 'No se ha podido calcular la ruta entre esos dos puntos.',
-    };
-  }
-
-  // Andando delante: en ciudad es lo primero que uno mira.
-  resultados.sort((x, y) => orden(x.modo) - orden(y.modo));
-  return { resultados, fuente: 'osrm' };
+  console.warn(`[traslados] sin ruta: ${mensaje}`);
+  return { resultados: [], fuente: null, mensaje };
 }
 
 const ORDEN_MODOS = ['andando', 'publico', 'coche'];
@@ -116,61 +85,6 @@ const orden = (m) => {
   const i = ORDEN_MODOS.indexOf(m);
   return i === -1 ? 99 : i;
 };
-
-/** OSRM, que solo sabe de coche por mucho que se le pida otra cosa. */
-async function porCarretera(a, b) {
-  const url = `${URL_OSRM}/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`;
-  await esperarTurno();
-
-  const control = new AbortController();
-  const reloj = setTimeout(() => control.abort(), TIMEOUT_MS);
-  try {
-    const r = await fetch(url, {
-      signal: control.signal,
-      headers: { 'User-Agent': AGENTE, Accept: 'application/json' },
-    });
-    if (!r.ok) return null;
-
-    const datos = await r.json();
-    if (datos.code !== 'Ok' || !datos.routes?.length) return null;
-
-    const ruta = datos.routes[0];
-    return {
-      modo: 'coche',
-      minutos: Math.max(1, Math.round(ruta.duration / 60)),
-      km: ruta.distance / 1000,
-      fuente: 'osrm',
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(reloj);
-  }
-}
-
-/**
- * El tiempo a pie, estimado.
- *
- * No se le pregunta a OSRM porque el servidor público contesta lo mismo para
- * `foot` que para `driving` —el coche—, y dar 3 minutos para 1,7 km andando
- * sería peor que no dar nada. Sale de la línea recta con margen de calles, y va
- * marcado como aproximado.
- */
-function aPie(a, b) {
-  // SIN REDONDEAR: `enLineaRecta` da kilómetros enteros, y del hotel al bar de
-  // la esquina hay 0,3 — que redondeados son cero y daban "1 min" para un
-  // paseo de seis.
-  const recta = distanciaKm({ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng });
-  const km = recta * RODEO_CALLES;
-  if (km > TOPE_ANDANDO_KM) return null;
-
-  return {
-    modo: 'andando',
-    minutos: Math.max(1, Math.round((km / KMH_ANDANDO) * 60)),
-    km,
-    fuente: 'estimado',
-  };
-}
 
 // =============================================================================
 // GUARDAR Y LEER

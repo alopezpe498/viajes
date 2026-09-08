@@ -542,9 +542,15 @@ const ICONO_TIPO = {
             }) %>
 
         <% if (hayHoteles) { %>
-          <%# --- El elegido, destacado arriba --- %>
-          <% if (dormir.elegido) { %>
-            <div class="elegido">
+          <%# --- El elegido, destacado arriba ---
+              LA CAJA EXISTE SIEMPRE, aunque esté vacía.
+              Antes solo se pintaba si ya había un hotel elegido, y por eso al
+              elegir uno no pasaba nada visible: el círculo se marcaba y esta
+              ficha seguía como estaba hasta cambiar de pestaña y volver.
+              Con la caja siempre presente, el JS la rellena al momento. %>
+          <div class="elegido" data-hotel-elegido data-ciudad="<%= etapa.nombre_ciudad %>"
+               <%= dormir.elegido ? '' : 'hidden' %>>
+            <% if (dormir.elegido) { %>
               <div class="elegido__marca">
                 <i class="ti ti-check" aria-hidden="true"></i> Tu alojamiento en <%= etapa.nombre_ciudad %>
               </div>
@@ -577,8 +583,8 @@ const ICONO_TIPO = {
                     adjuntos: dormir.elegido.adjuntos ?? [],
                     etiqueta: 'Reserva e instrucciones',
                   }) %>
-            </div>
-          <% } %>
+            <% } %>
+          </div>
 
           <div id="lista-hoteles" <%= dormir.elegido ? 'hidden' : '' %>>
             <div class="titulo-con-accion">
@@ -625,7 +631,12 @@ const ICONO_TIPO = {
               <i class="ti <%= ICONO_TIPO[t.tipo] || 'ti-arrow-right' %>" aria-hidden="true"></i>
               <%= t.nombreOrigen %> <i class="ti ti-arrow-narrow-right" aria-hidden="true"></i> <%= t.nombreDestino %>
             </span>
-            <span class="tramo-caja__estado <%= t.resuelto ? 'tramo-caja__estado--ok' : '' %>">
+            <%# Con `data-estado-tramo` el JS puede pasarlo a "Resuelto" en cuanto
+                se elige un medio. Antes esto solo lo pintaba el servidor, así
+                que elegir un tren dejaba el tramo en "Pendiente" hasta entrar a
+                editar y guardar sin tocar nada. %>
+            <span class="tramo-caja__estado <%= t.resuelto ? 'tramo-caja__estado--ok' : '' %>"
+                  data-estado-tramo="<%= t.id %>">
               <i class="ti <%= t.resuelto ? 'ti-check' : 'ti-alert-triangle' %>" aria-hidden="true"></i>
               <%= t.resuelto ? 'Resuelto' : 'Pendiente' %>
             </span>
@@ -781,10 +792,18 @@ const ICONO_TIPO = {
               horarios y con SUS filtros. Por eso el panel de filtros está aquí
               dentro, uno por tramo, y no en una pantalla aparte: puedo querer
               directos a la ida y que me dé igual a la vuelta. %>
-          <%# Se abre sola cuando hay resultados y también mientras busca: si no,
-              el mensaje de "buscando" quedaba escondido detrás del botón. %>
+          <%# CUÁNDO SE ABRE SOLA, y cuándo no.
+              Mientras busca y si falla, sí: el mensaje quedaría escondido
+              detrás del botón. Con resultados sin elegir, también: hay una
+              decisión pendiente y esconderla no ayuda.
+
+              PERO CON EL TRAMO YA RESUELTO, NO. Antes se abría igualmente, así
+              que cualquier acción o recarga volvía a desplegar los quince
+              vuelos de un trayecto ya decidido y te mandaba al principio de la
+              lista. Plegado es el estado natural de algo resuelto; "Ver vuelos
+              (15)" lo reabre cuando se quiera. %>
           <div class="vuelos-tramo" data-vuelos-de="<%= t.id %>"
-               <%= (t.resultados.estado === 'hecho' && t.resultados.vuelos.length)
+               <%= (t.resultados.estado === 'hecho' && t.resultados.vuelos.length && !t.resuelto)
                     || t.resultados.estado === 'buscando'
                     || t.resultados.estado === 'error' ? '' : 'hidden' %>>
 

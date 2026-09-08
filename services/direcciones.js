@@ -17,17 +17,16 @@
  * DOS FUENTES, EN ESTE ORDEN
  *
  *   1. Google Geocoding, con la clave de servidor.
- *   2. Nominatim, que no pide clave y siempre está.
+ *   2. (Ya no hay segunda: el respaldo tapaba las averías en vez de contarlas.)
  *
  * En local Google falla siempre —su clave está restringida a la IP del
- * servidor— y esto es exactamente lo previsto: se desarrolla contra Nominatim.
+ * servidor— y en local no se podrá situar nada. La pantalla lo dice y ya está.
  * El log dice en cada caso cuál contestó.
  */
 
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
-import { geocodificarConGoogle, googleDisponible } from '../lib/google.js';
-import { geocodificarDireccion } from './geocodificar.js';
+import { geocodificarConGoogle, googleDisponible, contadorDeAverias } from '../lib/google.js';
 
 /**
  * De qué puede tener dirección algo, y en qué tabla vive su id.
@@ -117,6 +116,10 @@ function conCara(d) {
     fuente: d.fuente,
     mensaje: d.mensaje,
     buscando: d.estado === 'buscando' || d.estado === 'pendiente',
+    // AVERÍA, que no es lo mismo que "no existe". Si Google no contestó, no hay
+    // nada que afinar en la dirección y decir "sin localizar" manda a corregir
+    // algo que está bien.
+    fallo: d.estado === 'error',
     // Solo hay punto cuando de verdad se encontró.
     situada: d.estado === 'ok' && d.lat != null && d.lng != null,
     punto: d.lat != null && d.lng != null ? { lat: d.lat, lng: d.lng } : null,
@@ -228,23 +231,21 @@ export async function geocodificarFila(direccionId, { cerca = null } = {}) {
     (t, i, todas) => t && todas.indexOf(t) === i
   );
 
+  // SOLO GOOGLE. Aquí había un plan B con Nominatim y se ha ido con él el
+  // problema que traía: cuando Google no estaba, esto seguía situando cosas con
+  // otro buscador y nadie se enteraba de que la clave llevaba semanas sin
+  // funcionar. El respaldo tapaba la avería en vez de contarla.
   let hallado = null;
+  // El contador de averías de Google, antes de empezar. Si crece durante la
+  // búsqueda es que no se ha podido preguntar, y eso no es lo mismo que haber
+  // preguntado y que no exista.
+  const averiasAntes = contadorDeAverias();
+
   for (const forma of formas) {
     try {
       hallado = await geocodificarConGoogle(forma, { cerca });
     } catch (err) {
       console.warn('[direcciones] Google falló:', err.message);
-    }
-
-    // Plan B. Se intenta SIEMPRE que Google no haya dado nada, tanto si es que
-    // no está disponible como si es que no encontró la dirección: son dos
-    // buscadores distintos y uno puede saber lo que el otro no.
-    if (!hallado) {
-      try {
-        hallado = await geocodificarDireccion(forma, { cerca });
-      } catch (err) {
-        console.warn('[direcciones] Nominatim falló:', err.message);
-      }
     }
 
     if (hallado) {
@@ -256,15 +257,30 @@ export async function geocodificarFila(direccionId, { cerca = null } = {}) {
   }
 
   if (!hallado) {
+    // DOS FRACASOS DISTINTOS, Y DOS MENSAJES.
+    //
+    // "No existe esa dirección" se arregla escribiéndola mejor; "no he podido
+    // preguntar" no se arregla tocando nada y hay que decirlo tal cual. Antes
+    // los dos caían en el mismo saco y el mensaje mandaba a afinar una
+    // dirección que estaba perfecta.
+    //
+    // Lo que NO puede pasar, pase lo que pase, es quedarse en 'buscando': eso
+    // es la ruedecita eterna.
+    const noSePudo = contadorDeAverias() > averiasAntes || !googleDisponible();
+    const mensaje = noSePudo
+      ? 'No he podido situar esta dirección: Google no ha contestado.'
+      : 'No se ha encontrado esa dirección. Puedes afinarla y volver a guardar.';
+
     ejecutar(
       `UPDATE direcciones
-          SET estado = 'sin_resultado', mensaje = ?, buscada_en = datetime('now'),
+          SET estado = ?, mensaje = ?, buscada_en = datetime('now'),
               actualizado_en = datetime('now')
         WHERE id = ?`,
-      'No se ha encontrado esa dirección. Puedes afinarla y volver a guardar.',
+      noSePudo ? 'error' : 'sin_resultado',
+      mensaje,
       d.id
     );
-    console.log(`[direcciones] sin resultado: «${d.direccion}»`);
+    console.log(`[direcciones] ${noSePudo ? 'avería' : 'sin resultado'}: «${d.direccion}»`);
     return direccionDe(d.tipo_elemento, d.elemento_id);
   }
 
@@ -507,5 +523,5 @@ export function paraLaVista(lugares) {
 
 /** Para el aviso de arranque: ¿está Google en juego o vamos con el plan B? */
 export function fuenteQueSeUsara() {
-  return googleDisponible() ? 'google' : 'nominatim';
+  return googleDisponible() ? 'google' : 'ninguna';
 }

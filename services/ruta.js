@@ -233,7 +233,7 @@ export function rutaDeViaje(viajeId) {
       puntoInteresId: e.punto_interes_id,
     })),
     tramos: tramosParaPintar(viajeId, confirmadas),
-    casa: ciudadDeCasa(),
+    casa: ciudadDeCasa(viajeId),
   };
 }
 
@@ -254,7 +254,7 @@ function refDeCiudades(a, b) {
 function tramosParaPintar(viajeId, confirmadas) {
   if (!confirmadas.length) return [];
 
-  const casa = ciudadDeCasa();
+  const casa = ciudadDeCasa(viajeId);
   const porId = new Map(confirmadas.map((e) => [e.id, e]));
   const filas = todas('SELECT * FROM transportes WHERE viaje_id = ?', viajeId);
 
@@ -294,7 +294,17 @@ function tramosParaPintar(viajeId, confirmadas) {
         despuesDe: origen?.id ?? null,
         antesDe: destino?.id ?? null,
         tipo: t.tipo,
-        resuelto: Boolean(t.candidato_id || t.notas),
+        // RESUELTO ES RESUELTO, VUELE O NO.
+        //
+        // Aquí solo se miraba `candidato_id` —que es lo que rellena el buscador
+        // de vuelos— y las notas escritas a mano. Un tren Lisboa → Cascais
+        // elegido en "Cómo llegar" no toca ninguna de las dos: se guarda en
+        // `ficha_transporte_id`. Resultado: el tramo estaba decidido y "Mi
+        // ruta" seguía enseñándolo en ámbar como pendiente.
+        //
+        // Las tres formas de tener un tramo resuelto, en el mismo sitio y para
+        // todos los tipos.
+        resuelto: Boolean(t.candidato_id || t.ficha_transporte_id || t.notas),
         texto,
         // Los km y el tiempo de coche del salto, de la caché de ciudades. Solo
         // en los saltos de en medio: en la ida y la vuelta se vuela, y poner

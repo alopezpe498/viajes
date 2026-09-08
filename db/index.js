@@ -323,6 +323,8 @@ export function migrarEsquema() {
   migracionIata();
   migracionFichaPais();
   migracionPaisDeEtapa();
+  migracionCiudadDeOrigen();
+  migracionFichaRevisada();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -407,6 +409,55 @@ export function migrarEsquema() {
  *
  * El pais de una parada es una propiedad de la parada. Aqui es donde va.
  */
+/**
+ * Migracion 23: de donde sale el viaje.
+ *
+ * Estaba clavado en una constante —'BCN'— y el propio comentario de
+ * services/proveedores.js decia lo que habia que hacer el dia que se quisiera
+ * elegir por viaje: una columna aqui y un campo en la pantalla 1. Pues eso.
+ *
+ * Barcelona sigue siendo el valor por defecto, asi que los viajes que ya
+ * existen se comportan exactamente igual que antes.
+ */
+/**
+ * Migracion 24: "Antes de viajar", ya revisado.
+ *
+ * El boton de Mi ruta nace con cara de aviso, y con razon: hay cosas que mirar.
+ * Pero una vez miradas deja de ser un aviso y pasa a ser una tarea hecha, igual
+ * que un vuelo elegido. Sin esto, el ambar se queda ahi para siempre y acaba
+ * siendo ruido que se ignora.
+ *
+ * Va por VIAJE, no por pais: revisar los papeles de Polonia para el viaje de
+ * septiembre no significa haberlos revisado para el de diciembre.
+ */
+function migracionFichaRevisada() {
+  const CLAVE = '2026-09-ficha-revisada';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(viajes)').all().map((c) => c.name);
+  if (!cols.includes('antes_revisado_en')) {
+    db.exec('ALTER TABLE viajes ADD COLUMN antes_revisado_en TEXT');
+  }
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: "Antes de viajar" revisado.');
+  return true;
+}
+
+function migracionCiudadDeOrigen() {
+  const CLAVE = '2026-09-ciudad-de-origen';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(viajes)').all().map((c) => c.name);
+  if (!cols.includes('ciudad_origen')) {
+    db.exec("ALTER TABLE viajes ADD COLUMN ciudad_origen TEXT NOT NULL DEFAULT 'Barcelona'");
+  }
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: ciudad de origen del viaje.');
+  return true;
+}
+
 function migracionPaisDeEtapa() {
   const CLAVE = '2026-09-pais-de-etapa';
   if (yaAplicada(CLAVE)) return false;

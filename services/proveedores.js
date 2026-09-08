@@ -18,7 +18,7 @@
  *   TODAS pasan por aqui.
  */
 
-import { todas, ejecutar } from '../db/index.js';
+import { todas, una, ejecutar } from '../db/index.js';
 import { encolar, trabajoActivo, ultimoTrabajo } from '../jobs/cola.js';
 
 /**
@@ -29,19 +29,27 @@ import { encolar, trabajoActivo, ultimoTrabajo } from '../jobs/cola.js';
  * origen no se pregunta en el wizard: se fija aqui.
  *
  * Es un codigo IATA de CIUDAD (BCN = Barcelona-El Prat). Si algun dia te mudas
- * o quieres salir de otro sitio, cambia esta linea y ya esta; si quieres poder
- * elegirlo por viaje, habria que añadir una columna `origen` a la tabla viajes
- * y un campo en la pantalla 1.
+ * YA SE PUEDE ELEGIR POR VIAJE: `viajes.ciudad_origen`, que se rellena en la
+ * pantalla de configuracion. Esto es solo el valor por defecto, para los viajes
+ * que no lo digan.
  */
-export const ORIGEN_POR_DEFECTO = 'BCN';
+export const ORIGEN_POR_DEFECTO = 'Barcelona';
 
 /**
- * De dónde se sale.
+ * De dónde se sale, para un viaje concreto.
  *
- * Hoy es una constante para toda la app: el wizard no pregunta el origen. El
- * día que se pregunte por viaje, este es el único sitio que hay que tocar.
+ * Se pregunta en la pantalla de configuración y se guarda en el viaje. Sin
+ * viaje —o si está vacío— vale Barcelona, que es de donde se salía siempre.
  */
-export function ciudadDeCasa() {
+export function ciudadDeCasa(viaje = null) {
+  if (viaje && typeof viaje === 'object') {
+    return String(viaje.ciudad_origen ?? '').trim() || ORIGEN_POR_DEFECTO;
+  }
+  // También admite el id, que es como lo tienen a mano algunos sitios.
+  if (viaje != null) {
+    const v = una('SELECT ciudad_origen FROM viajes WHERE id = ?', Number(viaje));
+    return String(v?.ciudad_origen ?? '').trim() || ORIGEN_POR_DEFECTO;
+  }
   return ORIGEN_POR_DEFECTO;
 }
 

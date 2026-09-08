@@ -4235,6 +4235,21 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 
 .direccion__estado:empty { display: none; }
 .direccion__situando,
+/* La avería de geolocalización: ámbar, porque no es culpa de lo que se escribió
+   y no se arregla corrigiéndolo. */
+.direccion__fallo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #FBEED6;
+  color: #8A5A16;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .direccion__aviso {
   display: inline-flex;
   align-items: center;
@@ -5534,3 +5549,67 @@ body.con-antes { overflow: hidden; }
 /* Leaflet mete sus propios márgenes en el globo; aquí se ajustan al tema. */
 .mapa-etapa .leaflet-popup-content { margin: 11px 13px; }
 .mapa-etapa .leaflet-popup-content-wrapper { border-radius: 12px; }
+
+/* --- "Antes de viajar", ya revisado --------------------------------------
+   El botón deja de ser un aviso y pasa a ser una tarea hecha, con el mismo
+   verde que un vuelo elegido. Un ámbar que no se puede apagar acaba siendo
+   ruido que se ignora, y entonces deja de avisar de nada. */
+.antes-boton--hecho {
+  background: var(--exito-bg, #E1F2E7);
+  border-color: #C4E3D0;
+  color: var(--exito-tx, #1E6B3C);
+}
+.antes-boton--hecho:hover { box-shadow: 0 6px 18px rgba(30, 107, 60, .16); }
+
+.antes__revisado {
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--borde);
+  background: var(--fondo);
+}
+.antes-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.antes-check input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.antes-check__marca {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 6px;
+  background: var(--superficie);
+  color: transparent;
+  font-size: 14px;
+}
+.antes-check input:checked + .antes-check__marca {
+  background: var(--exito-tx, #1E6B3C);
+  border-color: var(--exito-tx, #1E6B3C);
+  color: #fff;
+}
+.antes-check input:focus-visible + .antes-check__marca { outline: 2px solid var(--acento); outline-offset: 2px; }
+.antes-check__texto { display: grid; gap: 2px; }
+.antes-check__pie { color: var(--texto-2); font-size: 12px; }
+
+/* --- "No llegas": el aviso de tiempos que no cuadran ----------------------
+   Va dentro de la tarjeta que no alcanza, y en ámbar: el lienzo avisa, no
+   prohíbe. Igual ese trayecto se hace en taxi, o igual da lo mismo llegar
+   tarde a eso. */
+.item__aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #FBEED6;
+  color: #8A5A16;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.item__aviso i { flex-shrink: 0; font-size: 14px; margin-top: 1px; }

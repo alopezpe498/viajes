@@ -16,6 +16,7 @@
  */
 
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
+import { direccionDe, guardarDireccion, pedirGeocodificar } from './direcciones.js';
 
 export { normalizarNombre };
 
@@ -212,7 +213,54 @@ export function guardarFichaActividad(id, ficha) {
     Number(id)
   );
 
+  // EL PUNTO DE ENCUENTRO ES UNA DIRECCIÓN, y hasta ahora solo se pintaba.
+  //
+  // Civitatis lo escribe en la ficha —"Plaza de Oriente, junto a la estatua
+  // ecuestre"— y ahí se quedaba: el campo dirección de la excursión seguía
+  // vacío y había que teclearlo a mano para poder calcular un traslado. Todo
+  // dato que el scraping ya trae se guarda en el registro, no solo se enseña.
+  //
+  // No pisa lo que hubiera: si alguien ya escribió una dirección o la corrigió,
+  // esa manda.
+  volcarPuntoDeEncuentro(Number(id), ficha.puntoEncuentro);
+
   return actividadPorId(id);
+}
+
+/**
+ * La primera línea útil del punto de encuentro, que es la que parece una
+ * dirección.
+ *
+ * Civitatis mete debajo un "Ver mapa" y a veces un "Según la fecha…" que no son
+ * sitios y que solo estorban al geocodificador.
+ */
+export function puntoDeEncuentroLimpio(bruto) {
+  const primera = String(bruto ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .find((l) => l.toLowerCase() !== 'ver mapa' && !/^seg[uú]n la fecha/i.test(l));
+
+  return primera ? primera.slice(0, 400) : null;
+}
+
+/** Vuelca el punto de encuentro al campo dirección, si no había ya una. */
+function volcarPuntoDeEncuentro(actividadId, bruto) {
+  const texto = puntoDeEncuentroLimpio(bruto);
+  if (!texto) return;
+  if (direccionDe('actividad', actividadId)) return;
+
+  const ciudad = una(
+    'SELECT ciudad FROM catalogo_actividades WHERE id = ?',
+    actividadId
+  )?.ciudad;
+
+  guardarDireccion('actividad', actividadId, texto);
+  pedirGeocodificar('actividad', actividadId);
+  console.log(
+    `[catalogo] Excursión #${actividadId}: punto de encuentro → dirección «${texto}»` +
+      (ciudad ? ` (${ciudad})` : '')
+  );
 }
 
 /**

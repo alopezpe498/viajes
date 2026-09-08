@@ -1,153 +1,203 @@
 /**
  * services/geocodificar.js
  * -----------------------------------------------------------------------------
- * Nominatim (el buscador de OpenStreetMap) para la pantalla del mapamundi:
- * de unas coordenadas a un sitio con nombre, y de un nombre a unas coordenadas.
+ * DE UN NOMBRE A UN SITIO, Y DE UN PUNTO A UN NOMBRE. Todo con Google.
  *
- * SE LLAMA DESDE EL SERVIDOR, NUNCA DESDE EL NAVEGADOR. Tres razones, y las
- * tres importan:
+ * Antes esto era Nominatim, el buscador de OpenStreetMap. Funcionaba y era
+ * gratis, pero se le atragantaban justo las consultas que más se hacen aquí:
+ * las zonas difusas. "Cascais y Costa de Estoril" o "Valle del Tejo" no son un
+ * municipio ni un punto, y Nominatim contestaba que no existen. Google devuelve
+ * un punto representativo de la zona, que es exactamente lo que hace falta para
+ * situar un destino en el mapa.
  *
- *  1. Nominatim EXIGE un User-Agent que identifique a la aplicación. Sin él
- *     banea, y desde el navegador no se puede poner: el navegador manda el suyo.
- *  2. Su política es de UNA petición por segundo. Desde el navegador, un usuario
- *     nervioso clicando el mapa manda diez en dos segundos. Desde aquí se pueden
- *     poner en fila.
- *  3. La caché en memoria sirve para todos: si clicas dos veces en el mismo
- *     sitio, la segunda no sale del servidor.
+ * NO HAY PLAN B, y es a propósito. Antes había respaldo y eso escondía los
+ * fallos: cuando Google no contestaba, la aplicación seguía con datos peores sin
+ * decirlo. Ahora, si Google no resuelve algo, se devuelve un `null` con motivo y
+ * la pantalla lo dice. Vale más un "no he podido situar este destino" que un
+ * "calculando…" que no termina nunca.
  *
- * Es un servicio público y gratuito que mantiene gente con recursos limitados.
- * Portarse bien no es cortesía, es la condición para poder usarlo.
+ * LA CACHÉ SE QUEDA. Cada llamada cuesta dinero y dos clics a un dedo de
+ * distancia son el mismo sitio.
  */
+import { geocodificarConGoogle, hayClaveGoogle, googleDisponible } from '../lib/google.js';
 
-/** Quiénes somos. Nominatim lo pide y con razón. */
-const AGENTE = 'CreadorViajes/1.0 (uso personal)';
+const URL_GEOCODING = 'https://maps.googleapis.com/maps/api/geocode/json';
+const TIMEOUT_MS = 12_000;
 
-/** Su política: como mucho una petición por segundo. */
-const MINIMO_ENTRE_PETICIONES_MS = 1000;
-
-/** Si tarda más que esto, es que algo va mal. */
-const TIMEOUT_MS = 10_000;
-
-const BASE = 'https://nominatim.openstreetmap.org';
-
+// =============================================================================
+// CACHÉ EN MEMORIA
+// =============================================================================
 /**
- * Cuándo se hizo la última petición. Un simple número basta: el servidor es
- * un solo proceso y los trabajos van de uno en uno.
- */
-let ultimaPeticion = 0;
-
-/**
- * La cola del acelerador. Cada petición encadena su espera a la anterior, así
- * que tres clics seguidos salen a 0 s, 1 s y 2 s en vez de los tres a la vez.
- */
-let turno = Promise.resolve();
-
-const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Pide el turno y espera lo que haga falta para no pasarse del límite.
- * Devuelve una promesa que se resuelve cuando toca disparar.
- */
-function esperarTurno() {
-  turno = turno.then(async () => {
-    const desde = Date.now() - ultimaPeticion;
-    if (desde < MINIMO_ENTRE_PETICIONES_MS) {
-      await dormir(MINIMO_ENTRE_PETICIONES_MS - desde);
-    }
-    ultimaPeticion = Date.now();
-  });
-  return turno;
-}
-
-/**
- * Caché en memoria. Se pierde al reiniciar el servidor y no pasa nada: esto no
- * es un dato del viaje, es el nombre de un sitio, que se vuelve a pedir y ya.
- * Por eso no va a SQLite.
+ * Se guarda hasta el "no lo encuentro": preguntar dos veces por algo que no
+ * existe cuesta lo mismo que preguntar por algo que sí.
  */
 const cache = new Map();
-const CACHE_MAX = 500;
+const MAX_CACHE = 500;
 
-function deCache(clave) {
-  return cache.has(clave) ? cache.get(clave) : undefined;
-}
+const deCache = (clave) => cache.get(clave);
 
 function aCache(clave, valor) {
-  // Un tope tonto pero suficiente: si se llena, fuera la más vieja.
-  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+  if (cache.size >= MAX_CACHE) cache.delete(cache.keys().next().value);
   cache.set(clave, valor);
   return valor;
 }
 
-/** Una llamada a Nominatim, con turno, cabecera y timeout. */
-async function pedir(ruta, parametros) {
-  const url = new URL(BASE + ruta);
-  for (const [k, v] of Object.entries(parametros)) url.searchParams.set(k, String(v));
-  url.searchParams.set('format', 'json');
-  url.searchParams.set('accept-language', 'es');
+/** Para las pruebas y para cuando cambia la clave. */
+export function vaciarCache() {
+  cache.clear();
+}
 
-  await esperarTurno();
+// =============================================================================
+// LA LLAMADA
+// =============================================================================
+/**
+ * Geocoding de Google, directo o inverso según los parámetros.
+ *
+ * Devuelve la lista de resultados, o `null` si Google no contestó. Distinguir
+ * "no hay resultados" de "no he podido preguntar" importa: lo primero es una
+ * respuesta y lo segundo es una avería.
+ */
+async function pedirAGoogle(params) {
+  if (!hayClaveGoogle()) {
+    console.warn('[geocodificar] no hay GOOGLE_MAPS_SERVER_KEY: no se puede situar nada.');
+    return null;
+  }
+
+  const url = new URL(URL_GEOCODING);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+  url.searchParams.set('language', 'es');
+  url.searchParams.set('key', process.env.GOOGLE_MAPS_SERVER_KEY);
 
   const control = new AbortController();
   const reloj = setTimeout(() => control.abort(), TIMEOUT_MS);
+
   try {
-    const respuesta = await fetch(url, {
-      signal: control.signal,
-      headers: { 'User-Agent': AGENTE, Accept: 'application/json' },
-    });
-    if (!respuesta.ok) throw new Error(`Nominatim respondió ${respuesta.status}`);
-    return await respuesta.json();
+    const r = await fetch(url, { signal: control.signal, headers: { Accept: 'application/json' } });
+    const cuerpo = await r.json().catch(() => null);
+
+    if (cuerpo?.status === 'ZERO_RESULTS') return [];
+    if (cuerpo?.status !== 'OK') {
+      console.warn(
+        `[geocodificar] Google dijo ${cuerpo?.status ?? r.status}` +
+          (cuerpo?.error_message ? `: ${cuerpo.error_message}` : '')
+      );
+      return null;
+    }
+    return cuerpo.results ?? [];
   } catch (err) {
-    if (err.name === 'AbortError') throw new Error('Nominatim tardó demasiado en responder.');
-    throw err;
+    const motivo = err.name === 'AbortError' ? `tardó más de ${TIMEOUT_MS / 1000} s` : err.message;
+    console.warn(`[geocodificar] Google no contestó: ${motivo}`);
+    return null;
   } finally {
     clearTimeout(reloj);
   }
 }
 
 // =============================================================================
+// INTERPRETAR LO QUE CONTESTA GOOGLE
+// =============================================================================
+/**
+ * Los `address_components` de Google vienen etiquetados por tipo, que es mucho
+ * más fiable que los veinte campos sin garantizar de Nominatim.
+ *
+ * `locality` es la ciudad. Cuando no la hay —una zona difusa, un parque
+ * natural, una isla— se baja a la comarca y luego a la provincia o región, que
+ * es lo más concreto que existe ahí. Esa cadena es justo lo que hace que
+ * "Valle del Tejo" tenga respuesta en vez de no tener ninguna.
+ */
+const trozo = (componentes, tipo) =>
+  componentes?.find((c) => (c.types ?? []).includes(tipo))?.long_name ?? null;
+
+function interpretar(resultado, { comoPais = false } = {}) {
+  if (!resultado) return { hay: false };
+
+  const comp = resultado.address_components ?? [];
+  const tipos = resultado.types ?? [];
+
+  const pais = trozo(comp, 'country');
+  const ciudad =
+    trozo(comp, 'locality') ??
+    trozo(comp, 'postal_town') ??
+    trozo(comp, 'administrative_area_level_2') ??
+    trozo(comp, 'administrative_area_level_1');
+
+  // Es un país cuando lo dice Google, cuando se pide mirando el mundo entero, o
+  // cuando no hay nada más concreto debajo.
+  const esPais = comoPais || tipos.includes('country') || !ciudad;
+
+  const nombre = esPais ? pais : ciudad;
+  if (!nombre) return { hay: false };   // mar abierto, o algo sin nombre útil
+
+  const punto = resultado.geometry?.location;
+
+  return {
+    hay: true,
+    nombre,
+    tipo: esPais ? 'pais' : 'ciudad',
+    // El país solo se enseña como subtítulo cuando el destino es una ciudad:
+    // "Kioto · Japón" tiene sentido, "Japón · Japón" no.
+    pais: esPais ? null : pais,
+    lat: Number(punto?.lat),
+    lon: Number(punto?.lng),
+  };
+}
+
+// =============================================================================
 // DE COORDENADAS A SITIO
 // =============================================================================
 /**
- * El `zoom` de Nominatim decide con cuánto detalle contesta: con 3 te dice el
- * país y con 12 el pueblo. Lo sacamos del zoom del mapa, que es lo que dice qué
- * está mirando la persona: si ve el mundo entero, quiere un país; si ve una
- * provincia, quiere una ciudad.
+ * A qué nivel contestar según lo que se esté mirando.
+ *
+ * Quien ve el mundo entero y toca España quiere España, no el pueblo que haya
+ * debajo del dedo. Quien ve una provincia quiere la ciudad.
  */
-export function zoomNominatim(zoomMapa) {
-  const z = Number(zoomMapa) || 2;
-  if (z <= 4) return 3;   // país
-  if (z <= 7) return 8;   // región o ciudad grande
-  return 12;              // ciudad o pueblo
+export function nivelSegunZoom(zoomMapa) {
+  return (Number(zoomMapa) || 2) <= 4 ? 'pais' : 'ciudad';
 }
 
 /**
  * Qué hay en unas coordenadas.
  *
- * Devuelve siempre un objeto con la misma forma, incluso cuando no hay nada:
- *
- *   { hay: false }                                  -> mar abierto, o nada útil
- *   { hay: true, nombre, tipo, pais, lat, lon }     -> un sitio de verdad
+ *   { hay: false }                                -> mar abierto, o nada útil
+ *   { hay: true, nombre, tipo, pais, lat, lon }   -> un sitio de verdad
  */
 export async function sitioEnCoordenadas(lat, lon, zoomMapa) {
-  const zoom = zoomNominatim(zoomMapa);
-  // Redondeamos a dos decimales (~1 km) para la clave: dos clics a un dedo de
-  // distancia son el mismo sitio y no merecen dos llamadas.
-  const clave = `r|${Number(lat).toFixed(2)}|${Number(lon).toFixed(2)}|${zoom}`;
+  const nivel = nivelSegunZoom(zoomMapa);
+  // Dos decimales (~1 km) para la clave: dos clics a un dedo de distancia son
+  // el mismo sitio y no merecen dos llamadas.
+  const clave = `r|${Number(lat).toFixed(2)}|${Number(lon).toFixed(2)}|${nivel}`;
 
   const guardado = deCache(clave);
   if (guardado !== undefined) return guardado;
 
-  const datos = await pedir('/reverse', { lat, lon, zoom });
-  return aCache(clave, interpretar(datos, zoom, lat, lon));
+  const resultados = await pedirAGoogle({ latlng: `${lat},${lon}` });
+  if (resultados === null) return { hay: false };   // avería: no se cachea
+  if (!resultados.length) return aCache(clave, { hay: false });
+
+  // Google ordena de lo más concreto a lo más amplio. Para el nivel de país se
+  // busca el resultado que ES el país; para ciudad vale el primero.
+  const elegido =
+    nivel === 'pais'
+      ? (resultados.find((r) => (r.types ?? []).includes('country')) ?? resultados[0])
+      : resultados[0];
+
+  const sitio = interpretar(elegido, { comoPais: nivel === 'pais' });
+  // La coordenada buena es donde se tocó, no el centroide del país.
+  return aCache(clave, sitio.hay ? { ...sitio, lat: Number(lat), lon: Number(lon) } : sitio);
 }
 
 // =============================================================================
 // DE TEXTO A SITIO
 // =============================================================================
 /**
- * Busca un sitio por su nombre. Devuelve lo mismo que la inversa, más el zoom
- * al que conviene volar: un país se ve entero desde el 5 y una ciudad desde
- * el 10.
+ * Busca un sitio por su nombre.
+ *
+ * Devuelve lo mismo que la inversa más el zoom al que conviene volar: un país
+ * se ve entero desde el 5 y una ciudad desde el 10.
+ *
+ * AQUÍ ES DONDE SE NOTA EL CAMBIO. "Cascais y Costa de Estoril" o "Valle del
+ * Tejo" no son un municipio, y antes no tenían respuesta. Google devuelve un
+ * punto representativo de la zona y el destino se puede situar.
  */
 export async function sitioPorTexto(texto) {
   const consulta = String(texto ?? '').trim();
@@ -157,19 +207,22 @@ export async function sitioPorTexto(texto) {
   const guardado = deCache(clave);
   if (guardado !== undefined) return guardado;
 
-  const datos = await pedir('/search', { q: consulta, limit: 1, addressdetails: 1 });
-  const primero = Array.isArray(datos) ? datos[0] : null;
-  if (!primero) return aCache(clave, { hay: false });
+  const resultados = await pedirAGoogle({ address: consulta });
+  if (resultados === null) return { hay: false, motivo: 'no se pudo consultar' };
+  if (!resultados.length) {
+    console.log(`[geocodificar] sin resultados para «${consulta}»`);
+    return aCache(clave, { hay: false });
+  }
 
-  const lat = Number(primero.lat);
-  const lon = Number(primero.lon);
+  const primero = resultados[0];
+  const esPais = (primero.types ?? []).includes('country');
+  const sitio = interpretar(primero);
 
-  // addresstype es lo más fiable para saber qué te ha devuelto; type queda de
-  // respaldo para respuestas antiguas.
-  const que = primero.addresstype || primero.type || '';
-  const esPais = que === 'country';
+  console.log(
+    `[geocodificar] «${consulta}» → ${primero.formatted_address}` +
+      ` (${(primero.types ?? []).slice(0, 2).join(', ') || 'sin tipo'})`
+  );
 
-  const sitio = interpretar(primero, esPais ? 3 : 12, lat, lon);
   return aCache(clave, {
     ...sitio,
     // A un país se le mira entero; a una ciudad se le entra.
@@ -183,133 +236,24 @@ export async function sitioPorTexto(texto) {
 /**
  * Una DIRECCIÓN, no una ciudad: "Zelenih beretki 12, Sarajevo".
  *
- * `sitioPorTexto()` no vale para esto. Aquel resume a ciudad o país porque lo
+ * `sitioPorTexto()` no vale para esto: aquel resume a ciudad o país porque lo
  * usa el mapamundi, donde lo que se elige es un destino. Aquí hace falta el
- * portal exacto, así que se devuelve el punto tal cual y la dirección tal y
- * como Nominatim la escribe.
+ * portal exacto.
  *
- * Aprovecha el MISMO turno de una petición por segundo y la MISMA caché: es el
- * mismo servicio público y el límite es de todos, no de cada función.
+ * Es un envoltorio fino sobre `geocodificarConGoogle`, que ya sabe pegar la
+ * ciudad al final cuando la dirección no la lleva.
  *
- * Devuelve `{ direccion, lat, lng, fuente: 'nominatim' }` o `null`.
+ * Devuelve `{ direccion, lat, lng, fuente: 'google' }` o `null`.
  */
 export async function geocodificarDireccion(texto, { cerca = null } = {}) {
-  const base = String(texto ?? '').trim();
-  if (!base) return null;
-
-  // La ciudad de la parada pegada al final: "Calle Mayor 3" sin ciudad puede
-  // estar en media España.
-  const ciudad = String(cerca ?? '').trim();
-  const consulta =
-    ciudad && !base.toLowerCase().includes(ciudad.toLowerCase()) ? `${base}, ${ciudad}` : base;
-
-  const clave = `d|${consulta.toLowerCase()}`;
-  const guardado = deCache(clave);
-  if (guardado !== undefined) return guardado;
-
-  try {
-    // SE PIDEN VARIOS Y SE ELIGE, no el primero a ciegas.
-    //
-    // "Calle Huertas 18, Madrid" devuelve como primer resultado una calle de
-    // Torrelaguna, que está en la PROVINCIA de Madrid y a sesenta kilómetros
-    // del centro. Es una respuesta correcta a una pregunta ambigua, y colar esa
-    // por buena pone tu cena a una hora de coche sin avisar.
-    //
-    // Con `addressdetails` cada resultado dice en qué municipio cae, así que
-    // basta con preferir el que esté en la ciudad que se pidió.
-    const datos = await pedir('/search', { q: consulta, limit: 5, addressdetails: 1 });
-    const lista = Array.isArray(datos) ? datos : [];
-    if (!lista.length) {
-      console.log(`[nominatim] sin resultados para «${consulta}»`);
-      return aCache(clave, null);
-    }
-
-    const elegido = enLaCiudad(lista, ciudad) ?? lista[0];
-    if (ciudad && elegido !== lista[0]) {
-      console.log(`[nominatim] descarto «${lista[0].display_name}»: no está en ${ciudad}.`);
-    }
-
-    console.log(`[nominatim] OK: «${consulta}» → ${elegido.display_name}`);
-    return aCache(clave, {
-      direccion: elegido.display_name ?? consulta,
-      lat: Number(elegido.lat),
-      lng: Number(elegido.lon),
-      fuente: 'nominatim',
-    });
-  } catch (err) {
-    // Un fallo de red no se cachea: la próxima vez puede ir bien.
-    console.warn(`[nominatim] falló «${consulta}»: ${err.message}`);
-    return null;
-  }
+  if (!googleDisponible()) return null;
+  return geocodificarConGoogle(texto, { cerca });
 }
 
-/**
- * El primer resultado que de verdad cae en esa ciudad.
- *
- * El municipio puede venir con cuatro nombres distintos según el sitio —`city`
- * en una capital, `town` en un pueblo grande, `village` en uno pequeño,
- * `municipality` a veces—, así que se miran todos. Sin ciudad de referencia no
- * hay nada que preferir y se devuelve `null` para que mande el orden original.
- */
-function enLaCiudad(lista, ciudad) {
-  const objetivo = normalizar(ciudad);
-  if (!objetivo) return null;
-
-  return (
-    lista.find((r) => {
-      const a = r.address ?? {};
-      return [a.city, a.town, a.village, a.municipality]
-        .filter(Boolean)
-        .some((n) => normalizar(n) === objetivo);
-    }) ?? null
-  );
-}
-
-/** Sin acentos ni mayúsculas: "Málaga" y "malaga" son la misma ciudad. */
-function normalizar(s) {
-  return String(s ?? '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .trim();
-}
-
-// =============================================================================
-// INTERPRETAR LO QUE CONTESTA NOMINATIM
-// =============================================================================
-/**
- * Nominatim devuelve un `address` con veinte campos posibles y ninguno
- * garantizado. Esto se queda con lo único que nos importa: cómo se llama esto
- * y si es un país o una ciudad.
- *
- * La ciudad puede venir con cuatro nombres distintos según el sitio: `city` en
- * una capital, `town` en un pueblo grande, `village` en uno pequeño y, cuando
- * no hay ninguno, `state` (que en un desierto o una isla es lo más concreto
- * que hay). Se cogen en ese orden, de más preciso a menos.
- */
-function interpretar(datos, zoom, lat, lon) {
-  const direccion = datos?.address;
-  if (!direccion) return { hay: false };
-
-  const pais = direccion.country ?? null;
-  const ciudad =
-    direccion.city ?? direccion.town ?? direccion.village ?? direccion.state ?? null;
-
-  // Con zoom de país no preguntamos por la ciudad aunque venga: quien mira el
-  // mundo entero y toca España quiere España, no el pueblo que haya debajo.
-  const esPais = zoom <= 4 || !ciudad;
-
-  const nombre = esPais ? pais : ciudad;
-  if (!nombre) return { hay: false };   // mar abierto, o algo sin nombre útil
-
-  return {
-    hay: true,
-    nombre,
-    tipo: esPais ? 'pais' : 'ciudad',
-    // El país solo se enseña como subtítulo cuando el destino es una ciudad:
-    // "Kioto · Japón" tiene sentido, "Japón · Japón" no.
-    pais: esPais ? null : pais,
-    lat: Number(lat),
-    lon: Number(lon),
-  };
-}
+export default {
+  sitioEnCoordenadas,
+  sitioPorTexto,
+  geocodificarDireccion,
+  nivelSegunZoom,
+  vaciarCache,
+};

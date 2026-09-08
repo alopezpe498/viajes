@@ -31,6 +31,12 @@ const fino = typeof compacto !== 'undefined' && compacto;
     <span class="direccion__estado" data-estado>
       <% if (d?.buscando) { %>
         <span class="direccion__situando"><i class="ti ti-loader-2 girando" aria-hidden="true"></i> situando…</span>
+      <% } else if (d?.fallo) { %>
+        <%# La avería se dice entera y a la vista. Escondida en un `title` había
+            que adivinar que existía, y encima "sin localizar" mandaba a
+            corregir una dirección que no tenía nada malo. %>
+        <span class="direccion__fallo"><i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          No he podido situarla</span>
       <% } else if (d && !d.situada) { %>
         <span class="direccion__aviso" title="<%= d.mensaje ?? '' %>">
           <i class="ti ti-help-circle" aria-hidden="true"></i> sin localizar

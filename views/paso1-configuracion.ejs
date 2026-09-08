@@ -160,6 +160,32 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
         </div>
       </div>
 
+      <%# ======================= ORIGEN ======================= %>
+      <%# De dónde se sale. Estaba clavado en 'BCN' dentro del código, así que
+          un viaje desde Madrid buscaba vuelos desde Barcelona sin decir nada.
+          Barcelona sigue siendo el valor por defecto. %>
+      <div class="tarjeta">
+        <h2>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10h4a2 2 0 0 1 0 4h-4l-4 7h-3l2 -7h-4l-2 2h-3l2 -4l-2 -4h3l2 2h4l-2 -7h3z"/></svg>
+          ¿Desde dónde salís?
+        </h2>
+        <div class="sub">La ciudad de la que sale el viaje y a la que se vuelve</div>
+        <div class="cuerpo">
+          <div class="opcionales">
+            <div class="campo">
+              <label for="ciudad_origen">Ciudad de origen</label>
+              <div class="presupuesto">
+                <input type="text" id="ciudad_origen" name="ciudad_origen"
+                       maxlength="120" autocomplete="off"
+                       placeholder="Barcelona"
+                       value="<%= viaje.ciudad_origen || '' %>">
+              </div>
+              <div class="nota">Se usa para buscar los vuelos de ida y vuelta</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <%# ======================= TIPO DE VIAJE ======================= %>
       <div class="tarjeta">
         <h2>

@@ -697,7 +697,7 @@ export async function buscarEntre(ciudad, a, b, { consulta = null, entre = null 
   // pillan de paso. Los suyos llegan sin coordenadas, así que se sitúan AQUÍ,
   // antes de contestar, en vez de dejarlo para la cola.
   //
-  // Cuesta unos segundos —Nominatim va a una petición por segundo— y se paga
+  // Cuesta unos segundos —hay que geocodificar una a una— y se paga
   // una sola vez por sitio: la siguiente búsqueda ya los encuentra situados.
   await situarLosQueFalten(ciudad, sitios);
 

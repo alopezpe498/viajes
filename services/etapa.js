@@ -272,6 +272,10 @@ export function queVerDeEtapa(contexto) {
         // está apuntada todavía no tiene dónde guardarlos.
         adjuntos: estado.candidatoId ? adjuntosDe('excursion', estado.candidatoId) : [],
         ficha: fichaDeFila(a),
+        // ¿Se han traído ya los detalles? Es lo que decide si el botón invita a
+        // buscarlos o a abrir lo que ya hay. `detalles_en` es la marca de que
+        // esto se buscó alguna vez.
+        tieneFicha: Boolean(a.detalles_en),
         buscandoFicha: trabajando,
         errorFicha: !trabajando && !a.detalles_en && ultima?.estado === 'error'
           ? ultima.mensaje_error
@@ -532,7 +536,8 @@ export function tramosDeEtapa(contexto) {
 
 /** Un tramo con todo lo que hace falta para pintarlo. */
 export function describirTramo(t) {
-  const casa = ciudadDeCasa();
+  // El tramo sabe de qué viaje es, y el viaje sabe de dónde se sale.
+  const casa = ciudadDeCasa(t.viaje_id);
   const origen = t.etapa_origen_id ? una('SELECT * FROM etapas WHERE id = ?', t.etapa_origen_id) : null;
   const destino = t.etapa_destino_id ? una('SELECT * FROM etapas WHERE id = ?', t.etapa_destino_id) : null;
 

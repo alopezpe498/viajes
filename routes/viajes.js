@@ -160,7 +160,7 @@ import {
   comoTamano,
   TOPE as TOPE_ADJUNTO,
 } from '../services/adjuntos.js';
-import { fichasDelViaje, generarFicha } from '../services/ficha-pais.js';
+import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-pais.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import {
   datosDePortada,
@@ -486,7 +486,7 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
   // PASO 1: configuración (fechas + viajeros + tipo + más opciones)
   // ---------------------------------------------------------------------------
   if (paso === 1) {
-    const { fecha_inicio, fecha_fin, presupuesto, tipo_viaje, ritmo } = req.body;
+    const { fecha_inicio, fecha_fin, presupuesto, tipo_viaje, ritmo, ciudad_origen } = req.body;
 
     /** Vuelve a pintar la pantalla conservando lo que había escrito. */
     const esNuevo = !viaje.destino;
@@ -501,6 +501,7 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
           presupuesto,
           tipo_viaje,
           ritmo,
+          ciudad_origen,
           adultos: Number(req.body.adultos) || viaje.adultos,
           ninos: Number(req.body.ninos) || 0,
           edadesNinos: comoLista(req.body.edades_ninos).map(Number),
@@ -544,10 +545,14 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
     // --- Más opciones ---
     const ritmoLimpio = RITMOS.includes(ritmo) ? ritmo : 'normal';
 
+    // De dónde se sale. Vacío vuelve a Barcelona, que es lo de siempre.
+    const origenLimpio = String(ciudad_origen ?? '').trim().slice(0, 120) || 'Barcelona';
+    const cambioElOrigen = origenLimpio !== (viaje.ciudad_origen ?? 'Barcelona');
+
     ejecutar(
       `UPDATE viajes
           SET fecha_inicio = ?, fecha_fin = ?, presupuesto = ?, tipo_viaje = ?,
-              adultos = ?, ninos = ?, edades_ninos = ?, ritmo = ?
+              adultos = ?, ninos = ?, edades_ninos = ?, ritmo = ?, ciudad_origen = ?
         WHERE id = ?`,
       fecha_inicio,
       fecha_fin,
@@ -557,6 +562,7 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       ninos,
       JSON.stringify(edades),
       ritmoLimpio,
+      origenLimpio,
       viaje.id
     );
 
@@ -578,7 +584,9 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       console.log(`[rutas] Viaje #${viaje.id}: cambiaron las fechas, avisos a la cola otra vez.`);
     }
 
-    if (cambiaronViajeros || cambiaronFechas) {
+    // Cambiar el origen invalida los vuelos igual que cambiar las fechas: unos
+    // vuelos desde Barcelona no sirven si ahora se sale de Madrid.
+    if (cambiaronViajeros || cambiaronFechas || cambioElOrigen) {
       const { borrados, reencolados } = await olvidarTransporteYAlojamiento(viaje.id);
       if (borrados || reencolados.length) {
         console.log(
@@ -1301,10 +1309,10 @@ router.get('/elegir-destino/:viajeId', (req, res) => {
 /**
  * Geocodificación INVERSA: de un punto del mapa a un sitio con nombre.
  *
- * Esto es un proxy a Nominatim y tiene que serlo: su política exige un
- * User-Agent que identifique a la app (el navegador manda el suyo y no se puede
- * cambiar) y como mucho una petición por segundo. Las dos cosas se cumplen en
- * services/geocodificar.js.
+ * Es un proxy al Geocoding de Google, y tiene que serlo: la clave de servidor
+ * está restringida por IP y no puede salir al navegador. Lo resuelve
+ * services/geocodificar.js, que además cachea para no pagar dos veces por el
+ * mismo punto.
  */
 router.get('/api/geocodificar', async (req, res) => {
   // Ojo con Number(''), que da 0 y es un número perfectamente finito: sin
@@ -1521,6 +1529,8 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
 
   res.render('ruta', {
     ruta: rutaDeViaje(viajeId),
+    // Si ya se revisó "Antes de viajar", el botón deja de ser un aviso.
+    antesRevisado: Boolean(viaje.antes_revisado_en),
     urlExplorar: explorable ? `/descubrir/${destino.id}?viaje=${viajeId}` : null,
     dosier: estadoDelDosier(viaje),
     traslados,
@@ -1575,6 +1585,15 @@ router.post('/api/viaje/:viajeId/antes-de-viajar', async (req, res) => {
     console.error(`[rutas] no pude generar la ficha de ${pais}:`, err);
     res.status(500).json({ error: err.message || 'No se pudo preparar la ficha.' });
   }
+});
+
+/** "Ya lo he revisado". Reversible: se manda `revisado: false` y vuelve atrás. */
+router.post('/api/viaje/:viajeId/antes-de-viajar/revisado', (req, res) => {
+  const viaje = una('SELECT id FROM viajes WHERE id = ?', Number(req.params.viajeId));
+  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const revisadoEn = marcarRevisado(viaje.id, Boolean(req.body?.revisado));
+  res.json({ revisadoEn });
 });
 
 // --- API de la ruta ---------------------------------------------------------
@@ -1672,7 +1691,7 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
   const tramos = tramosDeEtapa(contexto);
 
   // Las distancias se calculan la primera vez que se mira el tramo y se quedan
-  // guardadas en su fila. Si OSRM no responde, el tramo se pinta igual sin ellas.
+  // guardadas en su fila. Si Google no responde, el tramo se pinta igual sin ellas.
   for (const t of tramos) {
     if (t.distanciaKm == null) await asegurarDistancia(t.id);
   }
@@ -2338,7 +2357,7 @@ function puntoDeLugar(lugar) {
 /**
  * Guardar la dirección de algo. Contesta al instante.
  *
- * Buscar las coordenadas va por la cola: geocodificar tarda —Nominatim tiene
+ * Buscar las coordenadas va por la cola: geocodificar tarda —hay que preguntarle
  * turno de una petición por segundo— y quien acaba de teclear una calle no
  * tiene por qué esperar a nadie. La ficha dice "situando…" mientras tanto.
  */

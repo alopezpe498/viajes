@@ -105,7 +105,7 @@ async function comoDataUri(url) {
       signal: corte,
       headers: {
         // Wikipedia pide identificarse; Civitatis no se queja pero tampoco
-        // estorba. Es la misma cortesía que con Nominatim.
+        // estorba. Es la misma cortesía que con cualquier servicio ajeno.
         'User-Agent': 'CreadorViajes/0.1 (uso personal; generación de dosier)',
         Accept: 'image/jpeg,image/png,image/webp,image/*',
       },

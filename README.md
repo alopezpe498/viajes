@@ -2841,3 +2841,35 @@ El calendario abre por el mes de la ida si ya la hay —al editar, lo normal es
 querer ver lo que elegiste— y por el actual si no. Atrás no se puede ir más allá
 del mes en curso: los días pasados están deshabilitados y un calendario de meses
 vacíos no lleva a ninguna parte.
+
+---
+
+## El lienzo avisa de los tiempos que no cuadran
+
+Si sales de un sitio a las 15:00 y el trayecto son dos horas, a las 15:30 no
+estás en el siguiente. Sobre el papel del lienzo eso no se ve —dos tarjetas
+seguidas parecen igual de seguidas midan lo que midan— y solo se descubre
+andando por la ciudad con prisa.
+
+La regla es literal: **hora de fin del primero + trayecto > hora de inicio del
+segundo**. El fin es su hora más su duración; sin duración tecleada se toma la
+hora de inicio, que es lo prudente.
+
+**Se usa lo ya calculado, no se pide nada.** Los tiempos salen de los traslados
+consultados desde "Moverse" o desde las fichas, que ahora vienen de Google
+Routes. Si entre dos cosas no hay traslado calculado, no hay aviso: inventarse
+un tiempo para poder avisar sería peor que callarse. De los medios disponibles
+se prefiere andando y luego público, que es con lo que se encadena un día.
+
+Solo entre tarjetas **consecutivas** del mismo día y con hora las dos: sin hora
+no hay nada que comparar, y comparar la primera con la tercera sería avisar de
+un salto que nadie va a dar. Los traslados quedan fuera como extremo — avisar de
+que no da tiempo a llegar al trayecto no significa nada.
+
+El aviso va **dentro de la segunda tarjeta**, en ámbar, y no arriba con los del
+día: los otros son del día entero ("tienes tres cosas antes de llegar") y ahí
+están bien; este habla de dos tarjetas concretas y leerlo en la cabecera obliga
+a buscar de cuáles.
+
+Y avisa, no prohíbe. No recoloca nada, no impide guardar y no cambia ninguna
+hora. Igual ese trayecto se hace en taxi, o igual da lo mismo llegar tarde a eso.

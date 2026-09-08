@@ -67,7 +67,7 @@ const ORDEN_DE_MODOS = ['andando', 'publico', 'coche', 'taxi'];
  *
  * No se calcula nada aquí: se leen los traslados que se guardaron cuando se
  * consultaron desde la pestaña "Moverse" o desde las fichas. Este mapa no
- * dispara peticiones a Routes ni a OSRM; enseña lo que hay y calla lo que no.
+ * dispara ni una petición a Google; enseña lo que hay y calla lo que no.
  *
  * Devuelve un Map de "tipo:id" -> { texto, etiqueta, icono, modo }.
  */

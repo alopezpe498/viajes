@@ -42,8 +42,12 @@ const nAdjuntos = c.apuntado && c.candidatoId ? (c.adjuntos ?? []).length : 0;
             aria-expanded="false"
             aria-controls="ficha-<%= c.id %>"
             <%= c.buscandoFicha ? 'disabled' : '' %>>
-      <i class="ti <%= c.buscandoFicha ? 'ti-loader-2' : 'ti-list-details' %>" aria-hidden="true"></i>
-      <span><%= c.buscandoFicha ? 'Buscando detalles…' : 'Ver detalles' %></span>
+      <%# TRES ESTADOS Y TRES TEXTOS. Antes ponía siempre lo mismo y no había
+          forma de saber cuáles ya habías consultado: con veinte excursiones en
+          una ciudad, eso es mirar la misma dos veces. %>
+      <i class="ti <%= c.buscandoFicha ? 'ti-loader-2 girando' : c.tieneFicha ? 'ti-file-text' : 'ti-list-details' %>"
+         aria-hidden="true"></i>
+      <span><%= c.buscandoFicha ? 'Buscando detalles…' : c.tieneFicha ? 'Abrir ficha' : 'Buscar detalles' %></span>
     </button>
 
     <%# El clip solo aparece si HAY papeles. Con la tarjeta cerrada dice cuántos

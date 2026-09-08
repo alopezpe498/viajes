@@ -10,10 +10,10 @@
  *
  * DOS FUENTES, EN ESTE ORDEN
  *
- *   1. OSRM (router.project-osrm.org): servidor público y gratuito, sin clave.
+ *   1. Google Routes, con la clave de servidor.
  *      Da kilómetros y minutos por carretera de verdad.
  *   2. Haversine, a pelo: la distancia en línea recta sobre la esfera. Es lo que
- *      queda cuando OSRM no encuentra ruta, que es justo lo que pasa entre
+ *      queda cuando no hay ruta por tierra, que es justo lo que pasa entre
  *      islas y a través de océanos — o sea, precisamente cuando el dato en
  *      línea recta es MÁS informativo que el de carretera.
  *
@@ -21,13 +21,7 @@
  * línea. Nunca lanza.
  */
 
-const URL_OSRM = 'https://router.project-osrm.org/route/v1/driving';
-
-/** Es un servidor de demostración gratuito: no se le aprieta. */
-const TIMEOUT_MS = 8_000;
-const PAUSA_MS = 400;
-
-const AGENTE = 'CreadorViajes/1.0 (uso personal)';
+import { rutasConGoogle } from '../lib/google.js';
 
 /** Radio medio de la Tierra, en kilómetros. */
 const RADIO_TIERRA_KM = 6371;
@@ -35,7 +29,7 @@ const RADIO_TIERRA_KM = 6371;
 /**
  * A partir de aquí, el dato por carretera deja de ser útil.
  *
- * OSRM es más listo de lo que conviene: preguntado por Barcelona → Tokio
+ * Un router es más listo de lo que conviene: preguntado por Barcelona → Tokio
  * contesta tan tranquilo "12.513 km, 158 horas" atravesando Eurasia. Es cierto,
  * y no le sirve a nadie. Por encima de este tope el tramo es un vuelo, y lo que
  * hay que enseñar es la línea recta, que es la que lo dice a las claras.
@@ -46,51 +40,34 @@ const RADIO_TIERRA_KM = 6371;
  */
 const TOPE_CARRETERA_KM = 1500;
 
-let turno = Promise.resolve();
-const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** Las peticiones a OSRM van de una en una, con un respiro entre ellas. */
-function esperarTurno() {
-  turno = turno.then(() => dormir(PAUSA_MS));
-  return turno;
-}
-
 /**
- * Distancia y tiempo por carretera entre dos puntos.
- * Devuelve null si OSRM no responde o no encuentra ruta (islas, océanos).
+ * Distancia y tiempo por carretera entre dos puntos, con Google Routes.
+ *
+ * Antes esto era OSRM, un servidor público de demostración que había que tratar
+ * con guantes: una petición cada 400 ms y sin apretar. Google no necesita esa
+ * ceremonia y, sobre todo, contesta de verdad donde OSRM se rendía.
+ *
+ * Devuelve null cuando Google no contesta o no hay ruta por tierra (islas,
+ * océanos). Ese null no es un error que haya que enseñar: quien llama se queda
+ * con la línea recta, que para "¿son 400 km o 9.000?" sobra.
  */
 async function porCarretera(a, b) {
-  const url =
-    `${URL_OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`;
+  // `rutasConGoogle` habla en lat/lng y aquí se maneja lat/lon. Es la misma
+  // coordenada con otro nombre, y confundirlas manda el viaje al otro
+  // hemisferio.
+  const rutas = await rutasConGoogle(
+    { lat: Number(a.lat), lng: Number(a.lon) },
+    { lat: Number(b.lat), lng: Number(b.lon) },
+    ['coche']
+  );
+  const enCoche = rutas?.find((r) => r.modo === 'coche');
+  if (!enCoche) return null;
 
-  await esperarTurno();
-
-  const control = new AbortController();
-  const reloj = setTimeout(() => control.abort(), TIMEOUT_MS);
-  try {
-    const respuesta = await fetch(url, {
-      signal: control.signal,
-      headers: { 'User-Agent': AGENTE, Accept: 'application/json' },
-    });
-    if (!respuesta.ok) return null;
-
-    const datos = await respuesta.json();
-    // OSRM contesta 200 con code:'NoRoute' cuando no hay carretera que una los
-    // dos puntos. No es un error de red: es la respuesta correcta a "¿se puede
-    // ir en coche de Barcelona a Tokio?".
-    if (datos.code !== 'Ok' || !datos.routes?.length) return null;
-
-    const ruta = datos.routes[0];
-    return {
-      km: Math.round(ruta.distance / 1000),
-      minutos: Math.round(ruta.duration / 60),
-      fuente: 'carretera',
-    };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(reloj);
-  }
+  return {
+    km: Math.round(enCoche.km ?? 0),
+    minutos: enCoche.minutos,
+    fuente: 'carretera',
+  };
 }
 
 /**

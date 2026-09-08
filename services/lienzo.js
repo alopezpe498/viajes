@@ -286,7 +286,7 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
 function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
   if (!dias.length) return [];
 
-  const casa = ciudadDeCasa();
+  const casa = ciudadDeCasa(viajeId);
   const tramos = todas(
     `SELECT t.*, c.titulo AS vuelo_titulo, c.datos_extra AS vuelo_extra
        FROM transportes t
@@ -386,7 +386,7 @@ function resumenDeSalto(t, origen, destino) {
   }
   trozos.push(`${origen.nombre_ciudad} → ${destino.nombre_ciudad}`);
 
-  // El tiempo de OSRM es EN COCHE, así que solo se enseña cuando el tramo va
+  // El tiempo de referencia es EN COCHE, así que solo se enseña cuando el tramo va
   // por carretera de verdad. Poner "Shinkansen · 5h35" al lado de un tren que
   // tarda 2h15 no es un detalle: es decirle a alguien una hora que no es.
   const porCarretera = t.tipo === 'coche' || t.tipo === 'bus';
@@ -502,6 +502,168 @@ function calcularAvisos(dias, colocados, fijos) {
           texto: `${c.nombre} empieza a las ${c.hora} (${etiquetaFranja(natural)})`,
         });
       }
+    }
+  }
+
+  // 4) Y si entre dos cosas seguidas no cabe el trayecto.
+  avisos.push(...avisosDeTiempo(dias, colocados));
+
+  return avisos;
+}
+
+// =============================================================================
+// ¿DA TIEMPO A LLEGAR?
+// -----------------------------------------------------------------------------
+// La regla es de perogrullo y por eso duele tanto cuando falla: si sales de un
+// sitio a las 15:00 y el trayecto son dos horas, a las 15:30 no estás en el
+// siguiente. Sobre el papel del lienzo eso no se ve —dos tarjetas seguidas
+// parecen igual de seguidas midan lo que midan— y solo se descubre andando.
+//
+// SE USA LO YA CALCULADO, no se pide nada. Los tiempos salen de los traslados
+// que se consultaron desde "Moverse" o desde las fichas, que ahora vienen de
+// Google Routes. Si entre dos cosas no hay traslado calculado, no hay aviso:
+// inventarse un tiempo para poder avisar sería peor que callarse.
+//
+// Y AVISA, NO PROHÍBE. Igual que el resto de la capa: no recoloca nada, no
+// impide guardar y no cambia ninguna hora. Solo lo dice.
+// =============================================================================
+
+/** "15:30" -> 930 minutos desde medianoche. Null si no hay hora. */
+function enMinutos(hora) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hora ?? '').trim());
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** 930 -> "15:30". */
+function comoHora(minutos) {
+  const h = Math.floor(minutos / 60) % 24;
+  const m = minutos % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** 150 -> "2 h 30". Para el texto del aviso. */
+function comoRato(minutos) {
+  const h = Math.floor(minutos / 60);
+  const m = minutos % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m}` : `${h} h`;
+}
+
+/**
+ * La identidad de catálogo de una tarjeta, que es como se guardan los extremos
+ * de un traslado.
+ *
+ * Un traslado apunta a la fila del CATÁLOGO (el restaurante, el monumento), no
+ * al candidato: el candidato es "esto lo quiero en este viaje" y el catálogo es
+ * "esto es". Sin esta traducción no cuadraría ningún extremo.
+ */
+function claveDeTarjeta(c) {
+  if (!c.candidatoId) return null;
+  const cand = una('SELECT * FROM candidatos WHERE id = ?', c.candidatoId);
+  return cand ? claveDeCandidato(cand) : null;
+}
+
+/**
+ * Minutos de trayecto entre dos tarjetas, de lo que ya esté calculado.
+ *
+ * Se prefiere andando y luego público: en una ciudad son los medios con los que
+ * se encadena un día. Si solo hay coche, vale el coche.
+ */
+const MEDIOS_PARA_ENCADENAR = ['andando', 'publico', 'coche', 'taxi'];
+
+function trayectoEntre(a, b) {
+  const ca = claveDeTarjeta(a);
+  const cb = claveDeTarjeta(b);
+  if (!ca || !cb) return null;
+
+  const t = una(
+    `SELECT * FROM traslados
+      WHERE estado = 'ok'
+        AND ((origen_tipo = ? AND origen_id = ? AND destino_tipo = ? AND destino_id = ?)
+          OR (origen_tipo = ? AND origen_id = ? AND destino_tipo = ? AND destino_id = ?))
+      ORDER BY id DESC
+      LIMIT 1`,
+    ca.tipo, ca.id, cb.tipo, cb.id,
+    cb.tipo, cb.id, ca.tipo, ca.id
+  );
+  if (!t) return null;
+
+  let resultados = [];
+  try {
+    resultados = t.resultados ? (JSON.parse(t.resultados) ?? []) : [];
+  } catch { return null; }
+
+  const mejor =
+    MEDIOS_PARA_ENCADENAR.map((m) => resultados.find((r) => r.modo === m)).find(Boolean) ??
+    resultados[0];
+
+  return mejor?.minutos != null
+    ? { minutos: mejor.minutos, modo: mejor.modo }
+    : null;
+}
+
+const COMO_SE_VA = {
+  andando: 'andando',
+  coche: 'en coche',
+  publico: 'en transporte público',
+  taxi: 'en taxi',
+};
+
+/**
+ * Los avisos de "no llegas", uno por pareja que no cuadre.
+ *
+ * Solo entre tarjetas CONSECUTIVAS del mismo día y con hora las dos: sin hora
+ * no hay nada que comparar, y comparar la primera con la tercera sería avisar
+ * de un salto que nadie va a dar.
+ */
+function avisosDeTiempo(dias, colocados) {
+  const avisos = [];
+  const orden = (clave) => CLAVES_FRANJA.indexOf(clave);
+
+  for (const d of dias) {
+    // El mismo orden en el que se ven: por franja, y dentro de la franja por
+    // hora y por el orden manual.
+    const delDia = colocados
+      .filter((c) => c.dia === d.n)
+      .sort(
+        (x, y) =>
+          orden(x.franja) - orden(y.franja) ||
+          (enMinutos(x.hora) ?? 9999) - (enMinutos(y.hora) ?? 9999) ||
+          (x.orden ?? 0) - (y.orden ?? 0)
+      );
+
+    for (let i = 0; i < delDia.length - 1; i++) {
+      const a = delDia[i];
+      const b = delDia[i + 1];
+
+      const empiezaA = enMinutos(a.hora);
+      const empiezaB = enMinutos(b.hora);
+      if (empiezaA == null || empiezaB == null) continue;
+
+      // Un traslado ya ES el trayecto: avisar de que no da tiempo a hacer el
+      // trayecto para llegar al trayecto no tiene sentido.
+      if (a.tipo === 'traslado' || b.tipo === 'traslado') continue;
+
+      const trayecto = trayectoEntre(a, b);
+      if (!trayecto) continue;
+
+      // Fin de lo primero: su hora más lo que dure. Sin duración tecleada se
+      // toma la hora de inicio, que es lo más prudente.
+      const acabaA = empiezaA + (Number(a.duracionMin) || 0);
+      const llegaria = acabaA + trayecto.minutos;
+      if (llegaria <= empiezaB) continue;
+
+      avisos.push({
+        dia: d.n,
+        tipo: 'no-llegas',
+        idsAfectados: [b.id],
+        texto:
+          `Sales de ${a.nombre} a las ${comoHora(acabaA)} y el trayecto son ` +
+          `${comoRato(trayecto.minutos)} ${COMO_SE_VA[trayecto.modo] ?? ''}`.trimEnd() +
+          `: no llegas a ${b.nombre} a las ${comoHora(empiezaB)}` +
+          ` (llegarías a las ${comoHora(llegaria)})`,
+      });
     }
   }
 

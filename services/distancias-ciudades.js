@@ -16,7 +16,7 @@
  * bucle normal, no con Promise.all. Veinte peticiones a la vez a un servidor
  * que nos deja usarlo gratis es la forma de que dejen de dejarnos.
  *
- * NUNCA ROMPE LA PANTALLA. Si OSRM falla o tarda, la ficha se queda con un
+ * NUNCA ROMPE LA PANTALLA. Si Google falla o tarda, la ficha se queda con un
  * guión y se reintenta la próxima vez que se abra el mapa. Una distancia que
  * falta es una molestia; una pantalla que no carga, un problema.
  */
@@ -91,7 +91,7 @@ function ciudadConCoordenadas(id) {
 /**
  * La distancia entre dos ciudades, de la caché o recién calculada.
  *
- * Devuelve null cuando falta una coordenada o cuando OSRM no contesta: quien
+ * Devuelve null cuando falta una coordenada o cuando Google no contesta: quien
  * llama pinta un guión y se vuelve a intentar la próxima vez.
  */
 export async function distanciaEntre(ciudadA, ciudadB) {

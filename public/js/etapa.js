@@ -303,7 +303,7 @@
       const abierta = !ficha.hidden;
       ficha.hidden = abierta;
       boton.setAttribute('aria-expanded', String(!abierta));
-      boton.querySelector('span').textContent = abierta ? 'Ver detalles' : 'Ocultar detalles';
+      boton.querySelector('span').textContent = abierta ? 'Abrir ficha' : 'Ocultar ficha';
       // El clip abre el mismo panel: que no se quede diciendo que está abierto
       // cuando lo acaba de cerrar el otro botón.
       caja.querySelector('[data-clip]')?.classList.toggle('clip--abierto', !abierta);
@@ -330,7 +330,8 @@
     const parado = () => {
       boton.disabled = false;
       boton.querySelector('i').className = 'ti ti-list-details';
-      boton.querySelector('span').textContent = 'Ver detalles';
+      // No se trajo nada: sigue invitando a buscar, no a abrir lo que no hay.
+      boton.querySelector('span').textContent = 'Buscar detalles';
       aviso?.classList.add('oculto');
     };
 
@@ -427,8 +428,9 @@
     sondearFicha(caja.dataset.actividad, () => {
       if (!boton) return;
       boton.disabled = false;
-      boton.querySelector('i').className = 'ti ti-list-details';
-      boton.querySelector('span').textContent = 'Ver detalles';
+      // Ya está guardada: a partir de aquí el botón abre, no busca.
+      boton.querySelector('i').className = 'ti ti-file-text';
+      boton.querySelector('span').textContent = 'Abrir ficha';
       caja.querySelector('.excursion__buscando')?.classList.add('oculto');
     });
   });
@@ -875,15 +877,98 @@
     if (!caja.hidden) caja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
+  // ===========================================================================
+  // AL ELEGIR HOTEL, LA FICHA VERDE SALE YA
+  // ---------------------------------------------------------------------------
+  // El círculo lo marca el manejador genérico de app.js, que hace lo suyo bien:
+  // pinta el círculo y desmarca los demás. Pero la ficha de arriba —el "Tu
+  // alojamiento en Madrid" con el precio— la pinta el SERVIDOR, así que se
+  // quedaba con el hotel anterior (o sin nada) hasta que uno cambiaba de
+  // pestaña y volvía. Elegir algo y que la pantalla no lo reconozca es de las
+  // cosas que más hacen dudar de si se ha guardado.
+  //
+  // Se pinta aquí con los datos que ya están en la tarjeta elegida: no hace
+  // falta preguntarle nada más al servidor.
+  // ===========================================================================
+  document.addEventListener('click', (ev) => {
+    const boton = ev.target.closest('[data-exclusivo="hotel"][data-marcar]');
+    if (!boton) return;
+
+    // Después del manejador de app.js, que es quien habla con el servidor.
+    setTimeout(() => pintarHotelElegido(boton), 60);
+  });
+
+  function pintarHotelElegido(boton) {
+    const panel = document.getElementById('panel-dormir');
+    if (!panel) return;
+
+    const elegido = boton.getAttribute('aria-pressed') === 'true';
+    const tarjeta = boton.closest('.segmento');
+    const caja = panel.querySelector('[data-hotel-elegido]');
+    if (!caja) return;
+
+    if (!elegido || !tarjeta) {
+      // Se ha soltado el hotel: la ficha se va, no se queda con el anterior.
+      caja.hidden = true;
+      caja.innerHTML = '';
+      return;
+    }
+
+    const nombre = tarjeta.querySelector('.segmento__nombre')?.textContent.trim() ?? '';
+    const precio = tarjeta.querySelector('.segmento__precio, .precio')?.textContent.trim() ?? '';
+    const enlace = tarjeta.querySelector('a[href*="booking"]')?.href ?? '';
+
+    caja.innerHTML =
+      '<div class="elegido__marca">' +
+      `<i class="ti ti-check" aria-hidden="true"></i> Tu alojamiento en ${esc(caja.dataset.ciudad ?? '')}` +
+      '</div>' +
+      `<div class="elegido__nombre">${esc(nombre)}</div>` +
+      '<div class="elegido__pie">' +
+      `<span class="elegido__precio">${esc(precio || '—')}</span>` +
+      (enlace
+        ? `<a class="elegido__enlace" href="${esc(enlace)}" target="_blank" rel="noopener noreferrer">` +
+          'Ver en Booking <i class="ti ti-external-link" aria-hidden="true"></i></a>'
+        : '') +
+      '</div>';
+    caja.hidden = false;
+  }
+
   // Elegir un vuelo lo hace el manejador genérico de app.js: la tarjeta es la
   // misma del paso 5 y su círculo ya sabe hablar con `data-marcar`. Después se
   // recarga, porque el tramo pasa de "Pendiente" a "Resuelto" y eso cambia
   // media tarjeta.
   document.addEventListener('click', (ev) => {
-    if (ev.target.closest('.vuelos-tramo [data-marcar]')) {
-      setTimeout(() => location.reload(), 400);
+    const enVuelos = ev.target.closest('.vuelos-tramo [data-marcar]');
+    if (!enVuelos) return;
+
+    // RECARGAR SIN PERDER EL SITIO.
+    //
+    // Elegir un vuelo cambia media tarjeta —de "Pendiente" a "Resuelto"— y
+    // repintarla a mano sería duplicar la plantilla. Pero la recarga te dejaba
+    // arriba del todo, y el tramo que acababas de resolver estaba a media
+    // pantalla de scroll. Se apunta cuál era y al volver se va a él.
+    const caja = enVuelos.closest('[data-vuelos-de]');
+    if (caja) {
+      try {
+        sessionStorage.setItem(`etapa:${etapaId}:volverA`, caja.dataset.vuelosDe);
+      } catch { /* sin sessionStorage: se recarga y ya, arriba */ }
     }
+    setTimeout(() => location.reload(), 400);
   });
+
+  /** Al cargar: si veníamos de resolver un tramo, se vuelve a él. */
+  (() => {
+    let tramo = null;
+    try {
+      tramo = sessionStorage.getItem(`etapa:${etapaId}:volverA`);
+      sessionStorage.removeItem(`etapa:${etapaId}:volverA`);
+    } catch { /* nada que reponer */ }
+    if (!tramo) return;
+
+    const caja = raiz.querySelector(`[data-vuelos-de="${tramo}"]`)?.closest('.tramo, .bloque')
+      ?? raiz.querySelector(`[data-vuelos-de="${tramo}"]`);
+    caja?.scrollIntoView({ block: 'center' });
+  })();
 
   function esc(t) {
     const d = document.createElement('div');
@@ -1023,9 +1108,33 @@
       ficha.querySelector('[data-datos-medio]')?.classList.toggle('oculto', !esta);
     });
 
+    // Y EL TRAMO PASA A "RESUELTO" AQUÍ MISMO.
+    //
+    // Elegir un medio es decidir el tramo, pero la insignia la pintaba solo el
+    // servidor: se quedaba en "Pendiente" hasta que entrabas a editar y
+    // guardabas sin tocar nada, que es un rodeo absurdo para algo ya decidido.
+    pintarEstadoTramo(tramoId, Boolean(elegidaId));
+
     // El resumen del tramo cambia con la elección ("Bus · 2 h 30"), y eso lo
     // pinta el servidor. Se refresca sin tocar los campos de aquí.
     refrescarResumenTramo(tramoId);
+  }
+
+  /**
+   * La insignia del tramo: "Resuelto" con su tic, o "Pendiente" con su aviso.
+   *
+   * Elegir un medio resuelve; soltarlo vuelve a dejarlo pendiente, salvo que el
+   * tramo tenga además un vuelo elegido o una nota a mano. Eso último no se
+   * sabe desde aquí, así que al soltar se deja que lo diga el servidor en la
+   * siguiente pintada: no se apaga una insignia que quizá deba seguir verde.
+   */
+  function pintarEstadoTramo(tramoId, resuelto) {
+    const insignia = raiz.querySelector(`[data-estado-tramo="${tramoId}"]`);
+    if (!insignia || !resuelto) return;
+
+    insignia.classList.add('tramo-caja__estado--ok');
+    insignia.innerHTML =
+      '<i class="ti ti-check" aria-hidden="true"></i> Resuelto';
   }
 
   async function refrescarResumenTramo(tramoId) {
@@ -1295,7 +1404,7 @@
   // transporte urbano. Todas usan `parciales/direccion.ejs`, así que basta con
   // saber leer su `data-direccion-de="tipo:id"`.
   //
-  // GUARDAR ES INSTANTÁNEO. Buscar las coordenadas va por la cola —Nominatim
+  // GUARDAR ES INSTANTÁNEO. Buscar las coordenadas va por la cola —hay que
   // tiene turno de una petición por segundo— y mientras tanto la ficha dice
   // "situando…" y se sondea hasta que se sepa. Nadie espera a nadie.
   //
@@ -1385,8 +1494,12 @@
         ? '<span class="direccion__situando"><i class="ti ti-loader-2 girando"></i> situando…</span>'
         : d.situada
           ? ''
-          : `<span class="direccion__aviso" title="${esc(d.mensaje)}">` +
-            '<i class="ti ti-help-circle"></i> sin localizar</span>';
+          : d.fallo
+            // Avería: no hay nada que afinar y hay que decirlo, no insinuarlo.
+            ? `<span class="direccion__fallo" title="${esc(d.mensaje)}">` +
+              '<i class="ti ti-alert-triangle"></i> No he podido situarla</span>'
+            : `<span class="direccion__aviso" title="${esc(d.mensaje)}">` +
+              '<i class="ti ti-help-circle"></i> sin localizar</span>';
   }
 
   /**

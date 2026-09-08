@@ -176,7 +176,7 @@ Reglas:
 /**
  * Elige el prompt según el nivel del destino.
  *
- * El nivel lo sabemos desde el mapamundi: al tocar el mapa, Nominatim contesta
+ * El nivel lo sabemos desde el mapamundi: al tocar el mapa, Google contesta
  * país o ciudad según el zoom, y eso se guarda en `destinos.tipo`. Si un destino
  * viejo no lo tiene, se trata como ámbito, que es lo más habitual y el caso en
  * el que la mezcla hacía más daño.

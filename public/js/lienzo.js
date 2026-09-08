@@ -197,11 +197,26 @@
     // no se busca dentro del bucle por cada tarjeta.
     const enConflicto = new Set(lienzo.avisos.flatMap((a) => a.idsAfectados));
 
+    // EL DE "NO LLEGAS" VA DENTRO DE LA TARJETA, no arriba con los demás.
+    //
+    // Los otros avisos son del día entero —"tienes tres cosas antes de
+    // llegar"— y arriba están bien. Este es de una tarjeta concreta y de la
+    // anterior: leerlo en la cabecera obliga a buscar de cuál habla.
+    porTarjeta = new Map(
+      lienzo.avisos
+        .filter((a) => a.tipo === 'no-llegas')
+        .map((a) => [a.idsAfectados[0], a.texto])
+    );
+
     zona.innerHTML = lienzo.dias.map((d) => columnaDia(d, enConflicto)).join('');
   }
 
+  /** Aviso propio de cada tarjeta, por id. Lo rellena `pintar()`. */
+  let porTarjeta = new Map();
+
   function columnaDia(d, enConflicto) {
-    const avisos = lienzo.avisos.filter((a) => a.dia === d.n);
+    // Los de "no llegas" no se repiten aquí arriba: cada uno está en su tarjeta.
+    const avisos = lienzo.avisos.filter((a) => a.dia === d.n && a.tipo !== 'no-llegas');
 
     return `
       <section class="dia" data-dia="${d.n}">
@@ -292,7 +307,23 @@
         </div>
         ${meta(c)}
         ${reloj(c)}
+        ${avisoDeTarjeta(c)}
       </article>`;
+  }
+
+  /**
+   * El aviso de "no llegas", en la tarjeta que no alcanza.
+   *
+   * Ámbar y no rojo a propósito: el lienzo avisa, no prohíbe. Igual el trayecto
+   * se hace en taxi, o igual da lo mismo llegar tarde a eso.
+   */
+  function avisoDeTarjeta(c) {
+    const texto = porTarjeta.get(c.id);
+    if (!texto) return '';
+    return (
+      '<p class="item__aviso"><i class="ti ti-clock-exclamation" aria-hidden="true"></i> ' +
+      `${esc(texto)}</p>`
+    );
   }
 
   /**

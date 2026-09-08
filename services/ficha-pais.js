@@ -382,6 +382,10 @@ export async function fichasDelViaje(viajeId) {
 
   return {
     viajeId,
+    // ¿Ya se ha revisado esto? Es lo que hace que el botón de Mi ruta pase de
+    // aviso a resuelto. Se guarda cuándo, no solo que sí: dentro de dos meses
+    // "revisado el 8 de septiembre" dice más que un tic.
+    revisadoEn: viaje.antes_revisado_en ?? null,
     fechaInicio: inicio,
     fechaFin: fin,
     rango: inicio && fin ? `${enLargo(inicio)} — ${enLargo(fin)}` : null,
@@ -393,6 +397,22 @@ export async function fichasDelViaje(viajeId) {
 }
 
 /** Lo mismo, pero para el dosier: sin generar y en plano. */
+/**
+ * Marca o desmarca "ya lo he revisado". Devuelve la marca de tiempo o null.
+ *
+ * Es reversible a propósito: uno marca, luego cambia las fechas o se acuerda de
+ * que faltaba mirar el visado, y tiene que poder volver atrás.
+ */
+export function marcarRevisado(viajeId, revisado) {
+  ejecutar(
+    `UPDATE viajes SET antes_revisado_en = ? WHERE id = ?`,
+    revisado ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null,
+    Number(viajeId)
+  );
+  return una('SELECT antes_revisado_en FROM viajes WHERE id = ?', Number(viajeId))
+    ?.antes_revisado_en ?? null;
+}
+
 export function fichasParaElDosier(viajeId) {
   const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
   if (!viaje) return [];
@@ -425,4 +445,4 @@ export function fichasParaElDosier(viajeId) {
     .map((f) => comoFicha(f, viaje.fecha_inicio));
 }
 
-export default { paisesDelViaje, fichasDelViaje, generarFicha, fichasParaElDosier };
+export default { paisesDelViaje, fichasDelViaje, generarFicha, fichasParaElDosier, marcarRevisado };

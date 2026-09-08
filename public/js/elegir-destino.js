@@ -8,7 +8,7 @@
  * tarjeta es uno solo y no hay dos caminos que mantener.
  *
  * La geocodificación NO se pide desde aquí: va contra /api/geocodificar, que es
- * un proxy del servidor. Nominatim exige un User-Agent propio y un máximo de
+ * un proxy del servidor. La clave de Google está restringida por IP y no puede
  * una petición por segundo, y ninguna de las dos cosas se puede garantizar
  * desde el navegador.
  */

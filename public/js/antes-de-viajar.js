@@ -68,6 +68,63 @@
   });
 
   // ===========================================================================
+  // YA LO HE REVISADO
+  // ---------------------------------------------------------------------------
+  // Marcarlo apaga el aviso de "Mi ruta" y lo pone verde, como un vuelo
+  // elegido. Es reversible: se desmarca y vuelve el ámbar. Y el botón cambia
+  // AQUÍ MISMO, sin recargar, porque si hay que salir y volver para verlo la
+  // mitad de las veces se piensa que no ha funcionado.
+  // ===========================================================================
+  const check = document.getElementById('antes-revisado');
+  const piePropio = document.getElementById('antes-revisado-pie');
+
+  function pintarRevisado(revisadoEn) {
+    const hecho = Boolean(revisadoEn);
+    if (check) check.checked = hecho;
+
+    boton.classList.toggle('antes-boton--hecho', hecho);
+    boton.dataset.revisado = hecho ? '1' : '';
+
+    const icono = boton.querySelector('.antes-boton__icono');
+    if (icono) icono.className = `ti ${hecho ? 'ti-check' : 'ti-alert-triangle'} antes-boton__icono`;
+
+    const pie = boton.querySelector('.antes-boton__pie');
+    if (pie) {
+      pie.textContent = hecho
+        ? 'Revisado. Puedes volver a mirarlo cuando quieras.'
+        : 'Papeles, vacunas, dinero y festivos de cada país';
+    }
+
+    if (piePropio) {
+      piePropio.textContent = hecho
+        ? `El aviso de «Mi ruta» queda en verde.`
+        : 'Mientras no lo marques, «Mi ruta» seguirá avisando.';
+    }
+  }
+
+  check?.addEventListener('change', async () => {
+    const quiero = check.checked;
+    check.disabled = true;
+    try {
+      const r = await fetch(`/api/viaje/${viajeId}/antes-de-viajar/revisado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ revisado: quiero }),
+      });
+      if (!r.ok) throw new Error(`Error ${r.status}`);
+      pintarRevisado((await r.json()).revisadoEn);
+    } catch (err) {
+      console.error('[antes] no se pudo guardar lo de revisado:', err);
+      check.checked = !quiero;   // se deshace lo que no se guardó
+    } finally {
+      check.disabled = false;
+    }
+  });
+
+  // Al cargar, el pie del check dice lo que toca.
+  pintarRevisado(boton.dataset.revisado);
+
+  // ===========================================================================
   // TRAER Y PINTAR
   // ===========================================================================
   async function cargar() {

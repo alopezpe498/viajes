@@ -260,7 +260,7 @@ const datosMapa = JSON.stringify({
             <p class="tarjeta-punto__texto"><%= p.descripcion_corta || p.por_que || '' %></p>
 
             <%# La distancia desde la ciudad de entrada del viaje. Nace con un
-                guión y la rellena el JS conforme llegan los cálculos: OSRM tarda
+                guión y la rellena el JS conforme llegan los cálculos: Google tarda
                 décimas por par, y esta pantalla no puede esperar a nadie. %>
             <p class="tarjeta-punto__distancia" data-distancia-de="<%= p.id %>" hidden>
               <i class="ti ti-car" aria-hidden="true"></i>
