@@ -5622,6 +5622,49 @@ body.con-antes { overflow: hidden; }
    un dato inventado no se distingue de uno bueno hasta que te plantas delante
    de una puerta cerrada.
    ========================================================================== */
+/* ---------------------------------------------------------------------------
+   LA LÍNEA DE DATOS DE LA TARJETA
+   ---------------------------------------------------------------------------
+   Una sola línea: precio, horario y visita, con su icono y separados por un
+   punto. Antes esto era una rejilla de dos columnas con los cinco campos y se
+   comía media tarjeta; en una lista de diez sitios la foto y la descripción
+   quedaban enterradas. Lo que no cabe se corta con puntos suspensivos: es una
+   línea de vistazo, y el dato entero está en «Ver detalle».
+--------------------------------------------------------------------------- */
+.datos-linea {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--texto-2);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.datos-linea__pieza {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;                 /* el precio y la visita se leen enteros */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* El que cede cuando no cabe es el horario, que es el largo: puede llevar la
+   franja y el día de cierre. Antes se encogían los tres a la vez y la tarjeta
+   estrecha acababa con «desde 15…», «9:00–0…» y «2–3…», tres datos a medias. */
+.datos-linea__pieza--cede { flex: 0 1 auto; }
+.datos-linea__pieza i { flex: none; color: var(--acento); font-size: 14px; }
+.datos-linea__punto { flex: none; color: var(--texto-3); }
+
+/* La espera, mientras la búsqueda va. No es un dato: es que aún no hay. */
+.datos-linea--esperando { color: var(--texto-3); font-style: italic; }
+
+/* ---------------------------------------------------------------------------
+   LOS DATOS COMPLETOS, DENTRO DE «VER DETALLE»
+   --------------------------------------------------------------------------- */
 .datos-sitio {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5652,8 +5695,6 @@ body.con-antes { overflow: hidden; }
 
 /* El hueco no se disimula: se ve que falta. */
 .datos-sitio__hueco { color: var(--texto-3); }
-
-.datos-sitio--esperando .datos-sitio__hueco { font-style: italic; }
 
 .datos-sitio__pie {
   grid-column: 1 / -1;

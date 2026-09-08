@@ -25,6 +25,7 @@
  */
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
+import { resumenDeSitio } from '../lib/resumen-sitio.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { buscarTablaDeSitios, ErrorCaptcha } from '../providers/google-busqueda.js';
 
@@ -49,6 +50,13 @@ export function diasDesde(iso) {
  * saber que un hueco es un hueco para pintar su guion, y no que el campo no
  * existe.
  */
+/** Un dominio suelto no es un enlace hasta que lleva esquema delante. */
+function enlaceWeb(web) {
+  const limpio = String(web ?? '').trim();
+  if (!limpio) return null;
+  return /^https?:\/\//i.test(limpio) ? limpio : `https://${limpio.replace(/^\/+/, '')}`;
+}
+
 export function datosDeSitio(sitio) {
   if (!sitio) return null;
 
@@ -57,11 +65,16 @@ export function datosDeSitio(sitio) {
     sitio.precio || sitio.horarios || sitio.tiempo_visita || sitio.web || sitio.telefono
   );
 
-  return {
+  const completos = {
     precio: sitio.precio ?? null,
     horarios: sitio.horarios ?? null,
     tiempoVisita: sitio.tiempo_visita ?? null,
     web: sitio.web ?? null,
+    // LA WEB, CON ESQUEMA. La búsqueda la devuelve casi siempre como dominio
+    // pelado —«louvre.fr»—, y un href sin http:// lo resuelve el navegador como
+    // ruta relativa: el enlace llevaba a /etapa/louvre.fr, dentro de la propia
+    // aplicación. Se enseña el dominio, que se lee mejor, pero se enlaza esto.
+    webUrl: enlaceWeb(sitio.web),
     telefono: sitio.telefono ?? null,
     // Trazabilidad: de dónde salió y cuándo. Va a la vista para poder decirlo.
     obtenidoEn: sitio.datos_en ?? null,
@@ -72,6 +85,15 @@ export function datosDeSitio(sitio) {
     // primero es un resultado y lo segundo, una espera.
     buscado: Boolean(sitio.datos_en),
     conviejo: hayAlgo && dias != null && dias > DIAS_PARA_AVISAR,
+  };
+
+  return {
+    ...completos,
+    // LA LÍNEA DE LA TARJETA: precio, horario y visita en corto, y solo lo que
+    // haya. Es una vista de lo de arriba, no otro dato: nada de esto se guarda
+    // ni vuelve a la base. El texto completo se enseña entero en «Ver detalle»,
+    // que es donde caben los tramos de precio y los horarios día por día.
+    resumen: resumenDeSitio(completos, sitio.cierra_dias),
   };
 }
 

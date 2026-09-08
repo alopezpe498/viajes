@@ -162,6 +162,7 @@ import {
 } from '../services/adjuntos.js';
 import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-pais.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
+import { buscandoDatos } from '../services/datos-sitios.js';
 import {
   datosDePortada,
   borrarViaje,
@@ -1812,6 +1813,12 @@ router.get('/etapa/:etapaId/estado', cargarContextoEtapa, (req, res) => {
   const misTraslados = trasladosDeEtapa(etapa.id);
   const miComer = comerDeEtapa(etapa);
 
+  // Los datos duros de los sitios: precio, horario y duración salidos de una
+  // búsqueda de verdad. Es lo último que se ha añadido a esta pantalla y, como
+  // les pasó antes a los vuelos, no se contaba aquí: las fichas se quedaban con
+  // "cargando…" en cada hueco hasta que uno recargaba a mano.
+  const datos = { buscando: Boolean(etapa.punto_interes_id && buscandoDatos(etapa.viaje_id, etapa.punto_interes_id)) };
+
   const algunTramoBuscando = Object.values(tramos).some(
     (t) => t.estado === 'buscando' || t.medios?.buscando
   );
@@ -1825,9 +1832,11 @@ router.get('/etapa/:etapaId/estado', cargarContextoEtapa, (req, res) => {
     movilidad: { buscando: movilidad.buscando, total: movilidad.fichas.length },
     traslados: { calculando: misTraslados.calculando, total: misTraslados.traslados.length },
     comer: { buscando: miComer.buscando, total: miComer.fichas.length },
+    datos,
     // La pantalla recarga cuando NADA sigue en marcha.
     trabajando:
       preparacion.trabajando ||
+      datos.buscando ||
       hoteles.estado === 'buscando' ||
       movilidad.buscando ||
       misTraslados.calculando ||

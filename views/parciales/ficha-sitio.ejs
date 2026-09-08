@@ -21,7 +21,11 @@ const enElMapa = (lat, lon) =>
   `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
 
 // ¿Hay algo más que la descripción corta? Si no, el desplegable no pinta nada.
-const hayDetalle = Boolean(s.porQue || s.comoMoverse || s.dentro.length || s.wikipedia_url || s.lat != null);
+// Los datos duros completos viven en el desplegable, así que también cuentan
+// para decidir si hay algo que desplegar.
+const hayDetalle = Boolean(
+  s.porQue || s.comoMoverse || s.dentro.length || s.wikipedia_url || s.lat != null || s.datos?.buscado
+);
 %>
 <article class="tarjeta-punto tarjeta-punto--ficha <%= s.apuntado ? 'tarjeta-punto--apuntada' : '' %>"
          data-sitio="<%= s.id %>" data-origen="<%= s.origen %>">
@@ -51,62 +55,30 @@ const hayDetalle = Boolean(s.porQue || s.comoMoverse || s.dentro.length || s.wik
       <p class="tarjeta-punto__texto"><%= s.descripcion %></p>
     <% } %>
 
-    <%# ============ LOS DATOS DUROS ============
-        Precio, horario, duración, web y teléfono, de una búsqueda real. Nada de
-        esto lo pone la IA por su cuenta: si no vino en la búsqueda, aquí sale
-        un guion. Un hueco se ve y se puede comprobar; un dato inventado no.
+    <%# ============ LOS DATOS DUROS, EN UNA LÍNEA ============
+        Precio, horario y visita en corto, con iconos y separados por puntos.
+        Esto ocupaba antes dos columnas con los cinco campos y se comía media
+        tarjeta: en una lista de diez sitios no se podía ver nada de un vistazo.
+        Ahora la tarjeta enseña lo que sirve para decidir y el resto —tramos de
+        precio, horarios por día, teléfono y web— está en «Ver detalle».
 
-        Tres estados y hay que distinguirlos:
-          · buscándose  -> "cargando…", que es una espera
-          · buscado sin resultado -> guion, que es un resultado
-          · sin buscar todavía -> no se pinta nada %>
-    <% if (s.datos && (s.datos.buscado || queVer.buscandoDatos)) { %>
-      <% const d = s.datos; const esperando = !d.buscado && queVer.buscandoDatos; %>
-      <dl class="datos-sitio <%= esperando ? 'datos-sitio--esperando' : '' %>">
-        <% const campos = [
-             { icono: 'ti-ticket',    etiqueta: 'Entrada',  valor: d.precio },
-             { icono: 'ti-clock',     etiqueta: 'Horario',  valor: d.horarios },
-             { icono: 'ti-hourglass', etiqueta: 'Visita',   valor: d.tiempoVisita },
-             { icono: 'ti-phone',     etiqueta: 'Teléfono', valor: d.telefono },
-           ]; %>
-        <% campos.forEach(c => { %>
-          <div class="datos-sitio__campo">
-            <dt><i class="ti <%= c.icono %>" aria-hidden="true"></i> <%= c.etiqueta %></dt>
-            <dd class="<%= c.valor ? '' : 'datos-sitio__hueco' %>">
-              <%= c.valor ?? (esperando ? 'cargando…' : '—') %>
-            </dd>
-          </div>
-        <% }) %>
-
-        <% if (d.web) { %>
-          <div class="datos-sitio__campo datos-sitio__campo--ancho">
-            <dt><i class="ti ti-world" aria-hidden="true"></i> Web</dt>
-            <dd>
-              <a href="<%= d.web %>" target="_blank" rel="noopener noreferrer">
-                <%= d.web.replace(/^https?:\/\//, '').replace(/\/$/, '') %>
-                <i class="ti ti-external-link" aria-hidden="true"></i>
-              </a>
-            </dd>
-          </div>
-        <% } %>
-
-        <%# La fecha y el aviso de antigüedad. Un dato de hace cinco semanas
-            sigue orientando, pero hay que decir que puede haber cambiado. %>
-        <% if (d.buscado) { %>
-          <p class="datos-sitio__pie <%= d.conviejo ? 'datos-sitio__pie--viejo' : '' %>">
-            <% if (d.conviejo) { %>
-              <i class="ti ti-alert-triangle" aria-hidden="true"></i>
-              Consultado hace <%= d.dias %> días: puede haber cambiado
-            <% } else if (!d.hayAlgo) { %>
-              <i class="ti ti-search-off" aria-hidden="true"></i>
-              La búsqueda no encontró estos datos
-            <% } else { %>
-              <i class="ti ti-check" aria-hidden="true"></i>
-              Consultado <%= d.dias === 0 ? 'hoy' : `hace ${d.dias} ${d.dias === 1 ? 'día' : 'días'}` %>
-            <% } %>
-          </p>
-        <% } %>
-      </dl>
+        Tres estados, y hay que distinguirlos:
+          · buscándose            -> "cargando…", que es una espera
+          · buscado sin resultado -> no se pinta línea; el detalle lo explica
+          · sin buscar todavía    -> no se pinta nada %>
+    <% if (s.datos && !s.datos.buscado && queVer.buscandoDatos) { %>
+      <p class="datos-linea datos-linea--esperando">
+        <span class="rueda" aria-hidden="true"></span> cargando…
+      </p>
+    <% } else if (s.datos?.resumen) { %>
+      <p class="datos-linea">
+        <% s.datos.resumen.forEach((pieza, i) => { %><%
+        %><% if (i) { %><span class="datos-linea__punto" aria-hidden="true">·</span><% } %><%
+        %><span class="datos-linea__pieza <%= pieza.flexible ? 'datos-linea__pieza--cede' : '' %>">
+            <i class="ti <%= pieza.icono %>" aria-hidden="true"></i><%= pieza.valor %>
+          </span><%
+        %><% }) %>
+      </p>
     <% } %>
 
     <div class="tarjeta-punto__acciones">
@@ -167,6 +139,59 @@ const hayDetalle = Boolean(s.porQue || s.comoMoverse || s.dentro.length || s.wik
 
   <% if (hayDetalle) { %>
     <div class="ficha-sitio__detalle" id="detalle-<%= s.origen %>-<%= s.id %>" hidden>
+
+      <%# ============ LOS DATOS DUROS, COMPLETOS ============
+          Aquí no se resume nada: el precio con todos sus tramos, el horario día
+          por día con sus matices, y el teléfono y la web, que en la tarjeta no
+          pintaban nada. Un hueco se enseña como hueco —un guion—, porque
+          "buscado y no encontrado" es un resultado y hay que poder verlo. %>
+      <% if (s.datos?.buscado) { %>
+        <h4 class="ficha-excursion__titulo">
+          <i class="ti ti-info-circle" aria-hidden="true"></i> Datos prácticos
+        </h4>
+        <% const d = s.datos; %>
+        <dl class="datos-sitio">
+          <% [
+               { icono: 'ti-ticket',    etiqueta: 'Entrada',  valor: d.precio,       ancho: true },
+               { icono: 'ti-clock',     etiqueta: 'Horario',  valor: d.horarios,     ancho: true },
+               { icono: 'ti-hourglass', etiqueta: 'Visita',   valor: d.tiempoVisita, ancho: false },
+               { icono: 'ti-phone',     etiqueta: 'Teléfono', valor: d.telefono,     ancho: false },
+             ].forEach(c => { %>
+            <div class="datos-sitio__campo <%= c.ancho ? 'datos-sitio__campo--ancho' : '' %>">
+              <dt><i class="ti <%= c.icono %>" aria-hidden="true"></i> <%= c.etiqueta %></dt>
+              <dd class="<%= c.valor ? '' : 'datos-sitio__hueco' %>"><%= c.valor ?? '—' %></dd>
+            </div>
+          <% }) %>
+
+          <% if (d.web) { %>
+            <div class="datos-sitio__campo datos-sitio__campo--ancho">
+              <dt><i class="ti ti-world" aria-hidden="true"></i> Web</dt>
+              <dd>
+                <a href="<%= d.webUrl %>" target="_blank" rel="noopener noreferrer">
+                  <%= d.web.replace(/^https?:\/\//, '').replace(/\/$/, '') %>
+                  <i class="ti ti-external-link" aria-hidden="true"></i>
+                </a>
+              </dd>
+            </div>
+          <% } %>
+
+          <%# La fecha y el aviso de antigüedad. Un dato de hace cinco semanas
+              sigue orientando, pero hay que decir que puede haber cambiado. %>
+          <p class="datos-sitio__pie <%= d.conviejo ? 'datos-sitio__pie--viejo' : '' %>">
+            <% if (d.conviejo) { %>
+              <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+              Consultado hace <%= d.dias %> días: puede haber cambiado
+            <% } else if (!d.hayAlgo) { %>
+              <i class="ti ti-search-off" aria-hidden="true"></i>
+              La búsqueda no encontró estos datos
+            <% } else { %>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              Consultado <%= d.dias === 0 ? 'hoy' : `hace ${d.dias} ${d.dias === 1 ? 'día' : 'días'}` %>
+            <% } %>
+          </p>
+        </dl>
+      <% } %>
+
       <% if (s.porQue) { %>
         <h4 class="ficha-excursion__titulo">
           <i class="ti ti-sparkles" aria-hidden="true"></i> Por qué merece la pena

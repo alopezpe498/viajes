@@ -1969,6 +1969,7 @@
   /** Cuántas cosas hay trabajando ahora mismo, para notar cuándo baja. */
   const cuantasTrabajan = (datos) =>
     (datos.preparacion?.trabajando ? 1 : 0) +
+    (datos.datos?.buscando ? 1 : 0) +
     (datos.hoteles === 'buscando' ? 1 : 0) +
     (datos.movilidad?.buscando ? 1 : 0) +
     (datos.traslados?.calculando ? 1 : 0) +

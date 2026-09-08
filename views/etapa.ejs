@@ -68,8 +68,12 @@ const ICONO_TIPO = {
        data-etapa="<%= etapa.id %>"
        <%# El sondeo se enciende si CUALQUIER cosa de esta pantalla está en
            marcha. Los vuelos faltaban aquí, y por eso su "Buscando en Kayak…"
-           se quedaba colgado aunque el trabajo hubiera terminado bien. %>
+           se quedaba colgado aunque el trabajo hubiera terminado bien. Los
+           datos duros de los sitios faltaban por lo mismo: las fichas se
+           quedaban con "cargando…" en el precio y el horario hasta que uno
+           recargaba a mano. Si algo nuevo trabaja en esta pantalla, va aquí. %>
        data-trabajando="<%= preparando.trabajando
+             || queVer.buscandoDatos
              || dormir.estado === 'buscando'
              || moverse.buscando
              || traslados.calculando
