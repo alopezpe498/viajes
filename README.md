@@ -2728,3 +2728,116 @@ Polonia llegó a llevarse la ficha de Chequia de otro. Ahora, si un viaje no tie
 países resueltos, el dosier no enseña la sección en vez de enseñarlo todo: que
 falte se nota y se arregla abriendo el panel; que sobre un país equivocado no se
 nota y engaña.
+
+---
+
+## El mapa de la parada
+
+Cuarta pestaña de la etapa. Un mapa de la ciudad con **todo lo que el viaje
+tiene en ella**: el hotel elegido, los sitios y excursiones apuntados, y los
+restaurantes apuntados. Sirve para una pregunta que una lista no contesta —si el
+museo está a diez minutos del hotel o al otro lado del río— y para nada más:
+aquí no se añade, no se edita y no se borra.
+
+El hotel va más grande porque es la referencia contra la que se lee todo lo
+demás, y cada tipo lleva su color con una leyenda pequeña al lado del título.
+El encuadre se ajusta solo a lo que haya; con un solo marcador se centra y se
+pone un zoom de barrio, porque `fitBounds` sobre un punto deja un cuadro de área
+cero y el mapa se va al zoom máximo, que en una ciudad es ver una acera.
+
+### De dónde salen las coordenadas
+
+Primero de la tabla `direcciones`, cuando el sitio ya está geocodificado; si no,
+del propio catálogo: `puntos_interes` y `sitios_lugar` traen lat/lon de serie.
+Los restaurantes y las excursiones no las traen y dependen de que se haya
+geocodificado su dirección.
+
+**Lo que no se puede situar se cuenta, no desaparece.** Que falte algo del mapa
+sin decir nada hace pensar que el mapa está roto; decir "1 sitio no está porque
+no tiene dirección situada: Excursión a Consuegra" hace pensar que falta una
+dirección, que es lo que pasa de verdad.
+
+Con el hotel hay **tres** estados y tres frases, porque confundirlos hace que la
+pantalla mienta: no hay hotel elegido; hay hotel pero sin dirección situada (que
+es común y no es lo mismo); y hotel en el mapa.
+
+### Las distancias no se calculan aquí
+
+Se leen de los traslados ya guardados, los que se consultaron desde "Moverse" o
+desde las fichas. Abrir este mapa no dispara ni una petición a Routes ni a OSRM:
+enseña lo que hay y calla lo que no. De los modos disponibles se elige andando
+primero, que es la pregunta que se hace mirando un mapa de ciudad.
+
+### Se monta tarde, y a propósito
+
+Leaflet necesita que su contenedor tenga tamaño para calcular el encuadre, y
+esta pestaña nace oculta: montarlo al cargar daría un mapa de cero píxeles con
+los marcadores amontonados en una esquina. Se monta la primera vez que se abre
+la pestaña —vigilando el atributo `hidden` del panel, no el clic, para que
+funcione igual venga de un clic, de la URL o del guión que repone la pestaña— y
+al cargar si el servidor la pintó ya abierta con `?p=mapa`.
+
+### Preparado para el recorrido de un día
+
+`pintar(lista, opciones)` no sabe de dónde sale la lista ni qué representa. Si un
+elemento trae `orden`, el marcador enseña el número en vez del icono; con
+`unir: true` se dibuja la línea que los une en ese orden. Las dos cosas están
+escritas y probadas, pero **nadie las enciende todavía**: el día que esto tenga
+que enseñar las paradas de un día numeradas, es pasarle esa lista y ya. El
+pintado no hay que tocarlo.
+
+Las teselas son las mismas que las del mapa de destinos, del mismo módulo
+(`public/js/mapa-teselas.js`): Google en español y OpenStreetMap de respaldo,
+avisando por consola con el nombre de la pantalla.
+
+---
+
+## Configura tu viaje, rehecha
+
+Era la última pantalla con la estética vieja: dos `<input type="date">` y unos
+chips que no se parecían a nada del resto. Ahora sigue `maqueta-configuracion.html`:
+calendario de rango de dos meses, contadores circulares, chips de tipo,
+segmentado de ritmo, campo de presupuesto y barra fija abajo.
+
+**Es un cambio de interfaz, no de modelo.** El POST va al mismo sitio, con los
+mismos nombres de campo, y el servidor no se ha tocado. Los controles nuevos
+escriben en campos ocultos: `fecha_inicio`, `fecha_fin`, `adultos`, `ninos`,
+`edades_ninos` (repetido, uno por niño), `tipo_viaje` (CSV), `ritmo` y
+`presupuesto`. Los efectos de siempre siguen ocurriendo: al cambiar las fechas
+se resincronizan las etapas y se reencolan los avisos, y al cambiar fechas o
+viajeros se tiran los candidatos de vuelo y hotel sin marcar.
+
+### El CSS cuelga de `.config`, y no es manía
+
+La maqueta usa nombres genéricos —`.tarjeta`, `.chip`, `.chips`, `.contador`,
+`.campo`, `.edades`, `.edad`— y **los siete existen ya en `estilo.css`** con
+otra pinta. Sin prefijo, o esta pantalla salía vestida de otra o le cambiaba la
+ropa a media aplicación. Las 72 reglas del archivo empiezan por `.config`, así
+que ni una sale de aquí.
+
+### Dos cosas de la maqueta que no se copiaron
+
+- **Los chips de tipo.** La maqueta trae siete (añade Aventura, Compras y Vida
+  nocturna) y aquí van los cinco que existen hoy. Meter valores nuevos sería
+  cambiar los datos, no la pantalla.
+- **La edad del niño.** La maqueta define al niño como "de 0 a 11 años" y al
+  adulto "de 12 en adelante"; aquí se mantiene 0-17 y adultos desde 18. No es un
+  detalle de texto: cambiarlo movería a un chaval de quince de una columna a la
+  otra y las búsquedas de vuelos y hoteles lo cobrarían distinto.
+
+También se respetan los topes del modelo —de 1 a 9 adultos, de 0 a 6 niños—
+apagando el "+" al llegar. La maqueta no ponía tope porque no guardaba nada, y
+enseñar un botón que no hace nada es peor que apagarlo.
+
+### El botón dice la verdad
+
+Sin las dos fechas el servidor rechaza el guardado, así que el botón nace
+apagado y el resumen de al lado dice qué falta: "Elige las fechas para
+continuar", "Falta el día de vuelta" o "La vuelta tiene que ser posterior a la
+ida" cuando se marca dos veces el mismo día. Enseñar un botón que va a fallar es
+hacer que alguien descubra el error después de pulsarlo.
+
+El calendario abre por el mes de la ida si ya la hay —al editar, lo normal es
+querer ver lo que elegiste— y por el actual si no. Atrás no se puede ir más allá
+del mes en curso: los días pasados están deshabilitados y un calendario de meses
+vacíos no lleva a ninguna parte.

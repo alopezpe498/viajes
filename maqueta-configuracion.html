@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maqueta · Configura tu viaje</title>
+<style>
+  :root{
+    --fondo:#F4F8FA; --superficie:#FFFFFF; --borde:#E2ECF1;
+    --acento:#1B7FA6; --acento-hover:#16688A; --tinte:#D3E8F0; --texto-acento:#12303E;
+    --secundario:#5E7A87;
+    --verde-f:#E1F2E7; --verde-t:#1E6B3C;
+    --ambar-f:#FBEED6; --ambar-t:#8A5A16;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--fondo);
+    font-family:"Segoe UI", system-ui, -apple-system, sans-serif;
+    color:var(--texto-acento);
+    min-height:100vh;
+    padding:28px 16px 90px;
+  }
+  .contenedor{max-width:880px; margin:0 auto;}
+
+  /* Cabecera */
+  .cabecera{display:flex; align-items:center; gap:14px; margin-bottom:22px;}
+  .btn-volver{
+    width:44px; height:44px; border-radius:50%; border:1px solid var(--borde);
+    background:var(--superficie); color:var(--acento); font-size:20px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .btn-volver:hover{background:var(--tinte);}
+  .cabecera h1{font-size:26px; font-weight:600;}
+  .cabecera p{color:var(--secundario); font-size:14px; margin-top:2px;}
+
+  /* Tarjetas de sección */
+  .tarjeta{
+    background:var(--superficie); border:1px solid var(--borde);
+    border-radius:16px; padding:22px 24px; margin-bottom:16px;
+  }
+  .tarjeta h2{font-size:16px; font-weight:600; display:flex; align-items:center; gap:10px;}
+  .tarjeta h2 svg{color:var(--acento); flex:none;}
+  .tarjeta .sub{color:var(--secundario); font-size:13px; margin-top:3px; margin-left:32px;}
+  .cuerpo{margin-top:18px;}
+
+  /* ====== Calendario de rango ====== */
+  .cal-resumen{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    background:var(--fondo); border:1px solid var(--borde); border-radius:999px;
+    padding:10px 18px; margin-bottom:18px; font-size:14px;
+  }
+  .cal-resumen b{font-weight:600;}
+  .cal-resumen .flecha{color:var(--secundario);}
+  .cal-resumen .noches{
+    margin-left:auto; background:var(--verde-f); color:var(--verde-t);
+    border-radius:999px; padding:4px 14px; font-size:13px; font-weight:600;
+  }
+  .cal-resumen .noches.vacio{background:var(--ambar-f); color:var(--ambar-t); font-weight:500;}
+
+  .cal-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .cal-nav button{
+    width:36px; height:36px; border-radius:50%; border:1px solid var(--borde);
+    background:var(--superficie); color:var(--acento); cursor:pointer; font-size:16px;
+  }
+  .cal-nav button:hover{background:var(--tinte);}
+  .meses{display:grid; grid-template-columns:1fr 1fr; gap:26px;}
+  .mes{min-width:0;}
+  .mes h3{text-align:center; font-size:14.5px; font-weight:600; margin-bottom:10px; text-transform:capitalize;}
+  .semana, .dias{display:grid; grid-template-columns:repeat(7,1fr);}
+  .semana span{
+    text-align:center; font-size:11.5px; color:var(--secundario);
+    padding-bottom:6px; font-weight:600;
+  }
+  .dias button{
+    aspect-ratio:1; border:none; background:transparent; font-size:13.5px;
+    color:var(--texto-acento); cursor:pointer; border-radius:50%;
+    position:relative; font-family:inherit;
+  }
+  .dias button:hover:not(:disabled):not(.extremo){background:var(--tinte);}
+  .dias button:disabled{color:#C3D2DA; cursor:default;}
+  .dias .relleno{visibility:hidden;}
+  .dias button.en-rango{background:var(--tinte); border-radius:0;}
+  .dias button.extremo{background:var(--acento); color:#fff; font-weight:600;}
+  .dias button.inicio.con-rango{border-radius:50% 0 0 50%;}
+  .dias button.fin{border-radius:0 50% 50% 0;}
+  .dias button.inicio.fin{border-radius:50%;}
+  .cal-pista{color:var(--secundario); font-size:12.5px; margin-top:12px; text-align:center;}
+
+  /* ====== Viajeros ====== */
+  .fila-viajero{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 0; border-bottom:1px solid var(--borde);
+  }
+  .fila-viajero:last-of-type{border-bottom:none;}
+  .fila-viajero .nombre{font-size:14.5px; font-weight:600;}
+  .fila-viajero .detalle{font-size:12.5px; color:var(--secundario); margin-top:2px;}
+  .contador{display:flex; align-items:center; gap:14px;}
+  .contador button{
+    width:36px; height:36px; border-radius:50%; border:1px solid var(--borde);
+    background:var(--superficie); color:var(--acento); font-size:18px; cursor:pointer;
+  }
+  .contador button:hover:not(:disabled){background:var(--tinte);}
+  .contador button:disabled{color:#C3D2DA; cursor:default;}
+  .contador .num{font-size:16px; font-weight:600; min-width:22px; text-align:center;}
+
+  .edades{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .edad{
+    display:flex; align-items:center; gap:8px;
+    background:var(--fondo); border:1px solid var(--borde); border-radius:999px;
+    padding:6px 8px 6px 14px; font-size:13px;
+  }
+  .edad select{
+    border:none; background:transparent; font-size:13px; font-weight:600;
+    color:var(--acento); cursor:pointer; font-family:inherit; outline:none;
+  }
+
+  /* ====== Chips tipo de viaje ====== */
+  .chips{display:flex; flex-wrap:wrap; gap:10px;}
+  .chip{
+    border:1px solid var(--borde); background:var(--superficie); border-radius:999px;
+    padding:9px 18px; font-size:13.5px; cursor:pointer; color:var(--texto-acento);
+    display:flex; align-items:center; gap:7px; font-family:inherit;
+  }
+  .chip:hover{border-color:var(--acento);}
+  .chip.activo{background:var(--acento); border-color:var(--acento); color:#fff; font-weight:600;}
+
+  /* ====== Opcionales ====== */
+  .opcionales{display:grid; grid-template-columns:1fr 1fr; gap:26px;}
+  .campo label{font-size:13.5px; font-weight:600; display:block; margin-bottom:10px;}
+  .segmentos{display:flex; border:1px solid var(--borde); border-radius:999px; overflow:hidden;}
+  .segmentos button{
+    flex:1; border:none; background:var(--superficie); padding:10px 0;
+    font-size:13.5px; cursor:pointer; color:var(--texto-acento); font-family:inherit;
+  }
+  .segmentos button + button{border-left:1px solid var(--borde);}
+  .segmentos button.activo{background:var(--acento); color:#fff; font-weight:600;}
+  .presupuesto{position:relative;}
+  .presupuesto input{
+    width:100%; border:1px solid var(--borde); border-radius:999px;
+    padding:10px 44px 10px 18px; font-size:14px; font-family:inherit; outline:none;
+    color:var(--texto-acento); background:var(--superficie);
+  }
+  .presupuesto input:focus{border-color:var(--acento);}
+  .presupuesto .euro{
+    position:absolute; right:18px; top:50%; transform:translateY(-50%);
+    color:var(--secundario); font-size:14px;
+  }
+  .campo .nota{font-size:12px; color:var(--secundario); margin-top:8px;}
+
+  /* ====== Barra final ====== */
+  .barra-final{
+    position:fixed; left:0; right:0; bottom:0;
+    background:var(--superficie); border-top:1px solid var(--borde);
+    padding:12px 16px;
+  }
+  .barra-final .interior{
+    max-width:880px; margin:0 auto; display:flex; align-items:center; gap:16px;
+  }
+  .barra-final .resumen{font-size:13.5px; color:var(--secundario); flex:1; min-width:0;}
+  .barra-final .resumen b{color:var(--texto-acento);}
+  .btn-guardar{
+    border:none; background:var(--acento); color:#fff; border-radius:999px;
+    padding:12px 30px; font-size:15px; font-weight:600; cursor:pointer; font-family:inherit;
+    flex:none;
+  }
+  .btn-guardar:hover{background:var(--acento-hover);}
+
+  @media (max-width:640px){
+    .meses{grid-template-columns:1fr;}
+    .mes.segundo{display:none;}
+    .opcionales{grid-template-columns:1fr;}
+    .barra-final .resumen{display:none;}
+    .btn-guardar{width:100%;}
+  }
+</style>
+</head>
+<body>
+<div class="contenedor">
+
+  <div class="cabecera">
+    <button class="btn-volver" title="Volver">←</button>
+    <div>
+      <h1>Configura tu viaje</h1>
+      <p>Polonia · una semana con Marta</p>
+    </div>
+  </div>
+
+  <!-- FECHAS -->
+  <div class="tarjeta">
+    <h2>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="3"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      ¿Cuándo viajáis?
+    </h2>
+    <div class="sub">Marca el día de ida y el de vuelta</div>
+    <div class="cuerpo">
+      <div class="cal-resumen">
+        <span id="res-ida"><b>Ida</b> · elige un día</span>
+        <span class="flecha">→</span>
+        <span id="res-vuelta"><b>Vuelta</b> · elige un día</span>
+        <span class="noches vacio" id="res-noches">sin fechas</span>
+      </div>
+      <div class="cal-nav">
+        <button id="cal-prev" title="Mes anterior">‹</button>
+        <button id="cal-next" title="Mes siguiente">›</button>
+      </div>
+      <div class="meses" id="meses"></div>
+      <div class="cal-pista" id="cal-pista">Toca un día para la ida y otro para la vuelta. Vuelve a tocar para empezar de nuevo.</div>
+    </div>
+  </div>
+
+  <!-- VIAJEROS -->
+  <div class="tarjeta">
+    <h2>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0 -3 -3.85"/></svg>
+      ¿Quiénes vais?
+    </h2>
+    <div class="cuerpo">
+      <div class="fila-viajero">
+        <div>
+          <div class="nombre">Adultos</div>
+          <div class="detalle">De 12 años en adelante</div>
+        </div>
+        <div class="contador">
+          <button id="ad-menos">−</button>
+          <span class="num" id="ad-num">2</span>
+          <button id="ad-mas">+</button>
+        </div>
+      </div>
+      <div class="fila-viajero">
+        <div>
+          <div class="nombre">Niños</div>
+          <div class="detalle">De 0 a 11 años</div>
+        </div>
+        <div class="contador">
+          <button id="ni-menos">−</button>
+          <span class="num" id="ni-num">0</span>
+          <button id="ni-mas">+</button>
+        </div>
+      </div>
+      <div class="edades" id="edades"></div>
+    </div>
+  </div>
+
+  <!-- TIPO DE VIAJE -->
+  <div class="tarjeta">
+    <h2>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 6.9h7.1l-5.7 4.3l2.2 6.8l-6 -4.2l-6 4.2l2.2 -6.8l-5.7 -4.3h7.1z"/></svg>
+      ¿Qué tipo de viaje os apetece?
+    </h2>
+    <div class="sub">Puedes marcar varios · nos ayudará a proponerte sitios</div>
+    <div class="cuerpo">
+      <div class="chips" id="chips-tipo">
+        <button class="chip activo">🏛️ Cultural</button>
+        <button class="chip activo">🍷 Gastronómico</button>
+        <button class="chip">🌿 Naturaleza</button>
+        <button class="chip">🏖️ Relax</button>
+        <button class="chip">🥾 Aventura</button>
+        <button class="chip">🛍️ Compras</button>
+        <button class="chip">🌃 Vida nocturna</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPCIONALES -->
+  <div class="tarjeta">
+    <h2>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+      Ajustes opcionales
+    </h2>
+    <div class="sub">Si no lo tienes claro, déjalo como está</div>
+    <div class="cuerpo">
+      <div class="opcionales">
+        <div class="campo">
+          <label>Ritmo del viaje</label>
+          <div class="segmentos" id="seg-ritmo">
+            <button>Tranquilo</button>
+            <button class="activo">Normal</button>
+            <button>Intenso</button>
+          </div>
+          <div class="nota">Cuántas cosas por día os apetece hacer</div>
+        </div>
+        <div class="campo">
+          <label>Presupuesto orientativo</label>
+          <div class="presupuesto">
+            <input type="text" placeholder="Sin límite definido" inputmode="numeric">
+            <span class="euro">€</span>
+          </div>
+          <div class="nota">Total del viaje, para orientar propuestas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="barra-final">
+  <div class="interior">
+    <div class="resumen" id="resumen-final">Elige las fechas para continuar</div>
+    <button class="btn-guardar">Guardar configuración</button>
+  </div>
+</div>
+
+<script>
+/* ===== Calendario de rango ===== */
+const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const DIAS=["L","M","X","J","V","S","D"];
+let base=new Date(2026,9,1);            // octubre 2026
+let ini=null, fin=null;
+const hoy=new Date(2026,8,8);
+
+function claveDia(d){return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();}
+
+function pintaMes(f, extra){
+  const y=f.getFullYear(), m=f.getMonth();
+  const primero=new Date(y,m,1);
+  let desplaza=(primero.getDay()+6)%7;
+  const nDias=new Date(y,m+1,0).getDate();
+  let html='<div class="mes '+extra+'"><h3>'+MESES[m]+' '+y+'</h3><div class="semana">'
+    +DIAS.map(d=>'<span>'+d+'</span>').join('')+'</div><div class="dias">';
+  for(let i=0;i<desplaza;i++) html+='<button class="relleno"></button>';
+  for(let d=1;d<=nDias;d++){
+    const fecha=new Date(y,m,d), k=claveDia(fecha);
+    const pasado=fecha<hoy;
+    let cls=[];
+    if(ini&&fin&&k>claveDia(ini)&&k<claveDia(fin)) cls.push('en-rango');
+    if(ini&&k===claveDia(ini)){cls.push('extremo','inicio'); if(fin&&claveDia(fin)!==k) cls.push('con-rango');}
+    if(fin&&k===claveDia(fin)&&(!ini||claveDia(ini)!==k)) cls.push('extremo','fin');
+    if(ini&&fin&&claveDia(ini)===claveDia(fin)&&k===claveDia(ini)) cls=['extremo','inicio','fin'];
+    html+='<button data-k="'+k+'" data-y="'+y+'" data-m="'+m+'" data-d="'+d+'" class="'+cls.join(' ')+'"'+(pasado?' disabled':'')+'>'+d+'</button>';
+  }
+  html+='</div></div>';
+  return html;
+}
+
+function fmt(d){return d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+' '+d.getFullYear();}
+
+function repinta(){
+  const seg=new Date(base.getFullYear(),base.getMonth()+1,1);
+  document.getElementById('meses').innerHTML=pintaMes(base,'primero')+pintaMes(seg,'segundo');
+  document.querySelectorAll('.dias button[data-k]').forEach(b=>{
+    b.onclick=()=>{
+      const f=new Date(+b.dataset.y,+b.dataset.m,+b.dataset.d);
+      if(!ini||(ini&&fin)){ini=f;fin=null;}
+      else if(claveDia(f)<claveDia(ini)){ini=f;}
+      else{fin=f;}
+      repinta();
+    };
+  });
+  const rIda=document.getElementById('res-ida'),
+        rVta=document.getElementById('res-vuelta'),
+        rN=document.getElementById('res-noches'),
+        rFin=document.getElementById('resumen-final');
+  rIda.innerHTML='<b>Ida</b> · '+(ini?fmt(ini):'elige un día');
+  rVta.innerHTML='<b>Vuelta</b> · '+(fin?fmt(fin):'elige un día');
+  if(ini&&fin){
+    const n=Math.round((fin-ini)/86400000);
+    rN.textContent=n+(n===1?' noche':' noches');
+    rN.classList.remove('vacio');
+    rFin.innerHTML='<b>'+fmt(ini)+' → '+fmt(fin)+'</b> · '+n+' noches · '+resumenViajeros();
+  }else{
+    rN.textContent='sin fechas'; rN.classList.add('vacio');
+    rFin.textContent='Elige las fechas para continuar';
+  }
+}
+document.getElementById('cal-prev').onclick=()=>{base=new Date(base.getFullYear(),base.getMonth()-1,1);repinta();};
+document.getElementById('cal-next').onclick=()=>{base=new Date(base.getFullYear(),base.getMonth()+1,1);repinta();};
+
+/* ===== Viajeros ===== */
+let ad=2, ni=0, edades=[];
+function resumenViajeros(){
+  let t=ad+' adulto'+(ad!==1?'s':'');
+  if(ni>0) t+=' y '+ni+' niño'+(ni!==1?'s':'');
+  return t;
+}
+function pintaViajeros(){
+  document.getElementById('ad-num').textContent=ad;
+  document.getElementById('ni-num').textContent=ni;
+  document.getElementById('ad-menos').disabled=ad<=1;
+  document.getElementById('ni-menos').disabled=ni<=0;
+  const cont=document.getElementById('edades');
+  cont.innerHTML='';
+  edades.forEach((e,i)=>{
+    const div=document.createElement('div');
+    div.className='edad';
+    div.innerHTML='Niño '+(i+1)+' <select>'+
+      Array.from({length:12},(_,a)=>'<option '+(a===e?'selected':'')+'>'+a+'</option>').join('')+
+      '</select> años';
+    div.querySelector('select').onchange=ev=>{edades[i]=+ev.target.value;};
+    cont.appendChild(div);
+  });
+  repinta();
+}
+document.getElementById('ad-mas').onclick=()=>{ad++;pintaViajeros();};
+document.getElementById('ad-menos').onclick=()=>{if(ad>1){ad--;pintaViajeros();}};
+document.getElementById('ni-mas').onclick=()=>{ni++;edades.push(5);pintaViajeros();};
+document.getElementById('ni-menos').onclick=()=>{if(ni>0){ni--;edades.pop();pintaViajeros();}};
+
+/* ===== Chips y segmentos ===== */
+document.querySelectorAll('#chips-tipo .chip').forEach(c=>c.onclick=()=>c.classList.toggle('activo'));
+document.querySelectorAll('#seg-ritmo button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#seg-ritmo button').forEach(x=>x.classList.remove('activo'));
+  b.classList.add('activo');
+});
+
+pintaViajeros();
+</script>
+</body>
+</html>

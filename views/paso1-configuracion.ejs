@@ -1,29 +1,41 @@
-<%# SIN LA CABECERA DEL WIZARD.
-    Ya no hay wizard: no hay "Tu viaje · Destino · Avisos" que recorrer, y esa
-    tira de pasos de arriba llevaba meses prometiendo un camino que no existe.
-    Con `pasoActual: null` la cabecera pinta solo el <head>, y la pantalla
-    empieza donde tiene que empezar: en "Configura tu viaje". %>
-<%- include('parciales/cabecera', { viaje: null, pasoActual: null, titulo: 'Configura tu viaje' }) %>
-
 <%
 /**
- * Pantalla 1: tres preguntas grandes, no un formulario de configuración.
- * Cada bloque es una tarjeta blanca con su icono y su título corto.
+ * CONFIGURA TU VIAJE.
  *
- * Absorbió lo que antes estaba repartido:
- *   - las fechas (antigua pantalla 1)
- *   - el tipo de viaje (antigua pantalla 4, que ya no existe)
- *   - el presupuesto (que estaba con las fechas y ahora va en "Más opciones")
+ * Rehecha siguiendo maqueta-configuracion.html: calendario de rango de dos
+ * meses, contadores circulares, chips de tipo, controles opcionales y barra
+ * fija abajo. Era la última pantalla con la estética vieja.
+ *
+ * ES UN CAMBIO DE INTERFAZ, NO DE MODELO. Se guarda exactamente lo mismo y en
+ * los mismos campos: `fecha_inicio`, `fecha_fin`, `adultos`, `ninos`,
+ * `edades_ninos`, `tipo_viaje`, `ritmo` y `presupuesto`. El POST va al mismo
+ * sitio de siempre y el servidor no se ha tocado.
+ *
+ * DOS COSAS DE LA MAQUETA QUE NO SE COPIAN, y a propósito:
+ *
+ *   · La maqueta trae siete chips de tipo (añade Aventura, Compras y Vida
+ *     nocturna) y aquí van los CINCO que existen hoy. Meter valores nuevos
+ *     sería cambiar los datos, no la pantalla.
+ *   · La maqueta define al niño como "de 0 a 11 años" y al adulto "de 12 en
+ *     adelante". Aquí se mantiene 0-17 y adultos desde 18, que es lo que la
+ *     aplicación guarda y lo que entienden las búsquedas de vuelos y hoteles.
+ *     Cambiarlo movería a un chaval de quince de una columna a otra.
+ *
+ * Espera: viaje, tipos, seleccionados, ritmos, esNuevo, urlVolver, error.
  */
-const ICONOS_TIPO = {
-  cultural: 'ti-building-monument',
-  gastronomico: 'ti-tools-kitchen-2',
-  naturaleza: 'ti-trees',
-  relax: 'ti-beach',
-  mixto: 'ti-sparkles',
+const cabezaExtra = '<link rel="stylesheet" href="/css/configuracion.css">';
+const pieExtra = '<script src="/js/configuracion.js"></script>';
+
+// Los mismos cinco valores de siempre, con la cara de la maqueta: emoji dentro
+// de la píldora en lugar del icono de fuente.
+const EMOJI_TIPO = {
+  cultural: '🏛️',
+  gastronomico: '🍷',
+  naturaleza: '🌿',
+  relax: '🏖️',
+  mixto: '✨',
 };
 
-const ICONOS_RITMO = { tranquilo: 'ti-armchair', normal: 'ti-walk', intenso: 'ti-run' };
 const NOMBRES_RITMO = { tranquilo: 'Tranquilo', normal: 'Normal', intenso: 'Intenso' };
 
 const adultos = viaje.adultos ?? 2;
@@ -31,191 +43,196 @@ const ninos = viaje.ninos ?? 0;
 const edades = viaje.edadesNinos ?? [];
 const ritmoActual = viaje.ritmo || 'normal';
 
-// El plegado se abre solo si ya hay algo dentro que enseñar.
-const abrirMas = Boolean(viaje.presupuesto) || (ritmoActual && ritmoActual !== 'normal');
+// Lo que el JS necesita para arrancar con lo ya guardado. Va como JSON en un
+// atributo en vez de repartido por mil `data-`: es un solo sitio que leer.
+const inicial = JSON.stringify({
+  fechaInicio: viaje.fecha_inicio || null,
+  fechaFin: viaje.fecha_fin || null,
+  adultos,
+  ninos,
+  edades,
+});
 
-/** ¿El error apunta a este campo? */
-const errorDe = (campo) => (error && error.campo === campo ? error.mensaje : null);
+/** El subtítulo de la cabecera: el destino si lo hay, y si no el nombre. */
+const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
+  || 'Un viaje por empezar';
 %>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: 'Configura tu viaje',
+      extraCabeza: cabezaExtra
+    }) %>
 
-<main class="envoltorio envoltorio--simple">
-  <div class="contenido">
-    <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a>
-        <% if (!esNuevo) { %> / <a href="<%= urlVolver %>">Mi ruta</a><% } %>
-        / Configuración
-      </p>
-      <h1 class="ruta-cabecera__titulo">Configura tu viaje</h1>
-      <p class="secundario" style="margin:6px 0 0">
-        Tres cosas y listo. Podrás cambiarlas después.
-      </p>
-    </header>
+<main class="config" data-inicial='<%= inicial %>'>
+  <form method="POST" action="/viajes/<%= viaje.id %>/paso/1" id="form-configuracion">
+    <div class="contenedor">
 
-    <form method="POST" action="/viajes/<%= viaje.id %>/paso/1" id="form-configuracion">
-
-      <%# ============ A · ¿Cuándo viajas? ============ %>
-      <section class="bloque">
-        <div class="bloque__cabecera">
-          <i class="ti ti-calendar" aria-hidden="true"></i>
-          <h2 class="bloque__titulo">¿Cuándo viajas?</h2>
+      <div class="cabecera">
+        <a class="btn-volver" href="<%= esNuevo ? '/' : urlVolver %>" title="Volver" aria-label="Volver">←</a>
+        <div>
+          <h1>Configura tu viaje</h1>
+          <p><%= subtitulo %></p>
         </div>
+      </div>
 
-        <div class="fila-campos">
-          <div class="campo">
-            <label for="fecha_inicio">Ida</label>
-            <input type="date" id="fecha_inicio" name="fecha_inicio"
-                   value="<%= viaje.fecha_inicio || '' %>"
-                   <%= errorDe('fecha_inicio') ? 'aria-invalid="true"' : '' %> required>
-            <% if (errorDe('fecha_inicio')) { %>
-              <div class="campo__error"><i class="ti ti-alert-circle"></i> <%= errorDe('fecha_inicio') %></div>
-            <% } %>
+      <%# ======================= FECHAS ======================= %>
+      <div class="tarjeta">
+        <h2>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="3"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          ¿Cuándo viajáis?
+        </h2>
+        <div class="sub">Marca el día de ida y el de vuelta</div>
+        <div class="cuerpo">
+
+          <%# El error del servidor, cuando la pantalla vuelve con uno. Antes de
+              todo, que es donde se mira. %>
+          <% if (error && error.mensaje) { %>
+            <p class="cal-error">
+              <i class="ti ti-alert-triangle" aria-hidden="true"></i> <%= error.mensaje %>
+            </p>
+          <% } %>
+
+          <div class="cal-resumen">
+            <span id="res-ida"><b>Ida</b> · elige un día</span>
+            <span class="flecha" aria-hidden="true">→</span>
+            <span id="res-vuelta"><b>Vuelta</b> · elige un día</span>
+            <span class="noches vacio" id="res-noches">sin fechas</span>
           </div>
-          <div class="campo">
-            <label for="fecha_fin">Vuelta</label>
-            <input type="date" id="fecha_fin" name="fecha_fin"
-                   value="<%= viaje.fecha_fin || '' %>"
-                   <%= errorDe('fecha_fin') ? 'aria-invalid="true"' : '' %> required>
-            <% if (errorDe('fecha_fin')) { %>
-              <div class="campo__error"><i class="ti ti-alert-circle"></i> <%= errorDe('fecha_fin') %></div>
-            <% } %>
+
+          <div class="cal-nav">
+            <button type="button" id="cal-prev" title="Mes anterior" aria-label="Mes anterior">‹</button>
+            <button type="button" id="cal-next" title="Mes siguiente" aria-label="Mes siguiente">›</button>
           </div>
-        </div>
 
-        <%# Lo calcula el JS en vivo al cambiar cualquiera de las dos fechas %>
-        <p class="bloque__nota" id="noches-nota"></p>
-      </section>
+          <div class="meses" id="meses"></div>
 
-      <%# ============ B · ¿Quiénes viajáis? ============ %>
-      <section class="bloque">
-        <div class="bloque__cabecera">
-          <i class="ti ti-users" aria-hidden="true"></i>
-          <h2 class="bloque__titulo">¿Quiénes viajáis?</h2>
-        </div>
-
-        <div class="contador">
-          <div class="contador__etiqueta">
-            <span class="contador__nombre">Adultos</span>
-            <span class="contador__pista">A partir de 18 años</span>
+          <div class="cal-pista">
+            Toca un día para la ida y otro para la vuelta. Vuelve a tocar para empezar de nuevo.
           </div>
-          <div class="stepper" data-stepper="adultos" data-min="1" data-max="9">
-            <button class="stepper__boton" type="button" data-delta="-1" aria-label="Quitar un adulto">
-              <i class="ti ti-minus" aria-hidden="true"></i>
-            </button>
-            <span class="stepper__valor" data-valor="adultos"><%= adultos %></span>
-            <button class="stepper__boton" type="button" data-delta="1" aria-label="Añadir un adulto">
-              <i class="ti ti-plus" aria-hidden="true"></i>
-            </button>
-          </div>
-          <input type="hidden" name="adultos" id="campo-adultos" value="<%= adultos %>">
+
+          <%# Lo que de verdad viaja al servidor. Los rellena el calendario. %>
+          <input type="hidden" name="fecha_inicio" id="campo-fecha-inicio"
+                 value="<%= viaje.fecha_inicio || '' %>">
+          <input type="hidden" name="fecha_fin" id="campo-fecha-fin"
+                 value="<%= viaje.fecha_fin || '' %>">
         </div>
+      </div>
 
-        <div class="contador">
-          <div class="contador__etiqueta">
-            <span class="contador__nombre">Niños</span>
-            <span class="contador__pista">De 0 a 17 años</span>
-          </div>
-          <div class="stepper" data-stepper="ninos" data-min="0" data-max="6">
-            <button class="stepper__boton" type="button" data-delta="-1" aria-label="Quitar un niño">
-              <i class="ti ti-minus" aria-hidden="true"></i>
-            </button>
-            <span class="stepper__valor" data-valor="ninos"><%= ninos %></span>
-            <button class="stepper__boton" type="button" data-delta="1" aria-label="Añadir un niño">
-              <i class="ti ti-plus" aria-hidden="true"></i>
-            </button>
-          </div>
-          <input type="hidden" name="ninos" id="campo-ninos" value="<%= ninos %>">
-        </div>
-
-        <%# Una edad por niño. El JS añade y quita según sube o baja el contador.
-            Las aerolíneas y los hoteles cobran distinto según la edad, por eso
-            no basta con saber cuántos son. %>
-        <div class="edades <%= ninos ? '' : 'oculto' %>" id="edades-ninos">
-          <div class="edades__titulo">Edad de cada niño al viajar</div>
-          <div class="edades__lista" id="edades-lista">
-            <% for (let i = 0; i < ninos; i++) { %>
-              <label class="edad">
-                <span class="edad__num">Niño <%= i + 1 %></span>
-                <select name="edades_ninos">
-                  <% for (let e = 0; e <= 17; e++) { %>
-                    <option value="<%= e %>" <%= (edades[i] ?? 0) === e ? 'selected' : '' %>><%= e %></option>
-                  <% } %>
-                </select>
-              </label>
-            <% } %>
-          </div>
-        </div>
-      </section>
-
-      <%# ============ C · ¿Qué tipo de viaje os apetece? ============ %>
-      <section class="bloque">
-        <div class="bloque__cabecera">
-          <i class="ti ti-compass" aria-hidden="true"></i>
-          <h2 class="bloque__titulo">¿Qué tipo de viaje os apetece?</h2>
-        </div>
-        <p class="bloque__nota" style="margin-top:0">Puedes elegir varios.</p>
-
-        <div class="chips chips--grandes">
-          <% tipos.forEach(t => { %>
-            <button class="chip chip--grande" type="button"
-                    aria-pressed="<%= seleccionados.includes(t.valor) %>"
-                    data-chip="<%= t.valor %>">
-              <i class="ti <%= ICONOS_TIPO[t.valor] || 'ti-tag' %>" aria-hidden="true"></i>
-              <%= t.etiqueta %>
-            </button>
-          <% }) %>
-        </div>
-        <input type="hidden" name="tipo_viaje" id="tipo_viaje" value="<%= seleccionados.join(',') %>">
-      </section>
-
-      <%# ============ Más opciones (plegado, cerrado por defecto) ============ %>
-      <div class="plegable">
-        <button class="plegable__disparador" type="button"
-                aria-expanded="<%= abrirMas %>" aria-controls="mas-opciones">
-          <i class="ti ti-chevron-down" aria-hidden="true"></i> Más opciones
-        </button>
-
-        <div class="plegable__cuerpo <%= abrirMas ? '' : 'oculto' %>" id="mas-opciones">
-          <div class="bloque" style="margin-top:12px">
-            <div class="campo">
-              <label for="presupuesto">Presupuesto total aproximado</label>
-              <div class="campo-euro">
-                <input type="number" id="presupuesto" name="presupuesto" min="0" step="50"
-                       placeholder="900" value="<%= viaje.presupuesto || '' %>">
-                <span class="campo-euro__simbolo">€</span>
-              </div>
-              <div class="ayuda">Opcional. Para el viaje entero, no por persona.</div>
+      <%# ======================= VIAJEROS ======================= %>
+      <div class="tarjeta">
+        <h2>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0 -3 -3.85"/></svg>
+          ¿Quiénes vais?
+        </h2>
+        <div class="cuerpo">
+          <div class="fila-viajero">
+            <div>
+              <div class="nombre">Adultos</div>
+              <div class="detalle">A partir de 18 años</div>
             </div>
+            <div class="contador">
+              <button type="button" id="ad-menos" aria-label="Quitar un adulto">−</button>
+              <span class="num" id="ad-num"><%= adultos %></span>
+              <button type="button" id="ad-mas" aria-label="Añadir un adulto">+</button>
+            </div>
+          </div>
 
-            <div class="campo" style="margin-bottom:0">
-              <label>Ritmo del viaje</label>
-              <div class="chips">
+          <div class="fila-viajero">
+            <div>
+              <div class="nombre">Niños</div>
+              <div class="detalle">De 0 a 17 años</div>
+            </div>
+            <div class="contador">
+              <button type="button" id="ni-menos" aria-label="Quitar un niño">−</button>
+              <span class="num" id="ni-num"><%= ninos %></span>
+              <button type="button" id="ni-mas" aria-label="Añadir un niño">+</button>
+            </div>
+          </div>
+
+          <%# Una edad por niño: las aerolíneas y los hoteles cobran distinto
+              según la edad, así que no basta con saber cuántos son. %>
+          <div class="edades" id="edades"></div>
+
+          <input type="hidden" name="adultos" id="campo-adultos" value="<%= adultos %>">
+          <input type="hidden" name="ninos" id="campo-ninos" value="<%= ninos %>">
+          <span id="campo-edades"></span>
+        </div>
+      </div>
+
+      <%# ======================= TIPO DE VIAJE ======================= %>
+      <div class="tarjeta">
+        <h2>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l2.4 6.9h7.1l-5.7 4.3l2.2 6.8l-6 -4.2l-6 4.2l2.2 -6.8l-5.7 -4.3h7.1z"/></svg>
+          ¿Qué tipo de viaje os apetece?
+        </h2>
+        <div class="sub">Puedes marcar varios · nos ayudará a proponerte sitios</div>
+        <div class="cuerpo">
+          <div class="chips" id="chips-tipo">
+            <% tipos.forEach(t => { %>
+              <button class="chip <%= seleccionados.includes(t.valor) ? 'activo' : '' %>"
+                      type="button" data-valor="<%= t.valor %>"
+                      aria-pressed="<%= seleccionados.includes(t.valor) %>">
+                <%= EMOJI_TIPO[t.valor] || '🏷️' %> <%= t.etiqueta %>
+              </button>
+            <% }) %>
+          </div>
+          <input type="hidden" name="tipo_viaje" id="campo-tipo" value="<%= seleccionados.join(',') %>">
+        </div>
+      </div>
+
+      <%# ======================= OPCIONALES ======================= %>
+      <div class="tarjeta">
+        <h2>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+          Ajustes opcionales
+        </h2>
+        <div class="sub">Si no lo tienes claro, déjalo como está</div>
+        <div class="cuerpo">
+          <div class="opcionales">
+            <div class="campo">
+              <label id="etiqueta-ritmo">Ritmo del viaje</label>
+              <div class="segmentos" id="seg-ritmo" role="group" aria-labelledby="etiqueta-ritmo">
                 <% ritmos.forEach(r => { %>
-                  <button class="chip" type="button"
-                          aria-pressed="<%= ritmoActual === r %>"
-                          data-ritmo="<%= r %>">
-                    <i class="ti <%= ICONOS_RITMO[r] %>" aria-hidden="true"></i>
-                    <%= NOMBRES_RITMO[r] %>
-                  </button>
+                  <button type="button" data-valor="<%= r %>"
+                          class="<%= ritmoActual === r ? 'activo' : '' %>"
+                          aria-pressed="<%= ritmoActual === r %>"><%= NOMBRES_RITMO[r] %></button>
                 <% }) %>
               </div>
+              <div class="nota">Cuántas cosas por día os apetece hacer</div>
               <input type="hidden" name="ritmo" id="campo-ritmo" value="<%= ritmoActual %>">
+            </div>
+
+            <div class="campo">
+              <label for="presupuesto">Presupuesto orientativo</label>
+              <div class="presupuesto">
+                <input type="text" id="presupuesto" name="presupuesto"
+                       placeholder="Sin límite definido" inputmode="numeric"
+                       value="<%= viaje.presupuesto || '' %>">
+                <span class="euro" aria-hidden="true">€</span>
+              </div>
+              <div class="nota">Total del viaje, para orientar propuestas</div>
             </div>
           </div>
         </div>
       </div>
 
-      <%# El campo dice a donde volver al guardar. En un viaje nuevo no hay
-          "donde estabas": se sigue al mapamundi a elegir destino, que es el
-          paso natural. %>
-      <input type="hidden" name="volverA" value="<%= urlVolver %>">
+    </div>
 
-      <%- include('parciales/barra', {
-            urlAtras: esNuevo ? '/' : urlVolver,
-            textoSiguiente: esNuevo ? 'Continuar' : 'Guardar',
-          }) %>
-    </form>
-  </div>
+    <%# ======================= BARRA FINAL ======================= %>
+    <div class="barra-final">
+      <div class="interior">
+        <div class="resumen" id="resumen-final">Elige las fechas para continuar</div>
+        <button class="btn-guardar" type="submit" id="btn-guardar" disabled>
+          <%= esNuevo ? 'Guardar y continuar' : 'Guardar configuración' %>
+        </button>
+      </div>
+    </div>
+
+    <%# A dónde se vuelve al guardar: a la ruta si venías de ella, y al mapamundi
+        si el viaje acaba de nacer y todavía no tiene destino. %>
+    <input type="hidden" name="volverA" value="<%= urlVolver %>">
+  </form>
 </main>
 
-<%- include('parciales/pie') %>
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

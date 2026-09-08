@@ -10,7 +10,22 @@
  * Espera: etapa, viaje, punto, confirmada, anterior, siguiente, posicion,
  *         total, queVer, dormir, tramos, tiposTransporte, preparando, orden.
  */
-const pieExtra = '<script src="/js/etapa.js"></script><script src="/js/adjuntos.js"></script>';
+// El mapa de la parada usa la MISMA base que el de descubrir: Leaflet, el
+// puente con Google y el módulo de teselas compartido. Mismas versiones a
+// propósito: dos Leaflets distintos en la misma app solo dan problemas.
+const LEAFLET = '1.9.4';
+const MUTANT = '0.14.1';
+
+const cabezaExtra =
+  `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">`;
+
+const pieExtra =
+  `<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.js"></script>` +
+  `<script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@${MUTANT}/dist/Leaflet.GoogleMutant.min.js"></script>` +
+  '<script src="/js/mapa-teselas.js"></script>' +
+  '<script src="/js/etapa.js"></script>' +
+  '<script src="/js/adjuntos.js"></script>' +
+  '<script src="/js/mapa-etapa.js"></script>';
 
 const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const dia = (iso) => {
@@ -45,7 +60,7 @@ const ICONO_TIPO = {
 };
 %>
 <%- include('parciales/cabecera', {
-      viaje: null, pasoActual: null, titulo: etapa.nombre_ciudad, extraCabeza: ''
+      viaje: null, pasoActual: null, titulo: etapa.nombre_ciudad, extraCabeza: cabezaExtra
     }) %>
 
 <main class="envoltorio envoltorio--simple">
@@ -136,6 +151,11 @@ const ICONO_TIPO = {
       <button class="pestana <%= vista.pestana === 'llegar' ? 'pestana--activa' : '' %>"
               type="button" role="tab"
               aria-selected="<%= vista.pestana === 'llegar' %>" data-panel="panel-llegar" data-ancla="llegar">Cómo llegar</button>
+      <button class="pestana <%= vista.pestana === 'mapa' ? 'pestana--activa' : '' %>"
+              type="button" role="tab"
+              aria-selected="<%= vista.pestana === 'mapa' %>" data-panel="panel-mapa" data-ancla="mapa">
+        Mapa <span class="pestana__n"><%= mapaEtapa.elementos.length %></span>
+      </button>
     </div>
 
     <%# ---------------------- 1) QUÉ VER ---------------------- %>
@@ -852,6 +872,66 @@ const ICONO_TIPO = {
       <% }) %>
     </section>
 
+    <%# ---------------------- 4) MAPA ----------------------
+        Un mapa de CONSULTA: dónde cae cada cosa respecto al hotel. No se añade,
+        no se edita y no se borra desde aquí; para eso están las otras pestañas.
+
+        Las coordenadas viajan en el `data-mapa` porque hay que dibujar puntos,
+        pero no se enseñan en ninguna parte: lo que se lee es el nombre y a
+        cuántos minutos está. %>
+    <section class="panel" id="panel-mapa" role="tabpanel" <%= vista.pestana === 'mapa' ? '' : 'hidden' %>>
+      <div class="titulo-con-accion">
+        <p class="secundario" style="margin:0">
+          Todo lo que tienes en <%= etapa.nombre_ciudad %>, y a cuánto está del hotel.
+        </p>
+        <span class="mapa-leyenda" id="mapa-etapa-leyenda"></span>
+      </div>
+
+      <% if (!mapaEtapa.elementos.length) { %>
+        <p class="candidatos__vacio">
+          Todavía no hay nada situado en <%= etapa.nombre_ciudad %>. Apunta sitios,
+          excursiones o restaurantes y elige hotel, y aparecerán aquí.
+        </p>
+      <% } else { %>
+        <div class="mapa-etapa" id="mapa-etapa"
+             data-clave-mapas="<%= claveMapas %>"
+             data-mapa='<%= JSON.stringify(mapaEtapa) %>'></div>
+
+        <%# Tres estados y tres frases. "No hay hotel" y "el hotel no está
+            situado" son cosas distintas: en la segunda el hotel está elegido y
+            lo que falta es su dirección. %>
+        <% if (!mapaEtapa.hotelElegido) { %>
+          <p class="mapa-etapa__nota">
+            <i class="ti ti-info-circle" aria-hidden="true"></i>
+            No hay hotel elegido en esta parada, así que no se pueden medir distancias
+            desde él. Elige uno en «Dónde dormir».
+          </p>
+        <% } else if (!mapaEtapa.hotelEnElMapa) { %>
+          <p class="mapa-etapa__nota">
+            <i class="ti ti-info-circle" aria-hidden="true"></i>
+            «<%= mapaEtapa.nombreDelHotel %>» está elegido pero no tiene dirección situada,
+            así que no sale en el mapa ni sirve de referencia. Puedes escribirla en
+            «Dónde dormir».
+          </p>
+        <% } %>
+
+        <%# LOS QUE NO SE PUEDEN SITUAR SE CUENTAN, no desaparecen.
+            Que falte algo del mapa sin decir nada hace pensar que el mapa está
+            roto; decir cuántos faltan hace pensar que faltan direcciones, que
+            es lo que pasa de verdad. %>
+        <% if (mapaEtapa.sinSituar.length) { %>
+          <p class="mapa-etapa__nota">
+            <i class="ti ti-map-pin-off" aria-hidden="true"></i>
+            <%= mapaEtapa.sinSituar.length %>
+            <%= mapaEtapa.sinSituar.length === 1 ? 'sitio no está' : 'sitios no están' %>
+            en el mapa porque no <%= mapaEtapa.sinSituar.length === 1 ? 'tiene' : 'tienen' %>
+            dirección situada:
+            <%= mapaEtapa.sinSituar.map(x => x.nombre).join(', ') %>.
+          </p>
+        <% } %>
+      <% } %>
+    </section>
+
     <%# ======================= NAVEGACIÓN ======================= %>
     <nav class="etapa-nav">
       <% if (anterior) { %>
@@ -872,6 +952,8 @@ const ICONO_TIPO = {
     </nav>
   </div>
 </main>
+
+
 
 <%# ===========================================================================
     LA PESTAÑA, REPUESTA ANTES DE PINTAR

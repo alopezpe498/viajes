@@ -161,6 +161,7 @@ import {
   TOPE as TOPE_ADJUNTO,
 } from '../services/adjuntos.js';
 import { fichasDelViaje, generarFicha } from '../services/ficha-pais.js';
+import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import {
   datosDePortada,
   borrarViaje,
@@ -877,7 +878,7 @@ router.get('/descubrir/:destinoId', cargarDestino, (req, res) => {
  * Se valida contra la lista de siempre: cualquier cosa rara cae en la primera,
  * que es lo que se veía antes de todo esto.
  */
-const PESTANAS = ['ver', 'dormir', 'llegar'];
+const PESTANAS = ['ver', 'dormir', 'llegar', 'mapa'];
 const SUBPESTANAS = ['sub-sitios', 'sub-excursiones', 'sub-comer', 'sub-moverse'];
 
 function vistaPedida(query = {}) {
@@ -1714,6 +1715,11 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
     // Ahora la pestaña viaja en la URL y llega ya pintada. El JS solo la
     // mantiene al día.
     vista: vistaPedida(req.query),
+    // EL MAPA DE LA PARADA: el hotel, lo apuntado y los restaurantes, con sus
+    // coordenadas. Van al cliente porque hay que dibujarlas; no se enseñan en
+    // ninguna pantalla, que es la regla de siempre.
+    mapaEtapa: mapaDeEtapa(etapa.id),
+    claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
     ordenVuelos,
     // Los filtros de hotel se pintan DENTRO de la pestaña: el formulario vive
     // donde se usa, no en otra pantalla.
