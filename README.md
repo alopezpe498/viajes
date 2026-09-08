@@ -2666,3 +2666,65 @@ Y como ahora se lleva más por delante, hay que **escribir el nombre del viaje**
 para que se encienda el botón. Se compara sin distinguir mayúsculas ni espacios
 de más: la ceremonia es para obligar a leer cuál es el viaje, no para jugar a
 las adivinanzas.
+
+---
+
+## Antes de viajar
+
+Una ficha por país con lo que hace falta para **entrar** (documento, visado,
+vacunas, seguro) y lo que hace falta **saber** (moneda, dónde cambiar, festivos
+durante el viaje, recomendaciones de Exteriores).
+
+Vive en "Mi ruta" y no en la etapa, y el botón está **siempre visible** con el
+ámbar de los avisos de la casa. No es un detalle de estilo: un visado se tramita
+con semanas y una vacuna con más, así que esto se consulta mientras se organiza.
+Un enlace discreto en un menú se descubre el día antes de salir, que es cuando
+ya no sirve de nada.
+
+**Una pestaña por país, deducidas solas** de las paradas. Si el viaje cruza a
+otro país aparece la segunda sin que nadie diga nada; si es a uno solo, la barra
+de pestañas ni se pinta.
+
+### De dónde sale cada cosa
+
+| | Fuente |
+|---|---|
+| Festivos | Nager.Date |
+| Recomendaciones de seguridad | exteriores.gob.es |
+| Papeles, salud, dinero | la IA configurada |
+
+Las tres van **en paralelo**. En fila tardaba diecisiete segundos, y no porque
+hubiera mucho que hacer: la página de Exteriores agotaba su plazo de doce
+mientras las otras dos esperaban turno sin motivo. `allSettled` y no `all`,
+porque aquí el objetivo es el contrario de "si una falla, aborta": si una falla,
+las otras dos tienen que llegar igual, y lo que no se pudo consultar se dice en
+la propia ficha en vez de esconderlo. Exteriores se cae con cierta alegría —en
+las pruebas devolvió 503 desde su WAF varias veces seguidas—.
+
+### Se guarda por país + fechas, no por viaje
+
+Los festivos y los avisos dependen de cuándo se va, pero dos viajes a Portugal
+la misma semana comparten ficha y no hay por qué pagar dos veces la llamada a la
+IA. Con eso, abrir el panel es instantáneo: enseña lo guardado y solo pide lo que
+falte.
+
+`generado_en` es la pieza importante. Si lo generado pasa de 30 días **y** el
+viaje está a menos de 90, la ficha se marca como "conviene actualizar", con una
+banda ámbar dentro y un punto en la pestaña del país. Las dos condiciones a la
+vez: un dato de hace dos meses para un viaje que es dentro de un año no urge; el
+mismo dato a dos semanas de salir, sí.
+
+### El país se guarda en la parada
+
+Averiguarlo es geocodificar la ciudad, y eso es una petición por parada. Al
+principio se hacía en cada apertura del panel; ahora se resuelve una vez y se
+queda en `etapas.pais` y `etapas.codigo_pais`. Abrir el panel pasó de geocodificar
+todas las ciudades a **6 ms**.
+
+Y hacía falta por otra razón: el dosier se arma sin red y de forma síncrona, así
+que no puede geocodificar. Su filtro por país se quedaba vacío y, como la tabla
+de fichas se comparte entre viajes con las mismas fechas, el dosier de un viaje a
+Polonia llegó a llevarse la ficha de Chequia de otro. Ahora, si un viaje no tiene
+países resueltos, el dosier no enseña la sección en vez de enseñarlo todo: que
+falte se nota y se arregla abriendo el panel; que sobre un país equivocado no se
+nota y engaña.

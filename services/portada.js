@@ -179,6 +179,7 @@ function limpiarLoHuerfano(ciudades, destinoIds) {
     ciudadesInvestigadas: 0,
     destinos: 0,
     direcciones: 0,
+    fichasPais: 0,
   };
 
   for (const ciudad of ciudades) {
@@ -230,7 +231,33 @@ function limpiarLoHuerfano(ciudades, destinoIds) {
   }
 
   hecho.direcciones = limpiarDireccionesHuerfanas();
+  hecho.fichasPais = limpiarFichasDePaisHuerfanas();
   return hecho;
+}
+
+/**
+ * Fichas de "Antes de viajar" que ya no le sirven a ningún viaje.
+ *
+ * Se guardan por país + fechas y se comparten entre viajes, así que una ficha
+ * solo sobra cuando NADIE pisa ya ese país en esas fechas. Es la misma regla
+ * que con el resto del catálogo: se limpia lo huérfano, y solo lo huérfano.
+ *
+ * Sin esto, repetir una prueba desde cero seguiría sacando la ficha vieja de la
+ * vez anterior, que es justo lo que se quería evitar.
+ */
+function limpiarFichasDePaisHuerfanas() {
+  return ejecutar(
+    `DELETE FROM fichas_pais
+      WHERE NOT EXISTS (
+        SELECT 1
+          FROM etapas e
+          JOIN viajes v ON v.id = e.viaje_id
+         WHERE e.pais IS NOT NULL
+           AND lower(e.pais) = lower(fichas_pais.pais)
+           AND v.fecha_inicio IS fichas_pais.fecha_inicio
+           AND v.fecha_fin    IS fichas_pais.fecha_fin
+      )`
+  ).changes;
 }
 
 /**

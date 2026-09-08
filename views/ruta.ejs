@@ -11,7 +11,10 @@
  * La maqueta usaba emoji para los iconos (🏠 ⠿ ⚠ ✓). Aquí van los de Tabler,
  * que es lo que usa el resto de la app.
  */
-const pieExtra = '<script src="/js/ruta.js"></script><script src="/js/dosier.js"></script>';
+const pieExtra =
+  '<script src="/js/ruta.js"></script>' +
+  '<script src="/js/dosier.js"></script>' +
+  '<script src="/js/antes-de-viajar.js"></script>';
 
 /** 330 -> "5 h 30". El mismo formato que usan los tramos. */
 const comoDuracion = (m) => {
@@ -66,6 +69,21 @@ const { viaje } = ruta;
       </div>
     </header>
 
+    <%# ---------------------- Antes de viajar ----------------------
+        SIEMPRE VISIBLE, y con cara de aviso.
+        Esto no es una pantalla más a la que se llega si uno se acuerda: es lo
+        que hay que mirar semanas antes de salir, cuando todavía da tiempo a
+        pedir un visado o a ponerse una vacuna. Un enlace discreto en un menú
+        se descubre el día de antes, que es cuando ya no sirve. %>
+    <button class="antes-boton" type="button" id="abrir-antes">
+      <i class="ti ti-alert-triangle antes-boton__icono" aria-hidden="true"></i>
+      <span class="antes-boton__texto">
+        <strong>Antes de viajar</strong>
+        <span class="antes-boton__pie">Papeles, vacunas, dinero y festivos de cada país</span>
+      </span>
+      <i class="ti ti-chevron-right antes-boton__flecha" aria-hidden="true"></i>
+    </button>
+
     <%# ---------------------- Contador de noches ----------------------
         Lo pinta el JS, para que después de cada cambio no haya dos sitios
         distintos donde tocar el mismo número. %>
@@ -118,6 +136,32 @@ const { viaje } = ruta;
     </div>
   </div>
 </main>
+
+<%# ---------------------- Panel "Antes de viajar" ----------------------
+    Se llama `antes-*` y no `modal-*` a propósito: en esta misma pantalla ya
+    hay un `.modal` (el de confirmar el borrado de una parada) y reutilizar el
+    nombre hace que las dos se pisen las reglas. Ya pasó una vez.
+
+    Nace vacío: lo rellena public/js/antes-de-viajar.js con lo que conteste el
+    servidor, y así no hay dos sitios pintando lo mismo. %>
+<div class="antes-fondo" id="antes-fondo" hidden>
+  <div class="antes" role="dialog" aria-modal="true" aria-labelledby="antes-titulo">
+    <header class="antes__cabecera">
+      <div>
+        <h2 class="antes__titulo" id="antes-titulo">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i> Antes de viajar
+        </h2>
+        <p class="antes__rango" id="antes-rango"></p>
+      </div>
+      <button class="antes__cerrar" type="button" data-antes-cerrar aria-label="Cerrar">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <div class="antes__paises" id="antes-paises" role="tablist" aria-label="Países del viaje"></div>
+    <div class="antes__cuerpo" id="antes-cuerpo"></div>
+  </div>
+</div>
 
 <%# ---------------------- Modal de confirmación ----------------------
     El de la app, no el confirm() del navegador: aquí se está borrando una

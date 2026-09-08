@@ -233,6 +233,20 @@ body{
 .bloque__titulo{margin:0 0 10px;font-size:17px;font-weight:700}
 .seccion__titulo{margin:22px 0 12px;font-size:21px;font-weight:700}
 
+/* --- Antes de viajar --- */
+.pais{border:1px solid #DCE6EA;border-radius:12px;padding:14px 16px;margin-bottom:14px;background:#fff}
+.pais__nombre{margin:0 0 2px;font-size:18px;font-weight:700;color:var(--acento)}
+.pais__fecha{margin:0 0 12px;font-size:12px;color:#6B8794}
+.pais__bloque{margin-top:14px}
+.pais__bloque h4{margin:0 0 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#6B8794}
+.pais__dato{margin:0 0 9px;font-size:14px;line-height:1.5}
+.pais__dato strong{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.02em;color:#6B8794;font-weight:700}
+.pais__marca{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:#FBEED6;color:#8A5A16}
+.pais__marca--no{background:var(--tinte);color:var(--acento-osc)}
+.pais__lista{margin:4px 0 0;padding-left:18px;font-size:13px}
+.pais__festivo{display:flex;gap:8px;font-size:14px;margin-bottom:3px}
+.pais__festivo b{color:var(--acento)}
+
 .vacio{color:var(--tx2);text-align:center;padding:26px 10px}
 .secundario{color:var(--tx2);font-size:14px}
 .oculto{display:none !important}
@@ -282,6 +296,12 @@ body{
 
     <h2 class="seccion__titulo">Reservas</h2>
     <section id="reservas"></section>
+
+    <%# Antes de viajar: papeles, salud, dinero y festivos de cada país.
+        Aquí abajo porque no se consulta a diario, pero DENTRO del dosier
+        porque es lo que no se puede buscar estando allí sin conexión. %>
+    <h2 class="seccion__titulo" id="antes-titulo-dosier" hidden>Antes de viajar</h2>
+    <section id="antes-de-viajar"></section>
   </div>
 </main>
 
@@ -714,6 +734,90 @@ body{
   }
 
   /* ===========================================================================
+     ANTES DE VIAJAR
+     Papeles, salud, dinero y festivos de cada pais. Con su fecha de generacion
+     a la vista, sin disimulo: un requisito de entrada de hace tres meses puede
+     haber cambiado y quien lo lea tiene que poder juzgarlo.
+     ======================================================================== */
+  function pintarAntesDeViajar() {
+    var fichas = DATOS.antesDeViajar || [];
+    if (!fichas.length) return;
+
+    document.getElementById('antes-titulo-dosier').hidden = false;
+
+    var h = '';
+    fichas.forEach(function (f) {
+      h += '<div class="pais">';
+      h += '<h3 class="pais__nombre">' + esc(f.pais) + '</h3>';
+      h += '<p class="pais__fecha">Preparado el ' + esc(f.generadoEnLargo || '—') + '</p>';
+
+      /* --- Papeles y salud --- */
+      var pap = f.papeles || {};
+      var sal = f.salud || {};
+      var a = '';
+      if (pap.documento) {
+        a += '<p class="pais__dato"><strong>Documento</strong>' + esc(pap.documento) +
+             (pap.vigenciaMinima ? ' · vigencia mínima: ' + esc(pap.vigenciaMinima) : '') + '</p>';
+      }
+      if (pap.visado) {
+        a += '<p class="pais__dato"><strong>Visado</strong>' +
+             '<span class="pais__marca' + (pap.visado.haceFalta ? '' : ' pais__marca--no') + '">' +
+             (pap.visado.haceFalta ? 'Hace falta' : 'No hace falta') + '</span> ' +
+             esc(pap.visado.texto || '') +
+             (pap.visado.tramite ? ' ' + esc(pap.visado.tramite) : '') + '</p>';
+      }
+      if (sal.vacunasObligatorias || sal.vacunasRecomendadas || sal.nota) {
+        a += '<p class="pais__dato"><strong>Vacunas y salud</strong>';
+        a += (sal.vacunasObligatorias && sal.vacunasObligatorias.length)
+          ? 'Obligatorias: ' + sal.vacunasObligatorias.map(esc).join(', ') + '. '
+          : 'Ninguna obligatoria. ';
+        if (sal.vacunasRecomendadas && sal.vacunasRecomendadas.length) {
+          a += 'Recomendadas: ' + sal.vacunasRecomendadas.map(esc).join(', ') + '. ';
+        }
+        if (sal.nota) a += esc(sal.nota);
+        a += '</p>';
+      }
+      if (pap.seguro) {
+        a += '<p class="pais__dato"><strong>Seguro de viaje</strong>' +
+             '<span class="pais__marca' + (pap.seguro.obligatorio ? '' : ' pais__marca--no') + '">' +
+             (pap.seguro.obligatorio ? 'Obligatorio' : 'No obligatorio') + '</span> ' +
+             esc(pap.seguro.texto || '') + '</p>';
+      }
+      if (a) h += '<div class="pais__bloque"><h4>Papeles y salud</h4>' + a + '</div>';
+
+      /* --- Dinero y calendario --- */
+      var din = f.dinero || {};
+      var b = '';
+      if (din.moneda) {
+        b += '<p class="pais__dato"><strong>Moneda</strong>' + esc(din.moneda) + '</p>';
+      }
+      if (din.dondeCambiar || (din.consejos && din.consejos.length)) {
+        b += '<p class="pais__dato"><strong>Dinero</strong>' + esc(din.dondeCambiar || '') + '</p>';
+        if (din.consejos && din.consejos.length) {
+          b += '<ul class="pais__lista">' +
+               din.consejos.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') +
+               '</ul>';
+        }
+      }
+      if (f.festivos && f.festivos.length) {
+        b += '<p class="pais__dato"><strong>Festivos durante el viaje</strong></p>';
+        f.festivos.forEach(function (x) {
+          b += '<div class="pais__festivo"><b>' + esc(x.diaMes) + '</b> ' + esc(x.nombre) + '</div>';
+        });
+      }
+      if (f.exteriores && f.exteriores.texto) {
+        b += '<p class="pais__dato"><strong>Recomendaciones de Exteriores</strong>' +
+             esc(f.exteriores.texto) + '</p>';
+      }
+      if (b) h += '<div class="pais__bloque"><h4>Dinero y calendario</h4>' + b + '</div>';
+
+      h += '</div>';
+    });
+
+    document.getElementById('antes-de-viajar').innerHTML = h;
+  }
+
+  /* ===========================================================================
      BUSCADOR
      Sobre los datos embebidos, no sobre el DOM: así encuentra también lo que
      está en un día que no se está mirando.
@@ -791,6 +895,7 @@ body{
 
   pintarPortada();
   pintarReservas();
+  pintarAntesDeViajar();
 
   document.getElementById('dias').addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('.pestana') : null;

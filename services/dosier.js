@@ -39,6 +39,7 @@ import { medioElegidoDeTramo } from './movilidad.js';
 import { trasladosDeEtapa, trasladosDeElementos } from './traslados.js';
 import { fichasDeComer } from './comer.js';
 import { direccionDeCandidato, direccionDe } from './direcciones.js';
+import { fichasParaElDosier, paisesDelViaje } from './ficha-pais.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RAIZ = path.join(__dirname, '..');
@@ -701,6 +702,13 @@ export function datosDelDosier(viajeId) {
     reservas,
     chuletas,
     dondeComer,
+    // ANTES DE VIAJAR, con su fecha de generación a la vista.
+    //
+    // Va al dosier porque el dosier es lo que se abre sin conexión, y estando
+    // allí el número del consulado o si el seguro era obligatorio no se pueden
+    // buscar. La fecha se enseña sin disimulo: un requisito de entrada de hace
+    // tres meses puede haber cambiado, y quien lo lea tiene que poder juzgarlo.
+    antesDeViajar: fichasParaElDosier(viajeId),
     generadoEn: new Date().toISOString(),
   };
 }
@@ -793,6 +801,18 @@ async function empaquetar(viajeId, html, adjuntos) {
  * que no se puedan traer se omiten: eso NO es un fallo de la generación.
  */
 export async function generarDosier(viajeId) {
+  // Que las paradas sepan de qué país son ANTES de armar los datos.
+  //
+  // `datosDelDosier` es síncrona y sin red a propósito, así que no puede
+  // geocodificar por su cuenta. Esto lo deja resuelto y guardado en las etapas,
+  // y de ahí lo lee el filtro de las fichas de país. Si falla, el dosier sale
+  // igual: simplemente sin esa sección.
+  try {
+    await paisesDelViaje(viajeId);
+  } catch (err) {
+    console.warn(`[dosier] no pude resolver los países del viaje #${viajeId}: ${err.message}`);
+  }
+
   // Antes de nada, fuera los adjuntos cuyo elemento ya no existe: si no, el ZIP
   // se llevaría el billete de un tramo que se borró hace tres cambios de ruta.
   await limpiarAdjuntosHuerfanos(viajeId);

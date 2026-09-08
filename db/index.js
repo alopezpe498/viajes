@@ -321,6 +321,8 @@ export function migrarEsquema() {
   migracionComer();
   migracionBusquedasEfimeras();
   migracionIata();
+  migracionFichaPais();
+  migracionPaisDeEtapa();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -377,6 +379,79 @@ export function migrarEsquema() {
  * respuesta, y asi no se reintenta en bucle. `buscado_en` permite reintentarlo
  * pasado un tiempo si algun dia interesa.
  */
+/**
+ * Migracion 21: la ficha practica de cada pais.
+ *
+ * Que hace falta para ENTRAR (pasaporte, visado, vacunas, seguro) y que hay que
+ * saber ESTANDO (moneda, cambio, festivos, avisos de Exteriores). Es
+ * informacion que se consulta mientras se organiza el viaje, no estando alli:
+ * un visado se tramita con semanas de antelacion y una vacuna con mas.
+ *
+ * Se guarda por PAIS + FECHAS, no por viaje: los festivos y los avisos dependen
+ * de cuando se va, pero dos viajes a Portugal la misma semana comparten ficha y
+ * no hay por que generarla dos veces. Cada llamada a la IA cuesta.
+ *
+ * `generado_en` es la pieza importante: con ella se sabe si lo que se enseña se
+ * quedo viejo. Un visado puede cambiar de un mes para otro.
+ */
+/**
+ * Migracion 22: el pais de cada parada, guardado en la propia parada.
+ *
+ * Se averigua geocodificando la ciudad, y eso es una peticion a Open-Meteo por
+ * ciudad. Sin guardarlo habia que repetirlas ENTERAS cada vez que se abria el
+ * panel de "Antes de viajar", y ademas el dosier —que se genera sin red y de
+ * forma sincrona— no tenia de donde sacarlo: su filtro por pais se quedaba
+ * vacio y dejaba pasar fichas de otros viajes con las mismas fechas.
+ *
+ * `etapas.destino_id` no servia: en las etapas reales viene a null.
+ *
+ * El pais de una parada es una propiedad de la parada. Aqui es donde va.
+ */
+function migracionPaisDeEtapa() {
+  const CLAVE = '2026-09-pais-de-etapa';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(etapas)').all().map((c) => c.name);
+  if (!cols.includes('pais')) db.exec('ALTER TABLE etapas ADD COLUMN pais TEXT');
+  if (!cols.includes('codigo_pais')) db.exec('ALTER TABLE etapas ADD COLUMN codigo_pais TEXT');
+
+  // Lo que ya se sepa por el catalogo se aprovecha; el resto se resolvera solo
+  // la primera vez que alguien abra el panel.
+  db.exec(`
+    UPDATE etapas
+       SET pais = (SELECT d.pais FROM destinos d WHERE d.id = etapas.destino_id)
+     WHERE pais IS NULL AND destino_id IS NOT NULL
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: país de cada parada.');
+  return true;
+}
+
+function migracionFichaPais() {
+  const CLAVE = '2026-09-ficha-pais';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fichas_pais (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      pais_norm    TEXT NOT NULL,          -- sin acentos y en minusculas
+      pais         TEXT NOT NULL,          -- como se escribe de verdad
+      codigo_pais  TEXT,                   -- ISO-2, p.ej. "PT"
+      fecha_inicio TEXT,                   -- las fechas con las que se genero
+      fecha_fin    TEXT,
+      datos        TEXT NOT NULL,          -- JSON con los dos bloques
+      generado_en  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pais_norm, fecha_inicio, fecha_fin)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ficha_pais ON fichas_pais (pais_norm);
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: ficha práctica por país.');
+  return true;
+}
+
 function migracionIata() {
   const CLAVE = '2026-09-iata-cache';
   if (yaAplicada(CLAVE)) return false;

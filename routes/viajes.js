@@ -160,6 +160,7 @@ import {
   comoTamano,
   TOPE as TOPE_ADJUNTO,
 } from '../services/adjuntos.js';
+import { fichasDelViaje, generarFicha } from '../services/ficha-pais.js';
 import {
   datosDePortada,
   borrarViaje,
@@ -1524,6 +1525,55 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
     traslados,
     avisoTraslados: viaje.fecha_inicio ? avisoDeTraslados(traslados.minutos, dias) : null,
   });
+});
+
+// =============================================================================
+// ANTES DE VIAJAR: la ficha práctica de cada país
+// -----------------------------------------------------------------------------
+// Dos rutas y una división clara entre ellas:
+//
+//   GET  devuelve LO QUE HAY GUARDADO y no genera nada. Así el panel abre al
+//        instante, con lo que ya se sabe, en vez de dejar a alguien mirando una
+//        ruedecita mientras se llama a la IA.
+//   POST genera (o regenera) UN país. Lo llama el propio panel para lo que le
+//        falte, y el botón de "actualizar" para rehacer lo que se quedó viejo.
+//
+// Generar tarda lo que tardan las fuentes, así que va con su plazo largo y sin
+// prisa: es una acción que se pide a sabiendas.
+// =============================================================================
+
+/** Lo guardado de cada país del viaje. No llama a nadie de fuera. */
+router.get('/api/viaje/:viajeId/antes-de-viajar', async (req, res) => {
+  try {
+    const datos = await fichasDelViaje(Number(req.params.viajeId));
+    if (!datos) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+    res.json(datos);
+  } catch (err) {
+    console.error('[rutas] no pude reunir las fichas de país:', err);
+    res.status(500).json({ error: 'No se pudo consultar la información de los países.' });
+  }
+});
+
+/** Genera o regenera la ficha de UN país. */
+router.post('/api/viaje/:viajeId/antes-de-viajar', async (req, res) => {
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', Number(req.params.viajeId));
+  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const pais = String(req.body?.pais ?? '').trim();
+  if (!pais) return res.status(400).json({ error: 'Falta el país.' });
+
+  try {
+    const ficha = await generarFicha({
+      pais,
+      codigoPais: String(req.body?.codigoPais ?? '').trim() || null,
+      fechaInicio: viaje.fecha_inicio,
+      fechaFin: viaje.fecha_fin,
+    });
+    res.json({ ficha });
+  } catch (err) {
+    console.error(`[rutas] no pude generar la ficha de ${pais}:`, err);
+    res.status(500).json({ error: err.message || 'No se pudo preparar la ficha.' });
+  }
 });
 
 // --- API de la ruta ---------------------------------------------------------

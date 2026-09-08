@@ -5170,3 +5170,274 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 
 /* Con el modal abierto, el fondo no se desplaza detrás. */
 body.con-ventana { overflow: hidden; }
+
+/* =============================================================================
+   ANTES DE VIAJAR
+   -----------------------------------------------------------------------------
+   La ficha práctica de cada país, en "Mi ruta". El botón lleva el ámbar de los
+   avisos de la casa (#FBEED6 sobre #8A5A16) porque es exactamente eso: algo que
+   hay que mirar y que, si no se mira a tiempo, se convierte en un problema.
+
+   Se llama `antes-*` y no `modal-*` a propósito: en esa pantalla ya vive un
+   `.modal` —el de confirmar el borrado de una parada— y reutilizar el nombre
+   hace que las dos se pisen las reglas.
+   ========================================================================== */
+.antes-boton {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 18px 0 4px;
+  padding: 14px 18px;
+  border: 1px solid #EBD5AE;
+  border-radius: var(--radio);
+  background: #FBEED6;
+  color: #8A5A16;
+  font-family: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.antes-boton:hover {
+  box-shadow: 0 6px 18px rgba(138, 90, 22, .16);
+  transform: translateY(-1px);
+}
+.antes-boton__icono { font-size: 24px; flex-shrink: 0; }
+.antes-boton__texto { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.antes-boton__texto strong { font-size: 16px; font-weight: 700; }
+.antes-boton__pie { font-size: 13px; opacity: .8; }
+.antes-boton__flecha { font-size: 20px; flex-shrink: 0; opacity: .7; }
+
+/* --- El panel ------------------------------------------------------------- */
+.antes-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(18, 48, 62, .38);
+  backdrop-filter: blur(2px);
+  animation: antes-entra .12s ease-out;
+}
+@keyframes antes-entra { from { opacity: 0 } to { opacity: 1 } }
+
+.antes {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 88vh;
+  border-radius: var(--radio);
+  background: var(--superficie);
+  box-shadow: 0 24px 60px rgba(18, 48, 62, .3);
+  overflow: hidden;
+}
+
+.antes__cabecera {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  background: #FBEED6;
+  color: #8A5A16;
+}
+.antes__titulo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 19px;
+}
+.antes__rango { margin: 3px 0 0; font-size: 13px; opacity: .82; }
+.antes__cerrar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(138, 90, 22, .12);
+  color: inherit;
+  font-size: 17px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.antes__cerrar:hover { background: rgba(138, 90, 22, .22); }
+
+/* --- Las pestañas de país ------------------------------------------------- */
+.antes__paises {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.antes-pais {
+  position: relative;
+  padding: 8px 15px 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--texto-2);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.antes-pais:hover { color: var(--texto); }
+.antes-pais--activo { color: var(--acento); border-bottom-color: var(--acento); }
+/* El punto ámbar de "esta conviene actualizar", visible sin abrir la pestaña. */
+.antes-pais__punto {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: #8A5A16;
+  vertical-align: middle;
+}
+
+/* --- El cuerpo ------------------------------------------------------------ */
+.antes__cuerpo { padding: 18px 20px 20px; overflow-y: auto; }
+.antes__cargando,
+.antes__vacio { margin: 8px 0 14px; color: var(--texto-2); font-size: 14px; }
+.antes__cargando { display: flex; align-items: center; gap: 9px; }
+
+.antes-caduca {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 16px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #FBEED6;
+  color: #8A5A16;
+  font-size: 13px;
+}
+
+.antes-bloque { margin-bottom: 22px; }
+.antes-bloque__titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.antes-bloque__titulo i { color: var(--acento); font-size: 19px; }
+
+/* Dos columnas cuando hay sitio. `minmax(0, 1fr)` y no `1fr`: con `1fr` el
+   contenido que no puede encoger empuja su columna y descuadra la rejilla. */
+.antes-bloque__rejilla { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 620px) {
+  .antes-bloque__rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.antes-dato {
+  padding: 13px 15px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--fondo);
+}
+.antes-dato__titulo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--texto-2);
+}
+.antes-dato__titulo i { color: var(--acento); font-size: 16px; }
+.antes-dato__cuerpo { font-size: 14px; line-height: 1.55; }
+.antes-dato__cuerpo p { margin: 0 0 7px; }
+.antes-dato__cuerpo p:last-child { margin-bottom: 0; }
+.antes-dato__nota { color: var(--texto-2); font-size: 13px; }
+
+.antes-lista { margin: 4px 0 8px; padding-left: 18px; font-size: 13px; }
+.antes-lista li { margin-bottom: 3px; }
+
+/* La pastilla de sí/no: lo primero que se busca al mirar esto. */
+.antes-marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.antes-marca--si { background: #FBEED6; color: #8A5A16; }
+.antes-marca--no { background: var(--tinte); color: var(--acento); }
+
+.antes-festivos { margin: 0 0 8px; padding: 0; list-style: none; font-size: 14px; }
+.antes-festivos li { display: flex; gap: 9px; margin-bottom: 4px; }
+.antes-festivos__dia {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--acento);
+  font-variant-numeric: tabular-nums;
+}
+
+.antes-sev {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--tinte);
+  color: var(--acento);
+}
+.antes-sev--precaucion { background: #FBEED6; color: #8A5A16; }
+.antes-sev--alerta { background: var(--alerta-bg, #FBE0DC); color: var(--alerta-tx, #A33A28); }
+
+.antes-enlace { color: var(--acento); font-size: 13px; font-weight: 650; }
+
+.antes-problemas {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 10px 13px;
+  border-radius: 10px;
+  background: var(--fondo);
+  color: var(--texto-2);
+  font-size: 13px;
+}
+
+.antes-pie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--borde);
+}
+.antes-pie__fecha { color: var(--texto-3); font-size: 12px; }
+/* Discreto a propósito: regenerar cuesta una llamada a la IA, no es un botón
+   que invite a pulsarlo por curiosidad. */
+.antes-pie__actualizar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-2);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.antes-pie__actualizar:hover { color: var(--acento); border-color: var(--acento); }
+
+/* Con el panel abierto, el fondo no se desplaza detrás. */
+body.con-antes { overflow: hidden; }

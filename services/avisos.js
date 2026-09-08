@@ -240,6 +240,89 @@ function primerasFrases(texto, n = 3) {
  * (Comprobado el 05/09/2026 con Portugal: la sección Seguridad empieza por
  *  "Condiciones semejantes a las de España. Se advierte a los ciudadanos...".)
  */
+/**
+ * EL TEXTO DE EXTERIORES, EN CRUDO Y ENTERO.
+ *
+ * `avisosDeSeguridad` se queda con tres frases porque es un aviso de la
+ * pantalla 3 y ahí sobra todo lo demás. La ficha del país quiere el texto
+ * completo, así que la lectura de la página se parte en dos: esta trae, y la de
+ * abajo recorta.
+ *
+ * Devuelve null cuando no hay nada que traer —España no tiene ficha propia, y
+ * sin nombre de país no hay URL— en vez de reventar: no tener recomendación no
+ * es un error.
+ */
+export async function textoDeExteriores(sitio) {
+  if (sitio.codigoPais === 'ES') return null;
+  if (!sitio.pais) return null;
+
+  const paisUrl = encodeURIComponent(sitio.pais).replace(/%20/g, '+');
+  const url = `${BASE_EXTERIORES}?trc=${paisUrl}`;
+
+  // AQUÍ NO SE LEVANTA LA VOZ. Esta página se cae con cierta alegría —durante
+  // las pruebas devolvió 503 desde su WAF varias veces seguidas— y no puede
+  // llevarse por delante toda la ficha del país. Si no contesta, se dice y ya.
+  let html;
+  try {
+    html = await pedir(url, { comoTexto: true });
+  } catch (err) {
+    console.warn(`[avisos] Exteriores no contestó para ${sitio.pais}: ${err.message}`);
+    return null;
+  }
+
+  // Mismo recorte que abajo: desde el <h3 class=accordion__main>Seguridad</h3>
+  // hasta el siguiente encabezado del acordeón. OJO: el atributo va SIN
+  // comillas y dentro del h3 hay un <span> con la flecha, así que un patrón
+  // estricto no casa con nada.
+  const inicio = html.search(/<h3[^>]*accordion__main[^>]*>\s*Seguridad/i);
+  if (inicio === -1) return null;
+
+  const resto = html.slice(inicio);
+  const siguiente = resto.slice(1).search(/<h3[^>]*accordion__main/i);
+  const trozo = siguiente === -1 ? resto : resto.slice(0, siguiente + 1);
+
+  const texto = aTextoPlano(trozo).replace(/^\s*Seguridad\s*/i, '');
+  if (texto.length < 40) return null;
+
+  const enMinusculas = texto.toLowerCase();
+  let severidad = 'info';
+  if (/desaconseja/.test(enMinusculas)) severidad = 'alerta';
+  else if (/precauci[oó]n|precauciones|extrem[ae]/.test(enMinusculas)) severidad = 'precaucion';
+
+  return { texto, severidad, url, fuente: 'Ministerio de Asuntos Exteriores' };
+}
+
+/**
+ * LOS FESTIVOS NACIONALES que caen dentro de unas fechas, en crudo.
+ *
+ * Solo los globales de tipo "Public": los autonómicos y los opcionales —el
+ * Carnaval en Portugal, sin ir más lejos— llenarían la lista sin que cierre
+ * nada por ellos.
+ */
+export async function festivosEntre(codigoPais, fechaInicio, fechaFin) {
+  if (!codigoPais || !fechaInicio || !fechaFin) return [];
+
+  const anos = [...new Set([fechaInicio.slice(0, 4), fechaFin.slice(0, 4)])];
+  const festivos = [];
+
+  for (const ano of anos) {
+    try {
+      const lista = await pedir(`https://date.nager.at/api/v3/PublicHolidays/${ano}/${codigoPais}`);
+      festivos.push(...(Array.isArray(lista) ? lista : []));
+    } catch (err) {
+      // País que Nager no cubre, o su servidor caído. Sin festivos y a otra
+      // cosa: inventarse una lista sería peor que no tenerla.
+      console.warn(`[avisos] sin festivos de ${codigoPais} en ${ano}: ${err.message}`);
+    }
+  }
+
+  return festivos
+    .filter((f) => f.global && (f.types ?? []).includes('Public'))
+    .filter((f) => f.date >= fechaInicio && f.date <= fechaFin)
+    .map((f) => ({ fecha: f.date, diaMes: aDiaMes(f.date), nombre: f.localName, ingles: f.name }))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+
 async function avisosDeSeguridad(sitio) {
   // España no tiene ficha propia: es el país desde el que se viaja.
   if (sitio.codigoPais === 'ES') return [];
@@ -358,4 +441,4 @@ export async function reunirAvisos({ destino, fechaInicio, fechaFin }) {
   return { sitio, avisos };
 }
 
-export default { reunirAvisos, situarDestino, UMBRALES_CLIMA };
+export default { reunirAvisos, situarDestino, textoDeExteriores, festivosEntre, UMBRALES_CLIMA };
