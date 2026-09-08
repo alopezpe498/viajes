@@ -28,7 +28,7 @@
  * Para publicar cambios, subir VERSION. Al activarse borra las cachés viejas.
  */
 
-const VERSION = 'v14';
+const VERSION = 'v16';
 const CACHE_ESTATICA = `viajes-estatica-${VERSION}`;
 const CACHE_VIVA = `viajes-viva-${VERSION}`;
 

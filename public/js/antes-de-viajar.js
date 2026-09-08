@@ -336,7 +336,7 @@
     const ext = f.exteriores
       ? `<span class="antes-sev antes-sev--${esc(f.exteriores.severidad)}">` +
         `${esc(etiquetaSeveridad(f.exteriores.severidad))}</span>` +
-        parrafo(f.exteriores.texto) +
+        parrafo(primerasFrases(f.exteriores.texto)) +
         (f.exteriores.url
           ? `<p><a class="antes-enlace" href="${esc(f.exteriores.url)}" target="_blank" rel="noopener">` +
             'Leer la recomendación completa <i class="ti ti-external-link" aria-hidden="true"></i></a></p>'
@@ -356,6 +356,28 @@
       '<h3 class="antes-bloque__titulo"><i class="ti ti-wallet" aria-hidden="true"></i> Dinero y calendario</h3>' +
       `<div class="antes-bloque__rejilla">${dentro}</div></section>`
     );
+  }
+
+  /**
+   * Las primeras frases, que es lo que cabe en una tarjeta.
+   *
+   * La sección de Exteriores viene entera: la de Polonia son tres mil quinientos
+   * caracteres y se comía el panel de arriba abajo, dejando los papeles y el
+   * dinero fuera de la pantalla. Aquí se enseña la entradilla y el enlace de
+   * debajo lleva al texto completo, que además se guarda entero y sale sin
+   * recortar en el dosier —ahí sí hay sitio, y es lo que se lee sin conexión—.
+   */
+  function primerasFrases(texto, cuantas = 3, tope = 420) {
+    const t = String(texto ?? '').trim();
+    if (t.length <= tope) return t;
+
+    const frases = t.split(/(?<=[.!?])\s+/);
+    let salida = '';
+    for (const f of frases) {
+      if (salida && (salida.length + f.length > tope || salida.split(/(?<=[.!?])\s+/).length >= cuantas)) break;
+      salida += (salida ? ' ' : '') + f;
+    }
+    return (salida || t.slice(0, tope)).trim() + ' […]';
   }
 
   const etiquetaSeveridad = (s) =>

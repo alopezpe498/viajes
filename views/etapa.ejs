@@ -238,7 +238,7 @@ const ICONO_TIPO = {
 
         <div class="rejilla-fichas">
           <% queVer.sitios.forEach(s => { %>
-            <%- include('parciales/ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa }) %>
+            <%- include('parciales/ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa, queVer }) %>
           <% }) %>
         </div>
       </section>

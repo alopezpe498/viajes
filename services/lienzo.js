@@ -18,6 +18,7 @@
 
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
+import { pedirInterpretarHorario } from './datos-sitios.js';
 import { ciudadDeCasa } from './proveedores.js';
 
 /** Las cuatro franjas, con sus horas orientativas. */
@@ -239,7 +240,7 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
   // --- 5) Los avisos ------------------------------------------------------
   ordenarPorHora(colocados);
 
-  const avisos = calcularAvisos(dias, colocados, fijos);
+  const avisos = calcularAvisos(dias, colocados, fijos, viajeId);
 
   // --- Filtro por etapa ---------------------------------------------------
   const filtrar = (lista) => (etapaId ? lista.filter((x) => x.etapaId === etapaId) : lista);
@@ -452,7 +453,7 @@ function normalizarHora(h) {
  * para que uno se dé cuenta, no para impedirle hacer lo que quiera. Igual has
  * puesto ahí el museo a propósito porque piensas cambiar el vuelo.
  */
-function calcularAvisos(dias, colocados, fijos) {
+function calcularAvisos(dias, colocados, fijos, viajeId) {
   const avisos = [];
   const indice = (clave) => CLAVES_FRANJA.indexOf(clave);
 
@@ -507,6 +508,128 @@ function calcularAvisos(dias, colocados, fijos) {
 
   // 4) Y si entre dos cosas seguidas no cabe el trayecto.
   avisos.push(...avisosDeTiempo(dias, colocados));
+
+  // 5) Y si un sitio cierra justo el día en que lo has puesto.
+  avisos.push(...avisosDeCierre(dias, colocados, viajeId));
+
+  return avisos;
+}
+
+// =============================================================================
+// ¿ESTÁ ABIERTO ESE DÍA?
+// -----------------------------------------------------------------------------
+// Muchos museos cierran los lunes y muchos palacios los martes, y eso no se ve
+// mirando un lienzo: la tarjeta cae igual de bien en cualquier columna. Se
+// descubre en la puerta.
+//
+// LOS HORARIOS SALEN DE LA BÚSQUEDA, no de Places ni de la IA: es la columna
+// `horarios` de `sitios_lugar`, que rellena services/datos-sitios.js con lo que
+// devolvió Google.
+//
+// Y SE INTERPRETAN AQUÍ, no al buscarlos. Un horario es una frase en cristiano
+// —"cerrado los lunes", "martes a domingo de 9 a 18"— y traducirla a días de la
+// semana es trabajo de la IA. Se hace la primera vez que hace falta un aviso y
+// se guarda en `cierra_dias`: una llamada por sitio en toda su vida, no una por
+// cada vez que se pinta el lienzo.
+//
+// Mientras esa interpretación no esté, no se avisa de nada. Es la decisión
+// correcta: callar un día es mejor que soltar un "cierra los lunes" a medio
+// deducir.
+// =============================================================================
+
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/**
+ * "los lunes", "los jueves", "los sábados".
+ *
+ * En castellano los días acabados en -s no cambian en plural, y añadirles una
+ * ese daba "los juevess". Solo sábado y domingo la llevan.
+ */
+const enPlural = (n) => (n === 0 || n === 6 ? `${DIAS_SEMANA[n]}s` : DIAS_SEMANA[n]);
+
+/** "2026-10-14" -> 0..6, con el domingo en el 0, como `getDay`. */
+function diaDeLaSemana(iso) {
+  const [a, m, d] = String(iso ?? '').slice(0, 10).split('-').map(Number);
+  if (!a || !m || !d) return null;
+  return new Date(Date.UTC(a, m - 1, d)).getUTCDay();
+}
+
+/**
+ * Los sitios con horario, y lo que se haya interpretado de él.
+ *
+ * Se piden todos de una vez: una consulta por tarjeta serían quince consultas
+ * para pintar un lienzo.
+ */
+function cierresDeLosSitios(ids) {
+  const lista = [...new Set(ids.filter(Boolean))];
+  if (!lista.length) return new Map();
+
+  const filas = todas(
+    `SELECT id, nombre, horarios, cierra_dias FROM sitios_lugar
+      WHERE id IN (${lista.map(() => '?').join(',')}) AND horarios IS NOT NULL`,
+    ...lista
+  );
+
+  return new Map(
+    filas.map((f) => {
+      let dias = null;
+      try {
+        dias = f.cierra_dias ? JSON.parse(f.cierra_dias) : null;
+      } catch { dias = null; }
+      return [f.id, { ...f, dias: Array.isArray(dias) ? dias : null }];
+    })
+  );
+}
+
+/**
+ * Avisos de "ese día está cerrado", y de paso encola lo que falte interpretar.
+ */
+function avisosDeCierre(dias, colocados, viajeId) {
+  const avisos = [];
+
+  // De cada tarjeta a su fila de catálogo, que es la que tiene el horario.
+  const claves = new Map();
+  for (const c of colocados) {
+    if (!c.candidatoId) continue;
+    const cand = una('SELECT * FROM candidatos WHERE id = ?', c.candidatoId);
+    const clave = cand ? claveDeCandidato(cand) : null;
+    if (clave?.tipo === 'sitio') claves.set(c.id, clave.id);
+  }
+  if (!claves.size) return avisos;
+
+  const cierres = cierresDeLosSitios([...claves.values()]);
+  const porInterpretar = new Set();
+
+  for (const d of dias) {
+    const queDia = diaDeLaSemana(d.fecha);
+    if (queDia == null) continue;
+
+    for (const c of colocados.filter((x) => x.dia === d.n)) {
+      const sitioId = claves.get(c.id);
+      if (!sitioId) continue;
+
+      const info = cierres.get(sitioId);
+      if (!info) continue;                       // sin horario: nada que decir
+
+      if (info.dias == null) {
+        porInterpretar.add(sitioId);             // hay horario pero sin traducir
+        continue;
+      }
+      if (!info.dias.includes(queDia)) continue; // abierto: todo bien
+
+      avisos.push({
+        dia: d.n,
+        tipo: 'sitio-cerrado',
+        idsAfectados: [c.id],
+        texto:
+          `${c.nombre} cierra los ${enPlural(queDia)} y lo has puesto en ` +
+          `${d.fechaCorta}. Su horario dice: «${info.horarios}»`,
+      });
+    }
+  }
+
+  // Lo que falte por interpretar se encola, sin bloquear este pintado.
+  for (const id of porInterpretar) pedirInterpretarHorario(viajeId, id);
 
   return avisos;
 }

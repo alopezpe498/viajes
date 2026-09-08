@@ -13,7 +13,7 @@
  * ampliada para siempre, se mire desde donde se mire.
  *
  * Espera: s (el sitio, tal y como lo devuelve queVerDeEtapa), viaje, etapa,
- *         colocaciones, diasDeLaEtapa.
+ *         colocaciones, diasDeLaEtapa, queVer.
  */
 const puesto = s.apuntado && s.candidatoId ? colocaciones.get(s.candidatoId) : null;
 
@@ -49,6 +49,64 @@ const hayDetalle = Boolean(s.porQue || s.comoMoverse || s.dentro.length || s.wik
 
     <% if (s.descripcion) { %>
       <p class="tarjeta-punto__texto"><%= s.descripcion %></p>
+    <% } %>
+
+    <%# ============ LOS DATOS DUROS ============
+        Precio, horario, duración, web y teléfono, de una búsqueda real. Nada de
+        esto lo pone la IA por su cuenta: si no vino en la búsqueda, aquí sale
+        un guion. Un hueco se ve y se puede comprobar; un dato inventado no.
+
+        Tres estados y hay que distinguirlos:
+          · buscándose  -> "cargando…", que es una espera
+          · buscado sin resultado -> guion, que es un resultado
+          · sin buscar todavía -> no se pinta nada %>
+    <% if (s.datos && (s.datos.buscado || queVer.buscandoDatos)) { %>
+      <% const d = s.datos; const esperando = !d.buscado && queVer.buscandoDatos; %>
+      <dl class="datos-sitio <%= esperando ? 'datos-sitio--esperando' : '' %>">
+        <% const campos = [
+             { icono: 'ti-ticket',    etiqueta: 'Entrada',  valor: d.precio },
+             { icono: 'ti-clock',     etiqueta: 'Horario',  valor: d.horarios },
+             { icono: 'ti-hourglass', etiqueta: 'Visita',   valor: d.tiempoVisita },
+             { icono: 'ti-phone',     etiqueta: 'Teléfono', valor: d.telefono },
+           ]; %>
+        <% campos.forEach(c => { %>
+          <div class="datos-sitio__campo">
+            <dt><i class="ti <%= c.icono %>" aria-hidden="true"></i> <%= c.etiqueta %></dt>
+            <dd class="<%= c.valor ? '' : 'datos-sitio__hueco' %>">
+              <%= c.valor ?? (esperando ? 'cargando…' : '—') %>
+            </dd>
+          </div>
+        <% }) %>
+
+        <% if (d.web) { %>
+          <div class="datos-sitio__campo datos-sitio__campo--ancho">
+            <dt><i class="ti ti-world" aria-hidden="true"></i> Web</dt>
+            <dd>
+              <a href="<%= d.web %>" target="_blank" rel="noopener noreferrer">
+                <%= d.web.replace(/^https?:\/\//, '').replace(/\/$/, '') %>
+                <i class="ti ti-external-link" aria-hidden="true"></i>
+              </a>
+            </dd>
+          </div>
+        <% } %>
+
+        <%# La fecha y el aviso de antigüedad. Un dato de hace cinco semanas
+            sigue orientando, pero hay que decir que puede haber cambiado. %>
+        <% if (d.buscado) { %>
+          <p class="datos-sitio__pie <%= d.conviejo ? 'datos-sitio__pie--viejo' : '' %>">
+            <% if (d.conviejo) { %>
+              <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+              Consultado hace <%= d.dias %> días: puede haber cambiado
+            <% } else if (!d.hayAlgo) { %>
+              <i class="ti ti-search-off" aria-hidden="true"></i>
+              La búsqueda no encontró estos datos
+            <% } else { %>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              Consultado <%= d.dias === 0 ? 'hoy' : `hace ${d.dias} ${d.dias === 1 ? 'día' : 'días'}` %>
+            <% } %>
+          </p>
+        <% } %>
+      </dl>
     <% } %>
 
     <div class="tarjeta-punto__acciones">

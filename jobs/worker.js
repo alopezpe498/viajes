@@ -36,6 +36,7 @@ import {
 } from '../services/movilidad.js';
 import { geocodificarFila, guardarDireccion } from '../services/direcciones.js';
 import { situarLugarConGoogle } from '../lib/google.js';
+import { buscarDatosDeSitios, pedirDatosDeSitios, interpretarHorario } from '../services/datos-sitios.js';
 import { calcularTraslado } from '../services/traslados.js';
 import {
   investigarComer,
@@ -785,6 +786,7 @@ const TIPOS_CONOCIDOS = [
   'transporte_tramo', 'movilidad_ciudad',
   'geocodificar', 'traslado',
   'comer_buscar', 'comer_detalles',
+  'datos_sitios', 'horario_cierre',
 ];
 
 /**
@@ -1230,6 +1232,14 @@ async function investigarPunto(trabajo, punto) {
   // está hecha y lo único que falta son las direcciones.
   await situarLosSitios(trabajo, punto);
 
+  // --- 3c) Y los datos duros, en su propio trabajo -------------------------
+  //
+  // Precio, horarios, duración, web y teléfono salen de UNA búsqueda en Google
+  // con navegador. Va aparte porque abre una ventana y puede tardar o toparse
+  // con un captcha, y la ficha no tiene por qué esperar a eso: se pinta con lo
+  // que hay y se completa cuando llegue.
+  pedirDatosDeSitios(trabajo.viaje_id, punto.id);
+
   // --- 4) Excursiones, solo para ciudades -------------------------------
   let excursiones = null;
   if (punto.categoria === 'ciudad') {
@@ -1312,6 +1322,29 @@ async function situarLosSitios(trabajo, punto) {
 }
 
 /**
+ * LOS DATOS DUROS DE LOS SITIOS DE UNA CIUDAD.
+ *
+ * Abre un navegador de verdad y hace UNA búsqueda con todos los sitios de la
+ * ciudad. Va por la cola y no dentro de la investigación a propósito: tarda sus
+ * segundos, puede saltar un captcha y no puede retrasar la lista de sitios, que
+ * es lo que la pantalla está esperando para pintar algo.
+ *
+ * Si falla, falla este trabajo y solo este: la ficha ya está hecha y lo único
+ * que se queda sin rellenar son los huecos de precio y horario, que la pantalla
+ * pinta con un guion.
+ */
+async function ejecutarDatosDeSitios(trabajo) {
+  const punto = una('SELECT * FROM puntos_interes WHERE id = ?', trabajo.referencia_id);
+  if (!punto) throw new Error('Ese sitio ya no está en el catálogo.');
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: datos duros de los sitios de ${punto.nombre} (Google).`
+  );
+  const r = await buscarDatosDeSitios(punto);
+  console.log(`[worker] Trabajo #${trabajo.id}: ${r.mensaje}`);
+}
+
+/**
  * Las excursiones de una ciudad, del catálogo o de Civitatis.
  *
  * Aquí es donde se nota que la caché de actividades dejó de colgar del viaje y
@@ -1368,6 +1401,8 @@ async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'distancias') return ejecutarDistancias(trabajo);
   if (trabajo.tipo === 'transporte_tramo') return ejecutarTransporteTramo(trabajo);
   if (trabajo.tipo === 'movilidad_ciudad') return ejecutarMovilidadCiudad(trabajo);
+  if (trabajo.tipo === 'datos_sitios') return ejecutarDatosDeSitios(trabajo);
+  if (trabajo.tipo === 'horario_cierre') return interpretarHorario(trabajo.referencia_id);
   if (trabajo.tipo === 'geocodificar') return ejecutarGeocodificar(trabajo);
   if (trabajo.tipo === 'traslado') return ejecutarTraslado(trabajo);
   if (trabajo.tipo === 'comer_buscar') return ejecutarComerBuscar(trabajo);

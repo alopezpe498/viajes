@@ -35,6 +35,7 @@ import { borrarAdjuntosDe, adjuntosDe } from './adjuntos.js';
 import { sincronizarEtapaUnica } from './etapas.js';
 import { medioElegidoDeTramo } from './movilidad.js';
 import { direccionesDe, direccionDe, volcarDireccionDeHotel } from './direcciones.js';
+import { datosDeSitio, buscandoDatos } from './datos-sitios.js';
 
 /** Los tipos de transporte que se pueden apuntar a mano. */
 export const TIPOS_TRANSPORTE = [
@@ -170,6 +171,10 @@ export function queVerDeEtapa(contexto) {
   const delDestino = puntosDelDestino.map((p) => {
     const extra = extraDe(p.datos_extra);
     return {
+      // Un punto del destino es una CIUDAD entera, no un monumento: no tiene
+      // precio de entrada ni hora de cierre. `datos` va a null y la ficha ni
+      // pinta el bloque.
+      datos: null,
       id: p.id,
       origen: 'punto',
       nombre: p.nombre,
@@ -209,6 +214,10 @@ export function queVerDeEtapa(contexto) {
         dentro: [],
         ampliada: true,
         ampliando: false,
+        // Precio, horarios, duración, web y teléfono, de la búsqueda en Google.
+        // Se saca AQUÍ porque es donde está la fila entera: más abajo esta
+        // proyección ya se ha quedado con un puñado de campos.
+        datos: datosDeSitio(s),
       }))
     : [];
 
@@ -243,6 +252,10 @@ export function queVerDeEtapa(contexto) {
     // Hay ficha que enseñar si la parada trae sitios de cualquiera de las dos
     // fuentes; que el punto esté "investigado" ya no es la única vía.
     investigada: Boolean(punto?.investigado_en) || delDestino.length > 0,
+    // ¿Se están buscando ahora mismo los datos duros? La ficha lo necesita para
+    // decir "cargando…" en los huecos en vez de "sin datos", que son cosas
+    // distintas: una espera y un resultado.
+    buscandoDatos: Boolean(punto && buscandoDatos(viaje.id, punto.id)),
     sitios: sitios.map((s) => ({
       ...s,
       // La dirección vive con la fila del CATÁLOGO de la que sale la tarjeta, y

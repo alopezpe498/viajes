@@ -5613,3 +5613,59 @@ body.con-antes { overflow: hidden; }
   line-height: 1.45;
 }
 .item__aviso i { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+
+/* =============================================================================
+   DATOS DUROS DE UN SITIO
+   -----------------------------------------------------------------------------
+   Precio, horario, duración, web y teléfono, de una búsqueda real. Los huecos
+   se ven a propósito: un guion dice "esto no lo sabemos" y se puede comprobar;
+   un dato inventado no se distingue de uno bueno hasta que te plantas delante
+   de una puerta cerrada.
+   ========================================================================== */
+.datos-sitio {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--fondo);
+  font-size: 13px;
+}
+.datos-sitio__campo { min-width: 0; }
+.datos-sitio__campo--ancho { grid-column: 1 / -1; }
+.datos-sitio dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--texto-3);
+}
+.datos-sitio dt i { color: var(--acento); font-size: 14px; }
+.datos-sitio dd { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.datos-sitio dd a { color: var(--acento); font-weight: 600; }
+
+/* El hueco no se disimula: se ve que falta. */
+.datos-sitio__hueco { color: var(--texto-3); }
+
+.datos-sitio--esperando .datos-sitio__hueco { font-style: italic; }
+
+.datos-sitio__pie {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--borde);
+  color: var(--texto-3);
+  font-size: 11.5px;
+}
+.datos-sitio__pie i { font-size: 13px; }
+/* Discreto, no alarmante: el dato sigue sirviendo, solo tiene sus semanas. */
+.datos-sitio__pie--viejo { color: #8A5A16; }

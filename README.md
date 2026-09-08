@@ -2873,3 +2873,79 @@ a buscar de cuáles.
 
 Y avisa, no prohíbe. No recoloca nada, no impide guardar y no cambia ninguna
 hora. Igual ese trayecto se hace en taxi, o igual da lo mismo llegar tarde a eso.
+
+---
+
+## Datos duros de los sitios
+
+La ficha de un sitio se montaba con dos fuentes: la IA propone **qué** ver y
+Wikipedia cuenta **qué es**. Las dos hablan del sitio y ninguna dice lo que hace
+falta para ir: cuánto cuesta, a qué hora abre, cuánto se tarda en verlo. Ahora
+hay una tercera, y solo trae números.
+
+### Una búsqueda por etapa, no una por sitio
+
+Se abre un navegador de verdad (perfil persistente, como Booking o Civitatis) y
+se le pregunta a Google **una sola vez** por todos los sitios de la ciudad
+juntos, pidiendo una tabla. Quince búsquedas sueltas serían quince oportunidades
+de que salte un captcha y quince veces más lento.
+
+De ahí sale **texto en crudo**. Convertirlo en campos lo hace la IA, y ahí está
+la regla que sostiene todo esto:
+
+> **Los datos duros o vienen de la búsqueda o no vienen.**
+
+La IA participa como traductora, no como fuente. El prompt le prohíbe
+explícitamente completar con lo que sepa, porque lo sabe: conoce los horarios
+del Louvre y los rellenaría encantada. Un horario inventado no se distingue de
+uno real hasta que te plantas delante de una puerta cerrada, y entonces ya da
+igual de dónde salió.
+
+### Tres estados, y hay que distinguirlos
+
+| Estado | Qué se ve |
+|---|---|
+| Buscándose | "cargando…" |
+| Buscado y no había | un guion, y "La búsqueda no encontró estos datos" |
+| Sin buscar todavía | no se pinta el bloque |
+
+`datos_en` se marca **siempre** al terminar, se haya encontrado algo o no. Sin
+esa marca, un sitio del que la búsqueda no dijo nada se quedaría diciendo
+"cargando…" para siempre.
+
+### Catálogo, con fecha
+
+El precio del Castillo de San Jorge no depende de mi viaje: se guarda en
+`sitios_lugar` y lo hereda el siguiente que vaya a Lisboa. Pasados 30 días se
+sigue enseñando con un "Consultado hace 45 días: puede haber cambiado" — un dato
+de hace cinco semanas sigue orientando, y esconderlo sería dejar la ficha vacía
+por prudencia mal entendida.
+
+### El fallo bueno
+
+El bloque de respuesta con IA de Google no tiene selector estable ni
+documentado. Se prueban varios contenedores y, si ninguno aparece, se cae a los
+resultados normales. Cuando Google cambie la maqueta esto devolverá **menos
+datos, no datos falsos**, y las fichas se quedarán con huecos.
+
+El captcha no se espera: `comprobarCaptcha` de lib/browser.js se queda esperando
+a que alguien pulse Enter, y eso aquí colgaría la cola de trabajos para siempre.
+Aquí se detecta y se aborta, la etapa sigue su camino y el motivo queda escrito
+en el registro de la cola.
+
+### "Ese día está cerrado"
+
+Muchos museos cierran los lunes y muchos palacios los martes, y en un lienzo eso
+no se ve: la tarjeta cae igual de bien en cualquier columna. La nueva regla lee
+la columna `horarios` —la de la búsqueda, no Places— y avisa.
+
+Un horario es una frase en cristiano, así que traducirla a días de la semana lo
+hace la IA **al generarse el aviso, no al buscar**: la mayoría de los sitios no
+acaban en ningún día concreto y traducir quince horarios para usar dos sería
+pagar por trece. El resultado se guarda en `cierra_dias`, así que es una llamada
+por sitio en toda su vida, no una por cada pintada del lienzo. Mientras no esté
+interpretado no se avisa: callar un día es mejor que soltar un "cierra los
+lunes" a medio deducir.
+
+Y los días de la semana acabados en -s no llevan plural, que si no queda "los
+juevess".

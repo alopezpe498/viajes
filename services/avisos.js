@@ -21,15 +21,69 @@
 /** Corta una petición que se eternice: mejor un aviso de fallo que colgarse. */
 const TIMEOUT_MS = 12_000;
 
-/** Petición con timeout y con un User-Agent honesto. */
-async function pedir(url, { comoTexto = false } = {}) {
+/**
+ * QUIÉNES DECIMOS QUE SOMOS.
+ *
+ * Por defecto, la verdad: un User-Agent que identifica la aplicación, que es lo
+ * educado con un servicio público y lo que piden Open-Meteo y Nager.
+ *
+ * Exteriores es la excepción, y no por gusto. Su WAF rechaza cualquier
+ * User-Agent que huela a programa: con el nuestro contesta 503 (TCDN-WAF-504)
+ * después de veintiún segundos de espera, y con uno de navegador contesta 200 y
+ * 74 KB en tres. Comprobado las dos cosas, una detrás de otra, contra la misma
+ * URL. No hay nada que esquivar más allá de eso: la página es pública, no pide
+ * usuario y se consulta una vez por país y por viaje.
+ */
+const AGENTE_PROPIO = 'CreadorViajes/0.1 (generador de viajes personal)';
+const AGENTE_NAVEGADOR =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * EXTERIORES, CON REINTENTOS. Porque los necesita.
+ *
+ * Su WAF rechaza alrededor de la MITAD de las peticiones, al azar y sin que
+ * importe el país: en una tanda de cinco, Polonia e Italia dieron 503 y
+ * Marruecos y Chequia dieron 200; a la vuelta, Polonia dio 200. Los rechazos
+ * son un 503 de 366 bytes —a veces inmediato, a veces después de veinte
+ * segundos— y los aciertos son 45-76 KB en segundo y medio.
+ *
+ * Con un solo intento, la mitad de las fichas de país salían diciendo "no se
+ * pudo leer la recomendación de Exteriores" siendo mentira: sí se podía, solo
+ * había que volver a llamar. Con tres intentos la probabilidad de fallar de
+ * verdad baja a algo así como una de cada ocho, y esto se consulta una vez por
+ * país y por viaje.
+ *
+ * El plazo de cada intento se queda en los doce segundos de siempre: un rechazo
+ * lento no puede comerse el tiempo de los otros dos intentos.
+ */
+async function pedirAExteriores(url, { intentos = 3 } = {}) {
+  let ultimo = null;
+  for (let i = 1; i <= intentos; i++) {
+    try {
+      return await pedir(url, { comoTexto: true, agente: AGENTE_NAVEGADOR });
+    } catch (err) {
+      ultimo = err;
+      if (i < intentos) {
+        console.log(`[avisos] Exteriores rechazó el intento ${i}/${intentos} (${err.message}). Repito.`);
+        await dormir(500 * i);
+      }
+    }
+  }
+  throw ultimo;
+}
+
+/** Petición con timeout y con el User-Agent que haga falta. */
+async function pedir(url, { comoTexto = false, agente = AGENTE_PROPIO } = {}) {
   const control = new AbortController();
   const reloj = setTimeout(() => control.abort(), TIMEOUT_MS);
   try {
     const respuesta = await fetch(url, {
       signal: control.signal,
       headers: {
-        'User-Agent': 'CreadorViajes/0.1 (generador de viajes personal)',
+        'User-Agent': agente,
         Accept: comoTexto ? 'text/html' : 'application/json',
       },
     });
@@ -252,6 +306,37 @@ function primerasFrases(texto, n = 3) {
  * sin nombre de país no hay URL— en vez de reventar: no tener recomendación no
  * es un error.
  */
+/**
+ * DE QUÉ COLOR ES ESTA RECOMENDACIÓN.
+ *
+ * La regla de antes era `/desaconseja/ -> alerta`, y era demasiado ingenua: en
+ * una ficha, "desaconsejar" aparece casi siempre referido a algo CONCRETO, no
+ * al país. Dos casos reales que salían marcados como "se desaconseja viajar":
+ *
+ *   Polonia: "…se desaconseja intentar acceder a la zona de exclusión que las
+ *            autoridades han establecido en la frontera con Bielorrusia."
+ *   Bosnia:  "…se desaconseja totalmente acercarse a precipicios y barrancos
+ *            cuando está lloviendo."
+ *
+ * Ninguna de las dos desaconseja el viaje. Pintar el país entero en rojo por un
+ * barranco con lluvia es peor que no decir nada: si la alerta salta siempre,
+ * deja de significar algo y se ignora justo el día que sí importa.
+ *
+ * Ahora solo es ALERTA cuando lo que se desaconseja es VIAJAR. Si se desaconseja
+ * otra cosa, sigue siendo algo que leer, pero como precaución.
+ */
+const DESACONSEJA_VIAJAR =
+  /desaconseja\w*\s+(?:totalmente\s+|encarecidamente\s+)?(?:todo\s+|cualquier\s+|los\s+|el\s+)?viaj/i;
+
+const HAY_PRECAUCION = /precauci[oó]n|precauciones|extrem[ae]|desaconseja/i;
+
+export function severidadDelTexto(texto) {
+  const t = String(texto ?? '');
+  if (DESACONSEJA_VIAJAR.test(t)) return 'alerta';
+  if (HAY_PRECAUCION.test(t)) return 'precaucion';
+  return 'info';
+}
+
 export async function textoDeExteriores(sitio) {
   if (sitio.codigoPais === 'ES') return null;
   if (!sitio.pais) return null;
@@ -264,7 +349,7 @@ export async function textoDeExteriores(sitio) {
   // llevarse por delante toda la ficha del país. Si no contesta, se dice y ya.
   let html;
   try {
-    html = await pedir(url, { comoTexto: true });
+    html = await pedirAExteriores(url);
   } catch (err) {
     console.warn(`[avisos] Exteriores no contestó para ${sitio.pais}: ${err.message}`);
     return null;
@@ -274,8 +359,29 @@ export async function textoDeExteriores(sitio) {
   // hasta el siguiente encabezado del acordeón. OJO: el atributo va SIN
   // comillas y dentro del h3 hay un <span> con la flecha, así que un patrón
   // estricto no casa con nada.
-  const inicio = html.search(/<h3[^>]*accordion__main[^>]*>\s*Seguridad/i);
-  if (inicio === -1) return null;
+  const inicio = html.search(/<h3[^>]*accordion__main[^>]*>\s*Seguridad/i);
+  if (inicio === -1) {
+    // NO ES LO MISMO "no se pudo leer" QUE "no hay nada que leer".
+    //
+    // Exteriores publica ficha completa de casi todos los países, pero de
+    // algunos solo tiene una página de aviso sin secciones: Chequia llega con
+    // 45 KB y un único encabezado, "Más información". Ahí no hay recomendación
+    // de seguridad que sacar, y decir "no se pudo leer" hace pensar en una
+    // avería nuestra cuando el que no la tiene es el Ministerio.
+    //
+    // Si la página trae el acordeón pero no la sección, es otra cosa: o han
+    // cambiado la maquetación o nos ha llegado una pantalla del WAF.
+    const tieneAcordeon = /accordion__main/i.test(html);
+    if (!tieneAcordeon) {
+      console.log(`[avisos] Exteriores no publica ficha de seguridad de ${sitio.pais}.`);
+      return { sinPublicar: true, url };
+    }
+    console.warn(
+      `[avisos] Exteriores: ${sitio.pais} llegó con ${html.length} bytes y acordeón, ` +
+        'pero sin sección "Seguridad".'
+    );
+    return null;
+  }
 
   const resto = html.slice(inicio);
   const siguiente = resto.slice(1).search(/<h3[^>]*accordion__main/i);
@@ -284,12 +390,7 @@ export async function textoDeExteriores(sitio) {
   const texto = aTextoPlano(trozo).replace(/^\s*Seguridad\s*/i, '');
   if (texto.length < 40) return null;
 
-  const enMinusculas = texto.toLowerCase();
-  let severidad = 'info';
-  if (/desaconseja/.test(enMinusculas)) severidad = 'alerta';
-  else if (/precauci[oó]n|precauciones|extrem[ae]/.test(enMinusculas)) severidad = 'precaucion';
-
-  return { texto, severidad, url, fuente: 'Ministerio de Asuntos Exteriores' };
+  return { texto, severidad: severidadDelTexto(texto), url, fuente: 'Ministerio de Asuntos Exteriores' };
 }
 
 /**
@@ -334,7 +435,7 @@ async function avisosDeSeguridad(sitio) {
   const paisUrl = encodeURIComponent(sitio.pais).replace(/%20/g, '+');
   const url = `${BASE_EXTERIORES}?trc=${paisUrl}`;
 
-  const html = await pedir(url, { comoTexto: true });
+  const html = await pedirAExteriores(url);
 
   // Recorte de la sección "Seguridad".
   // OJO con el HTML real: el atributo va SIN comillas (class=accordion__main)

@@ -325,6 +325,7 @@ export function migrarEsquema() {
   migracionPaisDeEtapa();
   migracionCiudadDeOrigen();
   migracionFichaRevisada();
+  migracionDatosDurosDeSitios();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -430,6 +431,52 @@ export function migrarEsquema() {
  * Va por VIAJE, no por pais: revisar los papeles de Polonia para el viaje de
  * septiembre no significa haberlos revisado para el de diciembre.
  */
+/**
+ * Migracion 25: los datos DUROS de cada sitio.
+ *
+ * Hasta ahora la ficha de un sitio era la IA (que lo propone) mas Wikipedia
+ * (que lo describe). Las dos cosas cuentan QUE es, y ninguna dice lo que hace
+ * falta para ir: cuanto cuesta, a que hora abre, cuanto se tarda en verlo.
+ *
+ * Esas columnas se llenan SOLO con lo que devuelva una busqueda real. La IA
+ * interviene para extraer los campos del texto de la busqueda, no para
+ * aportarlos: si la busqueda no trae el precio, la columna se queda vacia. Un
+ * precio inventado es peor que un hueco, porque el hueco se nota y el invento
+ * no.
+ *
+ * `datos_en` y `datos_fuente` son la trazabilidad: de donde salio y cuando. Con
+ * mas de treinta dias se siguen enseñando, pero avisando de que pueden haber
+ * cambiado.
+ *
+ * ES CATALOGO, no viaje: el horario del Castillo de San Jorge no depende de mi
+ * viaje, asi que el siguiente que vaya a Lisboa lo hereda sin volver a buscar.
+ */
+function migracionDatosDurosDeSitios() {
+  const CLAVE = '2026-09-datos-duros-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(sitios_lugar)').all().map((c) => c.name);
+  const anadir = (nombre, tipo) => {
+    if (!cols.includes(nombre)) db.exec(`ALTER TABLE sitios_lugar ADD COLUMN ${nombre} ${tipo}`);
+  };
+
+  anadir('precio', 'TEXT');
+  anadir('horarios', 'TEXT');
+  anadir('tiempo_visita', 'TEXT');
+  anadir('web', 'TEXT');
+  anadir('telefono', 'TEXT');
+  anadir('datos_en', 'TEXT');       // cuando se obtuvieron
+  anadir('datos_fuente', 'TEXT');   // de donde
+  // Los dias que cierra, ya interpretados. Lo rellena el aviso del lienzo la
+  // primera vez que hace falta, no la busqueda.
+  anadir('cierra_dias', 'TEXT');    // JSON: [0..6], domingo = 0
+  anadir('cierra_en', 'TEXT');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: datos duros de los sitios.');
+  return true;
+}
+
 function migracionFichaRevisada() {
   const CLAVE = '2026-09-ficha-revisada';
   if (yaAplicada(CLAVE)) return false;

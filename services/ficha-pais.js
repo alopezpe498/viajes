@@ -313,16 +313,29 @@ export async function generarFicha({ pais, codigoPais, fechaInicio = null, fecha
   }
 
   let exteriores = null;
+  let sinPublicar = false;
   if (resExteriores.status === 'fulfilled') {
-    exteriores = resExteriores.value;
-    fuentes.exteriores = exteriores !== null;
+    if (resExteriores.value?.sinPublicar) {
+      sinPublicar = true;
+      fuentes.exteriores = true;   // se consultó y contestó: no es una avería
+    } else {
+      exteriores = resExteriores.value;
+      fuentes.exteriores = exteriores !== null;
+    }
   } else {
     console.warn(`[ficha] Exteriores falló para ${pais}: ${resExteriores.reason?.message}`);
   }
-  // España no tiene ficha en Exteriores —es el país del que se sale— y eso no
-  // es un problema que haya que contar.
-  if (!exteriores && codigoPais !== 'ES') {
-    problemas.push('No se pudo leer la recomendación de Exteriores.');
+
+  // TRES DESENLACES Y TRES FRASES. España no tiene ficha porque es el país del
+  // que se sale; algunos países la tienen sin sección de seguridad; y a veces
+  // simplemente no se ha podido leer. Meterlos en el mismo saco hacía que la
+  // ficha dijera "no se pudo leer" cuando no había nada que leer.
+  if (codigoPais !== 'ES') {
+    if (sinPublicar) {
+      problemas.push(`Exteriores no publica recomendación de seguridad de ${pais}.`);
+    } else if (!exteriores) {
+      problemas.push('No se pudo leer la recomendación de Exteriores.');
+    }
   }
 
   const datos = { ...deLaIA, festivos, exteriores, fuentes, problemas };
