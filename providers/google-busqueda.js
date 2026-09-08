@@ -14,12 +14,20 @@
  * services/datos-sitios.js, y con la orden expresa de no inventarse lo que no
  * esté escrito.
  *
- * ESTO ES FRÁGIL Y CONVIENE SABERLO. El bloque de respuesta con IA de Google no
- * tiene un selector estable ni documentado, y cambia cada pocos meses. Por eso
- * se buscan varios contenedores conocidos y, si ninguno aparece, se cae al
- * texto de los resultados normales. Cuando Google cambie la maqueta, esto
- * devolverá menos datos —no datos falsos—, y las fichas se quedarán con huecos,
- * que es el fallo bueno.
+ * SE VA DIRECTO AL MODO IA por URL (`udm=50`), sin pasar por el cuadro de
+ * búsqueda. La versión anterior escribía la pregunta en la portada y esperaba a
+ * que apareciera el bloque de respuesta con IA entre los resultados normales;
+ * ese bloque salía a veces y a veces no, y cuando no salía se tiraba de los
+ * resultados corrientes —fragmentos sueltos de cada web—. En París eso daba 2
+ * sitios de 10.
+ *
+ * Y LA RESPUESTA VIENE EN STREAMING: se escribe sola durante varios segundos.
+ * Leer el DOM al cargar devuelve el primer párrafo, así que se espera a que el
+ * texto deje de crecer antes de extraer nada.
+ *
+ * Sigue siendo frágil, y conviene saberlo: ni la URL ni los contenedores están
+ * documentados. Cuando Google cambie la maqueta, esto devolverá menos datos —no
+ * datos falsos—, y las fichas se quedarán con huecos, que es el fallo bueno.
  *
  * EL CAPTCHA NO SE ESPERA. `comprobarCaptcha` de lib/browser.js se queda
  * esperando a que alguien lo resuelva y pulse Enter, y eso aquí colgaría la cola
@@ -30,11 +38,23 @@ import {
   abrirNavegador,
   cerrarNavegador,
   dormir,
-  pausaHumana,
   TIMEOUT_LARGO,
 } from '../lib/browser.js';
 
-const BASE = 'https://www.google.com';
+/**
+ * EL MODO IA DE GOOGLE, POR URL DIRECTA.
+ *
+ * `udm=50` abre el Modo IA con la consulta ya procesada, sin pasar por el
+ * cuadro de búsqueda. Antes se escribía la pregunta en la caja de la portada y
+ * se esperaba a que apareciera el bloque de respuesta con IA entre los
+ * resultados normales; ese bloque aparecía a veces y a veces no, y cuando no
+ * aparecía se tiraba de los resultados corrientes, que traen fragmentos sueltos
+ * de cada web: en la prueba de París salieron 2 sitios de 10.
+ *
+ * Con esta URL la tabla viene completa, con tramos de precio, horarios (días de
+ * cierre incluidos) y tiempos de visita.
+ */
+const BASE_MODO_IA = 'https://www.google.com/search?udm=50&q=';
 
 /** Un captcha aquí no se resuelve: se cuenta y se sale. */
 export class ErrorCaptcha extends Error {
@@ -100,9 +120,13 @@ export function componerPregunta(ciudad, sitios) {
 /**
  * Los contenedores donde Google ha ido metiendo su respuesta con IA.
  *
- * Van de más específico a más general. Ninguno está documentado y todos son
- * susceptibles de desaparecer, así que se prueban en orden y se usa el primero
- * que traiga texto suficiente.
+ * Ninguno está documentado y todos son susceptibles de desaparecer, así que se
+ * prueban todos y se usa EL MÁS LARGO, no el primero que traiga algo. Esto no
+ * es una manía: `div[aria-label*="IA" i]` casa con trozos de la interfaz del
+ * Modo IA —la cabecera de la conversación, sin ir más lejos— que traen 400
+ * caracteres y no crecen nunca. Cogiendo el primero, la espera de streaming los
+ * daba por respuesta terminada a los dos segundos y la tabla se quedaba sin
+ * leer. Ese era el fallo de los 2 sitios de 10.
  */
 const BLOQUES_IA = [
   '[data-attrid="AIOverview"]',
@@ -110,10 +134,82 @@ const BLOQUES_IA = [
   '#m-x-content',
   'div[aria-label*="IA" i]',
   'div[aria-label*="AI Overview" i]',
+  '[role="main"]',
+  '#main',
 ];
 
 /** Lo que se considera "ha contestado algo": menos que esto no vale la pena. */
 const MINIMO_UTIL = 200;
+
+/** Techo de espera del streaming. Pasado esto, se usa lo que haya. */
+const TOPE_STREAMING_MS = 45_000;
+/** Cada cuánto se mira si el texto ha crecido. */
+const LATIDO_MS = 800;
+/**
+ * Cuántas miradas seguidas sin crecer para darlo por terminado.
+ *
+ * Ocho, o sea seis segundos y pico, y no es exageración: el streaming SE PARA A
+ * MEDIAS. Midiendo París cada 0,8 s la curva fue 708, 1030 —y ahí cuatro
+ * segundos clavado—, 3442, 4210. Con una ventana corta se aceptaba el 1030, que
+ * es el enunciado y la primera fila, y de ahí salían dos sitios de diez. La
+ * ventana tiene que ser más larga que la pausa más larga; seis segundos le dan
+ * margen de sobra a los cuatro medidos.
+ */
+const QUIETO_PARA_TERMINAR = 8;
+/** Cuántas aguantando quieto sin haber crecido nunca para aceptarlo igual. */
+const QUIETO_SIN_CRECER = 15;
+
+/**
+ * ESPERA A QUE LA RESPUESTA DEJE DE CRECER.
+ *
+ * El Modo IA escribe en streaming: el texto va apareciendo durante varios
+ * segundos. Pero antes de empezar a escribir, Google ya ha pintado la pregunta
+ * —dos veces, la cabecera de la conversación y el enunciado— y esa cabecera se
+ * queda quieta un buen rato. Medir solo "el texto no ha crecido" daba la
+ * respuesta por terminada a los tres segundos, con el enunciado y nada más.
+ *
+ * Así que se exige que HAYA CRECIDO por encima de la primera medida antes de
+ * aceptar ninguna quietud. Eso se calibra solo: la primera medida es el
+ * enunciado, y la respuesta, cuando llega, siempre lo supera. No hace falta
+ * saber cuánto ocupa la pregunta ni acertar un mínimo a ojo.
+ *
+ * Y una salida por si la respuesta ya estaba entera en la primera mirada, que
+ * con la caché de Google puede pasar: si el texto lleva mucho rato quieto sin
+ * haber crecido, se acepta igual. Vale más leer de más que colgarse.
+ */
+async function esperarAQueTermine(pagina, leer) {
+  const empezo = Date.now();
+  let inicial = -1;
+  let anterior = -1;
+  let quieto = 0;
+
+  while (Date.now() - empezo < TOPE_STREAMING_MS) {
+    await dormir(LATIDO_MS);
+    const largo = (await leer().catch(() => '')).length;
+    if (inicial < 0) inicial = largo;
+
+    if (largo > 0 && largo === anterior) quieto += 1;
+    else quieto = 0;
+    anterior = largo;
+
+    const crecio = largo > inicial;
+    const quietoDeSobra = quieto >= QUIETO_SIN_CRECER;
+
+    if (largo >= MINIMO_UTIL && quieto >= QUIETO_PARA_TERMINAR && (crecio || quietoDeSobra)) {
+      console.log(
+        `[google-busqueda] respuesta estable en ${((Date.now() - empezo) / 1000).toFixed(1)} s ` +
+          `(${largo} caracteres${crecio ? '' : ', sin crecer desde el principio'}).`
+      );
+      return true;
+    }
+  }
+
+  console.warn(
+    `[google-busqueda] la respuesta seguía creciendo a los ${TOPE_STREAMING_MS / 1000} s: ` +
+      'uso lo que haya llegado.'
+  );
+  return false;
+}
 
 /**
  * Pregunta a Google y devuelve el texto de la respuesta.
@@ -127,61 +223,58 @@ export async function buscarTablaDeSitios({ ciudad, sitios, headless = false }) 
   }
 
   const pregunta = componerPregunta(ciudad, limpios);
+  const url = BASE_MODO_IA + encodeURIComponent(pregunta);
   console.log(`[google-busqueda] ${limpios.length} sitios de ${ciudad}, en una sola consulta.`);
 
   const { contexto, pagina } = await abrirNavegador({ headless });
 
   try {
-    await pagina.goto(BASE, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
+    // DIRECTOS AL MODO IA. Sin portada, sin escribir en la caja y sin pulsar
+    // Enter: la consulta va en la URL y Google la procesa al cargar.
+    await pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
     await aceptarCookies(pagina);
 
     if (await hayCaptcha(pagina)) {
-      throw new ErrorCaptcha('Google pidió verificación nada más entrar.');
+      throw new ErrorCaptcha('Google pidió verificación al abrir el Modo IA.');
     }
 
-    // Se escribe con pausas, no de golpe: un `fill` instantáneo de trescientos
-    // caracteres es de las cosas que disparan la verificación.
-    const caja = pagina.locator('textarea[name="q"], input[name="q"]').first();
-    await caja.waitFor({ state: 'visible', timeout: TIMEOUT_LARGO });
-    await caja.click();
-    await caja.type(pregunta, { delay: 12 });
-    await pausaHumana(400, 900);
-    await caja.press('Enter');
+    // DE DÓNDE SE LEE. Se miran todos los contenedores conocidos y se coge el
+    // que más texto traiga, no el primero que traiga algo. El Modo IA es una
+    // página dedicada: toda la zona principal ES la respuesta, y varios de los
+    // selectores casan con trozos pequeños de la interfaz que nunca crecen.
+    // Que se cuele algo de menú alrededor no estorba: quien lo lee después es
+    // la IA, que sabe distinguir una tabla de una barra de navegación.
+    const dondeLeer = async () => {
+      let mejor = '';
+      for (const sel of BLOQUES_IA) {
+        const b = pagina.locator(sel).first();
+        if (!(await b.count().catch(() => 0))) continue;
+        const t = (await b.innerText().catch(() => '')).trim();
+        if (t.length > mejor.length) mejor = t;
+      }
+      return mejor;
+    };
 
-    await pagina.waitForLoadState('domcontentloaded', { timeout: TIMEOUT_LARGO });
+    // LA ESPERA, que es el arreglo. La respuesta se escribe en streaming y
+    // leerla nada más cargar devolvía el primer párrafo: con eso salían 2 de 10
+    // sitios. Se espera a que el texto deje de crecer.
+    await esperarAQueTermine(pagina, dondeLeer);
 
     if (await hayCaptcha(pagina)) {
-      throw new ErrorCaptcha('Google pidió verificación después de buscar.');
+      throw new ErrorCaptcha('Google pidió verificación mientras respondía.');
     }
 
-    // La respuesta con IA tarda en montarse: aparece después de los resultados
-    // normales y se va rellenando sola. No hay evento que avisar, así que se le
-    // dan unos segundos y se mira qué hay.
-    await dormir(6000);
+    const texto = await dondeLeer();
 
-    for (const sel of BLOQUES_IA) {
-      const bloque = pagina.locator(sel).first();
-      if (!(await bloque.count().catch(() => 0))) continue;
-
-      const texto = (await bloque.innerText().catch(() => '')).trim();
-      if (texto.length >= MINIMO_UTIL) {
-        console.log(`[google-busqueda] respuesta con IA (${sel}): ${texto.length} caracteres.`);
-        return { texto, fuente: 'google-ia', url: pagina.url() };
-      }
+    if (texto.length < MINIMO_UTIL) {
+      throw new Error(
+        `El Modo IA devolvió muy poco (${texto.length} caracteres). ` +
+          'O no ha respondido, o ha cambiado la maqueta.'
+      );
     }
 
-    // SIN BLOQUE DE IA, LOS RESULTADOS NORMALES. Traen menos y peor —fragmentos
-    // sueltos de cada web— pero de ahí también salen horarios y precios, y es
-    // mejor que volver con las manos vacías.
-    const resultados = pagina.locator('#search, #rso').first();
-    const texto = (await resultados.innerText().catch(() => '')).trim();
-
-    if (texto.length >= MINIMO_UTIL) {
-      console.log(`[google-busqueda] sin bloque de IA; uso los resultados: ${texto.length} caracteres.`);
-      return { texto, fuente: 'google-resultados', url: pagina.url() };
-    }
-
-    throw new Error('Google no devolvió nada aprovechable.');
+    console.log(`[google-busqueda] Modo IA: ${texto.length} caracteres.`);
+    return { texto, fuente: 'google-modo-ia', url: pagina.url() };
   } finally {
     await cerrarNavegador(contexto);
   }
