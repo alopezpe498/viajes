@@ -663,16 +663,14 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       }
     }
 
-    // CON EL CHECK PUESTO NO SE VA AL MAPA: se pone a montar el viaje y se
-    // enseña el progreso. Es la diferencia entera entre los dos modos, y por eso
-    // va aquí, en el único sitio por el que pasan los dos.
-    if (quiereAutomatico) {
-      lanzarOrquestador(viaje.id);
-      return res.redirect(`/viajes/${viaje.id}/orquestador`);
-    }
-
-    // Se vuelve a donde estabas: a la ruta si venias de ella, y al mapamundi si
-    // el viaje acaba de nacer y todavia no tiene destino.
+    // EL MODO AUTOMATICO NO ARRANCA AQUI, y esto es lo importante.
+    //
+    // Al guardar la configuracion el viaje todavia no tiene destino: se elige
+    // despues, en el mapa. Lanzar el orquestador en este punto lo ponia a montar
+    // un viaje a ninguna parte. Arranca cuando se elige el destino, que es el
+    // primer momento en que hay algo que montar.
+    //
+    // Asi que aqui se guarda el check y se sigue el camino de siempre: al mapa.
     return res.redirect(urlVolver);
   }
 
@@ -1449,6 +1447,22 @@ router.post('/api/destinos/elegir', async (req, res) => {
       lat: Number(req.body.lat),
       lon: Number(req.body.lon),
     });
+
+    // EL VIAJE AUTOMATICO EMPIEZA AQUI.
+    //
+    // Este es el primer momento en que hay un viaje que montar: ya hay fechas,
+    // viajeros, preferencias y —ahora— destino. Se pone en marcha y se lleva a
+    // la pantalla de progreso.
+    //
+    // Va ANTES de mirar el nivel del destino a proposito: en automatico da igual
+    // que sea un pais o una ciudad, porque las paradas las decide la fase 1. Si
+    // se dejara pasar por la rama de "ciudad", se crearia una etapa a mano que
+    // la fase 1 tendria que borrar acto seguido.
+    if (viaje.automatico) {
+      lanzarOrquestador(viaje.id);
+      console.log(`[rutas] Viaje #${viaje.id}: destino «${nombre}» elegido; arranca el orquestador.`);
+      return res.json({ modo: 'orquestador', url: `/viajes/${viaje.id}/orquestador` });
+    }
 
     // EL NIVEL DEL DESTINO DECIDE A DONDE SE VA.
     //
