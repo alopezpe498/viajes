@@ -36,6 +36,7 @@ import { sincronizarEtapaUnica } from './etapas.js';
 import { medioElegidoDeTramo } from './movilidad.js';
 import { direccionesDe, direccionDe, volcarDireccionDeHotel } from './direcciones.js';
 import { datosDeSitio, buscandoDatos } from './datos-sitios.js';
+import { busquedasDeEtapa } from './busquedas-sitios.js';
 
 /** Los tipos de transporte que se pueden apuntar a mano. */
 export const TIPOS_TRANSPORTE = [
@@ -177,6 +178,11 @@ export function queVerDeEtapa(contexto) {
       datos: null,
       id: p.id,
       origen: 'punto',
+      // Estos nacieron antes de que hubiera pestañas y no los reparte nadie:
+      // son lo que hay que ver, así que van con los imprescindibles.
+      bloque: 'imprescindibles',
+      categoria: null,
+      busqueda: null,
       nombre: p.nombre,
       descripcion: p.descripcion_corta ?? p.por_que,
       imagen_url: p.imagen_url,
@@ -200,6 +206,11 @@ export function queVerDeEtapa(contexto) {
       ).map((s) => ({
         id: s.id,
         origen: 'sitio',
+        // En qué pestaña vive y qué etiqueta lleva. Los dos los pone la IA: el
+        // bloque, según en qué tanda salió; la categoría, de una lista cerrada.
+        bloque: s.bloque || 'imprescindibles',
+        categoria: s.categoria ?? null,
+        busqueda: s.busqueda ?? null,
         nombre: s.nombre,
         descripcion: s.descripcion,
         imagen_url: s.imagen_url,
@@ -248,21 +259,52 @@ export function queVerDeEtapa(contexto) {
   const dirSitios = direccionesDe('sitio', delPunto.map((x) => x.id));
   const dirActividades = direccionesDe('actividad', excursiones.map((x) => x.id));
 
+  // LOS CUATRO CAJONES. La pantalla pinta una pestaña por cada uno, así que se
+  // reparten aquí y no en la plantilla: una plantilla filtrando cuatro veces la
+  // misma lista es cuatro sitios donde equivocarse.
+  //
+  // «Para niños» solo existe si el viaje lleva niños, y se decide por el viaje y
+  // no por si hay fichas: un viaje con niños al que la IA no le encontró nada
+  // infantil tiene que enseñar la pestaña vacía, porque la pregunta se hizo.
+  const fichas = sitios.map((s) => ({
+    ...s,
+    direccion: (s.origen === 'punto' ? dirPuntos : dirSitios).get(s.id) ?? null,
+    ...conEstado(sitios, s.wikipedia_url, s.nombre),
+  }));
+
+  const hayNinos = Number(viaje.ninos) > 0;
+  const bloques = {
+    imprescindibles: fichas.filter((s) => s.bloque === 'imprescindibles'),
+    otros: fichas.filter((s) => s.bloque === 'otros'),
+    ninos: fichas.filter((s) => s.bloque === 'ninos'),
+    busqueda: fichas.filter((s) => s.bloque === 'busqueda'),
+  };
+
   return {
     // Hay ficha que enseñar si la parada trae sitios de cualquiera de las dos
     // fuentes; que el punto esté "investigado" ya no es la única vía.
     investigada: Boolean(punto?.investigado_en) || delDestino.length > 0,
+    bloques,
+    hayNinos,
+    // ¿Se puede buscar en esta parada? Solo si tiene ficha propia en el
+    // catálogo, que es donde se guardarían las fichas que salgan. Una parada
+    // que cuelga de un destino de nivel ciudad no la tiene, y sin esto el
+    // formulario aceptaba el texto y el trabajo reventaba después, en la cola,
+    // donde el usuario no lo ve.
+    puedeBuscar: Boolean(punto),
+    // Lo que el usuario se ha buscado por su cuenta: las consultas, su estado y
+    // sus propuestas pendientes de elegir. Las fichas ya van en bloques.busqueda.
+    busquedas: busquedasDeEtapa(etapa),
     // ¿Se están buscando ahora mismo los datos duros? La ficha lo necesita para
     // decir "cargando…" en los huecos en vez de "sin datos", que son cosas
     // distintas: una espera y un resultado.
     buscandoDatos: Boolean(punto && buscandoDatos(viaje.id, punto.id)),
-    sitios: sitios.map((s) => ({
-      ...s,
-      // La dirección vive con la fila del CATÁLOGO de la que sale la tarjeta, y
-      // `origen` dice de cuál de las dos tablas es.
-      direccion: (s.origen === 'punto' ? dirPuntos : dirSitios).get(s.id) ?? null,
-      ...conEstado(sitios, s.wikipedia_url, s.nombre),
-    })),
+    // La lista entera, sin repartir. La siguen usando el contador de la
+    // subpestaña, el mapa y el lienzo, que no saben de bloques.
+    //
+    // La dirección vive con la fila del CATÁLOGO de la que sale la tarjeta, y
+    // `origen` dice de cuál de las dos tablas es.
+    sitios: fichas,
     excursiones: excursiones.map((a) => {
       // La ficha completa, si alguien la pidió alguna vez. Es del CATÁLOGO, así
       // que puede venir de otro viaje: se buscó una vez y vale para siempre.

@@ -230,20 +230,69 @@ const ICONO_TIPO = {
         <% }) %>
       </div>
 
-      <%# --- Sitios: los de la ficha profunda de la ciudad --- %>
-      <section class="subpanel" id="sub-sitios" role="tabpanel" <%= vista.subpestana === 'sub-sitios' ? '' : 'hidden' %>>
-        <% if (!queVer.sitios.length) { %>
-          <p class="candidatos__vacio">
-            <%= preparando.trabajando
-                  ? 'Buscando qué hay que ver aquí…'
-                  : 'Todavía no hay sitios de esta ciudad en el catálogo.' %>
-          </p>
-        <% } %>
+      <%# --- Sitios: los de la ficha profunda de la ciudad ---
+          Cuatro cajones, y no una lista. Una lista de treinta tarjetas no se
+          recorre: los imprescindibles quedaban enterrados entre lo de segundo
+          nivel, y lo de niños no aparecía por ningún lado.
 
-        <div class="rejilla-fichas">
-          <% queVer.sitios.forEach(s => { %>
-            <%- include('parciales/ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa, queVer }) %>
+          "Para niños" solo sale si el viaje lleva niños, y sale aunque esté
+          vacía: la pregunta se ha hecho, y una pestaña vacía dice "aquí no hay
+          nada infantil", que es una respuesta. Que no exista no dice nada. %>
+      <section class="subpanel" id="sub-sitios" role="tabpanel" <%= vista.subpestana === 'sub-sitios' ? '' : 'hidden' %>>
+        <% const BLOQUES_VISTA = [
+             { clave: 'imprescindibles', etiqueta: 'Imprescindibles', icono: 'ti-star' },
+             { clave: 'otros',           etiqueta: 'Otros sitios',    icono: 'ti-map-pin' },
+             ...(queVer.hayNinos
+                   ? [{ clave: 'ninos', etiqueta: 'Para niños', icono: 'ti-mood-kid' }]
+                   : []),
+             { clave: 'busqueda',        etiqueta: 'Mis búsquedas', icono: 'ti-search' },
+           ]; %>
+
+        <div class="bloque-pestanas" role="tablist" aria-label="Tipos de sitio">
+          <% BLOQUES_VISTA.forEach((b, i) => { %>
+            <button class="bloque-pestana <%= vista.bloque === b.clave ? 'bloque-pestana--activa' : '' %>"
+                    type="button" role="tab"
+                    aria-selected="<%= vista.bloque === b.clave %>"
+                    data-bloque-panel="bloque-<%= b.clave %>">
+              <i class="ti <%= b.icono %>" aria-hidden="true"></i>
+              <%= b.etiqueta %>
+              <span class="bloque-pestana__n"><%= (queVer.bloques[b.clave] || []).length %></span>
+            </button>
           <% }) %>
+        </div>
+
+        <% BLOQUES_VISTA.filter(b => b.clave !== 'busqueda').forEach(b => { %>
+          <div class="bloque-panel" id="bloque-<%= b.clave %>" role="tabpanel"
+               <%= vista.bloque === b.clave ? '' : 'hidden' %>>
+            <% if (!queVer.bloques[b.clave].length) { %>
+              <p class="candidatos__vacio">
+                <% if (preparando.trabajando) { %>
+                  Buscando qué hay que ver aquí…
+                <% } else if (b.clave === 'ninos') { %>
+                  No he encontrado sitios pensados para niños en <%= etapa.nombre_ciudad %>.
+                <% } else if (b.clave === 'otros') { %>
+                  De momento solo están los imprescindibles.
+                <% } else { %>
+                  Todavía no hay sitios de esta ciudad en el catálogo.
+                <% } %>
+              </p>
+            <% } %>
+
+            <div class="rejilla-fichas">
+              <% queVer.bloques[b.clave].forEach(s => { %>
+                <%- include('parciales/ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa, queVer }) %>
+              <% }) %>
+            </div>
+          </div>
+        <% }) %>
+
+        <%# --- Mis búsquedas: la única pestaña que empieza vacía --- %>
+        <div class="bloque-panel" id="bloque-busqueda" role="tabpanel"
+             <%= vista.bloque === 'busqueda' ? '' : 'hidden' %>
+             data-etapa-busquedas="<%= etapa.id %>">
+          <%- include('parciales/mis-busquedas', {
+                viaje, etapa, queVer, colocaciones, diasDeLaEtapa,
+              }) %>
         </div>
       </section>
 

@@ -1,0 +1,150 @@
+<%
+/**
+ * VIAJE AUTOMÁTICO: el interruptor y todo lo que hay que decidir antes.
+ *
+ * Con el check apagado esto no se ve y el viaje va como siempre. Encendido, la
+ * sección se despliega y TODOS sus campos son obligatorios, porque el
+ * orquestador trabaja solo y en segundo plano: no puede pararse a la mitad a
+ * preguntarte en qué barrio quieres dormir.
+ *
+ * Son los mismos filtros que ya existen en el buscador de alojamiento y en el de
+ * vuelos, preguntados antes en vez de después.
+ *
+ * Espera: viaje, auto (la config ya normalizada), opcionesAuto, categorias,
+ *         viajerosTotales, viajerosParaFamiliar.
+ */
+const marcado = (a, b) => (a === b ? 'checked' : '');
+
+/** Un grupo de opciones excluyentes, pintadas como píldoras. */
+function grupo(nombre, opciones, elegido) {
+  return opciones
+    .map(
+      (o) => `
+      <label class="auto-opcion">
+        <input type="radio" name="${nombre}" value="${o.valor}" ${o.valor === elegido ? 'checked' : ''}>
+        <span>${o.etiqueta}</span>
+      </label>`
+    )
+    .join('');
+}
+
+const hayNinos = viajerosTotales >= viajerosParaFamiliar;
+%>
+
+<%# ======================= VIAJE AUTOMÁTICO ======================= %>
+<div class="tarjeta">
+  <h2>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.5l5.6 1.9l-5.6 1.9l-1.9 5.6l-1.9 -5.6l-5.6 -1.9l5.6 -1.9z"/><path d="M19 15l.7 2l2 .7l-2 .7l-.7 2l-.7 -2l-2 -.7l2 -.7z"/></svg>
+    Viaje automático
+  </h2>
+  <div class="sub">Que lo monte todo por mí: ciudades, vuelos, hoteles, sitios y el lienzo</div>
+
+  <div class="cuerpo">
+    <label class="auto-interruptor">
+      <input type="checkbox" name="automatico" id="check-automatico" value="1"
+             <%= viaje.automatico ? 'checked' : '' %>>
+      <span class="auto-interruptor__texto">
+        <strong>Viaje automático (IA)</strong>
+        <span class="auto-nota">
+          Al guardar, en vez de ir al mapa de ciudades se pone a montarlo en
+          segundo plano y te enseño el progreso.
+        </span>
+      </span>
+    </label>
+
+    <%# Todo lo de dentro solo cuenta con el check puesto. Se pinta siempre para
+        que el navegador conserve lo escrito al marcar y desmarcar. %>
+    <div class="auto-seccion" id="auto-seccion" <%= viaje.automatico ? '' : 'hidden' %>>
+
+      <p class="auto-aviso">
+        Con el viaje automático hay que decidir esto ahora: mientras monta el
+        viaje no puedo preguntarte nada.
+      </p>
+
+      <%# --- ALOJAMIENTO ------------------------------------------------ %>
+      <h3 class="auto-titulo"><i class="ti ti-bed" aria-hidden="true"></i> Alojamiento</h3>
+
+      <div class="auto-campo">
+        <label>Nivel de precio</label>
+        <div class="auto-opciones"><%- grupo('auto_nivel_precio', opcionesAuto.nivelPrecio, auto.nivelPrecio) %></div>
+        <div class="auto-nota">No es una cifra: «económico» no cuesta lo mismo en Oporto que en Zúrich</div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Zona</label>
+        <div class="auto-opciones"><%- grupo('auto_zona', opcionesAuto.zona, auto.zona) %></div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Tipo</label>
+        <div class="auto-opciones"><%- grupo('auto_tipo_alojamiento', opcionesAuto.tipoAlojamiento, auto.tipoAlojamiento) %></div>
+      </div>
+
+      <%# La habitación familiar solo se pregunta si hace falta. Con dos
+          viajeros la pregunta sobra y encima habría que contestarla. %>
+      <div class="auto-campo" id="auto-campo-familiar" <%= hayNinos ? '' : 'hidden' %>>
+        <label>Habitación familiar</label>
+        <div class="auto-opciones"><%- grupo('auto_habitacion_familiar', opcionesAuto.siNo, auto.habitacionFamiliar) %></div>
+        <div class="auto-nota">Sois <%= viajerosTotales %>, así que puede hacer falta</div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Desayuno incluido</label>
+        <div class="auto-opciones"><%- grupo('auto_desayuno', opcionesAuto.siNo, auto.desayuno) %></div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Cancelación gratuita</label>
+        <div class="auto-opciones"><%- grupo('auto_cancelacion', opcionesAuto.siNo, auto.cancelacionGratis) %></div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Valoración mínima</label>
+        <div class="auto-opciones"><%- grupo('auto_nota_minima', opcionesAuto.notaMinima, auto.notaMinima) %></div>
+      </div>
+
+      <%# --- VUELOS ------------------------------------------------------ %>
+      <h3 class="auto-titulo"><i class="ti ti-plane-departure" aria-hidden="true"></i> Vuelos</h3>
+
+      <div class="auto-campo">
+        <label>Escalas</label>
+        <div class="auto-opciones"><%- grupo('auto_escalas', opcionesAuto.escalas, auto.escalas) %></div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Franja horaria de la ida</label>
+        <div class="auto-opciones"><%- grupo('auto_franja_ida', opcionesAuto.franja, auto.franjaIda) %></div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Franja horaria de la vuelta</label>
+        <div class="auto-opciones"><%- grupo('auto_franja_vuelta', opcionesAuto.franja, auto.franjaVuelta) %></div>
+      </div>
+
+      <%# --- INTERESES --------------------------------------------------- %>
+      <h3 class="auto-titulo"><i class="ti ti-heart" aria-hidden="true"></i> Qué os interesa</h3>
+
+      <div class="auto-campo">
+        <label for="auto_intereses">En tus palabras</label>
+        <input type="text" id="auto_intereses" name="auto_intereses" maxlength="300"
+               autocomplete="off"
+               placeholder="Arquitectura modernista, mercados, sitios donde no haya colas…"
+               value="<%= auto.intereses %>">
+        <div class="auto-nota">Una frase basta. Con esto y las categorías me hago una idea</div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Categorías</label>
+        <div class="auto-chips">
+          <% categorias.forEach(c => { %>
+            <label class="auto-chip">
+              <input type="checkbox" name="auto_categorias" value="<%= c %>"
+                     <%= auto.categorias.includes(c) ? 'checked' : '' %>>
+              <span><%= c %></span>
+            </label>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,175 @@
+<%
+/**
+ * MIS BÚSQUEDAS: la pestaña que llena el usuario.
+ *
+ * Las otras tres las llena la aplicación. Esta empieza vacía, con un campo de
+ * texto, y crece con lo que uno se busque: "búnkers de Berlín", "el mirador ese
+ * de la peli".
+ *
+ * Cada búsqueda se pinta con el estado en el que esté, y hay uno que no es ni
+ * trabajando ni terminado: ESPERANDO. Cuando lo que se pidió era un tema, la IA
+ * propone hasta seis nombres y se para ahí, porque generar seis fichas que nadie
+ * ha pedido es tirar seis búsquedas de Google. Ese estado pinta casillas.
+ *
+ * Espera: viaje, etapa, queVer, colocaciones, diasDeLaEtapa.
+ */
+const misBusquedas = queVer.busquedas.busquedas;
+const fichas = queVer.bloques.busqueda;
+
+// Las fichas se agrupan por la consulta que las trajo, para que se lea "esto
+// salió de aquello" y no una rejilla suelta sin contexto.
+const fichasPorTexto = new Map();
+for (const f of fichas) {
+  const k = f.busqueda ?? '';
+  if (!fichasPorTexto.has(k)) fichasPorTexto.set(k, []);
+  fichasPorTexto.get(k).push(f);
+}
+
+// LAS HEREDADAS. El catálogo de una ciudad es de la casa, no de un viaje: si en
+// otro viaje a París alguien buscó "librerías históricas", esas fichas siguen
+// ahí. La búsqueda no, porque esa sí es de aquel viaje.
+//
+// Sin esto se contaban en la pestaña pero no las pintaba nadie: el contador
+// decía tres y el panel decía "aquí no hay nada". Se enseñan aparte, diciendo
+// de dónde salen, que además es lo que hace que el aviso de "esto ya lo tenías"
+// señale a algo que se puede ver.
+const mias = new Set(misBusquedas.map((b) => b.texto));
+const heredadas = fichas.filter((f) => !mias.has(f.busqueda));
+%>
+
+<% if (!queVer.puedeBuscar) { %>
+  <%# Esta parada no tiene ficha propia en el catálogo, así que no hay dónde
+      guardar lo que se busque. Se dice aquí y no se pinta el formulario:
+      dejar escribir para fallar después, en la cola, es peor. %>
+  <p class="candidatos__vacio">
+    Esta parada todavía no tiene ficha propia, así que aquí no puedo guardar lo
+    que busques. Abre <strong><%= etapa.nombre_ciudad %></strong> desde el mapa de
+    destinos para que se le haga la ficha, y vuelve.
+  </p>
+<% } else { %>
+<form class="buscador-sitios" data-buscar-sitios="<%= etapa.id %>">
+  <label class="buscador-sitios__campo">
+    <i class="ti ti-search" aria-hidden="true"></i>
+    <input type="text" name="texto" maxlength="120" autocomplete="off"
+           placeholder="Un sitio, o un tema: «búnkers», «miradores»…"
+           aria-label="Qué quieres buscar en <%= etapa.nombre_ciudad %>">
+  </label>
+  <button class="boton" type="submit">
+    <i class="ti ti-sparkles" aria-hidden="true"></i> Buscar
+  </button>
+</form>
+
+<p class="buscador-sitios__pista">
+  Si escribes un sitio concreto, te hago su ficha. Si escribes un tema, te
+  propongo unos cuantos y eliges.
+</p>
+
+<p class="buscador-sitios__error" data-error-busqueda hidden></p>
+<% } %>
+
+<% if (!misBusquedas.length && !heredadas.length) { %>
+  <p class="candidatos__vacio">
+    Aquí no hay nada hasta que busques algo. Lo que salga se queda en esta
+    pestaña, con su ficha completa como las demás.
+  </p>
+<% } %>
+
+<% misBusquedas.forEach(b => { %>
+  <article class="busqueda <%= b.esperando ? 'busqueda--esperando' : '' %>" data-busqueda="<%= b.id %>">
+    <header class="busqueda__cabecera">
+      <h4 class="busqueda__texto">
+        <i class="ti ti-quote" aria-hidden="true"></i> <%= b.texto %>
+      </h4>
+
+      <div class="busqueda__estado">
+        <% if (b.trabajando) { %>
+          <span class="rueda" aria-hidden="true"></span>
+          <%= b.estado === 'generando' ? 'Haciendo las fichas…' : 'Mirando qué me pides…' %>
+        <% } else if (b.esperando) { %>
+          <i class="ti ti-list-check" aria-hidden="true"></i> Elige cuáles quieres
+        <% } else if (b.estado === 'error') { %>
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i> No se pudo
+        <% } else { %>
+          <i class="ti ti-check" aria-hidden="true"></i>
+          <%= b.fichas %> <%= b.fichas === 1 ? 'ficha' : 'fichas' %>
+        <% } %>
+
+        <button class="busqueda__borrar" type="button" data-borrar-busqueda="<%= b.id %>"
+                title="Quitar esta búsqueda de la lista" aria-label="Quitar «<%= b.texto %>»">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+    </header>
+
+    <% if (b.mensajeError) { %>
+      <p class="busqueda__fallo"><%= b.mensajeError %></p>
+    <% } %>
+
+    <%# Lo que ya estaba en otra pestaña y por eso no se ha repetido. No es un
+        fallo, así que no se pinta como tal: es el motivo de que salgan menos
+        fichas de las que uno esperaba. %>
+    <% if (b.nota) { %>
+      <p class="busqueda__nota">
+        <i class="ti ti-info-circle" aria-hidden="true"></i> <%= b.nota %>
+      </p>
+    <% } %>
+
+    <%# LAS PROPUESTAS, cuando lo pedido era un tema. Se marcan y se generan. %>
+    <% if (b.esperando && b.propuestas.length) { %>
+      <form class="propuestas" data-elegir="<%= b.id %>">
+        <% b.propuestas.forEach((p, i) => { %>
+          <label class="propuesta">
+            <input type="checkbox" name="nombres" value="<%= p.nombre %>" <%= i === 0 ? 'checked' : '' %>>
+            <span class="propuesta__cuerpo">
+              <strong class="propuesta__nombre"><%= p.nombre %></strong>
+              <% if (p.descripcion) { %>
+                <span class="propuesta__linea"><%= p.descripcion %></span>
+              <% } %>
+            </span>
+          </label>
+        <% }) %>
+
+        <div class="propuestas__pie">
+          <button class="boton" type="submit">
+            <i class="ti ti-sparkles" aria-hidden="true"></i> Hacer las fichas de los marcados
+          </button>
+        </div>
+      </form>
+    <% } %>
+
+    <%# Y las fichas que salieron de esta búsqueda, con la tarjeta de siempre. %>
+    <% const suyas = fichasPorTexto.get(b.texto) ?? []; %>
+    <% if (suyas.length) { %>
+      <div class="rejilla-fichas">
+        <% suyas.forEach(s => { %>
+          <%- include('ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa, queVer }) %>
+        <% }) %>
+      </div>
+    <% } %>
+  </article>
+<% }) %>
+
+<%# Lo que ya estaba en el catálogo de esta ciudad, buscado desde otro viaje. %>
+<% if (heredadas.length) { %>
+  <article class="busqueda busqueda--heredada">
+    <header class="busqueda__cabecera">
+      <h4 class="busqueda__texto">
+        <i class="ti ti-archive" aria-hidden="true"></i>
+        Ya en el catálogo de <%= etapa.nombre_ciudad %>
+      </h4>
+      <div class="busqueda__estado">
+        <%= heredadas.length %> <%= heredadas.length === 1 ? 'ficha' : 'fichas' %>
+      </div>
+    </header>
+    <p class="busqueda__nota">
+      <i class="ti ti-info-circle" aria-hidden="true"></i>
+      Salieron de búsquedas hechas en otro viaje a <%= etapa.nombre_ciudad %>. Las
+      fichas son de la casa y se heredan; la búsqueda que las trajo, no.
+    </p>
+    <div class="rejilla-fichas">
+      <% heredadas.forEach(s => { %>
+        <%- include('ficha-sitio', { s, viaje, etapa, colocaciones, diasDeLaEtapa, queVer }) %>
+      <% }) %>
+    </div>
+  </article>
+<% } %>

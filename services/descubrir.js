@@ -452,31 +452,110 @@ function textoONulo(v) {
 const CUANTOS_SITIOS = { min: 6, max: 10 };
 
 /**
+ * LAS CATEGORÍAS, y son una lista cerrada a propósito.
+ *
+ * Si se le deja inventar la etiqueta, la IA devuelve «museo», «museos», «Museos»
+ * y «arte y cultura» para las mismas cuatro salas, y con eso no se puede filtrar
+ * nada el día que haya filtros. Se le da la lista y lo que no esté en ella se
+ * tira: mejor un sitio sin categoría que una categoría que no existe.
+ */
+export const CATEGORIAS_SITIO = [
+  'monumentos',
+  'museos',
+  'naturaleza',
+  'miradores',
+  'barrios y paseos',
+  'gastronomía',
+  'ocio y parques',
+  'compras y mercados',
+];
+
+/**
+ * LOS BLOQUES, EN ORDEN DE PRIORIDAD.
+ *
+ * El orden no es decorativo: es el desempate. Un sitio no puede estar en dos
+ * cajones, y cuando la IA repite —y repite, porque el Retiro es imprescindible
+ * y además es un parque para niños— se queda en el primero de esta lista y se
+ * cae de los demás.
+ */
+export const BLOQUES = ['imprescindibles', 'otros', 'ninos'];
+
+/** Los nombres con los que se enseñan. La clave es fea a propósito: va en URLs. */
+export const NOMBRE_DE_BLOQUE = {
+  imprescindibles: 'Imprescindibles',
+  otros: 'Otros sitios',
+  ninos: 'Para niños',
+  busqueda: 'Mis búsquedas',
+};
+
+/**
  * El prompt de la ficha profunda.
  *
  * Lo importante aquí es lo que se pide en `descripcion`: no un resumen de
  * enciclopedia — para eso ya está Wikipedia y el enlace — sino lo que te diría
  * alguien que ha estado: a qué hora ir, qué no perderse, dónde está la trampa.
  */
-function promptDeCiudad(punto, nombreDestino) {
+function promptDeCiudad(punto, nombreDestino, bloque, { excluir = [], edades = [] } = {}) {
   const queEs =
     punto.categoria === 'sitio'
       ? `${punto.nombre}, que se visita desde ${punto.ciudad_base || 'la ciudad más cercana'}`
       : `la ciudad de ${punto.nombre}`;
 
+  // QUÉ SE PIDE EN CADA PASADA. Lo único que cambia entre los tres bloques es
+  // este encargo y la cabecera; el formato y las reglas son los mismos, y así
+  // el saneado de la respuesta es uno solo.
+  const encargos = {
+    imprescindibles:
+      `Dame los ${CUANTOS_SITIOS.max} sitios que NO te puedes perder, los que justifican el viaje, ` +
+      'ordenados de más a menos imprescindible.',
+    otros:
+      `Dame otros ${CUANTOS_SITIOS.max} sitios de SEGUNDO NIVEL: los que merecen la pena cuando ya ` +
+      'has visto lo principal o tienes un día más. Nada de rellenar con lo obvio ni con sitios menores ' +
+      'que no visitaría nadie: si no llegas a diez buenos, dame menos.',
+    ninos:
+      `Dame hasta ${CUANTOS_SITIOS.max} sitios PARA NIÑOS` +
+      (edades.length ? ` de ${edades.join(' y ')} años` : '') +
+      '. Y esto es lo importante: cosas PENSADAS para niños —zoo, acuario, parque de atracciones, ' +
+      'museo de la ciencia con cosas que se tocan, parque con juegos, tren turístico, taller infantil—, ' +
+      'no monumentos que un niño puede ver sin quejarse. Una catedral no es un sitio para niños. ' +
+      'Si en esta ciudad no hay diez de verdad, dame los que haya.',
+  };
+
+  const evitar = excluir.length
+    ? [
+        '',
+        'NO REPITAS ninguno de estos, que ya te he cogido antes:',
+        ...excluir.map((n) => `- ${n}`),
+        'Si el mejor candidato ya está en esa lista, salta al siguiente.',
+      ].join('\n')
+    : '';
+
+  const conNinos =
+    bloque === 'ninos' && edades.length
+      ? `\nLos niños del viaje tienen ${edades.join(' y ')} años: ajusta lo que propongas a esas edades.`
+      : '';
+
   return `Eres un guía de viajes con experiencia real en ${nombreDestino}.
 
 Háblame de ${queEs}.
 
+${encargos[bloque]}${conNinos}
+${evitar}
+
 Devuelve un objeto JSON con esta forma exacta:
 
-{
+{${
+    bloque === 'imprescindibles'
+      ? `
   "parrafo_por_que": "4-5 frases sobre por qué merece la pena venir aquí. Concreto, nada de tópicos de folleto.",
-  "como_moverse": "1-2 frases: cómo se mueve uno por aquí (metro, a pie, autobús, bici, coche de alquiler).",
+  "como_moverse": "1-2 frases: cómo se mueve uno por aquí (metro, a pie, autobús, bici, coche de alquiler).",`
+      : ''
+  }
   "sitios": [
     {
       "nombre": "nombre en español del lugar concreto",
       "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir para evitar colas o pillar buena luz, qué es lo que no te puedes perder de dentro, cuánto tiempo hace falta.",
+      "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
       "lat": número, "lon": número,
       "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
     }
@@ -484,8 +563,13 @@ Devuelve un objeto JSON con esta forma exacta:
 }
 
 Reglas:
-- Entre ${CUANTOS_SITIOS.min} y ${CUANTOS_SITIOS.max} sitios, ordenados de más a menos imprescindible.
+- TODO tiene que estar en ${punto.nombre} o a menos de una hora de viaje. Nada de
+  otras ciudades del país por muy conocidas que sean: quien lee esto se aloja en
+  ${punto.nombre} y tiene tres días. Si un sitio famoso queda a media jornada de
+  distancia, déjalo fuera.
 - Sitios CONCRETOS que se visitan: templos, barrios, mercados, miradores, museos, parques. Nada de "la gastronomía" ni "el ambiente".
+- Los nombres, EN ESPAÑOL siempre que exista la forma española ("Museo del Louvre", no "Musée du Louvre").
+- "categoria" tiene que ser UNA de las de la lista, escrita igual. Si dudas, elige la que más se acerque; no te inventes otra.
 - lat y lon son obligatorios y tienen que ser las coordenadas reales del sitio.
 - No inventes URLs: las busco yo aparte.`;
 }
@@ -494,33 +578,108 @@ Reglas:
  * Le pregunta a la IA por el interior de una ciudad y devuelve la ficha ya
  * saneada. Lo que venga con una forma rara se queda fuera.
  */
-export async function investigarCiudadConIA(punto, nombreDestino) {
-  const respuesta = await consultarJSON(promptDeCiudad(punto, nombreDestino), {
-    paso: `investigar «${punto.nombre}»`,
+/** La categoría solo vale si es una de las de la lista. Lo demás, a null. */
+function categoriaValida(v) {
+  const t = String(v ?? '').trim().toLowerCase();
+  return CATEGORIAS_SITIO.includes(t) ? t : null;
+}
+
+/** Una pasada: se le pide un bloque y se sanea lo que conteste. */
+async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
+  const respuesta = await consultarJSON(promptDeCiudad(punto, nombreDestino, bloque, opciones), {
+    paso: `investigar «${punto.nombre}» · ${bloque}`,
     maxTokens: 6000,
   });
 
   const crudos = Array.isArray(respuesta?.sitios) ? respuesta.sitios : [];
-  const sitios = crudos
-    .filter((s) => s && typeof s.nombre === 'string' && s.nombre.trim())
-    .map((s, i) => ({
-      nombre: String(s.nombre).trim(),
-      descripcion: textoONulo(s.descripcion),
-      lat: numeroONulo(s.lat),
-      lon: numeroONulo(s.lon),
-      titulo_wikipedia: s.titulo_wikipedia ? String(s.titulo_wikipedia).trim() : String(s.nombre).trim(),
-      orden: i + 1,
-    }));
+  return {
+    parrafoPorQue: textoONulo(respuesta?.parrafo_por_que),
+    comoMoverse: textoONulo(respuesta?.como_moverse),
+    sitios: crudos
+      .filter((s) => s && typeof s.nombre === 'string' && s.nombre.trim())
+      .map((s) => ({
+        nombre: String(s.nombre).trim(),
+        descripcion: textoONulo(s.descripcion),
+        categoria: categoriaValida(s.categoria),
+        lat: numeroONulo(s.lat),
+        lon: numeroONulo(s.lon),
+        titulo_wikipedia: s.titulo_wikipedia
+          ? String(s.titulo_wikipedia).trim()
+          : String(s.nombre).trim(),
+        bloque,
+      })),
+  };
+}
+
+/**
+ * Le pregunta a la IA por el interior de una ciudad y devuelve la ficha ya
+ * saneada. Lo que venga con una forma rara se queda fuera.
+ *
+ * TRES LLAMADAS Y NO UNA. Se le podría pedir todo de golpe, y sería una llamada
+ * menos, pero pidiendo veinte o treinta sitios repartidos en cajones en una sola
+ * respuesta pasan dos cosas: la respuesta se corta por el límite de tokens justo
+ * en el último bloque —que casualmente es el de niños—, y los bloques se
+ * contaminan entre ellos. Encadenadas se puede además DECIRLE lo que ya se ha
+ * cogido, que es la única forma de que no repita.
+ *
+ * Y aun diciéndoselo repite, así que la regla dura no se delega: se aplica aquí
+ * con `nombre_norm`, y el duplicado cae del bloque menos prioritario.
+ *
+ * Si falla una pasada que no sea la primera, se sigue con lo que haya. Quedarse
+ * sin "otros sitios" es una pena; quedarse sin ficha por eso, una tontería.
+ */
+export async function investigarCiudadConIA(punto, nombreDestino, { edadesNinos = [] } = {}) {
+  const quiero = ['imprescindibles', 'otros'];
+  if (edadesNinos.length) quiero.push('ninos');
+
+  const vistos = new Set();
+  const sitios = [];
+  let parrafoPorQue = null;
+  let comoMoverse = null;
+
+  for (const bloque of quiero) {
+    let tanda;
+    try {
+      tanda = await pedirUnBloque(punto, nombreDestino, bloque, {
+        excluir: sitios.map((s) => s.nombre),
+        edades: edadesNinos,
+      });
+    } catch (err) {
+      // El primero es obligatorio: sin imprescindibles no hay ficha. Los otros
+      // dos son mejoras, y una mejora que falla no tumba lo que ya funciona.
+      if (bloque === 'imprescindibles') throw err;
+      console.warn(`[descubrir] «${punto.nombre}»: sin bloque «${bloque}» (${err.message}).`);
+      continue;
+    }
+
+    if (bloque === 'imprescindibles') {
+      parrafoPorQue = tanda.parrafoPorQue;
+      comoMoverse = tanda.comoMoverse;
+    }
+
+    // El tope se aplica aquí y no en el prompt: pedir diez y quedarse con los
+    // diez primeros es más fiable que confiar en que cuente, que a veces devuelve
+    // once y a veces trece. Se cuentan DESPUÉS de descartar duplicados, para que
+    // un repetido no le robe la plaza a un sitio bueno.
+    let puestos = 0;
+    for (const s of tanda.sitios) {
+      if (puestos >= CUANTOS_SITIOS.max) break;
+      const clave = normalizarNombre(s.nombre);
+      if (vistos.has(clave)) {
+        console.log(`[descubrir] «${s.nombre}» repetido en «${bloque}»: se queda donde estaba.`);
+        continue;
+      }
+      vistos.add(clave);
+      sitios.push({ ...s, orden: sitios.length + 1 });
+      puestos += 1;
+    }
+  }
 
   if (!sitios.length) {
     throw new Error(`La IA no devolvió ningún lugar dentro de «${punto.nombre}».`);
   }
 
-  return {
-    parrafoPorQue: textoONulo(respuesta?.parrafo_por_que),
-    comoMoverse: textoONulo(respuesta?.como_moverse),
-    sitios,
-  };
+  return { parrafoPorQue, comoMoverse, sitios };
 }
 
 /**
@@ -540,8 +699,9 @@ export async function investigarCiudadConIA(punto, nombreDestino) {
 export function guardarFichaProfunda(punto, ficha) {
   const insertar = db.prepare(
     `INSERT INTO sitios_lugar
-       (punto_interes_id, nombre, nombre_norm, descripcion, imagen_url, wikipedia_url, lat, lon, orden)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (punto_interes_id, nombre, nombre_norm, descripcion, imagen_url, wikipedia_url,
+        lat, lon, orden, bloque, categoria)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (punto_interes_id, nombre_norm) DO UPDATE SET
        nombre        = excluded.nombre,
        descripcion   = excluded.descripcion,
@@ -549,7 +709,11 @@ export function guardarFichaProfunda(punto, ficha) {
        wikipedia_url = excluded.wikipedia_url,
        lat           = excluded.lat,
        lon           = excluded.lon,
-       orden         = excluded.orden`
+       orden         = excluded.orden,
+       bloque        = excluded.bloque,
+       -- La categoría solo se pisa si viene una nueva: una respuesta sin
+       -- categoría no debe borrar la que ya estaba bien puesta.
+       categoria     = COALESCE(excluded.categoria, sitios_lugar.categoria)`
   );
 
   const anterior = punto.datos_extra ? seguroJSON(punto.datos_extra) : {};
@@ -576,7 +740,9 @@ export function guardarFichaProfunda(punto, ficha) {
         s.wikipedia_url ?? null,
         s.lat,
         s.lon,
-        s.orden
+        s.orden,
+        s.bloque ?? 'imprescindibles',
+        s.categoria ?? null
       );
     }
     db.exec('COMMIT');

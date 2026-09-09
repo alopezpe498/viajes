@@ -177,6 +177,8 @@
   };
 
   function pintaViajeros() {
+    // La habitación familiar entra y sale con el número de viajeros.
+    ajustaFamiliar();
     document.getElementById('ad-num').textContent = ad;
     document.getElementById('ni-num').textContent = ni;
     document.getElementById('ad-menos').disabled = ad <= MIN_ADULTOS;
@@ -285,6 +287,16 @@
     const n = noches();
 
     if (ini && fin && n > 0) {
+      // EL MODO AUTOMÁTICO EXIGE SU SECCIÓN ENTERA. No es rigor por rigor: el
+      // orquestador monta el viaje solo y en segundo plano, así que un campo sin
+      // contestar sería una decisión que acabaría tomando él en silencio.
+      const falta = queFaltaDelAutomatico();
+      if (falta) {
+        resumenFinal.textContent = falta;
+        botonGuardar.disabled = true;
+        return;
+      }
+
       resumenFinal.innerHTML =
         `<b>${fmt(ini)} → ${fmt(fin)}</b> · ${n} ${n === 1 ? 'noche' : 'noches'} · ${resumenViajeros()}`;
       botonGuardar.disabled = false;
@@ -299,6 +311,83 @@
       resumenFinal.textContent = 'Elige las fechas para continuar';
     }
     botonGuardar.disabled = true;
+  }
+
+  // ===========================================================================
+  // EL VIAJE AUTOMÁTICO
+  // ---------------------------------------------------------------------------
+  // El check despliega la sección y, mientras esté puesto, sus campos son
+  // obligatorios: el botón de guardar no se enciende hasta que estén todos.
+  //
+  // La sección se pinta siempre y solo se oculta, en vez de sacarla del DOM al
+  // apagar el check: así el navegador conserva lo contestado si uno lo apaga
+  // para mirar algo y lo vuelve a encender.
+  // ===========================================================================
+  const checkAuto = document.getElementById('check-automatico');
+  const seccionAuto = document.getElementById('auto-seccion');
+  const campoFamiliar = document.getElementById('auto-campo-familiar');
+
+  /** A partir de tres viajeros la habitación familiar entra en juego. */
+  const VIAJEROS_PARA_FAMILIAR = 3;
+
+  /**
+   * Qué falta por contestar, dicho como se lo diría una persona a otra.
+   *
+   * Devuelve null cuando no falta nada —o cuando el modo automático está
+   * apagado, que entonces no hay nada que exigir—.
+   */
+  function queFaltaDelAutomatico() {
+    if (!checkAuto?.checked || !seccionAuto) return null;
+
+    const grupos = [
+      ['auto_nivel_precio', 'el nivel de precio del alojamiento'],
+      ['auto_zona', 'la zona del alojamiento'],
+      ['auto_tipo_alojamiento', 'el tipo de alojamiento'],
+      ...(ad + ni >= VIAJEROS_PARA_FAMILIAR
+        ? [['auto_habitacion_familiar', 'si hace falta habitación familiar']]
+        : []),
+      ['auto_desayuno', 'si quieres desayuno incluido'],
+      ['auto_cancelacion', 'si quieres cancelación gratuita'],
+      ['auto_nota_minima', 'la valoración mínima'],
+      ['auto_escalas', 'si quieres vuelos directos'],
+      ['auto_franja_ida', 'la franja horaria de la ida'],
+      ['auto_franja_vuelta', 'la franja horaria de la vuelta'],
+    ];
+
+    for (const [nombre, comoSeLlama] of grupos) {
+      if (!seccionAuto.querySelector(`input[name="${nombre}"]:checked`)) {
+        return `Para el viaje automático falta ${comoSeLlama}`;
+      }
+    }
+
+    const texto = seccionAuto.querySelector('#auto_intereses')?.value.trim();
+    const marcadas = seccionAuto.querySelectorAll('input[name="auto_categorias"]:checked').length;
+    if (!texto && !marcadas) return 'Dime qué os interesa: escríbelo o marca una categoría';
+
+    return null;
+  }
+
+  if (checkAuto && seccionAuto) {
+    checkAuto.addEventListener('change', () => {
+      seccionAuto.hidden = !checkAuto.checked;
+      pintaBarra();
+    });
+    // Cualquier cambio dentro de la sección puede completar (o romper) el
+    // conjunto, así que se vuelve a mirar en todos.
+    seccionAuto.addEventListener('change', pintaBarra);
+    seccionAuto.addEventListener('input', pintaBarra);
+  }
+
+  /**
+   * La habitación familiar aparece y desaparece con los viajeros.
+   *
+   * Se llama desde `pintaViajeros`, que es quien sabe cuántos sois. Si al bajar
+   * a dos se quedara visible, estaríamos exigiendo una respuesta a una pregunta
+   * que ya no viene a cuento.
+   */
+  function ajustaFamiliar() {
+    if (!campoFamiliar) return;
+    campoFamiliar.hidden = ad + ni < VIAJEROS_PARA_FAMILIAR;
   }
 
   // ===========================================================================

@@ -1,0 +1,378 @@
+/* ===========================================================================
+   EL ORQUESTADOR: progreso, parámetros y cerebro.
+   ---------------------------------------------------------------------------
+   Mediterránea fresca, como el resto: fondos claros, azul de acento, bordes
+   suaves y nada de cajas grises. Las tres pantallas comparten hoja porque
+   comparten piezas —el aviso, el pie de botones— y separarlas en tres archivos
+   sería repetir lo mismo tres veces.
+   =========================================================================== */
+
+.orquestador { max-width: 860px; }
+
+.orq__titulo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 26px;
+}
+.orq__titulo i { color: var(--acento); }
+.orq__bajada { margin: 0 0 22px; color: var(--texto-2); line-height: 1.5; }
+
+/* --- La barra de progreso --------------------------------------------- */
+.orq-barra {
+  height: 8px;
+  margin: 0 0 24px;
+  border-radius: 999px;
+  background: var(--borde);
+  overflow: hidden;
+}
+.orq-barra__relleno {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--acento);
+  transition: width .4s ease;
+}
+
+/* --- Las fases --------------------------------------------------------- */
+.orq-fases { margin: 0 0 24px; padding: 0; list-style: none; }
+
+.orq-fase {
+  display: flex;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.orq-fase:last-child { border-bottom: 0; }
+
+.orq-fase__marca { flex: none; padding-top: 2px; }
+.orq-fase__marca i { font-size: 22px; color: var(--texto-3); }
+
+/* Cada estado tiene su color, y solo uno: el que está pasando ahora. */
+.orq-fase--en_curso   .orq-fase__marca i { color: var(--acento); }
+.orq-fase--hecho      .orq-fase__marca i { color: #2E7D5B; }
+.orq-fase--con_huecos .orq-fase__marca i { color: #8A5A16; }
+.orq-fase--error      .orq-fase__marca i { color: #8A2020; }
+
+/* La rueda del "en marcha". Se para sola cuando cambia el estado porque la
+   clase se quita: no hace falta apagarla a mano. */
+@keyframes orq-girar { to { transform: rotate(360deg); } }
+.orq-gira { display: inline-block; animation: orq-girar 1.1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .orq-gira { animation: none; } }
+
+.orq-fase__cuerpo { flex: 1; min-width: 0; }
+.orq-fase__cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.orq-fase__nombre {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 16px;
+}
+.orq-fase__nombre i { color: var(--texto-3); font-size: 17px; }
+.orq-fase__estado { color: var(--texto-2); font-size: 12.5px; font-weight: 600; }
+.orq-fase--en_curso .orq-fase__estado { color: var(--acento); }
+
+.orq-fase__explica { margin: 4px 0 0; color: var(--texto-2); font-size: 13.5px; line-height: 1.45; }
+
+/* El log: monoespaciado porque son líneas sueltas de máquina, no prosa. */
+.orq-fase__log {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fondo);
+  color: var(--texto-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.orq-fase__huecos { margin: 10px 0 0; padding: 0; list-style: none; }
+.orq-fase__huecos li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 3px 0;
+  color: #8A5A16;
+  font-size: 13px;
+}
+.orq-fase__huecos i { flex: none; margin-top: 2px; }
+
+/* --- Los huecos, todos juntos ------------------------------------------ */
+.orq-resumen-huecos {
+  margin: 0 0 24px;
+  padding: 16px 18px;
+  border: 1px solid #E8D9BF;
+  border-radius: 14px;
+  background: #FDF8EF;
+}
+.orq-resumen-huecos h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #6B4A12;
+}
+.orq-resumen-huecos ul { margin: 0; padding-left: 20px; color: var(--texto-2); font-size: 13.5px; }
+.orq-resumen-huecos li { padding: 2px 0; line-height: 1.45; }
+
+.orq-fallo {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #FDECEC;
+  color: #8A2020;
+  font-size: 13.5px;
+}
+
+.orq-pie { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+
+/* --- El aviso de guardado ---------------------------------------------- */
+.orq-aviso {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #E7F4EE;
+  color: #245B43;
+  font-size: 13px;
+}
+.orq-aviso--malo { background: #FDECEC; color: #8A2020; }
+
+/* ===========================================================================
+   PARÁMETROS
+   =========================================================================== */
+.orq-parametros { margin: 0; padding: 0; list-style: none; }
+
+.orq-parametro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--borde);
+}
+.orq-parametro:last-child { border-bottom: 0; }
+
+.orq-parametro__texto { flex: 1; min-width: 220px; }
+.orq-parametro__nombre { display: block; font-size: 14px; line-height: 1.4; cursor: pointer; }
+.orq-parametro__clave {
+  display: inline-block;
+  margin-top: 3px;
+  color: var(--texto-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.orq-parametro__control { display: flex; align-items: center; gap: 10px; }
+.orq-parametro__control input {
+  width: 92px;
+  padding: 9px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--tarjeta, #fff);
+  font: inherit;
+  font-size: 14px;
+  text-align: right;
+}
+.orq-parametro__control input:focus { outline: none; border-color: var(--acento); }
+.orq-parametro__unidad { min-width: 70px; color: var(--texto-3); font-size: 12.5px; }
+
+/* Lo que has cambiado tú se marca, para poder verlo de un vistazo entre once. */
+.orq-parametro--tocado .orq-parametro__control input {
+  border-color: var(--acento);
+  font-weight: 700;
+}
+
+.orq-parametro__restaurar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.orq-parametro__restaurar:hover { border-color: var(--acento); color: var(--acento); }
+
+/* ===========================================================================
+   CEREBRO
+   =========================================================================== */
+.orq-prompt {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  background: var(--tarjeta, #fff);
+}
+.orq-prompt--tocado { border-color: var(--acento); }
+
+.orq-prompt__cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.orq-prompt__nombre {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+}
+.orq-prompt__nombre i { color: var(--acento); font-size: 17px; }
+.orq-prompt__cuando { color: var(--texto-3); font-size: 12px; }
+.orq-prompt__explica { margin: 6px 0 10px; color: var(--texto-2); font-size: 13px; line-height: 1.45; }
+
+.orq-prompt__texto {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  background: var(--fondo);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.orq-prompt__texto:focus { outline: none; border-color: var(--acento); background: var(--tarjeta, #fff); }
+
+.orq-prompt__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+
+/* ===========================================================================
+   LA SECCIÓN AUTOMÁTICA DE LA CONFIGURACIÓN
+   ---------------------------------------------------------------------------
+   Vive en la pantalla de configuración, que tiene su propia hoja con estilos
+   `.config`. Estas clases van prefijadas con `auto-` para no chocar con nada de
+   allí, que es la misma precaución que ya se tomó al rehacer esa pantalla.
+   =========================================================================== */
+.auto-interruptor {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.auto-interruptor input { margin-top: 3px; flex: none; width: 18px; height: 18px; }
+.auto-interruptor__texto { display: flex; flex-direction: column; gap: 3px; }
+
+/* La nota de esta sección va con clase propia y no con `.nota` a secas: esa
+   clase ya existe en la hoja global, donde es un flex centrado, y reutilizarla
+   dejaba todas las explicaciones centradas bajo sus campos. */
+.auto-nota {
+  display: block;
+  margin-top: 5px;
+  color: var(--texto-3);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.auto-seccion {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borde);
+}
+
+.auto-aviso {
+  margin: 0 0 18px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #EAF4F8;
+  color: #14536B;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.auto-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 12px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--texto-3);
+}
+.auto-titulo:first-of-type { margin-top: 0; }
+.auto-titulo i { color: var(--acento); font-size: 17px; }
+
+.auto-campo { margin: 0 0 16px; }
+.auto-campo > label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.auto-campo input[type="text"] {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--tarjeta, #fff);
+  font: inherit;
+  font-size: 14px;
+}
+.auto-campo input[type="text"]:focus { outline: none; border-color: var(--acento); }
+
+/* Las opciones excluyentes, como píldoras. El radio se esconde pero sigue ahí:
+   el teclado y los lectores de pantalla lo necesitan. */
+.auto-opciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.auto-opcion { cursor: pointer; }
+.auto-opcion input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.auto-opcion span {
+  display: inline-block;
+  padding: 8px 15px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--tarjeta, #fff);
+  font-size: 13.5px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.auto-opcion input:checked + span {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+  font-weight: 600;
+}
+.auto-opcion input:focus-visible + span { outline: 2px solid var(--acento); outline-offset: 2px; }
+.auto-opcion input:not(:checked) + span:hover { border-color: var(--acento); color: var(--acento); }
+
+.auto-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.auto-chip { cursor: pointer; }
+.auto-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
+.auto-chip span {
+  display: inline-block;
+  padding: 7px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--tarjeta, #fff);
+  font-size: 13px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.auto-chip input:checked + span {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+  font-weight: 600;
+}
+.auto-chip input:focus-visible + span { outline: 2px solid var(--acento); outline-offset: 2px; }

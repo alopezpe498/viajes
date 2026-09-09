@@ -5710,3 +5710,188 @@ body.con-antes { overflow: hidden; }
 .datos-sitio__pie i { font-size: 13px; }
 /* Discreto, no alarmante: el dato sigue sirviendo, solo tiene sus semanas. */
 .datos-sitio__pie--viejo { color: #8A5A16; }
+
+/* ===========================================================================
+   LOS BLOQUES DE SITIOS (tercer nivel de pestañas)
+   ---------------------------------------------------------------------------
+   Van DENTRO de "Sitios", así que no pueden repetir el subrayado de la barra de
+   arriba: dos filas de pestañas subrayadas, una debajo de otra, no dicen cuál
+   manda sobre cuál. Estas son píldoras, que se leen como un segundo escalón.
+   =========================================================================== */
+.bloque-pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.bloque-pestana {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--tarjeta, #fff);
+  color: var(--texto-2);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+/* El hover NO toca a la activa: su fondo ya es el acento, y pintarle el texto
+   del mismo color la dejaba en blanco —el nombre desaparecía al pasar por
+   encima, que es justo cuando acabas de hacer clic—. */
+.bloque-pestana:not(.bloque-pestana--activa):hover {
+  border-color: var(--acento);
+  color: var(--acento);
+}
+.bloque-pestana--activa {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+.bloque-pestana i { font-size: 15px; }
+.bloque-pestana__n {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .07);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.bloque-pestana--activa .bloque-pestana__n { background: rgba(255, 255, 255, .25); }
+
+/* La categoría del sitio: una etiqueta pequeña, sin ruido. Solo informa. */
+.sitio-categoria {
+  margin: 2px 0 0;
+  color: var(--texto-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ===========================================================================
+   MIS BÚSQUEDAS
+   =========================================================================== */
+.buscador-sitios {
+  display: flex;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+.buscador-sitios__campo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  background: var(--tarjeta, #fff);
+}
+.buscador-sitios__campo i { flex: none; color: var(--texto-3); }
+.buscador-sitios__campo input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+.buscador-sitios__campo input:focus { outline: none; }
+.buscador-sitios__campo:focus-within { border-color: var(--acento); }
+
+.buscador-sitios__pista {
+  margin: 0 0 14px;
+  color: var(--texto-3);
+  font-size: 12.5px;
+}
+.buscador-sitios__error {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #FDECEC;
+  color: #8A2020;
+  font-size: 13px;
+}
+
+/* Una búsqueda: lo que se pidió, en qué va, y lo que salió. */
+.busqueda {
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  background: var(--fondo);
+}
+/* La que espera a que elijas se distingue: es la única que pide algo. */
+.busqueda--esperando { border-color: var(--acento); background: var(--tarjeta, #fff); }
+/* Las heredadas del catálogo no son tuyas: se marcan sin gritar. */
+.busqueda--heredada { border-style: dashed; }
+
+.busqueda__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.busqueda__texto {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.busqueda__texto i { color: var(--texto-3); font-size: 15px; }
+.busqueda__estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--texto-2);
+  font-size: 12.5px;
+}
+.busqueda__borrar {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-3);
+  cursor: pointer;
+}
+.busqueda__borrar:hover { background: rgba(0, 0, 0, .06); color: var(--texto); }
+.busqueda__fallo { margin: 8px 0 0; color: #8A2020; font-size: 13px; }
+/* El aviso de "esto ya lo tenías": informa, no alarma. */
+.busqueda__nota {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 0;
+  color: var(--texto-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.busqueda__nota i { flex: none; color: var(--acento); font-size: 15px; }
+
+.propuestas { margin: 12px 0 0; }
+.propuesta {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.propuesta:hover { background: rgba(0, 0, 0, .035); }
+.propuesta input { margin-top: 3px; flex: none; }
+.propuesta__cuerpo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.propuesta__nombre { font-size: 14px; }
+.propuesta__linea { color: var(--texto-2); font-size: 12.5px; line-height: 1.4; }
+.propuestas__pie { margin-top: 10px; }
+
+/* Las fichas que salieron de una búsqueda van dentro de su tarjeta. */
+.busqueda .rejilla-fichas { margin-top: 14px; }

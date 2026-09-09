@@ -51,6 +51,13 @@ const hayDetalle = Boolean(
       <h3 class="tarjeta-punto__nombre"><%= s.nombre %></h3>
     </div>
 
+    <%# La categoría, que la pone la IA de una lista cerrada. De momento solo se
+        enseña: sirve para orientarse de un vistazo en una rejilla de veinte
+        tarjetas. El día que haya filtros, saldrán de aquí. %>
+    <% if (s.categoria) { %>
+      <p class="sitio-categoria"><%= s.categoria %></p>
+    <% } %>
+
     <% if (s.descripcion) { %>
       <p class="tarjeta-punto__texto"><%= s.descripcion %></p>
     <% } %>

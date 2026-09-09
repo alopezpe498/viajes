@@ -37,6 +37,25 @@ import {
 import { geocodificarFila, guardarDireccion } from '../services/direcciones.js';
 import { situarLugarConGoogle } from '../lib/google.js';
 import { buscarDatosDeSitios, pedirDatosDeSitios, interpretarHorario } from '../services/datos-sitios.js';
+import { dormir } from '../lib/browser.js';
+import { ejecutarBusqueda } from '../services/busquedas-sitios.js';
+import {
+  FASES,
+  promptDeFase,
+  empezarFase,
+  anotar,
+  apuntarHueco,
+  cerrarFase,
+} from '../services/orquestador.js';
+import { ejecutarFaseCiudades } from '../services/orquestador-ciudades.js';
+
+/**
+ * Las fases que ya hacen algo de verdad. Las que no estan aqui siguen siendo
+ * cascarones, y se iran mudando a esta tabla una a una.
+ */
+const FASES_IMPLEMENTADAS = {
+  ciudades_y_noches: ejecutarFaseCiudades,
+};
 import { calcularTraslado } from '../services/traslados.js';
 import {
   investigarComer,
@@ -786,7 +805,8 @@ const TIPOS_CONOCIDOS = [
   'transporte_tramo', 'movilidad_ciudad',
   'geocodificar', 'traslado',
   'comer_buscar', 'comer_detalles',
-  'datos_sitios', 'horario_cierre',
+  'datos_sitios', 'horario_cierre', 'busqueda_sitios',
+  'orquestador',
 ];
 
 /**
@@ -1186,6 +1206,31 @@ async function ejecutarInvestigarCiudad(trabajo) {
  * La ficha profunda de un punto del catálogo. Igual que arriba: separada de su
  * trabajo para que la pueda usar también el que prepara una etapa.
  */
+/**
+ * Las edades de los niños de un viaje, si lleva.
+ *
+ * Devuelve [] cuando no hay niños, cuando el campo está vacío o cuando lleva
+ * algo que no es una lista de números: quien pregunta solo necesita saber si
+ * hay que generar el bloque infantil, y ante la duda, no.
+ */
+function edadesDelViaje(viajeId) {
+  const viaje = una('SELECT ninos, edades_ninos FROM viajes WHERE id = ?', viajeId);
+  if (!viaje?.ninos) return [];
+  try {
+    const lista = JSON.parse(viaje.edades_ninos ?? '[]');
+    return Array.isArray(lista) ? lista.map(Number).filter((n) => Number.isFinite(n)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Para el log: "12 imprescindibles, 9 otros, 6 ninos". */
+function resumenDeBloques(sitios) {
+  const cuenta = new Map();
+  for (const s of sitios) cuenta.set(s.bloque, (cuenta.get(s.bloque) ?? 0) + 1);
+  return [...cuenta].map(([b, n]) => `${n} ${b}`).join(', ');
+}
+
 async function investigarPunto(trabajo, punto) {
   const destino = una('SELECT * FROM destinos WHERE id = ?', punto.destino_id);
   const nombreDestino = destino?.nombre ?? punto.ciudad_base ?? punto.nombre;
@@ -1195,8 +1240,17 @@ async function investigarPunto(trabajo, punto) {
   );
 
   // --- 1) Qué hay dentro -----------------------------------------------
-  const ficha = await investigarCiudadConIA(punto, nombreDestino);
-  console.log(`[worker] Trabajo #${trabajo.id}: la IA propone ${ficha.sitios.length} lugares. Busco fotos.`);
+  //
+  // Las edades de los niños deciden si hay bloque «Para niños» y qué se pide en
+  // él: un viaje de adultos no gasta una llamada en pedir zoos, y uno con un
+  // niño de 4 y otro de 9 no quiere las mismas cosas que uno con dos de 15.
+  const ficha = await investigarCiudadConIA(punto, nombreDestino, {
+    edadesNinos: edadesDelViaje(trabajo.viaje_id),
+  });
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: la IA propone ${ficha.sitios.length} lugares ` +
+      `(${resumenDeBloques(ficha.sitios)}). Busco fotos.`
+  );
 
   // --- 2) Foto y enlace de cada uno ------------------------------------
   const conFoto = await ponerFotosDeWikipedia(ficha.sitios);
@@ -1387,6 +1441,97 @@ async function ejecutarOpinarLienzo(trabajo) {
   );
 }
 
+/**
+ * Una búsqueda del usuario en la pestaña «Mis búsquedas».
+ *
+ * El worker aquí no decide nada: el servicio sabe si toca proponer o generar
+ * según en qué estado esté la búsqueda. Lo único que pone de su parte es la
+ * búsqueda de datos duros de las fichas nuevas, que se le pasa como función
+ * porque es lo que le toca a esta capa: abrir el navegador.
+ */
+async function ejecutarBusquedaDeSitios(trabajo) {
+  console.log(`[worker] Trabajo #${trabajo.id}: búsqueda de sitios #${trabajo.referencia_id}.`);
+
+  const r = await ejecutarBusqueda(trabajo.referencia_id, {
+    alGenerar: (punto, ids) => buscarDatosDeSitios(punto, { ids }),
+  });
+
+  console.log(`[worker] Trabajo #${trabajo.id}: ${r.mensaje}`);
+}
+
+/**
+ * EL ORQUESTADOR: monta el viaje entero, fase por fase.
+ *
+ * `referencia_id` es el id del viaje.
+ *
+ * HOY ESTO ES UN ESQUELETO. Las seis fases se recorren en orden, cada una se
+ * marca en curso, espera un momento, anota que está pendiente de implementar y
+ * se cierra. Lo que ya funciona de verdad es el andamio: el orden, los estados,
+ * el log y —esto es lo importante— que una fase que se cae NO tumba las demás.
+ *
+ * ESA REGLA ESTÁ AQUÍ Y NO EN CADA FASE a propósito. Cuando se escriban las seis
+ * de verdad, ninguna tendrá que acordarse de capturar sus propios errores: el
+ * bucle ya garantiza que un fallo en «dormir» deje su hueco y siga con «sitios».
+ * Si la garantía viviera dentro de cada fase, la primera que se escribiera sin
+ * try/catch rompería el viaje entero.
+ */
+async function ejecutarOrquestador(trabajo) {
+  const viajeId = trabajo.referencia_id;
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) throw new Error('Ese viaje ya no existe.');
+
+  console.log(`[worker] Trabajo #${trabajo.id}: orquestando el viaje «${viaje.nombre}».`);
+
+  let conHuecos = 0;
+  let conError = 0;
+
+  for (const fase of FASES) {
+    empezarFase(viajeId, fase.clave);
+
+    try {
+      // El prompt se lee AQUÍ, de la tabla, aunque todavía no se use para nada:
+      // así, el día que la fase llame a la IA, el camino ya está hecho y nadie
+      // cae en la tentación de escribirlo en una constante de este archivo.
+      const prompt = promptDeFase(fase.clave);
+
+      const implementada = FASES_IMPLEMENTADAS[fase.clave];
+      if (implementada) {
+        // La fase de verdad. Se le pasa el viaje recién leído y el prompt de la
+        // tabla; todo lo que decida lo narra ella en el log.
+        await implementada(una('SELECT * FROM viajes WHERE id = ?', viajeId), prompt);
+      } else {
+        // --- EL CASCARÓN ------------------------------------------------
+        // Los dos segundos no son decorativos: la pantalla de progreso se sondea
+        // en vivo, y sin ellos las fases que quedan pasarían de pendiente a
+        // hecho en el mismo parpadeo y no se vería el refresco.
+        await dormir(2000);
+        anotar(viajeId, fase.clave, 'Fase pendiente de implementar.');
+        anotar(viajeId, fase.clave, `Prompt cargado de la tabla (${prompt.length} caracteres).`);
+      }
+
+      const final = cerrarFase(viajeId, fase.clave, 'hecho');
+      if (final === 'con_huecos') conHuecos += 1;
+    } catch (err) {
+      // Aquí muere el fallo de una fase. Se anota, se cierra en error y se sigue
+      // con la siguiente: un viaje con una fase caída es algo que se puede
+      // repasar; un viaje que se paró en la segunda no es nada.
+      conError += 1;
+      anotar(viajeId, fase.clave, `No se pudo: ${err.message}`);
+      // Sin el nombre de la fase delante: el hueco ya vive dentro de su fase, y
+      // el resumen de arriba le antepone la etiqueta. Ponerlo aqui lo duplicaba
+      // ("Donde dormir: Donde dormir: ...").
+      apuntarHueco(viajeId, fase.clave, err.message);
+      cerrarFase(viajeId, fase.clave, 'error');
+      console.warn(`[worker] Trabajo #${trabajo.id}: fase «${fase.clave}» falló (${err.message}).`);
+    }
+  }
+
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: viaje «${viaje.nombre}» orquestado ` +
+      `(${FASES.length} fases, ${conHuecos} con huecos, ${conError} con error).`
+  );
+}
+
 /** Ejecuta un trabajo cualquiera según su tipo. */
 async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'opinar_lienzo') return ejecutarOpinarLienzo(trabajo);
@@ -1402,6 +1547,8 @@ async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'transporte_tramo') return ejecutarTransporteTramo(trabajo);
   if (trabajo.tipo === 'movilidad_ciudad') return ejecutarMovilidadCiudad(trabajo);
   if (trabajo.tipo === 'datos_sitios') return ejecutarDatosDeSitios(trabajo);
+  if (trabajo.tipo === 'busqueda_sitios') return ejecutarBusquedaDeSitios(trabajo);
+  if (trabajo.tipo === 'orquestador') return ejecutarOrquestador(trabajo);
   if (trabajo.tipo === 'horario_cierre') return interpretarHorario(trabajo.referencia_id);
   if (trabajo.tipo === 'geocodificar') return ejecutarGeocodificar(trabajo);
   if (trabajo.tipo === 'traslado') return ejecutarTraslado(trabajo);

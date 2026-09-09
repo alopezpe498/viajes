@@ -326,6 +326,14 @@ export function migrarEsquema() {
   migracionCiudadDeOrigen();
   migracionFichaRevisada();
   migracionDatosDurosDeSitios();
+  migracionBloquesDeSitios();
+  migracionBusquedasDeSitios();
+  migracionNotaDeBusqueda();
+  migracionOrquestador();
+  migracionFase1Ciudades();
+  migracionFase1PromptAfinado();
+  migracionFase1CiudadUnica();
+  migracionFase1DiasVsNoches();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -474,6 +482,537 @@ function migracionDatosDurosDeSitios() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migración: datos duros de los sitios.');
+  return true;
+}
+
+/**
+ * LOS SITIOS DE UNA ETAPA, REPARTIDOS EN BLOQUES.
+ *
+ * Antes había una lista y ya está. Ahora hay cuatro cajones —los imprescindibles,
+ * los de segundo nivel, los de niños y lo que el usuario se busque por su cuenta—
+ * y cada sitio vive en uno solo.
+ *
+ * Todo lo que ya estaba guardado pasa a 'imprescindibles': es lo que era, la
+ * lista corta de lo que no te puedes perder, y así ninguna etapa investigada
+ * hasta hoy aparece vacía al abrirla.
+ *
+ * `categoria` la pone la IA de una lista cerrada. Se guarda aunque de momento
+ * solo se enseñe: la fila de filtros vendrá después.
+ */
+function migracionBloquesDeSitios() {
+  const CLAVE = '2026-09-bloques-de-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(sitios_lugar)').all().map((c) => c.name);
+  const anadir = (nombre, tipo) => {
+    if (!cols.includes(nombre)) db.exec(`ALTER TABLE sitios_lugar ADD COLUMN ${nombre} ${tipo}`);
+  };
+
+  anadir('bloque', "TEXT NOT NULL DEFAULT 'imprescindibles'");
+  anadir('categoria', 'TEXT');
+  // Qué escribió el usuario para que apareciera este sitio. Solo lo llevan los
+  // del bloque 'busqueda', y sirve para agruparlos por consulta en su pestaña.
+  anadir('busqueda', 'TEXT');
+
+  // Lo de antes es lo imprescindible. Un UPDATE explícito y no solo el DEFAULT,
+  // porque el DEFAULT no toca las filas que ya existían.
+  db.exec("UPDATE sitios_lugar SET bloque = 'imprescindibles' WHERE bloque IS NULL");
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: bloques y categoría de los sitios.');
+  return true;
+}
+
+/**
+ * LO QUE EL USUARIO SE BUSCA POR SU CUENTA.
+ *
+ * Una búsqueda no es una ficha: es una conversación corta que puede quedarse a
+ * medias. Escribes «búnkers de Berlín», la IA propone seis y tú eliges dos. Ese
+ * estado intermedio —propuesto pero no elegido— no cabe en `sitios_lugar`, que
+ * es catálogo y solo guarda sitios de verdad.
+ *
+ * Así que la búsqueda vive aquí con lo suyo: qué se pidió, si era un sitio
+ * concreto o un tema, qué propuso la IA y en qué punto está. Las fichas que
+ * salgan van a `sitios_lugar` como todas las demás, con bloque 'busqueda'.
+ *
+ * Cuelga de la ETAPA y no del catálogo: «búnkers» es una curiosidad de este
+ * viaje, no un dato de Berlín que deba heredar el siguiente que vaya.
+ */
+function migracionBusquedasDeSitios() {
+  const CLAVE = '2026-09-busquedas-de-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS busquedas_sitios (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      viaje_id      INTEGER NOT NULL REFERENCES viajes(id) ON DELETE CASCADE,
+      etapa_id      INTEGER NOT NULL REFERENCES etapas(id) ON DELETE CASCADE,
+      texto         TEXT    NOT NULL,
+      -- 'concreto' (un sitio) o 'generico' (un tema). Lo decide la IA.
+      tipo          TEXT,
+      -- pendiente → proponiendo → esperando | generando → hecha | error
+      estado        TEXT    NOT NULL DEFAULT 'pendiente',
+      -- Lo que la IA propuso cuando el texto era un tema: [{nombre, descripcion}]
+      propuestas    TEXT,
+      -- Cuántas fichas salieron, para poder contarlo sin recorrer el catálogo.
+      fichas        INTEGER NOT NULL DEFAULT 0,
+      mensaje_error TEXT,
+      creado_en     TEXT    NOT NULL DEFAULT (datetime('now')),
+      terminado_en  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_busquedas_sitios_etapa ON busquedas_sitios(etapa_id);
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: búsquedas de sitios del usuario.');
+  return true;
+}
+
+/**
+ * UN AVISO QUE NO ES UN ERROR.
+ *
+ * Buscas «Torre Eiffel» y ya la tienes en Imprescindibles: no se regenera, y
+ * hasta aquí bien. Pero la pantalla se quedaba diciendo «0 fichas» sin explicar
+ * por qué, que parece que ha fallado algo. No cabía en `mensaje_error` porque no
+ * ha fallado nada: es una respuesta correcta que hay que contar.
+ */
+function migracionNotaDeBusqueda() {
+  const CLAVE = '2026-09-nota-de-busqueda';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(busquedas_sitios)').all().map((c) => c.name);
+  if (!cols.includes('nota')) db.exec('ALTER TABLE busquedas_sitios ADD COLUMN nota TEXT');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: nota de las búsquedas de sitios.');
+  return true;
+}
+
+/**
+ * LOS CIMIENTOS DEL ORQUESTADOR.
+ *
+ * El modo automático monta el viaje entero en segundo plano llamando a las
+ * mismas funciones que usa el flujo manual. Esta migración no trae ninguna
+ * decisión: trae los sitios donde se guardan las que vendrán.
+ *
+ * CUATRO COSAS, y cada una está separada por un motivo:
+ *
+ *   · `viajes.automatico` y `viajes.config_auto`. El interruptor y todo lo que
+ *     hay que tener decidido de antemano. Va en JSON y no en veinte columnas
+ *     porque es una hoja de preferencias que va a crecer en cada fase, y añadir
+ *     una columna por cada casilla acaba en una tabla que nadie mira.
+ *
+ *   · `parametros_orquestador`. Los números con los que decide. Guardar el
+ *     valor de fábrica AL LADO del actual es lo que permite el botón de
+ *     restaurar sin tener que ir a buscarlo al código.
+ *
+ *   · `prompts_orquestador`. Lo que se le dice a la IA en cada fase, editable
+ *     desde la pantalla. El worker lee SIEMPRE de aquí, nunca de código: si el
+ *     prompt vive en dos sitios, el que se edita nunca es el que se usa.
+ *
+ *   · `orquestador_fases`. En qué punto va cada viaje, con su log. Una fila por
+ *     viaje y fase.
+ *
+ * Y UN FLAG EN LO QUE TOCAN LAS FASES. `tocado_a_mano` marca lo que ha decidido
+ * una persona para que ninguna fase lo pise. Todavía no lo lee nadie —las fases
+ * son cascarones—, pero la columna tiene que existir desde el principio: el día
+ * que una fase empiece a escribir de verdad, no puede ser el día en que se
+ * descubre que no hay dónde apuntar lo que era tuyo.
+ */
+function migracionOrquestador() {
+  const CLAVE = '2026-09-orquestador';
+  if (yaAplicada(CLAVE)) return false;
+
+  // --- 1) El interruptor y la hoja de preferencias -------------------------
+  const colsViaje = db.prepare('PRAGMA table_info(viajes)').all().map((c) => c.name);
+  if (!colsViaje.includes('automatico')) {
+    db.exec('ALTER TABLE viajes ADD COLUMN automatico INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!colsViaje.includes('config_auto')) {
+    db.exec('ALTER TABLE viajes ADD COLUMN config_auto TEXT');
+  }
+
+  // --- 2) Los números con los que decide -----------------------------------
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS parametros_orquestador (
+      clave         TEXT PRIMARY KEY,
+      valor         TEXT NOT NULL,
+      valor_fabrica TEXT NOT NULL,
+      descripcion   TEXT NOT NULL,
+      unidad        TEXT,
+      orden         INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS prompts_orquestador (
+      fase           TEXT PRIMARY KEY,
+      prompt_actual  TEXT NOT NULL,
+      prompt_fabrica TEXT NOT NULL,
+      actualizado_en TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS orquestador_fases (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      viaje_id     INTEGER NOT NULL REFERENCES viajes(id) ON DELETE CASCADE,
+      fase         TEXT    NOT NULL,
+      orden        INTEGER NOT NULL,
+      -- pendiente | en_curso | hecho | con_huecos | error
+      estado       TEXT    NOT NULL DEFAULT 'pendiente',
+      -- Lo que ha ido haciendo, en español y para leerlo en pantalla.
+      log          TEXT,
+      -- Lo que no consiguió. Una fase con huecos NO detiene el proceso.
+      huecos       TEXT,
+      empezado_en  TEXT,
+      terminado_en TEXT,
+      UNIQUE (viaje_id, fase)
+    );
+    CREATE INDEX IF NOT EXISTS idx_orq_fases_viaje ON orquestador_fases(viaje_id);
+  `);
+
+  // --- 3) El flag de "esto lo he decidido yo" ------------------------------
+  //
+  // En las cuatro tablas que van a tocar las fases: las paradas, lo apuntado
+  // (vuelos y hoteles), los traslados y lo colocado en el lienzo.
+  for (const tabla of ['etapas', 'candidatos', 'traslados', 'itinerario']) {
+    const cols = db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name);
+    if (cols.length && !cols.includes('tocado_a_mano')) {
+      db.exec(`ALTER TABLE ${tabla} ADD COLUMN tocado_a_mano INTEGER NOT NULL DEFAULT 0`);
+    }
+  }
+
+  sembrarParametros();
+  sembrarPrompts();
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: cimientos del orquestador.');
+  return true;
+}
+
+/**
+ * LOS PARÁMETROS DE FÁBRICA.
+ *
+ * `INSERT OR IGNORE`: si el parámetro ya está, no se toca. Lo que el usuario
+ * haya cambiado manda sobre lo que diga esta lista, y añadir un parámetro nuevo
+ * en una versión futura no puede resetear los diez anteriores.
+ */
+function sembrarParametros() {
+  const PARAMETROS = [
+    ['antelacion_vuelo_internacional_min', '120', 'Cuánto antes hay que estar en el aeropuerto para un vuelo de fuera de Europa', 'minutos'],
+    ['antelacion_vuelo_europeo_min', '60', 'Lo mismo para un vuelo europeo', 'minutos'],
+    ['antelacion_tren_min', '30', 'Cuánto antes hay que estar en la estación', 'minutos'],
+    ['minimo_noches_por_ciudad', '2', 'Por debajo de esto, una ciudad no compensa: se duerme más de lo que se ve', 'noches'],
+    ['max_ciudades_candidatas', '8', 'Cuántas ciudades se ponen sobre la mesa antes de elegir', 'ciudades'],
+    ['umbral_empate_traslado_min', '30', 'Diferencia de tiempo por debajo de la cual decide el precio y no el reloj', 'minutos'],
+    ['factor_precio_traslado', '3', 'Cuántas veces más caro tiene que ser para descartar la opción rápida', 'veces'],
+    ['duracion_comida_min', '90', 'Lo que se reserva para comer al repartir el día', 'minutos'],
+    ['max_excursiones_largas_por_dia', '1', 'Excursiones de día entero que caben en una jornada', 'excursiones'],
+    ['max_excursiones_por_viaje', '0', 'Tope de excursiones en todo el viaje (0 = sin límite)', 'excursiones'],
+    ['dias_caducidad_datos_sitios', '30', 'A partir de aquí, los datos de un sitio se vuelven a buscar', 'días'],
+  ];
+
+  const meter = db.prepare(
+    `INSERT OR IGNORE INTO parametros_orquestador
+       (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  PARAMETROS.forEach(([clave, valor, descripcion, unidad], i) => {
+    meter.run(clave, valor, valor, descripcion, unidad, i);
+  });
+}
+
+/**
+ * UNA FILA POR FASE, con un prompt de relleno.
+ *
+ * El de verdad llegará con cada fase. Lo que importa hoy es que la fila exista
+ * y que el worker ya lea de aquí: así, cuando se escriba el prompt bueno, no hay
+ * que cambiar ni una línea de código para que se use.
+ */
+function sembrarPrompts() {
+  const FASES = [
+    ['ciudades_y_noches', 'Elegir qué ciudades entran en el viaje, cuántas noches en cada una y por qué aeropuerto se entra y se sale.'],
+    ['traslados', 'Decidir cómo se va de cada ciudad a la siguiente.'],
+    ['dormir', 'Elegir alojamiento en cada parada con los filtros de la configuración.'],
+    ['sitios', 'Elegir qué ver en cada parada y apuntarlo.'],
+    ['excursiones', 'Elegir excursiones que merezcan la pena y repartirlas.'],
+    ['lienzo', 'Colocar lo apuntado en los días, respetando horarios y cierres.'],
+  ];
+
+  const meter = db.prepare(
+    `INSERT OR IGNORE INTO prompts_orquestador (fase, prompt_actual, prompt_fabrica)
+     VALUES (?, ?, ?)`
+  );
+  for (const [fase, texto] of FASES) {
+    const placeholder = `[PENDIENTE DE ESCRIBIR] ${texto}`;
+    meter.run(fase, placeholder, placeholder);
+  }
+}
+
+/**
+ * LA FASE 1 DEL ORQUESTADOR, YA CON CONTENIDO.
+ *
+ * Dos cosas: dónde guardar las ciudades que se pensaron y no entraron, y el
+ * prompt de verdad en lugar del marcador de posición.
+ *
+ * LAS DESCARTADAS SE GUARDAN porque son trabajo ya hecho. La IA se ha molestado
+ * en valorar Nara y en decir por qué no cabe en siete días; tirar eso obliga a
+ * volver a preguntarlo el día que alguien quiera añadirla a mano.
+ *
+ * EL PROMPT SE PISA A PROPÓSITO, y es la única vez que se hará. Lo que había era
+ * un `[PENDIENTE DE ESCRIBIR]` que no servía para nada; a partir de ahora, lo
+ * que el usuario escriba en el cerebro manda y esta migración no vuelve a tocar
+ * la fila —lleva su propia clave y solo corre una vez—.
+ */
+function migracionFase1Ciudades() {
+  const CLAVE = '2026-09-fase1-ciudades';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(viajes)').all().map((c) => c.name);
+  if (!cols.includes('ciudades_candidatas')) {
+    db.exec('ALTER TABLE viajes ADD COLUMN ciudades_candidatas TEXT');
+  }
+
+  const texto = promptDeCiudadesYNoches();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE
+              -- Solo se pisa lo que nadie ha tocado. Si el usuario ya lo editó,
+              -- su versión manda: para eso está la pantalla del cerebro.
+              WHEN prompt_actual = prompt_fabrica THEN ?
+              ELSE prompt_actual
+            END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: prompt real de la fase «ciudades y noches».');
+  return true;
+}
+
+/**
+ * EL PROMPT DE FÁBRICA DE LA FASE 1.
+ *
+ * Va en dos secciones marcadas porque son dos llamadas con el mismo criterio en
+ * medio: primero se piden candidatas, luego se buscan vuelos de verdad, y solo
+ * después se cierra la ruta. Las dos mitades tienen que decir lo mismo sobre el
+ * ritmo y los niños, y por eso se editan juntas y no en dos filas separadas.
+ *
+ * Los {{HUECOS}} los rellena services/orquestador-ciudades.js.
+ */
+function promptDeCiudadesYNoches() {
+  return `=== PASO 1: CANDIDATAS ===
+Eres un planificador de viajes con experiencia real en {{DESTINO}}.
+
+EL VIAJE
+- Destino: {{DESTINO}}
+- {{FORMA_DEL_DESTINO}}
+- Fechas: del {{FECHA_INICIO}} al {{FECHA_FIN}} ({{DIAS}} días, {{NOCHES}} noches)
+- Salen desde: {{ORIGEN}}
+- Viajeros: {{VIAJEROS}}
+- Ritmo: {{RITMO}}
+- Tipo de viaje: {{TIPO_VIAJE}}
+- Les interesa: {{INTERESES}}
+
+Propón hasta {{MAX_CIUDADES}} ciudades candidatas para este viaje. Todavía no
+decides la ruta: pones sobre la mesa lo que merece la pena, con datos para poder
+elegir después.
+
+Devuelve SOLO este JSON:
+
+{
+  "ciudades": [
+    {
+      "nombre": "nombre en español de la ciudad",
+      "peso": 1-5,
+      "noches_min": número,
+      "noches_max": número,
+      "aeropuerto_internacional": true|false,
+      "iata": "TYO"|null,
+      "por_que": "una frase: qué tiene esta ciudad que no tengan las otras"
+    }
+  ],
+  "tiempos": [
+    {"desde": "ciudad", "hasta": "ciudad", "minutos": número, "modo": "tren|coche|vuelo|bus|barco"}
+  ]
+}
+
+REGLAS, y la primera es la que más se incumple:
+
+1. NO TE SALGAS DE {{DESTINO}}. Si el destino es un país, todas las ciudades son
+   de ese país. Si el destino es UNA CIUDAD, el viaje es esa ciudad: la única
+   candidata es ella, y solo añades otra si de verdad merece dormir allí —no un
+   sitio que se ve en media jornada y se vuelve a cenar—. Proponer ciudades de
+   otro país es el peor fallo que puedes cometer aquí.
+2. LAS CIUDADES TIENEN QUE CABER EN {{DIAS}} DÍAS. No propongas ocho ciudades
+   para una semana. Cuenta que cada cambio de ciudad se come medio día entre
+   hacer maletas, trayecto y encontrar el alojamiento, y que por debajo de
+   {{MINIMO_NOCHES}} noches una ciudad se duerme más de lo que se ve. Si el
+   viaje es corto, propón pocas y buenas.
+3. "peso" es cuánto merece la pena, de 1 a 5, y sirve para repartir noches
+   después. No pongas todo a 5: si todo es imprescindible, no has priorizado.
+4. "aeropuerto_internacional" en true SOLO si tiene aeropuerto con vuelos
+   intercontinentales o europeos de verdad, no un aeródromo regional. De esto
+   depende por dónde se entra al país, así que no lo pongas por cortesía.
+5. AJUSTA A LOS VIAJEROS. Con niños pequeños, nada de tres trayectos largos en
+   una semana: menos ciudades y más noches en cada una. Con ritmo tranquilo,
+   igual. Con ritmo intenso puedes apretar, pero sin llegar a la paliza.
+6. "tiempos" es tu ESTIMACIÓN de trayecto entre las candidatas que se podrían
+   encadenar. No hace falta que estén todas contra todas: las que tengan sentido.
+   Es una orientación, no un horario: no te inventes precisión que no tienes.
+7. Los tiempos y las noches son números enteros. Nada de rangos dentro del JSON.
+
+=== PASO 3: CIERRE ===
+Eres el mismo planificador. Ya hay vuelos reales comprados y la puerta de entrada
+y de salida están DECIDIDAS: no se discuten.
+
+EL VIAJE
+- Destino: {{DESTINO}}
+- Fechas: del {{FECHA_INICIO}} al {{FECHA_FIN}}
+- NOCHES A REPARTIR: {{NOCHES}}
+
+  Ojo con esto, que es donde se falla: el viaje dura {{DIAS}} días pero se
+  reparten {{NOCHES}} NOCHES. Son cosas distintas y siempre hay una noche menos
+  que días, porque el último día se vuelve a casa y no se duerme allí. Lo que
+  tienen que sumar tus paradas es {{NOCHES}}.
+- Viajeros: {{VIAJEROS}} · Ritmo: {{RITMO}}
+- Les interesa: {{INTERESES}}
+
+ENTRADA Y SALIDA, YA FIJADAS CON VUELOS REALES
+- Se entra por: {{ENTRADA}}
+- Se sale por: {{SALIDA}}
+- {{HORARIOS_VUELOS}}
+
+CANDIDATAS QUE PROPUSISTE
+{{CANDIDATAS}}
+
+TIEMPOS ESTIMADOS ENTRE ELLAS
+{{TIEMPOS}}
+
+Cierra la ruta. Devuelve SOLO este JSON:
+
+{
+  "ruta": [
+    {"ciudad": "nombre", "noches": número, "motivo": "solo si incumple el mínimo de noches"}
+  ],
+  "noches_totales": número,
+  "descartadas": [
+    {"ciudad": "nombre", "por_que": "por qué se queda fuera"}
+  ],
+  "resumen": "dos frases: por qué esta ruta y no otra"
+}
+
+REGLA 1, Y ES LA QUE SE FALLA SIEMPRE: LAS NOCHES SUMAN {{NOCHES}}.
+
+No {{NOCHES}} aproximadamente: {{NOCHES}} exactas. Antes de responder, SUMA las
+noches que has puesto y escribe el resultado en "noches_totales". Si esa suma no
+da {{NOCHES}}, tu respuesta no vale y hay que rehacerla.
+
+Y cuando no cuadre, QUITA UNA CIUDAD. No repartas de menos para que quepan todas:
+tres ciudades bien vistas valen más que cinco de pasada. Los rangos de noches de
+las candidatas son una orientación de cuánto pide cada sitio, NO un presupuesto
+que haya que gastar entero.
+
+Ejemplo con 11 noches: 4 + 4 + 3 = 11 vale. 4 + 3 + 3 + 3 = 13 NO vale.
+
+EL RESTO DE REGLAS:
+
+2. LA PRIMERA PARADA ES {{ENTRADA}} Y LA ÚLTIMA ES {{SALIDA}}. Sin excepciones:
+   los vuelos ya están comprados. Si entrada y salida son la misma ciudad, esa
+   ciudad aparece al principio y al final, y son dos paradas distintas.
+3. Ninguna parada con 0 noches. Si una ciudad no llega a una noche, no es una
+   parada: es una excursión, y va fuera de la ruta.
+   Y SI SOLO HAY UNA PARADA —un viaje a una sola ciudad—, esa parada se lleva
+   LAS {{NOCHES}} NOCHES, y la ruta tiene un único elemento. No la partas en dos
+   ni metas una segunda ciudad para rellenar.
+4. Mínimo {{MINIMO_NOCHES}} noches por ciudad. Puedes bajar de ahí SOLO si es un
+   tránsito obligado (se pasa por allí porque no hay otra forma de llegar), y
+   entonces tienes que explicarlo en "motivo".
+5. Ordena para no dar rodeos: sigue la geografía, no el orden en que se te
+   ocurrieron. Un trayecto largo al principio se lleva mejor que al final.
+6. No metas ciudades que no estén en las candidatas.
+7. Reparte las noches según el peso y lo que les interesa, no a partes iguales.
+   Cuenta lo que se comen los vuelos: si se llega de madrugada esa primera noche
+   casi no existe, y si se sale a primera hora la última tampoco.`;
+}
+
+/**
+ * EL PROMPT DE LA FASE 1, AFINADO DESPUES DE PROBARLO.
+ *
+ * La primera version fallaba en lo mismo dos veces seguidas: la IA repartia 15 y
+ * 14 noches en un viaje de 11. Los rangos de las candidatas se leian como un
+ * presupuesto a gastar, y ninguna de las siete reglas le hacia hacer la suma.
+ *
+ * Ahora la cuenta es la regla 1, se le pide que escriba el total que le sale
+ * —hacer la suma en voz alta es lo que hace que salga bien— y se le dice que
+ * cuando no cuadre quite una ciudad en vez de estirar las noches.
+ *
+ * Solo se pisa lo que nadie haya editado: si el usuario ya afino el suyo, manda
+ * el suyo.
+ */
+function migracionFase1PromptAfinado() {
+  const CLAVE = '2026-09-fase1-prompt-afinado';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeCiudadesYNoches();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: prompt de la fase 1 afinado (la suma de noches).');
+  return true;
+}
+
+/**
+ * EL PROMPT DE LA FASE 1, ahora distinguiendo un pais de una ciudad.
+ *
+ * Probado con un viaje a Paris, la IA propuso Versalles, Amberes y Brujas. Las
+ * dos ultimas estan en Belgica. El prompt pedia "ciudades candidatas" sin decir
+ * en ningun sitio que el destino podia ser ya una ciudad, y con eso se puso a
+ * montar una ruta por Europa.
+ *
+ * Ahora se le dice la forma del destino, y la primera regla es no salirse de el.
+ */
+function migracionFase1CiudadUnica() {
+  const CLAVE = '2026-09-fase1-ciudad-unica';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeCiudadesYNoches();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: prompt de la fase 1 distingue país de ciudad.');
+  return true;
+}
+
+/**
+ * EL PROMPT DE LA FASE 1: dias y noches no son lo mismo.
+ *
+ * Con un viaje de 12 dias y 11 noches, la IA devolvio 12 noches dos veces
+ * seguidas. Le llegaban los dos numeros y usaba el que no era. Ahora se le dice
+ * la diferencia con todas las letras, y en el sitio donde se equivoca.
+ */
+function migracionFase1DiasVsNoches() {
+  const CLAVE = '2026-09-fase1-dias-vs-noches';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeCiudadesYNoches();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: el prompt de la fase 1 separa días de noches.');
   return true;
 }
 

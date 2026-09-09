@@ -23,7 +23,11 @@
  *
  * Espera: viaje, tipos, seleccionados, ritmos, esNuevo, urlVolver, error.
  */
-const cabezaExtra = '<link rel="stylesheet" href="/css/configuracion.css">';
+const cabezaExtra =
+  '<link rel="stylesheet" href="/css/configuracion.css">' +
+  // La seccion del viaje automatico se viste con la hoja del orquestador, que
+  // es donde viven todas sus clases `auto-`.
+  '<link rel="stylesheet" href="/css/orquestador.css">';
 const pieExtra = '<script src="/js/configuracion.js"></script>';
 
 // Los mismos cinco valores de siempre, con la cara de la maqueta: emoji dentro
@@ -242,6 +246,11 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
           </div>
         </div>
       </div>
+
+      <%- include('parciales/config-automatico', {
+            viaje, auto, opcionesAuto, categorias,
+            viajerosTotales, viajerosParaFamiliar,
+          }) %>
 
     </div>
 

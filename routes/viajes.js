@@ -164,6 +164,27 @@ import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import { buscandoDatos } from '../services/datos-sitios.js';
 import {
+  pedirBusqueda,
+  elegirPropuestas,
+  borrarBusqueda,
+  busquedasDeEtapa,
+} from '../services/busquedas-sitios.js';
+import {
+  OPCIONES_AUTO,
+  VIAJEROS_PARA_FAMILIAR,
+  configAuto,
+  validarConfigAuto,
+  lanzarOrquestador,
+  progresoDeViaje,
+  parametros,
+  guardarParametro,
+  restaurarParametro,
+  prompts,
+  guardarPrompt,
+  restaurarPrompt,
+} from '../services/orquestador.js';
+import { CATEGORIAS_SITIO } from '../services/descubrir.js';
+import {
   datosDePortada,
   borrarViaje,
   loQueArrastra,
@@ -401,6 +422,14 @@ router.get('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
         ritmos: RITMOS,
         esNuevo,
         urlVolver: destinoDeVuelta(req.query.volverA, viaje, esNuevo),
+        // Lo del modo automatico. Va siempre, aunque el check este apagado: la
+        // seccion se pinta oculta para que el navegador conserve lo escrito
+        // cuando se marca y se desmarca.
+        auto: configAuto(viaje),
+        opcionesAuto: OPCIONES_AUTO,
+        categorias: CATEGORIAS_SITIO,
+        viajerosTotales: (viaje.adultos ?? 2) + (viaje.ninos ?? 0),
+        viajerosParaFamiliar: VIAJEROS_PARA_FAMILIAR,
         error: null,
       });
     }
@@ -491,6 +520,10 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
 
     /** Vuelve a pintar la pantalla conservando lo que había escrito. */
     const esNuevo = !viaje.destino;
+    // Lo que llegue de la seccion automatica, aun sin validar. Se declara aqui
+    // porque `conError` lo necesita para poder devolver la pantalla con lo
+    // escrito puesto, y se rellena mas abajo cuando toca validar.
+    let datosAuto = null;
     const urlVolver = destinoDeVuelta(req.body.volverA, viaje, esNuevo);
 
     const conError = (mensaje, campo) =>
@@ -506,12 +539,21 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
           adultos: Number(req.body.adultos) || viaje.adultos,
           ninos: Number(req.body.ninos) || 0,
           edadesNinos: comoLista(req.body.edades_ninos).map(Number),
+          // El check, tal y como lo dejo el usuario: si vuelve la pantalla con
+          // un error, la seccion tiene que seguir abierta.
+          automatico: req.body.automatico ? 1 : 0,
         },
         tipos: TIPOS_VIAJE,
         seleccionados: (tipo_viaje || '').split(',').filter(Boolean),
         ritmos: RITMOS,
         esNuevo,
         urlVolver,
+        // Lo que habia escrito en la seccion automatica, para no perderlo.
+        auto: { ...configAuto(viaje), ...(datosAuto ?? {}) },
+        opcionesAuto: OPCIONES_AUTO,
+        categorias: CATEGORIAS_SITIO,
+        viajerosTotales: (Number(req.body.adultos) || viaje.adultos || 2) + (Number(req.body.ninos) || 0),
+        viajerosParaFamiliar: VIAJEROS_PARA_FAMILIAR,
         error: { mensaje, campo },
       });
 
@@ -546,6 +588,23 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
     // --- Más opciones ---
     const ritmoLimpio = RITMOS.includes(ritmo) ? ritmo : 'normal';
 
+    // --- El modo automático ---
+    //
+    // Se valida ANTES de guardar nada: si falta un campo, la pantalla vuelve con
+    // el aviso y el viaje se queda como estaba. Guardar a medias dejaría un
+    // viaje marcado como automático al que le faltan decisiones, y el
+    // orquestador tendría que inventárselas.
+    const quiereAutomatico = Boolean(req.body.automatico);
+    if (quiereAutomatico) {
+      const viajeros = (Number(req.body.adultos) || 1) + (Number(req.body.ninos) || 0);
+      const revision = validarConfigAuto(req.body, {
+        viajeros,
+        categoriasValidas: CATEGORIAS_SITIO,
+      });
+      datosAuto = revision.limpia;
+      if (revision.error) return conError(revision.error, revision.campo);
+    }
+
     // De dónde se sale. Vacío vuelve a Barcelona, que es lo de siempre.
     const origenLimpio = String(ciudad_origen ?? '').trim().slice(0, 120) || 'Barcelona';
     const cambioElOrigen = origenLimpio !== (viaje.ciudad_origen ?? 'Barcelona');
@@ -553,7 +612,8 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
     ejecutar(
       `UPDATE viajes
           SET fecha_inicio = ?, fecha_fin = ?, presupuesto = ?, tipo_viaje = ?,
-              adultos = ?, ninos = ?, edades_ninos = ?, ritmo = ?, ciudad_origen = ?
+              adultos = ?, ninos = ?, edades_ninos = ?, ritmo = ?, ciudad_origen = ?,
+              automatico = ?, config_auto = ?
         WHERE id = ?`,
       fecha_inicio,
       fecha_fin,
@@ -564,6 +624,10 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       JSON.stringify(edades),
       ritmoLimpio,
       origenLimpio,
+      quiereAutomatico ? 1 : 0,
+      // Al apagar el check no se borra lo contestado: si vuelve a encenderlo,
+      // se encuentra sus respuestas puestas en vez de la pantalla en blanco.
+      datosAuto ? JSON.stringify(datosAuto) : (viaje.config_auto ?? null),
       viaje.id
     );
 
@@ -597,6 +661,14 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
             (reencolados.length ? `; a buscar de nuevo: ${reencolados.join(', ')}.` : '.')
         );
       }
+    }
+
+    // CON EL CHECK PUESTO NO SE VA AL MAPA: se pone a montar el viaje y se
+    // enseña el progreso. Es la diferencia entera entre los dos modos, y por eso
+    // va aquí, en el único sitio por el que pasan los dos.
+    if (quiereAutomatico) {
+      lanzarOrquestador(viaje.id);
+      return res.redirect(`/viajes/${viaje.id}/orquestador`);
     }
 
     // Se vuelve a donde estabas: a la ruta si venias de ella, y al mapamundi si
@@ -890,12 +962,23 @@ router.get('/descubrir/:destinoId', cargarDestino, (req, res) => {
 const PESTANAS = ['ver', 'dormir', 'llegar', 'mapa'];
 const SUBPESTANAS = ['sub-sitios', 'sub-excursiones', 'sub-comer', 'sub-moverse'];
 
+/**
+ * Y un tercer nivel dentro de «Sitios»: en qué bloque estabas.
+ *
+ * Va en la URL por lo mismo que los otros dos: buscar algo en «Mis búsquedas»
+ * recarga la pantalla cuando termina el trabajo, y sin esto la recarga te
+ * devolvía a «Imprescindibles» justo cuando venías a ver lo que habías pedido.
+ */
+const BLOQUES_VISTA = ['imprescindibles', 'otros', 'ninos', 'busqueda'];
+
 function vistaPedida(query = {}) {
   const p = String(query.p ?? '').trim();
   const sp = String(query.sp ?? '').trim();
+  const bl = String(query.bl ?? '').trim();
   return {
     pestana: PESTANAS.includes(p) ? p : PESTANAS[0],
     subpestana: SUBPESTANAS.includes(sp) ? sp : SUBPESTANAS[0],
+    bloque: BLOQUES_VISTA.includes(bl) ? bl : BLOQUES_VISTA[0],
   };
 }
 
@@ -1513,6 +1596,14 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
     return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
   }
 
+  // SI SE ESTA MONTANDO SOLO, se enseña el progreso en vez de la ruta. Cerrar
+  // la pantalla de progreso no cancela nada —el trabajo va por la cola—, así que
+  // al volver al viaje hay que devolverle donde estaba: mirando cómo se monta.
+  // Una ruta medio vacía que cambia sola bajo el ratón no se entiende.
+  if (viaje.automatico && progresoDeViaje(viajeId).trabajando) {
+    return res.redirect(`/viajes/${viajeId}/orquestador`);
+  }
+
   // Se recalcula al entrar: si algo quedó descuadrado (un viaje migrado, unas
   // fechas cambiadas desde otra pantalla), la ruta se ve ya coherente.
   recalcularRuta(viajeId);
@@ -1819,6 +1910,12 @@ router.get('/etapa/:etapaId/estado', cargarContextoEtapa, (req, res) => {
   // "cargando…" en cada hueco hasta que uno recargaba a mano.
   const datos = { buscando: Boolean(etapa.punto_interes_id && buscandoDatos(etapa.viaje_id, etapa.punto_interes_id)) };
 
+  // Y las busquedas del usuario, que son lo ultimo que trabaja en esta pantalla.
+  // Una busqueda "esperando" NO cuenta como trabajo: esta parada a proposito,
+  // esperando a que alguien marque casillas, y contarla dejaria el sondeo dando
+  // vueltas para siempre.
+  const misBusquedas = busquedasDeEtapa(etapa);
+
   const algunTramoBuscando = Object.values(tramos).some(
     (t) => t.estado === 'buscando' || t.medios?.buscando
   );
@@ -1833,10 +1930,12 @@ router.get('/etapa/:etapaId/estado', cargarContextoEtapa, (req, res) => {
     traslados: { calculando: misTraslados.calculando, total: misTraslados.traslados.length },
     comer: { buscando: miComer.buscando, total: miComer.fichas.length },
     datos,
+    busquedas: { buscando: misBusquedas.trabajando, total: misBusquedas.busquedas.length },
     // La pantalla recarga cuando NADA sigue en marcha.
     trabajando:
       preparacion.trabajando ||
       datos.buscando ||
+      misBusquedas.trabajando ||
       hoteles.estado === 'buscando' ||
       movilidad.buscando ||
       misTraslados.calculando ||
@@ -2174,6 +2273,102 @@ function distanciasDeSitios(sitios) {
 // COMER — bares y restaurantes
 // =============================================================================
 /** Buscar. El texto libre es el matiz: "cenar tranquilo cerca del hotel". */
+// =============================================================================
+// EL ORQUESTADOR: progreso, parámetros y cerebro
+// =============================================================================
+/**
+ * La pantalla de progreso del montaje automático.
+ *
+ * Se puede volver cuando sea: el trabajo va por la cola, así que si cerraste la
+ * pestaña y vuelves, aquí está por dónde iba.
+ */
+router.get('/viajes/:id/orquestador', cargarViaje, (req, res) => {
+  res.render('orquestador-progreso', {
+    viaje: req.viaje,
+    progreso: progresoDeViaje(req.viaje.id),
+  });
+});
+
+/** Sondeo de esa pantalla. Devuelve las seis fases con su estado y su log. */
+router.get('/viajes/:id/orquestador/estado', cargarViaje, (req, res) => {
+  res.json(progresoDeViaje(req.viaje.id));
+});
+
+/** Volver a lanzarlo. Reinicia las fases: si le das, es que quieres rehacerlo. */
+router.post('/viajes/:id/orquestador/lanzar', cargarViaje, (req, res) => {
+  const r = lanzarOrquestador(req.viaje.id);
+  res.json(r);
+});
+
+/** Los números con los que decide. */
+router.get('/orquestador/parametros', (req, res) => {
+  res.render('orquestador-parametros', { parametros: parametros() });
+});
+
+router.post('/api/orquestador/parametros/:clave', (req, res) => {
+  const r = guardarParametro(req.params.clave, req.body?.valor);
+  if (!r) return res.status(404).json({ error: 'Ese parámetro no existe.' });
+  if (r.error) return res.status(400).json(r);
+  res.json({ ...r, esDeFabrica: r.valor === r.valor_fabrica });
+});
+
+router.post('/api/orquestador/parametros/:clave/restaurar', (req, res) => {
+  const r = restaurarParametro(req.params.clave);
+  if (!r) return res.status(404).json({ error: 'Ese parámetro no existe.' });
+  res.json({ ...r, esDeFabrica: true });
+});
+
+/** Lo que se le dice a la IA en cada fase. */
+router.get('/orquestador/cerebro', (req, res) => {
+  res.render('orquestador-cerebro', { prompts: prompts() });
+});
+
+router.post('/api/orquestador/prompts/:fase', (req, res) => {
+  const r = guardarPrompt(req.params.fase, req.body?.texto);
+  if (r.error) return res.status(400).json(r);
+  res.json({ ...r, esDeFabrica: r.prompt_actual === r.prompt_fabrica });
+});
+
+router.post('/api/orquestador/prompts/:fase/restaurar', (req, res) => {
+  const r = restaurarPrompt(req.params.fase);
+  if (!r) return res.status(404).json({ error: 'Esa fase no existe.' });
+  res.json({ ...r, esDeFabrica: true });
+});
+
+// =============================================================================
+// «MIS BÚSQUEDAS»: los sitios que el usuario se busca por su cuenta
+// =============================================================================
+/** Escribir algo y darle a buscar. Se toma nota y se encola; aquí no se espera. */
+router.post('/api/etapas/:etapaId/sitios/buscar', (req, res) => {
+  const etapa = una('SELECT * FROM etapas WHERE id = ?', Number(req.params.etapaId));
+  if (!etapa) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', etapa.viaje_id);
+  const r = pedirBusqueda(viaje, etapa, req.body?.texto);
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+
+/** Sondeo de la pestaña: en qué punto va cada búsqueda. */
+router.get('/api/etapas/:etapaId/sitios/busquedas', (req, res) => {
+  const etapa = una('SELECT * FROM etapas WHERE id = ?', Number(req.params.etapaId));
+  if (!etapa) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+  res.json(busquedasDeEtapa(etapa));
+});
+
+/** El usuario marca cuáles de las propuestas quiere. */
+router.post('/api/busquedas-sitios/:id/elegir', (req, res) => {
+  const r = elegirPropuestas(Number(req.params.id), req.body?.nombres);
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+
+/** Quitar una búsqueda de la lista. Las fichas que dio se quedan: son catálogo. */
+router.delete('/api/busquedas-sitios/:id', (req, res) => {
+  borrarBusqueda(Number(req.params.id));
+  res.json({ ok: true });
+});
+
 router.post('/api/etapas/:etapaId/comer/buscar', (req, res) => {
   const r = pedirBusquedaDeComer(Number(req.params.etapaId), req.body?.consulta);
   if (!r) return res.status(404).json({ error: 'Esa parada ya no existe.' });

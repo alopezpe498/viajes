@@ -187,17 +187,13 @@ const texto = (v) => {
  * la cola: sin él, un trabajo "hecho" que no rellenó nada es indistinguible de
  * uno que rellenó todo.
  */
-export async function buscarDatosDeSitios(punto) {
-  const sitios = todas(
-    'SELECT id, nombre FROM sitios_lugar WHERE punto_interes_id = ? ORDER BY orden, id',
-    punto.id
-  );
-  if (!sitios.length) return { sitios: 0, rellenados: 0, mensaje: 'No hay sitios que consultar.' };
-
-  const ciudad = punto.ciudad_base || punto.nombre;
-  const nombres = sitios.map((s) => s.nombre);
-
-  // --- 1) La búsqueda, una sola -------------------------------------------
+/**
+ * UNA TANDA: una búsqueda en Google y una pasada de la IA ordenando lo que vino.
+ *
+ * Devuelve los datos indexados por nombre normalizado, que es como se casan
+ * después con sus filas.
+ */
+async function unaTanda(ciudad, nombres) {
   let resultado;
   try {
     resultado = await buscarTablaDeSitios({ ciudad, sitios: nombres });
@@ -211,17 +207,120 @@ export async function buscarDatosDeSitios(punto) {
     throw new Error(`${porQue} Las fichas se quedan sin datos duros.`);
   }
 
-  // --- 2) La IA ordena lo que vino, sin añadir nada ------------------------
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
   const r = await consultarJSON(prompt(ciudad, nombres, resultado.texto), {
-    maxTokens: 4000,
+    // Treinta sitios con cinco campos cada uno no caben en cuatro mil tokens, y
+    // una respuesta cortada por el límite se pierde entera: no es JSON válido.
+    maxTokens: 8000,
     paso: `ordenar los datos de los sitios de ${ciudad}`,
   });
 
-  const porNombre = new Map(
-    (r?.sitios ?? []).map((s) => [normalizarNombre(s?.nombre), s])
+  const porNombre = new Map();
+  for (const s of r?.sitios ?? []) {
+    if (s?.nombre) porNombre.set(normalizarNombre(s.nombre), s);
+  }
+  return { porNombre, fuente: resultado.fuente };
+}
+
+/** Cuántos de los pedidos han vuelto con algo. Es la vara de medir del plan B. */
+function cuantosTraenAlgo(nombres, porNombre) {
+  return nombres.filter((n) => {
+    const d = porNombre.get(normalizarNombre(n));
+    return d && (d.precio || d.horarios || d.tiempoVisita || d.web || d.telefono);
+  }).length;
+}
+
+/**
+ * A partir de cuántos sitios tiene sentido plantearse partir la búsqueda.
+ *
+ * Con diez, si vuelven pocos es que Google no sabía de ellos, y repetir en dos
+ * mitades da lo mismo dos veces. Con veinte o treinta, lo más probable es que la
+ * tabla se haya quedado corta.
+ */
+const MUCHOS_SITIOS = 14;
+
+/** Por debajo de esto se considera que la respuesta vino incompleta. */
+const COBERTURA_MINIMA = 0.7;
+
+/**
+ * Cuántos sitios caben en una tanda que funcione.
+ *
+ * Doce y no "la mitad de lo que sea". Medido: con diez sitios el Modo IA
+ * devuelve la tabla entera y completa; con treinta devuelve dos párrafos y
+ * ninguna fila. Partiendo por la mitad, esos treinta daban dos tandas de quince
+ * y la segunda volvía vacía —catorce de treinta—. En trozos de doce salen tres
+ * tandas y vuelven casi todos.
+ *
+ * Para una lista de veinte, que es el caso normal de una etapa sin niños, esto
+ * son exactamente dos búsquedas.
+ */
+const TAMANO_TANDA = 12;
+
+/**
+ * @param {object} punto
+ * @param {{ids?: number[]}} opciones `ids` limita la búsqueda a esos sitios.
+ *   Lo usa «Mis búsquedas»: una ficha recién creada necesita sus datos, y
+ *   rehacer la tabla de los treinta que ya los tienen sería abrir el navegador
+ *   para nada.
+ */
+export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
+  const filtro = ids?.length ? ` AND id IN (${ids.map(() => '?').join(',')})` : '';
+  const sitios = todas(
+    `SELECT id, nombre, horarios FROM sitios_lugar
+      WHERE punto_interes_id = ?${filtro} ORDER BY orden, id`,
+    punto.id,
+    ...(ids?.length ? ids : [])
   );
+  if (!sitios.length) return { sitios: 0, rellenados: 0, mensaje: 'No hay sitios que consultar.' };
+
+  const ciudad = punto.ciudad_base || punto.nombre;
+  const nombres = sitios.map((s) => s.nombre);
+
+  // --- 1 y 2) Una búsqueda para todos, y la IA ordenando -------------------
+  let { porNombre, fuente } = await unaTanda(ciudad, nombres);
+
+  // --- PLAN B: la misma búsqueda, en dos mitades --------------------------
+  //
+  // Se pide UNA tabla con todos los sitios de la etapa, que ahora pueden ser
+  // treinta. Google contesta lo que le cabe, y con esa lista de la compra la
+  // tabla llega a veces cortada por la mitad: las primeras filas completas y el
+  // resto sin nada. No se distingue de "no lo sabe" mirando una fila, pero sí
+  // mirando el conjunto —si vuelven ocho de treinta, no es que falte
+  // información, es que faltan filas—.
+  //
+  // Entonces se repite en dos tandas más cortas y se junta. Cuesta una búsqueda
+  // más y medio minuto, y solo pasa cuando hace falta.
+  const cobertura = cuantosTraenAlgo(nombres, porNombre);
+  if (nombres.length >= MUCHOS_SITIOS && cobertura < nombres.length * COBERTURA_MINIMA) {
+    const trozos = [];
+    for (let i = 0; i < nombres.length; i += TAMANO_TANDA) {
+      trozos.push(nombres.slice(i, i + TAMANO_TANDA));
+    }
+    console.log(
+      `[datos-sitios] ${ciudad}: solo ${cobertura} de ${nombres.length} en una tabla. ` +
+        `La parto en ${trozos.length} y repito.`
+    );
+
+    const juntas = new Map();
+    let fuentePartida = fuente;
+    for (const trozo of trozos) {
+      try {
+        const parcial = await unaTanda(ciudad, trozo);
+        for (const [k, v] of parcial.porNombre) juntas.set(k, v);
+        fuentePartida = parcial.fuente;
+      } catch (err) {
+        console.warn(`[datos-sitios] ${ciudad}: una de las tandas falló (${err.message}).`);
+      }
+    }
+
+    // Solo se cambia de caballo si el partido va mejor. Si las tandas fallaron
+    // o trajeron menos, se conserva lo de la búsqueda entera.
+    if (cuantosTraenAlgo(nombres, juntas) > cobertura) {
+      porNombre = juntas;
+      fuente = `${fuentePartida} (en ${trozos.length} tandas)`;
+    }
+  }
 
   // --- 3) Guardar, campo a campo ------------------------------------------
   const cuando = new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -262,17 +361,17 @@ export async function buscarDatosDeSitios(punto) {
       fila.web,
       fila.telefono,
       cuando,
-      resultado.fuente,
+      fuente,
       s.id
     );
   }
 
   const resumen =
     `${rellenados} de ${sitios.length} sitios con algún dato (${campos} campos) ` +
-    `· fuente: ${resultado.fuente}`;
+    `· fuente: ${fuente}`;
   console.log(`[datos-sitios] ${ciudad}: ${resumen}`);
 
-  return { sitios: sitios.length, rellenados, campos, fuente: resultado.fuente, mensaje: resumen };
+  return { sitios: sitios.length, rellenados, campos, fuente: fuente, mensaje: resumen };
 }
 
 // =============================================================================

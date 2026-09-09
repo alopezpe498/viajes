@@ -1,0 +1,75 @@
+<%
+/**
+ * PARÁMETROS DEL ORQUESTADOR.
+ *
+ * Los números con los que decide: cuánta antelación en el aeropuerto, cuántas
+ * noches mínimas por ciudad, cuándo un traslado más caro deja de compensar.
+ *
+ * Cada uno enseña su valor de fábrica al lado. No es adorno: es lo que permite
+ * volver atrás sin acordarse de cuál era, y lo que hace que tocarlos no dé
+ * miedo. Un ajuste del que no se puede volver, no se toca.
+ *
+ * Espera: parametros.
+ */
+const cabezaExtra = '<link rel="stylesheet" href="/css/orquestador.css">';
+const pieExtra = '<script src="/js/orquestador.js" defer></script>';
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: 'Parámetros del orquestador',
+      extraCabeza: cabezaExtra,
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido orquestador">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga"><a href="/">Mis viajes</a> / Ajustes</p>
+      <h1 class="orq__titulo">
+        <i class="ti ti-adjustments" aria-hidden="true"></i> Parámetros del orquestador
+      </h1>
+      <p class="orq__bajada">
+        Los números con los que monta los viajes. Se guardan al salir del campo.
+      </p>
+    </header>
+
+    <p class="orq-aviso" data-aviso-parametros hidden></p>
+
+    <ul class="orq-parametros">
+      <% parametros.forEach(p => { %>
+        <li class="orq-parametro <%= p.esDeFabrica ? '' : 'orq-parametro--tocado' %>"
+            data-parametro="<%= p.clave %>">
+          <div class="orq-parametro__texto">
+            <label class="orq-parametro__nombre" for="p-<%= p.clave %>"><%= p.descripcion %></label>
+            <code class="orq-parametro__clave"><%= p.clave %></code>
+          </div>
+
+          <div class="orq-parametro__control">
+            <input type="number" id="p-<%= p.clave %>" min="0" step="1"
+                   value="<%= p.valor %>" data-valor
+                   aria-label="<%= p.descripcion %>">
+            <span class="orq-parametro__unidad"><%= p.unidad || '' %></span>
+
+            <%# El botón solo tiene sentido si el valor NO es el de fábrica.
+                Enseñarlo siempre invita a pulsarlo para no cambiar nada. %>
+            <button class="orq-parametro__restaurar" type="button" data-restaurar
+                    title="Volver a <%= p.valor_fabrica %>"
+                    <%= p.esDeFabrica ? 'hidden' : '' %>>
+              <i class="ti ti-rotate" aria-hidden="true"></i>
+              <span>De fábrica: <%= p.valor_fabrica %></span>
+            </button>
+          </div>
+        </li>
+      <% }) %>
+    </ul>
+
+    <div class="orq-pie">
+      <a class="boton boton--secundario" href="/orquestador/cerebro">
+        <i class="ti ti-brain" aria-hidden="true"></i> Cerebro del orquestador
+      </a>
+    </div>
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

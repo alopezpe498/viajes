@@ -1,0 +1,131 @@
+<%
+/**
+ * EL PROGRESO DEL VIAJE AUTOMÁTICO.
+ *
+ * Seis fases en orden, cada una con su estado, lo que ha ido haciendo y lo que
+ * no ha conseguido. Se refresca sola con el mismo mecanismo de sondeo que el
+ * resto de la aplicación: mientras algo trabaje, se pregunta; cuando no queda
+ * nada en marcha, se para sola.
+ *
+ * SI CIERRAS ESTA PANTALLA NO PASA NADA. El trabajo va por la cola, en segundo
+ * plano, y sigue. Al volver al viaje se te enseña por dónde va.
+ *
+ * Espera: viaje, progreso.
+ */
+const cabezaExtra = '<link rel="stylesheet" href="/css/orquestador.css">';
+const pieExtra = '<script src="/js/orquestador.js" defer></script>';
+
+const ICONO_ESTADO = {
+  pendiente: 'ti-circle',
+  en_curso: 'ti-loader-2',
+  hecho: 'ti-circle-check',
+  con_huecos: 'ti-alert-circle',
+  error: 'ti-circle-x',
+};
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      // El título de la pestaña dice en qué punto va: con varias pestañas
+      // abiertas es lo único que se ve del progreso sin volver a mirar.
+      titulo: `${progreso.terminado ? 'Montado' : 'Montando'} · ${viaje.nombre}`,
+      extraCabeza: cabezaExtra,
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido orquestador" data-viaje="<%= viaje.id %>"
+       data-trabajando="<%= progreso.trabajando ? '1' : '' %>">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <%= viaje.nombre %>
+      </p>
+      <h1 class="orq__titulo">
+        <i class="ti ti-sparkles" aria-hidden="true"></i>
+        <%= progreso.terminado ? 'Tu viaje está montado' : 'Montando tu viaje' %>
+      </h1>
+      <p class="orq__bajada" id="orq-bajada">
+        <% if (progreso.trabajando) { %>
+          Voy por la fase <%= Math.min(progreso.resueltas + 1, progreso.total) %> de <%= progreso.total %>.
+          Puedes cerrar esta pantalla: sigue en segundo plano.
+        <% } else if (progreso.terminado) { %>
+          Ya está. Repasa lo que ha quedado y ajusta lo que quieras.
+        <% } else { %>
+          Todavía no ha empezado.
+        <% } %>
+      </p>
+    </header>
+
+    <%# La barra: cuántas fases están resueltas, con hueco o sin él. %>
+    <div class="orq-barra" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="<%= progreso.porcentaje %>" aria-label="Progreso del montaje">
+      <div class="orq-barra__relleno" id="orq-relleno" style="width: <%= progreso.porcentaje %>%"></div>
+    </div>
+
+    <ol class="orq-fases" id="orq-fases">
+      <% progreso.fases.forEach(f => { %>
+        <li class="orq-fase orq-fase--<%= f.estado %>" data-fase="<%= f.clave %>">
+          <div class="orq-fase__marca">
+            <i class="ti <%= ICONO_ESTADO[f.estado] %> <%= f.estado === 'en_curso' ? 'orq-gira' : '' %>"
+               aria-hidden="true"></i>
+          </div>
+
+          <div class="orq-fase__cuerpo">
+            <div class="orq-fase__cabecera">
+              <h2 class="orq-fase__nombre">
+                <i class="ti <%= f.icono %>" aria-hidden="true"></i> <%= f.etiqueta %>
+              </h2>
+              <span class="orq-fase__estado"><%= f.nombreEstado %></span>
+            </div>
+
+            <p class="orq-fase__explica"><%= f.explica %></p>
+
+            <% if (f.log) { %>
+              <pre class="orq-fase__log"><%= f.log %></pre>
+            <% } %>
+
+            <% if (f.huecos.length) { %>
+              <ul class="orq-fase__huecos">
+                <% f.huecos.forEach(h => { %>
+                  <li><i class="ti ti-alert-triangle" aria-hidden="true"></i> <%= h %></li>
+                <% }) %>
+              </ul>
+            <% } %>
+          </div>
+        </li>
+      <% }) %>
+    </ol>
+
+    <% if (progreso.mensajeError) { %>
+      <p class="orq-fallo">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        El montaje se cortó: <%= progreso.mensajeError %>
+      </p>
+    <% } %>
+
+    <%# LOS HUECOS, TODOS JUNTOS. Es lo que hay que repasar a mano, y leerlo
+        fase por fase no da la foto: aquí está la lista entera. %>
+    <% if (progreso.huecos.length) { %>
+      <section class="orq-resumen-huecos">
+        <h2><i class="ti ti-list-check" aria-hidden="true"></i> Lo que te dejo para repasar</h2>
+        <ul>
+          <% progreso.huecos.forEach(h => { %>
+            <li><strong><%= h.fase %>:</strong> <%= h.texto %></li>
+          <% }) %>
+        </ul>
+      </section>
+    <% } %>
+
+    <div class="orq-pie">
+      <a class="boton <%= progreso.terminado ? 'boton--primario' : 'boton--secundario' %>"
+         href="/viaje/<%= viaje.id %>/ruta" id="orq-ver-ruta">
+        <i class="ti ti-route" aria-hidden="true"></i> Ver mi ruta
+      </a>
+      <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/1">
+        <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> Volver a la configuración
+      </a>
+    </div>
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

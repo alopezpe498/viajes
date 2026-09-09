@@ -217,6 +217,128 @@
   }
 
   // ===========================================================================
+  // LOS BLOQUES DE SITIOS: Imprescindibles / Otros / Para niños / Mis búsquedas
+  // ---------------------------------------------------------------------------
+  // Un tercer nivel de pestañas, dentro de "Sitios". Va aparte del de arriba y
+  // no reutiliza aquel código porque son barras distintas: `.subpestanas` es
+  // única en la pantalla y ese bloque hace `querySelector`, así que meter otra
+  // con la misma clase le habría robado los botones a la primera.
+  //
+  // Se guarda en la URL (?bl=) por lo mismo que las otras dos: cuando termina
+  // una búsqueda la pantalla se recarga entera, y sin esto la recarga te sacaba
+  // de "Mis búsquedas" justo al terminar de buscar.
+  // ===========================================================================
+  const barraBloques = raiz.querySelector('.bloque-pestanas');
+  if (barraBloques) {
+    const bBotones = [...barraBloques.querySelectorAll('.bloque-pestana')];
+    const bPaneles = bBotones.map((b) => document.getElementById(b.dataset.bloquePanel));
+
+    const mostrarBloque = (indice, { guardar = true } = {}) => {
+      bBotones.forEach((b, i) => {
+        b.classList.toggle('bloque-pestana--activa', i === indice);
+        b.setAttribute('aria-selected', String(i === indice));
+      });
+      bPaneles.forEach((p, i) => {
+        if (p) p.hidden = i !== indice;
+      });
+      if (guardar && bBotones[indice]) {
+        ponerEnLaUrl({ bl: bBotones[indice].dataset.bloquePanel.replace(/^bloque-/, '') });
+      }
+    };
+
+    bBotones.forEach((b, i) => b.addEventListener('click', () => mostrarBloque(i)));
+
+    barraBloques.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return;
+      const actual = bBotones.findIndex((b) => b.classList.contains('bloque-pestana--activa'));
+      const siguiente = (actual + (ev.key === 'ArrowRight' ? 1 : -1) + bBotones.length) % bBotones.length;
+      mostrarBloque(siguiente);
+      bBotones[siguiente].focus();
+      ev.preventDefault();
+    });
+  }
+
+  // ===========================================================================
+  // MIS BÚSQUEDAS: escribir, elegir y borrar
+  // ---------------------------------------------------------------------------
+  // Todo va por la cola. Aquí no se espera a nada: se manda, se deja el campo en
+  // "buscando" y el sondeo de la pantalla —que ya cuenta estas búsquedas— se
+  // encarga de recargar cuando terminen.
+  // ===========================================================================
+  const avisoBusqueda = raiz.querySelector('[data-error-busqueda]');
+  const decirloEnPantalla = (mensaje) => {
+    if (!avisoBusqueda) return;
+    avisoBusqueda.textContent = mensaje ?? '';
+    avisoBusqueda.hidden = !mensaje;
+  };
+
+  raiz.querySelector('[data-buscar-sitios]')?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const form = ev.currentTarget;
+    const campo = form.querySelector('input[name="texto"]');
+    const texto = campo.value.trim();
+    if (!texto) return;
+
+    const boton = form.querySelector('button[type="submit"]');
+    boton.disabled = true;
+    decirloEnPantalla(null);
+
+    try {
+      const r = await fetch(`/api/etapas/${form.dataset.buscarSitios}/sitios/buscar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ texto }),
+      });
+      const datos = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+      campo.value = '';
+      location.reload();
+    } catch (err) {
+      decirloEnPantalla(err.message);
+      boton.disabled = false;
+    }
+  });
+
+  raiz.addEventListener('submit', async (ev) => {
+    const form = ev.target.closest('[data-elegir]');
+    if (!form) return;
+    ev.preventDefault();
+
+    const nombres = [...form.querySelectorAll('input[name="nombres"]:checked')].map((c) => c.value);
+    if (!nombres.length) return decirloEnPantalla('Marca al menos uno.');
+
+    const boton = form.querySelector('button[type="submit"]');
+    boton.disabled = true;
+    decirloEnPantalla(null);
+
+    try {
+      const r = await fetch(`/api/busquedas-sitios/${form.dataset.elegir}/elegir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ nombres }),
+      });
+      const datos = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+      location.reload();
+    } catch (err) {
+      decirloEnPantalla(err.message);
+      boton.disabled = false;
+    }
+  });
+
+  raiz.addEventListener('click', async (ev) => {
+    const boton = ev.target.closest('[data-borrar-busqueda]');
+    if (!boton) return;
+    boton.disabled = true;
+    try {
+      await fetch(`/api/busquedas-sitios/${boton.dataset.borrarBusqueda}`, { method: 'DELETE' });
+      location.reload();
+    } catch {
+      boton.disabled = false;
+    }
+  });
+
+  // ===========================================================================
   // PLEGAR Y DESPLEGAR (los "Cambiar filtros")
   // ---------------------------------------------------------------------------
   // El panel de filtros ya sabe abrirse solo con su .plegable__disparador. Esto
@@ -1970,6 +2092,7 @@
   const cuantasTrabajan = (datos) =>
     (datos.preparacion?.trabajando ? 1 : 0) +
     (datos.datos?.buscando ? 1 : 0) +
+    (datos.busquedas?.buscando ? 1 : 0) +
     (datos.hoteles === 'buscando' ? 1 : 0) +
     (datos.movilidad?.buscando ? 1 : 0) +
     (datos.traslados?.calculando ? 1 : 0) +
