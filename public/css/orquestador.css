@@ -148,6 +148,81 @@
 .orq-aviso--malo { background: #FDECEC; color: #8A2020; }
 
 /* ===========================================================================
+   LA PANTALLA DE AJUSTES: una sección por fase
+   ---------------------------------------------------------------------------
+   Cada sección es una fase, con sus números arriba y su prompt debajo. El orden
+   es el de ejecución, que es también el orden en que uno piensa el viaje.
+   =========================================================================== */
+
+/* El índice. Con siete secciones y prompts de cuatro mil caracteres, sin esto
+   la pantalla solo se recorre a rueda de ratón. */
+.orq-indice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 14px;
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  background: var(--fondo);
+}
+.orq-indice__enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--tarjeta, #fff);
+  border: 1px solid var(--borde);
+  color: var(--texto-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.orq-indice__enlace:hover { border-color: var(--acento); color: var(--acento); }
+.orq-indice__enlace i { font-size: 15px; color: var(--acento); }
+
+.orq-seccion {
+  margin: 0 0 34px;
+  padding-top: 22px;
+  border-top: 2px solid var(--borde);
+  /* Para que el ancla del índice no deje el título pegado al borde. */
+  scroll-margin-top: 16px;
+}
+.orq-seccion:first-of-type { border-top: 0; padding-top: 0; }
+
+.orq-seccion__titulo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 4px;
+  font-size: 19px;
+}
+.orq-seccion__titulo i { color: var(--acento); font-size: 21px; }
+.orq-seccion__explica {
+  margin: 0 0 14px;
+  color: var(--texto-2);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.orq-seccion__sin {
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--fondo);
+  color: var(--texto-3);
+  font-size: 13px;
+}
+
+/* El aviso de guardado sigue al scroll: con la pantalla larga, un mensaje
+   arriba del todo no se ve cuando estás editando la última sección. */
+.orq-aviso {
+  position: sticky;
+  top: 10px;
+  z-index: 5;
+}
+
+/* ===========================================================================
    PARÁMETROS
    =========================================================================== */
 .orq-parametros { margin: 0; padding: 0; list-style: none; }

@@ -81,6 +81,29 @@
 .panel__nuevo:hover { background: var(--tinte); }
 .panel__nuevo i { font-size: 17px; }
 
+/* El enlace a los ajustes del orquestador, debajo del botón de nuevo viaje. */
+.panel__ajustes {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* El panel es una columna flex y estira a sus hijos: sin esto el enlace
+     ocupaba todo el ancho mientras el botón de arriba no, y no parecían de la
+     misma familia. */
+  align-self: flex-start;
+  margin-top: 12px;
+  padding: 8px 15px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  opacity: .85;
+  transition: background .15s, opacity .15s;
+}
+.panel__ajustes:hover { background: rgba(255, 255, 255, .16); opacity: 1; }
+.panel__ajustes i { font-size: 16px; }
+
 .panel__dato {
   margin: auto 0 0;
   font-size: 13px;

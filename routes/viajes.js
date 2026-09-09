@@ -176,10 +176,9 @@ import {
   validarConfigAuto,
   lanzarOrquestador,
   progresoDeViaje,
-  parametros,
+  seccionesDelOrquestador,
   guardarParametro,
   restaurarParametro,
-  prompts,
   guardarPrompt,
   restaurarPrompt,
 } from '../services/orquestador.js';
@@ -2314,10 +2313,23 @@ router.post('/viajes/:id/orquestador/lanzar', cargarViaje, (req, res) => {
   res.json(r);
 });
 
-/** Los números con los que decide. */
-router.get('/orquestador/parametros', (req, res) => {
-  res.render('orquestador-parametros', { parametros: parametros() });
+/**
+ * LOS AJUSTES DEL ORQUESTADOR, en una sola pantalla.
+ *
+ * Antes eran dos —los números y los prompts— y para entender una fase había que
+ * ver las dos. Ahora va todo junto, sección por sección.
+ */
+router.get('/orquestador', (req, res) => {
+  res.render('orquestador', { secciones: seccionesDelOrquestador() });
 });
+
+// Las dos direcciones de antes siguen funcionando: llevan a la pantalla nueva,
+// a la sección que les corresponde. Un enlace guardado no tiene por qué morir
+// porque se reorganice una pantalla.
+router.get('/orquestador/parametros', (req, res) => res.redirect('/orquestador#seccion-general'));
+router.get('/orquestador/cerebro', (req, res) =>
+  res.redirect('/orquestador#seccion-ciudades_y_noches')
+);
 
 router.post('/api/orquestador/parametros/:clave', (req, res) => {
   const r = guardarParametro(req.params.clave, req.body?.valor);
@@ -2330,11 +2342,6 @@ router.post('/api/orquestador/parametros/:clave/restaurar', (req, res) => {
   const r = restaurarParametro(req.params.clave);
   if (!r) return res.status(404).json({ error: 'Ese parámetro no existe.' });
   res.json({ ...r, esDeFabrica: true });
-});
-
-/** Lo que se le dice a la IA en cada fase. */
-router.get('/orquestador/cerebro', (req, res) => {
-  res.render('orquestador-cerebro', { prompts: prompts() });
 });
 
 router.post('/api/orquestador/prompts/:fase', (req, res) => {

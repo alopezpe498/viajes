@@ -1,11 +1,12 @@
 /**
  * public/js/orquestador.js
  * -----------------------------------------------------------------------------
- * Las tres pantallas del orquestador: el progreso, los parámetros y el cerebro.
+ * Las dos pantallas del orquestador: el progreso de un viaje y sus ajustes.
  *
- * Van juntas en un archivo porque son tres cosas pequeñas de la misma familia y
- * ninguna se usa sin las otras. Cada bloque se activa solo si encuentra lo suyo
- * en el HTML, así que cargarlo en las tres pantallas no cuesta nada.
+ * Van en el mismo archivo porque son dos cosas pequeñas de la misma familia.
+ * Cada bloque se activa solo si encuentra lo suyo en el HTML —el progreso mira
+ * el `data-viaje`, los ajustes miran el aviso—, así que cargarlo en las dos no
+ * cuesta nada y ninguno estorba al otro.
  */
 (() => {
   'use strict';
@@ -118,24 +119,33 @@
   }
 
   // ===========================================================================
-  // 2) LOS PARÁMETROS
+  // 2) LOS AJUSTES: números y prompts, sección por sección
   // ---------------------------------------------------------------------------
-  // Se guardan al salir del campo, sin botón de guardar: son once números y una
-  // barra de "guardar cambios" para cada uno sobraría.
+  // Los dos vivían en pantallas distintas y cada uno tenía su bloque, su aviso y
+  // su `querySelector`. Ahora conviven en la misma página, con una lista de
+  // parámetros por sección, así que nada puede ir buscando "el" primero que
+  // encuentre: se escucha en la raíz y se resuelve por el elemento pulsado.
+  //
+  // Los números se guardan al salir del campo y los prompts con su botón. No es
+  // una incoherencia: un número se cambia de un teclazo y confirmarlo sobra; un
+  // prompt es un texto largo que se escribe a ratos, y guardarlo solo mientras
+  // alguien lo redacta daría sustos.
   // ===========================================================================
-  const listaParametros = document.querySelector('.orq-parametros');
-  if (listaParametros) {
-    const aviso = document.querySelector('[data-aviso-parametros]');
+  const ajustes = document.querySelector('.orquestador');
+  const aviso = document.querySelector('[data-aviso]');
+
+  if (ajustes && aviso) {
+    let borrarAviso = null;
     const decir = (texto, malo = false) => {
-      if (!aviso) return;
       aviso.textContent = texto ?? '';
       aviso.hidden = !texto;
       aviso.classList.toggle('orq-aviso--malo', Boolean(malo));
-      if (texto && !malo) setTimeout(() => { aviso.hidden = true; }, 2000);
+      clearTimeout(borrarAviso);
+      if (texto && !malo) borrarAviso = setTimeout(() => { aviso.hidden = true; }, 2000);
     };
 
-    /** Deja la fila con la cara que le toca según sea de fábrica o no. */
-    const refrescarFila = (fila, datos) => {
+    /** Deja la fila de un parámetro con la cara que le toca. */
+    const refrescarParametro = (fila, datos) => {
       fila.classList.toggle('orq-parametro--tocado', !datos.esDeFabrica);
       const boton = fila.querySelector('[data-restaurar]');
       if (boton) boton.hidden = datos.esDeFabrica;
@@ -143,64 +153,8 @@
       if (campo) campo.value = datos.valor;
     };
 
-    listaParametros.addEventListener('change', async (ev) => {
-      const campo = ev.target.closest('[data-valor]');
-      if (!campo) return;
-      const fila = campo.closest('[data-parametro]');
-
-      try {
-        const r = await fetch(`/api/orquestador/parametros/${fila.dataset.parametro}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ valor: campo.value }),
-        });
-        const datos = await r.json();
-        if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
-        refrescarFila(fila, datos);
-        decir('Guardado');
-      } catch (err) {
-        decir(err.message, true);
-      }
-    });
-
-    listaParametros.addEventListener('click', async (ev) => {
-      const boton = ev.target.closest('[data-restaurar]');
-      if (!boton) return;
-      const fila = boton.closest('[data-parametro]');
-
-      try {
-        const r = await fetch(
-          `/api/orquestador/parametros/${fila.dataset.parametro}/restaurar`,
-          { method: 'POST', headers: { Accept: 'application/json' } }
-        );
-        const datos = await r.json();
-        if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
-        refrescarFila(fila, datos);
-        decir('Restaurado');
-      } catch (err) {
-        decir(err.message, true);
-      }
-    });
-  }
-
-  // ===========================================================================
-  // 3) EL CEREBRO
-  // ---------------------------------------------------------------------------
-  // Aquí sí hay botón de guardar: un prompt es un texto largo y guardar al salir
-  // del campo mientras alguien lo está escribiendo daría sustos.
-  // ===========================================================================
-  const prompts = [...document.querySelectorAll('[data-prompt]')];
-  if (prompts.length) {
-    const aviso = document.querySelector('[data-aviso-prompt]');
-    const decir = (texto, malo = false) => {
-      if (!aviso) return;
-      aviso.textContent = texto ?? '';
-      aviso.hidden = !texto;
-      aviso.classList.toggle('orq-aviso--malo', Boolean(malo));
-      if (texto && !malo) setTimeout(() => { aviso.hidden = true; }, 2000);
-    };
-
-    const refrescar = (caja, datos) => {
+    /** Y lo mismo con la caja de un prompt. */
+    const refrescarPrompt = (caja, datos) => {
       caja.classList.toggle('orq-prompt--tocado', !datos.esDeFabrica);
       const boton = caja.querySelector('[data-restaurar-prompt]');
       if (boton) boton.hidden = datos.esDeFabrica;
@@ -210,40 +164,70 @@
       if (texto) texto.value = datos.prompt_actual;
     };
 
-    for (const caja of prompts) {
-      const fase = caja.dataset.prompt;
-
-      caja.querySelector('[data-guardar]')?.addEventListener('click', async () => {
-        const texto = caja.querySelector('[data-texto]').value;
-        try {
-          const r = await fetch(`/api/orquestador/prompts/${fase}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({ texto }),
-          });
-          const datos = await r.json();
-          if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
-          refrescar(caja, datos);
-          decir('Guardado');
-        } catch (err) {
-          decir(err.message, true);
-        }
+    /** Una llamada al servidor con el mismo trato para todas: falla o repinta. */
+    const mandar = async (url, cuerpo) => {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: cuerpo
+          ? { 'Content-Type': 'application/json', Accept: 'application/json' }
+          : { Accept: 'application/json' },
+        body: cuerpo ? JSON.stringify(cuerpo) : undefined,
       });
+      const datos = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+      return datos;
+    };
 
-      caja.querySelector('[data-restaurar-prompt]')?.addEventListener('click', async () => {
-        try {
-          const r = await fetch(`/api/orquestador/prompts/${fase}/restaurar`, {
-            method: 'POST',
-            headers: { Accept: 'application/json' },
-          });
-          const datos = await r.json();
-          if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
-          refrescar(caja, datos);
+    // --- Un número, al salir del campo ------------------------------------
+    ajustes.addEventListener('change', async (ev) => {
+      const campo = ev.target.closest('[data-valor]');
+      if (!campo) return;
+      const fila = campo.closest('[data-parametro]');
+      try {
+        const datos = await mandar(`/api/orquestador/parametros/${fila.dataset.parametro}`, {
+          valor: campo.value,
+        });
+        refrescarParametro(fila, datos);
+        decir('Guardado');
+      } catch (err) {
+        decir(err.message, true);
+      }
+    });
+
+    // --- Los botones: restaurar un número, guardar o restaurar un prompt ---
+    ajustes.addEventListener('click', async (ev) => {
+      const restaurarNumero = ev.target.closest('[data-restaurar]');
+      const guardarPrompt = ev.target.closest('[data-guardar]');
+      const restaurarPrompt = ev.target.closest('[data-restaurar-prompt]');
+      if (!restaurarNumero && !guardarPrompt && !restaurarPrompt) return;
+
+      const boton = restaurarNumero ?? guardarPrompt ?? restaurarPrompt;
+      boton.disabled = true;
+
+      try {
+        if (restaurarNumero) {
+          const fila = boton.closest('[data-parametro]');
+          const datos = await mandar(
+            `/api/orquestador/parametros/${fila.dataset.parametro}/restaurar`
+          );
+          refrescarParametro(fila, datos);
           decir('Restaurado');
-        } catch (err) {
-          decir(err.message, true);
+        } else {
+          const caja = boton.closest('[data-prompt]');
+          const fase = caja.dataset.prompt;
+          const datos = guardarPrompt
+            ? await mandar(`/api/orquestador/prompts/${fase}`, {
+                texto: caja.querySelector('[data-texto]').value,
+              })
+            : await mandar(`/api/orquestador/prompts/${fase}/restaurar`);
+          refrescarPrompt(caja, datos);
+          decir(guardarPrompt ? 'Guardado' : 'Restaurado');
         }
-      });
-    }
+      } catch (err) {
+        decir(err.message, true);
+      } finally {
+        boton.disabled = false;
+      }
+    });
   }
 })();

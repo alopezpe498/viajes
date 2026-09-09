@@ -260,6 +260,84 @@ export function validarConfigAuto(body, { viajeros = 2, categoriasValidas = [] }
 }
 
 // =============================================================================
+// CÓMO SE ORGANIZA LA PANTALLA DE AJUSTES
+// =============================================================================
+/**
+ * A QUÉ FASE PERTENECE CADA PARÁMETRO.
+ *
+ * Los parámetros y los prompts vivían en dos pantallas distintas, y para
+ * entender qué hace una fase había que mirar en las dos y juntarlas mentalmente.
+ * Ahora van juntos, sección por sección, en el mismo orden en que se ejecutan.
+ *
+ * ESTE REPARTO ES SOLO DE INTERFAZ. Las tablas no saben nada de él: un parámetro
+ * sigue siendo una fila con su clave, y quien lo lee lo pide por su nombre. Si
+ * mañana una fase deja de usar uno, se cambia esta lista y ya está.
+ *
+ * LO QUE USA MÁS DE UNA FASE VA A «GENERAL». Las antelaciones de aeropuerto las
+ * necesitan los traslados para calcular puerta a puerta y el lienzo para dejar
+ * el hueco del viaje; el umbral de empate lo usan la elección de puerta de la
+ * fase 1 y la de traslados de la 2. Colgarlos de una sola fase sería mentir
+ * sobre dónde surten efecto.
+ */
+export const FASE_DE_PARAMETRO = {
+  antelacion_vuelo_internacional_min: 'general',
+  antelacion_vuelo_europeo_min: 'general',
+  antelacion_tren_min: 'general',
+  // Lo usan la fase 1 (por qué puerta se entra) y la 2 (qué traslado se coge).
+  umbral_empate_traslado_min: 'general',
+  // Vale para el orquestador y para las fichas de sitios fuera de él.
+  dias_caducidad_datos_sitios: 'general',
+
+  minimo_noches_por_ciudad: 'ciudades_y_noches',
+  max_ciudades_candidatas: 'ciudades_y_noches',
+
+  factor_precio_traslado: 'traslados',
+
+  max_excursiones_largas_por_dia: 'excursiones',
+  max_excursiones_por_viaje: 'excursiones',
+
+  duracion_comida_min: 'lienzo',
+};
+
+/** La sección que no es de ninguna fase, y por eso va primera. */
+const GENERAL = {
+  clave: 'general',
+  etiqueta: 'General',
+  icono: 'ti-settings',
+  explica: 'Lo que usan varias fases a la vez, o lo que vale también fuera del orquestador.',
+};
+
+/**
+ * LA PANTALLA ENTERA, sección por sección.
+ *
+ * Una sección por fase, en el orden en que se ejecutan, más «General» delante.
+ * Cada una lleva sus parámetros y su prompt: es la misma información que había
+ * en dos pantallas, puesta donde se entiende.
+ *
+ * «General» no tiene prompt porque no es una fase: no se le pide nada a la IA
+ * en general, se le pide en cada paso.
+ */
+export function seccionesDelOrquestador() {
+  const todosLosParametros = parametros();
+  const todosLosPrompts = new Map(prompts().map((p) => [p.fase, p]));
+
+  const deLaSeccion = (clave) =>
+    todosLosParametros.filter((p) => (FASE_DE_PARAMETRO[p.clave] ?? 'general') === clave);
+
+  return [GENERAL, ...FASES].map((s) => {
+    const clave = s.clave;
+    return {
+      clave,
+      etiqueta: s.etiqueta,
+      icono: s.icono,
+      explica: s.explica,
+      parametros: deLaSeccion(clave),
+      prompt: todosLosPrompts.get(clave) ?? null,
+    };
+  });
+}
+
+// =============================================================================
 // LOS PARÁMETROS
 // =============================================================================
 /**
@@ -554,6 +632,8 @@ export function cerrarFase(viajeId, fase, estado = 'hecho') {
 
 export default {
   FASES,
+  FASE_DE_PARAMETRO,
+  seccionesDelOrquestador,
   OPCIONES_AUTO,
   VIAJEROS_PARA_FAMILIAR,
   configAuto,

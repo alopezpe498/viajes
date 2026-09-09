@@ -1,0 +1,146 @@
+<%
+/**
+ * EL ORQUESTADOR: una pantalla, una sección por fase.
+ *
+ * Antes esto eran dos pantallas —los números por un lado, los prompts por otro—
+ * y para entender qué hace una fase había que abrirlas las dos y juntarlas
+ * mentalmente. Ahora cada fase enseña lo suyo: primero con qué números decide y
+ * debajo qué se le dice a la IA.
+ *
+ * Las secciones van en el orden en que se ejecutan las fases, con «General»
+ * delante para lo que usan varias a la vez.
+ *
+ * Espera: secciones.
+ */
+const cabezaExtra = '<link rel="stylesheet" href="/css/orquestador.css">';
+const pieExtra = '<script src="/js/orquestador.js" defer></script>';
+
+/** "2026-09-09 17:04:11" -> "9 sep, 17:04" */
+const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function cuando(iso) {
+  if (!iso) return null;
+  const [f, h] = String(iso).split(' ');
+  const [, m, d] = f.split('-').map(Number);
+  return `${d} ${MESES[m - 1]}${h ? ', ' + h.slice(0, 5) : ''}`;
+}
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: 'Orquestador',
+      extraCabeza: cabezaExtra,
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido orquestador">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga"><a href="/">Mis viajes</a> / Ajustes</p>
+      <h1 class="orq__titulo">
+        <i class="ti ti-adjustments" aria-hidden="true"></i> Orquestador
+      </h1>
+      <p class="orq__bajada">
+        Con qué números decide y qué se le dice a la IA en cada fase. Se usa esto
+        tal cual, así que lo que cambies aquí cambia cómo monta los viajes.
+      </p>
+    </header>
+
+    <p class="orq-aviso" data-aviso hidden></p>
+
+    <%# Un índice para no tener que bajar a buscar. Con siete secciones y prompts
+        largos, la pantalla es larga: esto la vuelve navegable. %>
+    <nav class="orq-indice" aria-label="Secciones">
+      <% secciones.forEach(s => { %>
+        <a class="orq-indice__enlace" href="#seccion-<%= s.clave %>">
+          <i class="ti <%= s.icono %>" aria-hidden="true"></i> <%= s.etiqueta %>
+        </a>
+      <% }) %>
+    </nav>
+
+    <% secciones.forEach(s => { %>
+      <section class="orq-seccion" id="seccion-<%= s.clave %>">
+        <header class="orq-seccion__cabecera">
+          <h2 class="orq-seccion__titulo">
+            <i class="ti <%= s.icono %>" aria-hidden="true"></i> <%= s.etiqueta %>
+          </h2>
+          <p class="orq-seccion__explica"><%= s.explica %></p>
+        </header>
+
+        <%# --- LOS NÚMEROS --------------------------------------------- %>
+        <% if (s.parametros.length) { %>
+          <ul class="orq-parametros">
+            <% s.parametros.forEach(p => { %>
+              <li class="orq-parametro <%= p.esDeFabrica ? '' : 'orq-parametro--tocado' %>"
+                  data-parametro="<%= p.clave %>">
+                <div class="orq-parametro__texto">
+                  <label class="orq-parametro__nombre" for="p-<%= p.clave %>"><%= p.descripcion %></label>
+                  <code class="orq-parametro__clave"><%= p.clave %></code>
+                </div>
+
+                <div class="orq-parametro__control">
+                  <input type="number" id="p-<%= p.clave %>" min="0" step="1"
+                         value="<%= p.valor %>" data-valor
+                         aria-label="<%= p.descripcion %>">
+                  <span class="orq-parametro__unidad"><%= p.unidad || '' %></span>
+
+                  <%# El botón solo aparece si hay algo que restaurar: enseñarlo
+                      siempre invita a pulsarlo para no cambiar nada. %>
+                  <button class="orq-parametro__restaurar" type="button" data-restaurar
+                          title="Volver a <%= p.valor_fabrica %>"
+                          <%= p.esDeFabrica ? 'hidden' : '' %>>
+                    <i class="ti ti-rotate" aria-hidden="true"></i>
+                    <span>De fábrica: <%= p.valor_fabrica %></span>
+                  </button>
+                </div>
+              </li>
+            <% }) %>
+          </ul>
+        <% } else { %>
+          <p class="orq-seccion__sin">Esta fase no tiene números que ajustar todavía.</p>
+        <% } %>
+
+        <%# --- Y LO QUE SE LE DICE A LA IA ------------------------------ %>
+        <% if (s.prompt) { %>
+          <div class="orq-prompt <%= s.prompt.esDeFabrica ? '' : 'orq-prompt--tocado' %>"
+               data-prompt="<%= s.prompt.fase %>">
+            <div class="orq-prompt__cabecera">
+              <h3 class="orq-prompt__nombre">
+                <i class="ti ti-brain" aria-hidden="true"></i> Lo que se le pide a la IA
+              </h3>
+              <span class="orq-prompt__cuando">
+                <% if (s.prompt.esDeFabrica) { %>
+                  Como vino de fábrica
+                <% } else if (s.prompt.actualizadoEn) { %>
+                  Editado el <%= cuando(s.prompt.actualizadoEn) %>
+                <% } else { %>
+                  Editado
+                <% } %>
+              </span>
+            </div>
+
+            <textarea class="orq-prompt__texto" data-texto rows="10"
+                      aria-label="Prompt de <%= s.etiqueta %>"><%= s.prompt.texto %></textarea>
+
+            <div class="orq-prompt__acciones">
+              <button class="boton boton--primario" type="button" data-guardar>
+                <i class="ti ti-device-floppy" aria-hidden="true"></i> Guardar
+              </button>
+              <button class="boton boton--secundario" type="button" data-restaurar-prompt
+                      <%= s.prompt.esDeFabrica ? 'hidden' : '' %>>
+                <i class="ti ti-rotate" aria-hidden="true"></i> Restaurar de fábrica
+              </button>
+            </div>
+          </div>
+        <% } %>
+      </section>
+    <% }) %>
+
+    <div class="orq-pie">
+      <a class="boton boton--secundario" href="/">
+        <i class="ti ti-chevron-left" aria-hidden="true"></i> Volver a mis viajes
+      </a>
+    </div>
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>
