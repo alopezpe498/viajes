@@ -25,7 +25,7 @@
  */
 
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
-import { consultarJSON } from '../lib/ia.js';
+import { consultarJSONConGoogle } from '../lib/ia.js';
 import { trabajoActivo, ultimoTrabajo, encolar } from '../jobs/cola.js';
 import { direccionesDe } from './direcciones.js';
 
@@ -509,11 +509,13 @@ REGLAS:
 
 /** Pregunta por un tramo. Devuelve las fichas ya guardadas en el catálogo. */
 export async function investigarTramo(ciudadA, ciudadB) {
-  const datos = await consultarJSON(promptDeTramo(ciudadA, ciudadB), {
-    paso: `buscar cómo ir de ${ciudadA} a ${ciudadB}`,
-    conWeb: true,
-    maxTokens: 4000,
-  });
+  // El contexto lo trae el Modo IA de Google, no la búsqueda web de la API: es
+  // el mismo dato reciente y no se cobra por consulta.
+  const datos = await consultarJSONConGoogle(
+    `Cómo ir de ${ciudadA} a ${ciudadB}: tren, autobús, coche y ferry, con duración, precio y frecuencia`,
+    promptDeTramo(ciudadA, ciudadB),
+    { paso: `buscar cómo ir de ${ciudadA} a ${ciudadB}`, maxTokens: 4000 }
+  );
 
   const medios = Array.isArray(datos?.medios) ? datos.medios : [];
   const guardadas = medios
@@ -525,11 +527,11 @@ export async function investigarTramo(ciudadA, ciudadB) {
 
 /** Pregunta por una ciudad. Devuelve las fichas ya guardadas. */
 export async function investigarMovilidad(ciudad) {
-  const datos = await consultarJSON(promptDeMovilidad(ciudad), {
-    paso: `buscar cómo moverse por ${ciudad}`,
-    conWeb: true,
-    maxTokens: 4000,
-  });
+  const datos = await consultarJSONConGoogle(
+    `Cómo moverse por ${ciudad}: metro, autobús, tranvía, abonos de transporte, tarjeta turística y teléfonos de taxi`,
+    promptDeMovilidad(ciudad),
+    { paso: `buscar cómo moverse por ${ciudad}`, maxTokens: 4000 }
+  );
 
   const opciones = Array.isArray(datos?.opciones) ? datos.opciones : [];
   return opciones

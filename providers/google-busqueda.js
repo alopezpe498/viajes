@@ -222,10 +222,31 @@ export async function buscarTablaDeSitios({ ciudad, sitios, headless = false }) 
     throw new Error('[google-busqueda] Hace falta la ciudad y al menos un sitio.');
   }
 
-  const pregunta = componerPregunta(ciudad, limpios);
-  const url = BASE_MODO_IA + encodeURIComponent(pregunta);
   console.log(`[google-busqueda] ${limpios.length} sitios de ${ciudad}, en una sola consulta.`);
+  return preguntarAlModoIA(componerPregunta(ciudad, limpios), { headless });
+}
 
+/**
+ * PREGUNTARLE CUALQUIER COSA AL MODO IA DE GOOGLE.
+ *
+ * Esto era el cuerpo de la búsqueda de datos de sitios, y sacarlo de ahí es lo
+ * que permite usarlo para lo demás: cómo se va de una ciudad a otra, cómo se
+ * mueve uno por dentro, dónde se come. Es exactamente el mismo mecanismo —una
+ * URL con `udm=50`, esperar a que termine de escribirse y leer el texto—, solo
+ * que la pregunta la pone quien llama.
+ *
+ * POR QUÉ ESTO EN VEZ DE LA BÚSQUEDA WEB DE LA API. Porque la de la API se cobra
+ * aparte y por consulta, y esto es un navegador que ya se abría para otras
+ * cosas. Mismo resultado —un texto reciente de la web— y coste cero.
+ *
+ * Devuelve `{texto, fuente, url}`. Quien llama decide qué hacer con el texto;
+ * aquí no se interpreta nada.
+ */
+export async function preguntarAlModoIA(pregunta, { headless = false } = {}) {
+  const limpia = String(pregunta ?? '').trim();
+  if (!limpia) throw new Error('[google-busqueda] No hay pregunta que hacer.');
+
+  const url = BASE_MODO_IA + encodeURIComponent(limpia);
   const { contexto, pagina } = await abrirNavegador({ headless });
 
   try {

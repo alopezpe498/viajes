@@ -34,7 +34,7 @@
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
 import { trabajoActivo, ultimoTrabajo, encolar } from '../jobs/cola.js';
 import { buscarSitiosConGoogle, detallesDeSitioConGoogle, googleDisponible } from '../lib/google.js';
-import { consultarJSON } from '../lib/ia.js';
+import { consultarJSONConGoogle } from '../lib/ia.js';
 import { notaPonderada } from './proveedores.js';
 import { direccionesDe, direccionDe, guardarDireccion } from './direcciones.js';
 
@@ -442,18 +442,18 @@ export async function investigarComer(ciudad, consulta, { centro = null, radio =
     return { sitios: dePlaces, fuente: 'places' };
   }
 
-  // --- 2) La IA con búsqueda web -------------------------------------------
+  // --- 2) La IA con contexto del Modo IA de Google --------------------------
   console.log(
     googleDisponible()
-      ? '[comer] Places no dio resultados: pregunto a la IA con búsqueda web.'
-      : '[comer] Sin Places (clave restringida o ausente): IA con búsqueda web.'
+      ? '[comer] Places no dio resultados: pregunto a la IA con contexto del Modo IA de Google.'
+      : '[comer] Sin Places (clave restringida o ausente): IA con contexto del Modo IA de Google.'
   );
 
-  const respuesta = await consultarJSON(promptDeComer(ciudad, pregunta), {
-    paso: `buscar dónde comer en ${ciudad}`,
-    conWeb: true,
-    maxTokens: 6000,
-  });
+  const respuesta = await consultarJSONConGoogle(
+    `Dónde comer en ${ciudad}${pregunta ? `: ${pregunta}` : ''} — restaurantes recomendados con dirección, teléfono y precio`,
+    promptDeComer(ciudad, pregunta),
+    { paso: `buscar dónde comer en ${ciudad}`, maxTokens: 6000 }
+  );
 
   const sitios = (Array.isArray(respuesta) ? respuesta : respuesta?.sitios ?? [])
     .filter((s) => texto(s?.nombre))
@@ -627,8 +627,9 @@ export async function investigarDetallesDeComer(fichaId) {
 
 async function detallesPorIA(f) {
   try {
-    const r = await consultarJSON(
-      `BUSCA EN LA WEB los datos de contacto de este sitio para comer:
+    const r = await consultarJSONConGoogle(
+      `Teléfono, web y horarios de «${f.nombre}»${f.direccion ? `, ${f.direccion}` : ''}, en ${f.ciudad}`,
+      `Estos son los datos de contacto de este sitio para comer:
 
 "${f.nombre}"${f.direccion ? `, ${f.direccion}` : ''}, en ${f.ciudad}.
 
@@ -637,7 +638,7 @@ Responde SOLO con este JSON:
 
 Si un dato no lo encuentras, deja la cadena VACÍA. NO te lo inventes: un
 teléfono equivocado es peor que ninguno.`,
-      { paso: `datos de «${f.nombre}»`, conWeb: true, maxTokens: 1500 }
+      { paso: `datos de «${f.nombre}»`, maxTokens: 1500 }
     );
     return {
       telefono: texto(r?.telefono),
