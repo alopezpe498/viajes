@@ -34,18 +34,19 @@ const TIMEOUT_WIKI_MS = 8_000;
 const AGENTE = 'CreadorViajes/0.1 (generador de viajes personal)';
 
 /**
- * Pausa entre peticiones a Wikipedia.
+ * Pausa entre peticiones sueltas a Wikipedia.
  *
- * No es adorno. Las 15 seguidas a pelo tardan 1,7 s y Wikipedia contesta 429
- * ("estás pidiendo demasiado") a partir de la sexta o la séptima: se quedaban
- * sin foto sitios que sí tienen artículo. Con este respiro tarda unos 6 s en
- * total y entran todas. Es exactamente la misma regla que con los scrapers:
- * nada de ráfagas contra un servidor que no me ha hecho nada.
+ * Ya casi no se usa: las fotos se piden en lotes de 50 títulos con una sola
+ * llamada (`loteDeWikipedia`), que era la forma de dejar de comerse los 429
+ * —"estás pidiendo demasiado"— al encadenar ciudades. Queda para las consultas
+ * de una en una, que son las menos.
  */
-const PAUSA_WIKI_MS = 350;
 
 /** Si aun así nos frenan, se espera esto y se prueba UNA vez más. */
 const ESPERA_TRAS_429_MS = 2_000;
+
+/** Cuantos titulos caben en una peticion de la API de accion. */
+const TOPE_LOTE = 50;
 
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -111,7 +112,9 @@ Devuelve un objeto JSON con esta forma exacta:
       "dias_recomendados_min": número entero,
       "dias_recomendados_max": número entero,
       "direccion": "calle y número si es un sitio concreto; vacío si es una ciudad o una región",
-      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
+      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
+      "titulo_wikipedia_local": "título EXACTO del mismo artículo en la Wikipedia del idioma del país",
+      "idioma_wikipedia_local": "código de ese idioma: pl, it, ja, de…"
     }
   ]
 }
@@ -122,6 +125,9 @@ Reglas:
 - lat y lon son obligatorios y tienen que ser las coordenadas reales del lugar.
 - "direccion" solo si el punto es un sitio concreto con dirección postal (un monasterio, un castillo): la calle, SIN ciudad ni país. Para una ciudad o una región entera, deja la cadena VACÍA. NO te la inventes.
 - "titulo_wikipedia" es el título del artículo en es.wikipedia.org, tal cual, con sus tildes.
+- "titulo_wikipedia_local" es el mismo artículo en la Wikipedia del país, escrito EXACTO y
+  con sus caracteres propios. Muchos sitios solo tienen artículo ahí, y es de donde sale la foto.
+  Si no estás seguro del título, deja la cadena VACÍA: un título inventado no encuentra nada.
 - No inventes URLs de imágenes ni de páginas web: eso lo busco yo aparte.`;
 }
 
@@ -159,7 +165,9 @@ Devuelve un objeto JSON con esta forma exacta:
       "dias_recomendados_min": número entero,
       "dias_recomendados_max": número entero,
       "direccion": "calle y número, o la plaza donde está",
-      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
+      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
+      "titulo_wikipedia_local": "título EXACTO del mismo artículo en la Wikipedia del idioma del país",
+      "idioma_wikipedia_local": "código de ese idioma: pl, it, ja, de…"
     }
   ]
 }
@@ -217,6 +225,8 @@ export async function investigarDestinoConIA(nombreDestino, tipo = 'pais') {
       dias_recomendados_min: enteroONulo(p.dias_recomendados_min),
       dias_recomendados_max: enteroONulo(p.dias_recomendados_max),
       titulo_wikipedia: p.titulo_wikipedia ? String(p.titulo_wikipedia).trim() : String(p.nombre).trim(),
+      titulo_wikipedia_local: textoONulo(p.titulo_wikipedia_local),
+      idioma_wikipedia_local: textoONulo(p.idioma_wikipedia_local),
       orden: i + 1,
     }));
 
@@ -290,23 +300,218 @@ export async function fichaDeWikipedia(titulo, { reintentar = true } = {}) {
 }
 
 /**
- * Pone foto y enlace a una lista de puntos, uno detrás de otro.
+ * UNA SOLA PETICIÓN PARA TODOS LOS TÍTULOS DE UN IDIOMA.
  *
- * Secuencial a propósito, como todo lo demás en este proyecto: son 15
- * peticiones a un servidor que no me ha hecho nada. Tarda unos segundos más y
- * no le monto una ráfaga a Wikipedia.
+ * La API de resúmenes (`rest_v1/page/summary`) va de uno en uno: veinte sitios
+ * eran veinte peticiones con su pausa, y encadenando tres ciudades seguidas
+ * Wikipedia empieza a contestar 429 ("vas muy rápido"). La API de acción acepta
+ * hasta 50 títulos de golpe y devuelve la miniatura y la URL de cada uno, así
+ * que una ciudad entera cabe en una petición de tres décimas.
+ *
+ * `redirects=1` resuelve los títulos que solo fallan por poco, y las páginas de
+ * desambiguación se descartan: "Basílica de Santa María" a secas es una lista de
+ * basílicas, no un sitio.
+ *
+ * Devuelve un Map de título pedido -> { imagenUrl, wikipediaUrl }. El Map lleva
+ * también los títulos normalizados y los redirigidos, porque la API responde con
+ * el título final y hay que saber a quién corresponde.
+ */
+async function loteDeWikipedia(idioma, titulos) {
+  if (!titulos.length) return new Map();
+
+  const url = new URL(`https://${idioma}.wikipedia.org/w/api.php`);
+  url.searchParams.set('action', 'query');
+  url.searchParams.set('prop', 'pageimages|info|pageprops');
+  url.searchParams.set('inprop', 'url');
+  url.searchParams.set('ppprop', 'disambiguation');
+  url.searchParams.set('piprop', 'thumbnail');
+  url.searchParams.set('pithumbsize', '400');
+  url.searchParams.set('pilimit', '50');
+  url.searchParams.set('redirects', '1');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('formatversion', '2');
+  url.searchParams.set('titles', titulos.join('|'));
+
+  const control = new AbortController();
+  const reloj = setTimeout(() => control.abort(), TIMEOUT_WIKI_MS);
+
+  try {
+    const respuesta = await fetch(url, {
+      signal: control.signal,
+      headers: { 'User-Agent': AGENTE, Accept: 'application/json' },
+    });
+    if (respuesta.status === 429) {
+      await dormir(ESPERA_TRAS_429_MS);
+      return new Map();
+    }
+    if (!respuesta.ok) return new Map();
+
+    const datos = await respuesta.json();
+    const paginas = datos.query?.pages ?? [];
+
+    // De título final a ficha.
+    const porTitulo = new Map();
+    for (const pagina of paginas) {
+      if (pagina.missing) continue;
+      if (pagina.pageprops && 'disambiguation' in pagina.pageprops) continue;
+      porTitulo.set(pagina.title, {
+        imagenUrl: pagina.thumbnail?.source ?? null,
+        wikipediaUrl: pagina.fullurl ?? null,
+      });
+    }
+
+    // La API cuenta aparte lo que ha normalizado y lo que ha redirigido: hay que
+    // deshacer ese camino para responder por el título que se pidió.
+    const puente = new Map();
+    for (const n of datos.query?.normalized ?? []) puente.set(n.from, n.to);
+    for (const r of datos.query?.redirects ?? []) puente.set(r.from, r.to);
+
+    const salida = new Map();
+    for (const pedido of titulos) {
+      let t = pedido;
+      // Como mucho dos saltos: normalizado y luego redirigido.
+      for (let vuelta = 0; vuelta < 3 && puente.has(t); vuelta += 1) t = puente.get(t);
+      const ficha = porTitulo.get(t);
+      if (ficha) salida.set(pedido, ficha);
+    }
+    return salida;
+  } catch {
+    return new Map();
+  } finally {
+    clearTimeout(reloj);
+  }
+}
+
+/**
+ * Pone foto y enlace a una lista de puntos.
+ *
+ * DOS WIKIPEDIAS, Y EN ESE ORDEN. Primero la española, que es la que se quiere
+ * leer. Si el artículo no existe ahí, se prueba con el título en el idioma del
+ * país, que es donde están los sitios que no son de primera fila: de veinte
+ * sitios de Gdańsk, es.wikipedia tenía cero y pl.wikipedia trece. La foto es la
+ * misma foto, y el enlace lleva al artículo que de verdad existe.
+ *
+ * Se piden en LOTES de 50, no de uno en uno: además de tardar veinte veces
+ * menos, es lo que evita el 429 al encadenar tres ciudades seguidas.
  */
 export async function ponerFotosDeWikipedia(puntos, alAvanzar = null) {
-  let conFoto = 0;
-  for (const [i, punto] of puntos.entries()) {
-    if (i > 0) await dormir(PAUSA_WIKI_MS);
-    const ficha = await fichaDeWikipedia(punto.titulo_wikipedia || punto.nombre);
-    punto.wikipedia_url = ficha?.wikipediaUrl ?? null;
-    punto.imagen_url = ficha?.imagenUrl ?? null;
-    if (punto.imagen_url) conFoto++;
-    alAvanzar?.(i + 1, puntos.length);
+  if (!puntos.length) return 0;
+
+  for (const punto of puntos) {
+    punto.wikipedia_url = null;
+    punto.imagen_url = null;
   }
+
+  // Primera vuelta: español.
+  const enEspanol = puntos.map((p) => p.titulo_wikipedia || p.nombre);
+  const fichasEs = await loteDeWikipedia('es', [...new Set(enEspanol)].slice(0, TOPE_LOTE));
+  puntos.forEach((punto, i) => {
+    const ficha = fichasEs.get(enEspanol[i]);
+    if (!ficha) return;
+    punto.wikipedia_url = ficha.wikipediaUrl;
+    punto.imagen_url = ficha.imagenUrl;
+  });
+
+  // Segunda vuelta: los que se han quedado sin foto, en el idioma del país.
+  const pendientes = puntos.filter((p) => !p.imagen_url && p.titulo_wikipedia_local);
+  const porIdioma = new Map();
+  for (const punto of pendientes) {
+    const idioma = String(punto.idioma_wikipedia_local || '').trim().toLowerCase();
+    if (!/^[a-z]{2,3}$/.test(idioma) || idioma === 'es') continue;
+    if (!porIdioma.has(idioma)) porIdioma.set(idioma, []);
+    porIdioma.get(idioma).push(punto);
+  }
+
+  for (const [idioma, delIdioma] of porIdioma) {
+    const titulos = delIdioma.map((p) => p.titulo_wikipedia_local);
+    const fichas = await loteDeWikipedia(idioma, [...new Set(titulos)].slice(0, TOPE_LOTE));
+    delIdioma.forEach((punto, i) => {
+      const ficha = fichas.get(titulos[i]);
+      if (!ficha?.imagenUrl) return;
+      punto.imagen_url = ficha.imagenUrl;
+      // El enlace español, si lo había, se respeta: se lee mejor.
+      punto.wikipedia_url = punto.wikipedia_url ?? ficha.wikipediaUrl;
+    });
+  }
+
+  const conFoto = puntos.filter((p) => p.imagen_url).length;
+  alAvanzar?.(puntos.length, puntos.length);
   return conFoto;
+}
+
+/**
+ * REPASO DE FOTOS DE SITIOS YA GUARDADOS.
+ *
+ * Las fichas que se generaron antes de que existiera el título en el idioma del
+ * país se quedaron sin foto —de veinte sitios de Gdansk tenían tres— y como una
+ * ciudad con sitios ya no se regenera, ahí se iban a quedar. Esto las repasa sin
+ * tocar nada más: se le piden a la IA los títulos de Wikipedia de los que están
+ * sin foto, se buscan en un lote y SOLO se rellena `imagen_url` donde estaba
+ * vacía. No se borra ni se reescribe ninguna ficha.
+ *
+ * Devuelve cuántas fotos se han conseguido.
+ */
+export async function repasarFotosDeSitios(punto, nombrePais) {
+  const sinFoto = todas(
+    `SELECT id, nombre FROM sitios_lugar
+      WHERE punto_interes_id = ? AND (imagen_url IS NULL OR imagen_url = '')`,
+    punto.id
+  );
+  if (!sinFoto.length) return 0;
+
+  let titulos = [];
+  try {
+    const r = await consultarJSON(
+      `Estos lugares están en ${punto.nombre}${nombrePais ? ` (${nombrePais})` : ''}:\n` +
+        sinFoto.map((s) => `- ${s.nombre}`).join('\n') +
+        '\n\nPara cada uno dime el título EXACTO de su artículo en la Wikipedia en ' +
+        'español y en la Wikipedia del idioma del país. Devuelve SOLO este JSON:\n' +
+        '{"sitios": [{"nombre": "el nombre tal cual te lo he escrito", ' +
+        '"titulo_wikipedia": "título en español o cadena vacía", ' +
+        '"titulo_wikipedia_local": "título en el idioma del país o cadena vacía", ' +
+        '"idioma_wikipedia_local": "código del idioma: pl, it, ja…"}]}\n' +
+        'Si no estás seguro de un título, deja la cadena VACÍA: un título inventado ' +
+        'no encuentra nada y es peor que el hueco.',
+      { maxTokens: 3000, paso: `títulos de Wikipedia de ${punto.nombre}` }
+    );
+    titulos = Array.isArray(r?.sitios) ? r.sitios : [];
+  } catch {
+    return 0; // sin títulos no hay nada que buscar; se reintentará otro día
+  }
+
+  const porNombre = new Map(
+    titulos
+      .filter((t) => t && typeof t.nombre === 'string')
+      .map((t) => [t.nombre.trim().toLowerCase(), t])
+  );
+
+  const puntos = sinFoto.map((s) => {
+    const t = porNombre.get(s.nombre.trim().toLowerCase());
+    return {
+      id: s.id,
+      nombre: s.nombre,
+      titulo_wikipedia: textoONulo(t?.titulo_wikipedia) ?? s.nombre,
+      titulo_wikipedia_local: textoONulo(t?.titulo_wikipedia_local),
+      idioma_wikipedia_local: textoONulo(t?.idioma_wikipedia_local),
+    };
+  });
+
+  await ponerFotosDeWikipedia(puntos);
+
+  let puestas = 0;
+  for (const s of puntos) {
+    if (!s.imagen_url) continue;
+    ejecutar(
+      `UPDATE sitios_lugar
+          SET imagen_url = ?, wikipedia_url = COALESCE(wikipedia_url, ?)
+        WHERE id = ? AND (imagen_url IS NULL OR imagen_url = '')`,
+      s.imagen_url,
+      s.wikipedia_url ?? null,
+      s.id
+    );
+    puestas += 1;
+  }
+  return puestas;
 }
 
 // =============================================================================
@@ -557,7 +762,9 @@ Devuelve un objeto JSON con esta forma exacta:
       "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir para evitar colas o pillar buena luz, qué es lo que no te puedes perder de dentro, cuánto tiempo hace falta.",
       "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
       "lat": número, "lon": número,
-      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
+      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
+      "titulo_wikipedia_local": "título EXACTO del mismo artículo en la Wikipedia del idioma del país",
+      "idioma_wikipedia_local": "código de ese idioma: pl, it, ja, de…"
     }
   ]
 }
@@ -574,6 +781,9 @@ Reglas:
 - Los nombres, EN ESPAÑOL siempre que exista la forma española ("Museo del Louvre", no "Musée du Louvre").
 - "categoria" tiene que ser UNA de las de la lista, escrita igual. Si dudas, elige la que más se acerque; no te inventes otra.
 - lat y lon son obligatorios y tienen que ser las coordenadas reales del sitio.
+- "titulo_wikipedia_local" es el mismo artículo en la Wikipedia del país, escrito EXACTO.
+  De ahí sale la foto de la ficha: fuera de los sitios muy famosos, la Wikipedia en
+  español no los tiene y la del país sí. Si no estás seguro del título, deja la cadena VACÍA.
 - No inventes URLs: las busco yo aparte.`;
 }
 
@@ -609,6 +819,8 @@ async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
         titulo_wikipedia: s.titulo_wikipedia
           ? String(s.titulo_wikipedia).trim()
           : String(s.nombre).trim(),
+        titulo_wikipedia_local: textoONulo(s.titulo_wikipedia_local),
+        idioma_wikipedia_local: textoONulo(s.idioma_wikipedia_local),
         bloque,
       })),
   };

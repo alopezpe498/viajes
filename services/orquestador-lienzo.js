@@ -39,6 +39,7 @@ import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { lienzoDeViaje, colocar, FRANJAS } from '../services/lienzo.js';
 import { datosDeSitio } from '../services/datos-sitios.js';
 import { ocupacionDe } from '../services/proveedores.js';
+import { alternarApuntado } from '../services/etapa.js';
 import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
 
 const FASE = 'lienzo';
@@ -88,46 +89,124 @@ export function diasDeLaEtapa(lienzo, etapaId) {
 }
 
 /**
- * Lo que se puede colocar en una etapa.
+ * LO QUE SE PUEDE COLOCAR EN UNA ETAPA.
  *
- * Se dejan fuera dos cosas y por motivos distintos: lo que ya está en el lienzo
- * —porque colocarlo otra vez sería moverlo— y los sitios cubiertos por una
- * excursión, que la fase 5 marcó para que no se programe dos veces la misma
- * visita.
+ * AQUÍ ESTABA EL FALLO QUE DEJABA EL LIENZO VACÍO. Esto leía `candidatos` con
+ * `marcado = 1`, o sea lo que alguien hubiera pulsado «Me lo apunto». Pero
+ * ninguna fase apunta sitios —la 4 los genera y se dice expresamente que no los
+ * apunte— así que la lista salía vacía y no había nada que repartir.
+ *
+ * Ahora se trabaja con LAS FICHAS GENERADAS, que es lo que de verdad hay: los
+ * imprescindibles primero y los de segundo nivel después, sin los que ya cubre
+ * una excursión. Las excursiones sí vienen de `candidatos`, porque la fase 5 las
+ * preseleccionó apuntándolas de verdad.
+ *
+ * Y el «Me lo apunto» se hace AL COLOCAR, no antes: apuntar treinta sitios para
+ * colocar ocho dejaría veintidós apuntados que nadie va a ver. Lo que no cabe se
+ * queda generado y sin apuntar, que es exactamente lo que significa.
  */
 export function colocablesDeEtapa(etapa, lienzo) {
   const yaColocados = new Set(lienzo.colocados.map((c) => c.candidatoId).filter(Boolean));
 
-  const candidatos = todas(
+  // --- Las excursiones, que ya son candidatos y son anclas ----------------
+  const excursiones = todas(
     `SELECT * FROM candidatos
-      WHERE etapa_id = ? AND tipo IN ('sitio', 'actividad') AND marcado = 1`,
+      WHERE etapa_id = ? AND tipo = 'actividad' AND marcado = 1`,
     etapa.id
-  ).filter((c) => !yaColocados.has(c.id));
-
-  return candidatos.map((c) => {
-    // El sitio del catálogo del que sale la tarjeta, que es quien tiene los
-    // horarios y el tiempo de visita.
-    const sitio = c.url
-      ? una('SELECT * FROM sitios_lugar WHERE wikipedia_url = ? OR nombre = ?', c.url, c.titulo)
-      : una('SELECT * FROM sitios_lugar WHERE nombre = ?', c.titulo);
-
-    const datos = sitio ? datosDeSitio(sitio) : null;
-    const cierres = sitio ? diasDeCierre(sitio.cierra_dias) : [];
-
-    return {
+  )
+    .filter((c) => !yaColocados.has(c.id))
+    .map((c) => ({
+      clase: 'excursion',
       candidatoId: c.id,
-      tipo: c.tipo,
+      sitioId: null,
+      tipo: 'actividad',
       nombre: c.titulo,
-      categoria: sitio?.categoria ?? null,
-      // Una excursión trae hora de encuentro; un sitio, no.
-      hora: c.tipo === 'actividad' ? null : null,
-      duracion: c.duracion ?? datos?.tiempoVisita ?? null,
-      horarios: datos?.horarios ?? null,
-      precio: datos?.precio ?? null,
-      cierraDias: cierres,
-      cierraTexto: cierres.length ? cierres.map((d) => DIAS_SEMANA[d]).join(' y ') : null,
-    };
-  });
+      categoria: null,
+      duracion: c.duracion ?? null,
+      horarios: null,
+      cierraDias: [],
+      cierraTexto: null,
+    }));
+
+  // --- Y los sitios generados, en el orden de sus bloques -----------------
+  const sitios = etapa.punto_interes_id
+    ? todas(
+        `SELECT * FROM sitios_lugar
+          WHERE punto_interes_id = ?
+            AND bloque IN ('imprescindibles', 'otros', 'ninos')
+            AND cubierto_por IS NULL
+          ORDER BY CASE bloque
+                     WHEN 'imprescindibles' THEN 1
+                     WHEN 'ninos' THEN 2
+                     ELSE 3
+                   END, orden, id`,
+        etapa.punto_interes_id
+      )
+    : [];
+
+  // Un sitio ya apuntado y colocado no se ofrece otra vez.
+  const apuntados = new Map(
+    todas(
+      "SELECT id, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'sitio'",
+      etapa.id
+    ).map((c) => {
+      let deId = null;
+      try {
+        deId = JSON.parse(c.datos_extra ?? '{}').deId ?? null;
+      } catch {
+        deId = null;
+      }
+      return [deId, c.id];
+    })
+  );
+
+  const delCatalogo = sitios
+    .filter((s) => {
+      const cand = apuntados.get(s.id);
+      return !cand || !yaColocados.has(cand);
+    })
+    .map((s) => {
+      const datos = datosDeSitio(s);
+      const cierres = diasDeCierre(s.cierra_dias);
+      return {
+        clase: 'sitio',
+        candidatoId: apuntados.get(s.id) ?? null,
+        sitioId: s.id,
+        tipo: 'sitio',
+        nombre: s.nombre,
+        categoria: s.categoria ?? null,
+        bloque: s.bloque,
+        duracion: datos?.tiempoVisita ?? null,
+        horarios: datos?.horarios ?? null,
+        cierraDias: cierres,
+        cierraTexto: cierres.length ? cierres.map((d) => DIAS_SEMANA[d]).join(' y ') : null,
+      };
+    });
+
+  // Las excursiones primero: son las anclas y quien lee la lista tiene que
+  // verlas antes de repartir lo demás.
+  return [...excursiones, ...delCatalogo];
+}
+
+/**
+ * Apunta un sitio del catálogo y devuelve su candidato.
+ *
+ * Es el mismo «Me lo apunto» del botón. Se hace justo antes de colocarlo, para
+ * que el estado quede como si lo hubiera apuntado una persona: si mañana se
+ * quita del lienzo, vuelve a la mochila como cualquier otro.
+ */
+function apuntarYObtener(etapaId, sitioId) {
+  const r = alternarApuntado(etapaId, 'sitio', sitioId);
+  if (!r?.apuntado) return null;
+
+  const c = una(
+    `SELECT id FROM candidatos
+      WHERE etapa_id = ? AND tipo = 'sitio' AND datos_extra LIKE ?
+      ORDER BY id DESC LIMIT 1`,
+    etapaId,
+    `%"deId":${sitioId}%`
+  );
+  return c?.id ?? null;
 }
 
 // =============================================================================
@@ -170,7 +249,12 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
       continue;
     }
 
-    const piezas = colocablesDeEtapa(etapa, lienzo);
+    const piezas = colocablesDeEtapa(etapa, lienzo).map((p, i) => ({
+      ...p,
+      // Una referencia propia y no el id del candidato: un sitio generado
+      // todavía no tiene candidato, y no lo tendrá hasta que se coloque.
+      ref: p.clase === 'excursion' ? `x${i + 1}` : `s${i + 1}`,
+    }));
     if (!piezas.length) {
       di(`${ciudad}: no hay nada apuntado que colocar.`);
       continue;
@@ -199,8 +283,10 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
       COLOCABLES: piezas
         .map(
           (p) =>
-            `- ${p.tipo === 'actividad' ? 'EXCURSIÓN' : 'sitio'} #${p.candidatoId} · ${p.nombre}` +
-            `${p.categoria ? ` (${p.categoria})` : ''}\n` +
+            `- ${p.clase === 'excursion' ? 'EXCURSIÓN' : 'sitio'} ${p.ref} · ${p.nombre}` +
+            `${p.categoria ? ` (${p.categoria})` : ''}` +
+            `${p.bloque === 'otros' ? ' [segundo nivel]' : ''}` +
+            `${p.bloque === 'ninos' ? ' [para niños]' : ''}\n` +
             `  visita: ${p.duracion ?? 'no lo sé'}` +
             `${p.horarios ? `\n  horario: ${String(p.horarios).slice(0, 120)}` : ''}` +
             `${p.cierraTexto ? `\n  CIERRA los ${p.cierraTexto}` : ''}`
@@ -235,7 +321,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
     }
 
     // --- Guardar, con el mismo `colocar` del arrastre ---------------------
-    const porId = new Map(piezas.map((p) => [p.candidatoId, p]));
+    const porRef = new Map(piezas.map((p) => [p.ref, p]));
     let puestos = 0;
 
     for (const d of plan.dias) {
@@ -244,9 +330,34 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
 
       const resumen = [];
 
+      // LA HORA MANDA SOBRE LA FRANJA, y esto quita una clase entera de avisos.
+      //
+      // La IA devuelve las dos cosas y a veces no concuerdan: puso la Plaza
+      // Szczepański a las 15:30 en la franja de tarde, que empieza a las 16. El
+      // lienzo lo detecta y avisa, con razón. Pero es un desajuste aritmético,
+      // no una decisión: si hay hora, la franja se deduce de ella y ya no hay
+      // nada que avisar.
+      const franjaDeLaHora = (hora) => {
+        const h = Number(String(hora ?? '').split(':')[0]);
+        if (!Number.isFinite(h)) return null;
+        return FRANJAS.find((f) => h >= f.desde && h < f.hasta)?.clave ?? 'noche';
+      };
+
+      // Y NADA DESPUÉS DE IRSE. El día de salida tiene su bloque fijo con hora:
+      // lo que caiga en una franja posterior no es un plan, es una cosa que no
+      // se va a poder hacer. Se descarta aquí en vez de dejar el aviso puesto.
+      const salida = (dias.find((x) => x.n === n)?.fijos ?? []).find((f) => f.donde === 'vuelta');
+      const topeFranja = salida ? CLAVES_FRANJA.indexOf(salida.franja) : -1;
+
       for (const item of Array.isArray(d?.plan) ? d.plan : []) {
-        const franja = CLAVES_FRANJA.includes(item?.franja) ? item.franja : null;
+        const pedida = CLAVES_FRANJA.includes(item?.franja) ? item.franja : null;
+        const franja = franjaDeLaHora(item?.hora) ?? pedida;
         if (!franja) continue;
+
+        if (topeFranja >= 0 && CLAVES_FRANJA.indexOf(franja) > topeFranja) {
+          di(`   Día ${n}: fuera «${item?.ref ?? item?.tipo ?? '?'}», caía después del viaje de vuelta.`);
+          continue;
+        }
 
         // La comida no es un candidato: es un bloque de texto, como el que
         // pondría alguien a mano.
@@ -262,15 +373,17 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
           continue;
         }
 
-        const pieza = porId.get(Number(item?.id));
+        const pieza = porRef.get(String(item?.ref ?? item?.id ?? '').trim());
         if (!pieza) continue;
 
-        colocar(viajeId, {
-          candidatoId: pieza.candidatoId,
-          dia: n,
-          franja,
-          hora: item.hora ?? null,
-        });
+        // APUNTARLO ES PARTE DE COLOCARLO. Un sitio generado no es candidato
+        // hasta que se decide meterlo en un día; en ese momento se apunta con la
+        // misma función del botón y ya se puede colocar.
+        const candidatoId =
+          pieza.candidatoId ?? (pieza.sitioId ? apuntarYObtener(etapa.id, pieza.sitioId) : null);
+        if (!candidatoId) continue;
+
+        colocar(viajeId, { candidatoId, dia: n, franja, hora: item.hora ?? null });
         puestos += 1;
         resumen.push(pieza.nombre);
       }
@@ -284,7 +397,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
     }
 
     for (const f of plan.fuera ?? []) {
-      const pieza = porId.get(Number(f?.id));
+      const pieza = porRef.get(String(f?.ref ?? f?.id ?? '').trim());
       if (pieza) {
         sinColocarEnTotal += 1;
         di(`   Fuera: ${pieza.nombre}${f.por_que ? ` (${f.por_que})` : ''}`);

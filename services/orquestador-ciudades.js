@@ -35,6 +35,8 @@ import { ocupacionDe, ciudadDeCasa } from '../services/proveedores.js';
 import { asegurarDestino, destinoPorNombre } from '../services/catalogo.js';
 import { recalcularRuta } from '../services/ruta.js';
 import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+import { fichasDeTramo } from '../services/movilidad.js';
+import { distanciaEntre, distanciaGuardada } from '../services/distancias-ciudades.js';
 
 /** Cuántas puertas se prueban con vuelos de verdad. Cada una son dos búsquedas. */
 const MAX_PUERTAS = 3;
@@ -176,6 +178,14 @@ function minutosDe(opcion) {
   return (opcion.tramos ?? []).reduce((s, t) => s + aMin(t.duracion), 0);
 }
 
+/** 175 -> "2h 55min". Para que el log se lea como habla la gente. */
+function comoTexto(min) {
+  if (min == null) return '—';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h ? `${h}h ${m ? `${m}min` : ''}`.trim() : `${m}min`;
+}
+
 /** La opción más corta de las que devolvió Kayak. */
 function laMasCorta(opciones) {
   let mejor = null;
@@ -233,6 +243,21 @@ async function buscarAflojando({ viajeId, origen, destino, fecha, ocupacion, aut
           );
         }
         return { ...mejor, opciones, aflojado: intento.nota };
+      }
+
+      // CERO CON ESTOS FILTROS TIENE ARREGLO; CERO A SECAS, NO.
+      //
+      // Si la web dice que hay vuelos pero ninguno pasa el filtro, aflojar es
+      // exactamente lo que hay que hacer y se dice en el log. Si simplemente no
+      // vino nada, aflojar tampoco va a traer nada, pero se intenta igual: sale
+      // barato y a veces la diferencia está en la franja horaria.
+      if (opciones.sinResultadosPorFiltros) {
+        anotar(
+          viajeId,
+          'ciudades_y_noches',
+          `   ${comoSeLlama}: hay vuelos ese día pero ninguno cumple ` +
+            `${i === 0 ? 'tus filtros' : `lo pedido ${intentos[i].nota}`}. Aflojo y repito.`
+        );
       }
     } catch (err) {
       anotar(viajeId, 'ciudades_y_noches', `   ${comoSeLlama}: la búsqueda falló (${err.message}).`);
@@ -301,6 +326,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       ocupacion, auto, comoSeLlama: `ida a ${p.nombre}`,
     });
     if (ida) idas.set(p.nombre, { ...ida, iata, ciudad: p.nombre });
+    else anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: sin ninguna ida utilizable.`);
 
     anotar(viajeId, 'ciudades_y_noches', `Buscando vuelos de vuelta desde ${p.nombre} (${iata}→${iataCasa})…`);
     const vuelta = await buscarAflojando({
@@ -308,6 +334,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       ocupacion, auto, comoSeLlama: `vuelta desde ${p.nombre}`,
     });
     if (vuelta) vueltas.set(p.nombre, { ...vuelta, iata, ciudad: p.nombre });
+    else anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: sin ninguna vuelta utilizable.`);
   }
 
   if (!idas.size || !vueltas.size) {
@@ -341,6 +368,33 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     }
   }
   combinaciones.sort((a, b) => a.total - b.total);
+
+  // QUÉ CONSIGUIÓ CADA PUERTA, dicho antes de elegir.
+  //
+  // Sin esto, el log saltaba de «busco vuelos a Gdansk» a «entro por Varsovia» y
+  // no había forma de saber si Gdansk se cayó porque no había vuelo o porque
+  // salía peor. Son dos cosas muy distintas y la segunda es una decisión que hay
+  // que poder discutir.
+  const loQueLogro = (m, lado) => {
+    const h = m.get(lado);
+    if (!h) return 'nada';
+    return `${comoTexto(h.minutos)}${h.aflojado ? ` (${h.aflojado})` : ' con tus filtros'}`;
+  };
+  for (const p of puertas) {
+    anotar(
+      viajeId,
+      'ciudades_y_noches',
+      `   ${p.nombre}: mejor ida ${loQueLogro(idas, p.nombre)} · mejor vuelta ${loQueLogro(vueltas, p.nombre)}.`
+    );
+  }
+  anotar(
+    viajeId,
+    'ciudades_y_noches',
+    `Combinaciones posibles, de menos a más tiempo de vuelo: ` +
+      combinaciones
+        .map((c) => `${c.entrada.ciudad}→${c.salida.ciudad} ${comoTexto(c.total)}`)
+        .join(' · ')
+  );
 
   /**
    * La regla de siempre, que ahora es el respaldo.
@@ -454,10 +508,14 @@ function guardarVueloElegido(viaje, lado, hallazgo) {
   const o = hallazgo.opcion;
   const huella = (o.tramos ?? []).map((t) => `${t.horaSalida}-${t.horaLlegada}`).join('/');
 
+  // EL TRAMO AL QUE PERTENECE ESTE VUELO.
+  //
+  // La ida es el tramo que no tiene etapa de origen —se sale de casa— y la
+  // vuelta el que no tiene etapa de destino. Los crea `recalcularRuta` al montar
+  // las paradas, así que a estas alturas ya existen.
   const yaEsta = una(
     `SELECT id FROM candidatos
-      WHERE viaje_id = ? AND tipo = 'vuelo' AND transporte_id IS NULL
-        AND datos_extra LIKE ?`,
+      WHERE viaje_id = ? AND tipo = 'vuelo' AND datos_extra LIKE ?`,
     viaje.id,
     `%"huella":"${huella}"%`
   );
@@ -504,6 +562,221 @@ function guardarVueloElegido(viaje, lado, hallazgo) {
   return Number(r.lastInsertRowid);
 }
 
+/**
+ * ENLAZA LOS VUELOS YA GUARDADOS CON SUS TRAMOS.
+ *
+ * VA DESPUÉS DE CREAR LAS ETAPAS, Y NO PUEDE IR ANTES. Los tramos —el de casa a
+ * la primera parada y el de la última a casa— los crea `recalcularRuta` al
+ * montar la ruta, o sea DESPUÉS de que se hayan elegido y guardado los vuelos.
+ * Intentar enlazarlos al guardarlos no encontraba ningún tramo y el enlace se
+ * perdía en silencio: el vuelo quedaba marcado pero «Mi ruta» lo daba por
+ * pendiente, porque ella mira `transportes.candidato_id`.
+ *
+ * Es lo mismo que hace el círculo de «Cómo llegar»: el candidato cuelga del
+ * tramo, se queda marcado, y el tramo apunta al candidato.
+ */
+export function enlazarVuelosConTramos(viajeId) {
+  const enlazados = [];
+
+  for (const lado of ['ida', 'vuelta']) {
+    const tramo = una(
+      lado === 'ida'
+        ? 'SELECT * FROM transportes WHERE viaje_id = ? AND etapa_origen_id IS NULL LIMIT 1'
+        : 'SELECT * FROM transportes WHERE viaje_id = ? AND etapa_destino_id IS NULL LIMIT 1',
+      viajeId
+    );
+    if (!tramo) continue;
+
+    const vuelo = una(
+      `SELECT id FROM candidatos
+        WHERE viaje_id = ? AND tipo = 'vuelo' AND marcado = 1
+          AND transporte_id IS NULL AND titulo LIKE ?
+        ORDER BY id DESC LIMIT 1`,
+      viajeId,
+      `%· ${lado} (%`
+    );
+    if (!vuelo) continue;
+
+    ejecutar("UPDATE candidatos SET marcado = 0 WHERE transporte_id = ?", tramo.id);
+    ejecutar('UPDATE candidatos SET transporte_id = ?, marcado = 1 WHERE id = ?', tramo.id, vuelo.id);
+    ejecutar("UPDATE transportes SET candidato_id = ?, tipo = 'vuelo' WHERE id = ?", vuelo.id, tramo.id);
+    enlazados.push({ lado, tramoId: tramo.id, candidatoId: vuelo.id });
+  }
+
+  return enlazados;
+}
+
+/**
+ * ¿SE HA QUEDADO CORTA UNA CIUDAD DE PESO MÁXIMO, Y SIN EXPLICARLO?
+ *
+ * La regla está escrita en el prompt, pero pedirla no basta: en Polonia, con 6
+ * noches y pesos 5-4-5, salió 4-1-1 y la justificación era un horario inventado.
+ * Así que se comprueba aquí, con la aritmética, que es lo que la máquina sí sabe
+ * hacer.
+ *
+ * Devuelve el arreglo a aplicar —de qué ciudad quitar una noche y a cuál dársela—
+ * o null si el reparto está bien. Si la IA escribió un "motivo" para la parada
+ * corta, se respeta: ahí está diciendo por qué, y esa era la puerta que la regla
+ * dejaba abierta.
+ */
+export function nochePorPeso(ruta, candidatas, minimoNoches) {
+  const pesoDe = (nombre) =>
+    candidatas.find((c) => normalizarNombre(c.nombre) === normalizarNombre(nombre))?.peso ?? 3;
+
+  // Las paradas de paso (0 noches en un extremo) no entran en el reparto.
+  const paradas = ruta.filter((p) => p.noches > 0);
+  if (paradas.length < 2) return null;
+
+  const pesoMaximo = Math.max(...paradas.map((p) => pesoDe(p.ciudad)));
+
+  for (const corta of paradas) {
+    if (pesoDe(corta.ciudad) !== pesoMaximo) continue;
+    if (corta.noches > minimoNoches) continue;
+    if (corta.motivo) continue; // lo explica: es la excepción que la regla permite
+
+    // DOS CLASES DE DONANTE, y las dos hacen falta.
+    //
+    // La de menor peso que tenga más noches, que es lo evidente. Y una del mismo
+    // peso máximo que se haya llevado DOS noches más: el caso real de Polonia
+    // fue 4-1-1 con pesos 5-4-5, o sea que las dos ciudades cortas de peso
+    // máximo tenían al lado otra igual de importante con cuatro noches. Sin esta
+    // segunda vía no había de dónde sacarlas y el desajuste se quedaba.
+    const donantes = paradas
+      .filter((p) => {
+        if (p === corta) return false;
+        const peso = pesoDe(p.ciudad);
+        if (peso < pesoMaximo) return p.noches > corta.noches;
+        return peso === pesoMaximo && p.noches >= corta.noches + 2;
+      })
+      .sort((a, b) => pesoDe(a.ciudad) - pesoDe(b.ciudad) || b.noches - a.noches);
+
+    // El donante tiene que poder permitírselo: si al soltar la noche se queda
+    // por debajo del mínimo, el arreglo crea el problema que quería quitar.
+    const donante = donantes.find((d) => d.noches - 1 >= minimoNoches);
+    if (!donante) continue;
+
+    return { de: donante, a: corta, pesoMaximo };
+  }
+
+  return null;
+}
+
+// =============================================================================
+// LOS TIEMPOS ENTRE CANDIDATAS, CON SU PROCEDENCIA
+// -----------------------------------------------------------------------------
+// Antes aquí solo iba la matriz que la propia IA estimaba «a ojo» en el paso 1,
+// y con eso escribió esto en una ruta de Polonia:
+//
+//   «Cracovia absorbe solo la noche de salida porque llega de madrugada tras
+//    360 min de tren»
+//
+// El tren de Gdansk a Cracovia sale a las 9:15 y llega sobre las 15:30. Ni 360
+// minutos ni madrugada: se lo inventó, y con ese invento le quitó dos noches a
+// una ciudad de peso máximo.
+//
+// La cura no es pedirle que no invente —eso ya se le pide—, sino DARLE EL DATO y
+// decirle de dónde sale cada línea. Tres fuentes, en este orden:
+//
+//   1. EL CATÁLOGO de tramos: trenes y buses reales, con su duración y su
+//      frecuencia, tal y como se guardaron al investigarlos.
+//   2. LA CARRETERA: los kilómetros y el tiempo en coche del par de ciudades,
+//      que son un suelo fiable aunque se vaya en tren.
+//   3. SU PROPIA ESTIMACIÓN del paso 1, marcada como lo que es.
+//
+// Y si no hay nada de eso, se dice «sin dato». Un hueco declarado es lo único
+// que impide que lo rellene con una hora inventada.
+// =============================================================================
+
+/** El punto del catálogo de una ciudad candidata, si está. */
+function puntoDeCiudad(destinoId, nombre) {
+  if (!destinoId || !nombre) return null;
+  return una(
+    'SELECT id, nombre, lat, lon FROM puntos_interes WHERE destino_id = ? AND nombre_norm = ?',
+    destinoId,
+    normalizarNombre(nombre)
+  );
+}
+
+/** "2 h 20 min a 3 h · cada 30 o 60 minutos" a partir de una ficha del catálogo. */
+function comoSeLeeLaFicha(f) {
+  return [f.medio, f.nombre, f.duracion, f.frecuencia]
+    .map((t) => (t ? String(t).trim() : ''))
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * La tabla de tiempos que se le enseña a la IA para repartir noches.
+ *
+ * Se calculan también las distancias por carretera que falten: son de una en
+ * una y quedan en el catálogo para siempre, así que el rato que cuestan aquí lo
+ * ahorra después "Mi ruta", que las necesita para sus kilómetros.
+ */
+export async function tablaDeTiempos(candidatas, tiemposIA, destinoId) {
+  const estimado = new Map();
+  for (const t of tiemposIA) {
+    const clave = [normalizarNombre(t.desde), normalizarNombre(t.hasta)].sort().join('|');
+    if (!estimado.has(clave)) estimado.set(clave, t);
+  }
+
+  const lineas = [];
+  for (let i = 0; i < candidatas.length; i += 1) {
+    for (let j = i + 1; j < candidatas.length; j += 1) {
+      const a = candidatas[i].nombre;
+      const b = candidatas[j].nombre;
+
+      // 1) El catálogo de tramos: lo mejor que hay, porque son datos que ya se
+      //    investigaron para este par de ciudades.
+      const fichas = fichasDeTramo(a, b).filter((f) => f.duracion);
+      if (fichas.length) {
+        // Tren y bus primero, que es como se va de ciudad a ciudad. Lo que no
+        // esté en la lista va al final: `indexOf` devuelve -1 y sin esto un
+        // medio «otro» se colaba en cabeza.
+        const preferido = ['tren', 'bus', 'barco', 'coche', 'traslado', 'avion'];
+        const orden = (m) => (preferido.indexOf(m) === -1 ? preferido.length : preferido.indexOf(m));
+        fichas.sort((x, y) => orden(x.medio) - orden(y.medio));
+        for (const f of fichas.slice(0, 2)) {
+          lineas.push(`- ${a} ↔ ${b}: ${comoSeLeeLaFicha(f)} [dato real del catálogo]`);
+        }
+        continue;
+      }
+
+      // 2) La carretera. Si no está calculada, se calcula: queda guardada.
+      const pa = puntoDeCiudad(destinoId, a);
+      const pb = puntoDeCiudad(destinoId, b);
+      let carretera = pa && pb ? distanciaGuardada(pa.id, pb.id) : null;
+      if (!carretera && pa && pb) {
+        try {
+          await distanciaEntre(pa.id, pb.id);
+          carretera = distanciaGuardada(pa.id, pb.id);
+        } catch {
+          carretera = null;
+        }
+      }
+      if (carretera?.km) {
+        const horas = carretera.minutos_coche
+          ? ` (${Math.floor(carretera.minutos_coche / 60)} h ${String(carretera.minutos_coche % 60).padStart(2, '0')} en coche)`
+          : '';
+        lineas.push(`- ${a} ↔ ${b}: ${Math.round(carretera.km)} km${horas} [medido por carretera]`);
+        continue;
+      }
+
+      // 3) Lo que estimó ella misma, dicho como lo que es.
+      const suyo = estimado.get([normalizarNombre(a), normalizarNombre(b)].sort().join('|'));
+      if (suyo?.minutos) {
+        lineas.push(
+          `- ${a} ↔ ${b}: ~${suyo.minutos} min en ${suyo.modo ?? 'transporte'} [estimación tuya, sin comprobar]`
+        );
+        continue;
+      }
+
+      lineas.push(`- ${a} ↔ ${b}: sin dato. No sabes cuánto se tarda ni a qué hora sale nada.`);
+    }
+  }
+
+  return lineas.length ? lineas.join('\n') : '(sin datos de tiempos entre ciudades)';
+}
+
 // =============================================================================
 // PASO 3: LA RUTA
 // =============================================================================
@@ -525,12 +798,27 @@ export function nochesEntre(desde, hasta) {
 export function validarRuta(ruta, { nochesTotales, entrada, salida, minimoNoches }) {
   if (!Array.isArray(ruta) || !ruta.length) return 'no devolvió ninguna ciudad.';
 
-  for (const p of ruta) {
+  // ENTRAR Y SALIR POR LA MISMA CIUDAD PERMITE UNA PARADA SIN NOCHES, y solo
+  // una: la del extremo que es un paso, no una estancia.
+  //
+  // Con vuelo de vuelta desde Cracovia a las 22:30, el último día se vuelve a
+  // Cracovia desde la ciudad anterior, se pasa la tarde y se vuela. Eso es una
+  // parada de cero noches perfectamente real, y prohibirla dejaba a la IA sin
+  // ninguna ruta válida: lo intentó dos veces y la fase acabó en error.
+  const irYVolver = normalizarNombre(entrada) === normalizarNombre(salida);
+  const extremos = irYVolver ? [0, ruta.length - 1] : [];
+
+  for (const [i, p] of ruta.entries()) {
     if (!p.ciudad) return 'hay una parada sin nombre de ciudad.';
-    if (!Number.isInteger(p.noches) || p.noches < 1) {
+    const puedeSerDePaso = extremos.includes(i);
+    const minimoAqui = puedeSerDePaso ? 0 : 1;
+    if (!Number.isInteger(p.noches) || p.noches < minimoAqui) {
       return `«${p.ciudad}» se queda con ${p.noches} noches, y una parada de cero noches no es una parada.`;
     }
-    if (p.noches < minimoNoches && !p.motivo) {
+    if (p.noches === 0 && !p.motivo) {
+      return `«${p.ciudad}» se queda sin noches y no explica por qué en "motivo".`;
+    }
+    if (p.noches > 0 && p.noches < minimoNoches && !p.motivo) {
       return (
         `«${p.ciudad}» tiene ${p.noches} noche(s), por debajo del mínimo de ${minimoNoches}, ` +
         'y no viene el campo "motivo" que lo justifique.'
@@ -558,6 +846,7 @@ export function validarRuta(ruta, { nochesTotales, entrada, salida, minimoNoches
     // Repetir la ciudad de entrada al final es normal (ida y vuelta por el mismo
     // sitio); repetir cualquier otra en medio es un error de la IA.
     if (vistas.has(k) && k !== primera) return `«${p.ciudad}» aparece dos veces.`;
+    // (la de entrada puede repetirse al final: es volver al aeropuerto)
     vistas.add(k);
   }
 
@@ -778,9 +1067,11 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     CANDIDATAS: candidatasDeRuta
       .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
       .join('\n'),
-    TIEMPOS: tiempos.length
-      ? tiempos.map((t) => `- ${t.desde} → ${t.hasta}: ${t.minutos} min en ${t.modo ?? 'transporte'}`).join('\n')
-      : '(sin estimaciones)',
+    TIEMPOS: await tablaDeTiempos(
+      candidatasDeRuta,
+      tiempos,
+      (viaje.destino ? destinoPorNombre(viaje.destino) : null)?.id ?? null
+    ),
   };
 
   let ruta = null;
@@ -839,6 +1130,21 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     // Cuando lo que falla es la cuenta, se le dice qué quitar o qué poner y
     // dónde. Se recorta por la parada de menor peso y se añade a la de mayor,
     // que es lo que haría cualquiera con el mapa delante.
+    // LOS EXTREMOS, dichos como una edición y no como una regla.
+    //
+    // «La última parada es Gdańsk y se sale por Varsovia» es exacto y no le
+    // sirve: lo intentó dos veces y la segunda movió otra ciudad. Decirle qué
+    // mover y adónde sí funciona, que es lo mismo que se hizo con las noches.
+    if (fallo && propuesta.length) {
+      const primera = normalizarNombre(propuesta[0].ciudad ?? '');
+      const ultima = normalizarNombre(propuesta[propuesta.length - 1].ciudad ?? '');
+      if (primera !== normalizarNombre(entrada)) {
+        arreglo = `pon «${entrada}» la PRIMERA de la lista, que es por donde se entra, y deja el resto en el mismo orden.`;
+      } else if (ultima !== normalizarNombre(salida)) {
+        arreglo = `pon «${salida}» la ÚLTIMA de la lista, que es por donde se sale, y deja el resto en el mismo orden.`;
+      }
+    }
+
     if (fallo && real !== nochesTotales && propuesta.length) {
       const sobran = real - nochesTotales;
       const pesoDe = (nombre) =>
@@ -855,7 +1161,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
               : `, que se queda con ${floja.noches - sobran}. El resto no se toca.`)
           : `faltan ${-sobran} noche(s). Dáselas a «${fuerte.ciudad}», que pasa a ` +
             `${fuerte.noches - sobran}. El resto no se toca.`;
-    } else {
+    } else if (!fallo) {
       arreglo = null;
     }
     if (fallo) {
@@ -870,8 +1176,39 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     throw new Error(`La IA no consiguió una ruta válida en dos intentos. Último motivo: ${ultimoFallo}`);
   }
 
+  // EL REPARTO POR PESO SE COMPRUEBA, NO SE PIDE Y YA.
+  //
+  // Con 6 noches y pesos 5-4-5 lo que sale es 2-2-2. Si una ciudad de peso
+  // máximo se queda en el mínimo y no dice por qué, se le pasa una noche de la
+  // parada de menor peso. Se corrige aquí en vez de volver a preguntar: mover
+  // una noche de una lista es aritmética, y la aritmética la hace mejor el
+  // código que el modelo.
+  // Hasta tres pases: cada uno mueve UNA noche y se vuelve a mirar. Más de tres
+  // correcciones ya no es afinar un reparto, es rehacerlo, y eso no toca aquí.
+  for (let pase = 0; pase < 3; pase += 1) {
+    const desajuste = nochePorPeso(ruta, candidatasDeRuta, minimoNoches);
+    if (!desajuste) break;
+    desajuste.de.noches -= 1;
+    desajuste.a.noches += 1;
+    di(
+      `Reparto corregido: «${desajuste.a.ciudad}» es de peso máximo y se quedaba con ` +
+        `${desajuste.a.noches - 1} noche(s) sin explicar por qué. Le paso una noche de ` +
+        `«${desajuste.de.ciudad}» (${desajuste.de.noches + 1} → ${desajuste.de.noches}).`
+    );
+  }
+
   // --- Guardar -------------------------------------------------------------
   const creadas = crearEtapas(viaje, ruta);
+
+  // Los tramos acaban de nacer con la ruta: ahora sí se les puede colgar el
+  // vuelo, que es lo que deja la ida y la vuelta en verde y le da al lienzo la
+  // hora de llegada.
+  const enlazados = enlazarVuelosConTramos(viajeId);
+  if (enlazados.length) {
+    di(`Vuelos enlazados con sus tramos (${enlazados.map((e) => e.lado).join(' y ')}): quedan elegidos.`);
+  } else if (!conVuelos.error) {
+    apuntarHueco(viajeId, FASE, 'Los vuelos se guardaron pero no pude engancharlos a sus tramos.');
+  }
 
   // Las descartadas se guardan por si alguien las quiere recuperar: la IA las
   // pensó y descartarlas en silencio pierde trabajo ya hecho.

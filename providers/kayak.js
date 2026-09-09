@@ -231,19 +231,98 @@ async function cerrarEstorbos(pagina) {
  * CRECER durante dos comprobaciones seguidas. Es el unico criterio que no
  * depende de como se llame hoy el elemento de "Cargando".
  */
-async function esperarCargaCompleta(pagina) {
-  // 1) Que aparezca algo.
-  await pagina
-    .locator(SEL_TARJETA)
-    .first()
-    .waitFor({ state: 'visible', timeout: TIMEOUT_BUSQUEDA })
-    .catch(() => {
-      throw new Error(
-        `Kayak no mostró ningún resultado en ${TIMEOUT_BUSQUEDA / 1000} s. ` +
-          'Puede ser que la ruta no tenga vuelos esos días, que la búsqueda vaya muy lenta, ' +
-          'o que nos haya puesto un muro. Mira la ventana de Chrome.'
+/**
+ * ¿ESTO ES «NO HA CARGADO» O ES «CERO CON ESTOS FILTROS»?
+ *
+ * No es lo mismo y se parecían mucho: las dos cosas son una página sin tarjetas.
+ * Con el filtro de directos, BCN→GDN enseña «0 de 599 vuelos» y un aviso de que
+ * no hay nada; el scraper esperaba sus 45 segundos y lo daba por fallo. Eso hacía
+ * que una puerta con vuelos perfectamente válidos —con escala— se descartara
+ * como si Kayak estuviera caído.
+ *
+ * SE MIRA LA ESTRUCTURA ANTES QUE EL TEXTO. El texto está en el idioma de la
+ * web y cambia con el rediseño de turno; el contador a cero, la lista vacía y el
+ * botón de quitar filtros son lo que la página ES. El texto solo confirma.
+ *
+ * Devuelve `null` si no hay señales claras —que es lo que hay que hacer mientras
+ * la búsqueda sigue en marcha— y el motivo si las hay.
+ */
+async function detectarSinResultados(pagina) {
+  return pagina
+    .evaluate(() => {
+      const texto = document.body?.innerText ?? '';
+
+      // 1) EL CONTADOR A CERO. "0 de 599 vuelos", "0 of 599". Es la señal más
+      //    fuerte: dice a la vez que hay vuelos y que ninguno pasa el filtro.
+      const contador = texto.match(/\b0\s+(?:de|of)\s+([\d.,]+)\s+\S+/i);
+
+      // 2) EL BOTÓN DE QUITAR FILTROS. Solo aparece cuando hay filtros puestos
+      //    que están recortando; es la propia web reconociendo la situación.
+      const botones = [...document.querySelectorAll('button, a, [role="button"]')];
+      const quitarFiltros = botones.some((b) =>
+        /(quitar|borrar|restablecer|eliminar|limpiar)[^.]{0,20}filtro|clear[^.]{0,12}filter|reset[^.]{0,12}filter/i.test(
+          b.innerText ?? ''
+        )
       );
-    });
+
+      // 3) LA PÁGINA ESTÁ MONTADA. Si hay panel de filtros o cabecera de
+      //    resultados, ya ha cargado: la ausencia de tarjetas es un resultado,
+      //    no una espera.
+      const montada =
+        Boolean(document.querySelector('[class*="filter" i], [id*="filter" i]')) ||
+        Boolean(contador);
+
+      // 4) Y el texto, como confirmación.
+      const sinNada =
+        /no se han encontrado|no encontramos|no hay vuelos|sin resultados|no results|no flights found/i.test(
+          texto
+        );
+
+      return { contador: contador ? contador[0] : null, quitarFiltros, montada, sinNada };
+    })
+    .catch(() => null);
+}
+
+/** Con esto se da por hecho que no hay nada que esperar. */
+function esCeroPorFiltros(señales) {
+  if (!señales) return false;
+  // El contador a cero basta por sí solo. Las demás señales necesitan que la
+  // página esté montada, para no confundir una carga a medias con un cero.
+  if (señales.contador) return true;
+  return señales.montada && (señales.quitarFiltros || señales.sinNada);
+}
+
+async function esperarCargaCompleta(pagina) {
+  // 1) Que aparezca algo... O que la página diga que no hay nada.
+  //
+  // Se compite entre las dos cosas en vez de esperar solo a la tarjeta: si el
+  // filtro deja la lista a cero, la tarjeta no va a llegar nunca y quedarse los
+  // 45 segundos completos es tiempo tirado además de un diagnóstico falso.
+  const hastaCuando = Date.now() + TIMEOUT_BUSQUEDA;
+  let aparecio = false;
+
+  while (Date.now() < hastaCuando) {
+    if ((await pagina.locator(SEL_TARJETA).count().catch(() => 0)) > 0) {
+      aparecio = true;
+      break;
+    }
+    const señales = await detectarSinResultados(pagina);
+    if (esCeroPorFiltros(señales)) {
+      console.log(
+        `    (cero resultados con estos filtros${señales.contador ? `: «${señales.contador}»` : ''})`
+      );
+      return { tarjetas: 0, sinResultadosPorFiltros: true };
+    }
+    await dormir(1000);
+  }
+
+  if (!aparecio) {
+    throw new Error(
+      `Kayak no mostró ningún resultado en ${TIMEOUT_BUSQUEDA / 1000} s. ` +
+        'Puede ser que la ruta no tenga vuelos esos días, que la búsqueda vaya muy lenta, ' +
+        'o que nos haya puesto un muro. Mira la ventana de Chrome.'
+    );
+  }
 
   // 2) Que se estabilice.
   const limite = Date.now() + TIMEOUT_BUSQUEDA;
@@ -257,7 +336,7 @@ async function esperarCargaCompleta(pagina) {
       estables++;
       if (estables >= 2) {
         console.log(`    (búsqueda estabilizada en ${n} tarjetas)`);
-        return n;
+        return { tarjetas: n, sinResultadosPorFiltros: false };
       }
     } else {
       estables = 0;
@@ -268,7 +347,7 @@ async function esperarCargaCompleta(pagina) {
 
   const n = await pagina.locator(SEL_TARJETA).count();
   console.log(`    (se agotó la espera; sigo con las ${n} tarjetas que hay)`);
-  return n;
+  return { tarjetas: n, sinResultadosPorFiltros: false };
 }
 
 /**
@@ -499,7 +578,23 @@ export async function buscarVuelosKayak({
 
     await paso('2. Cerrar cookies y popups', () => cerrarEstorbos(pagina));
 
-    await paso('3. Esperar a que termine la búsqueda', () => esperarCargaCompleta(pagina));
+    const carga = await paso('3. Esperar a que termine la búsqueda', () =>
+      esperarCargaCompleta(pagina)
+    );
+
+    // CERO CON ESTOS FILTROS NO ES UN FALLO, ES UNA RESPUESTA.
+    //
+    // Hay vuelos en esa ruta; lo que no hay es ninguno que cumpla lo que se ha
+    // pedido. Devolverlo como error hacía que quien llama descartara la ruta
+    // entera, cuando lo que toca es aflojar un filtro y volver a preguntar.
+    //
+    // Va como lista vacía con una marca encima: quien solo mire `.length` sigue
+    // funcionando igual, y quien quiera distinguir los dos casos puede.
+    if (carga?.sinResultadosPorFiltros) {
+      const vacio = [];
+      vacio.sinResultadosPorFiltros = true;
+      return vacio;
+    }
 
     // Un scroll suave: es lo que haría una persona y de paso asienta el render.
     await paso('4. Recorrer la lista', async () => {

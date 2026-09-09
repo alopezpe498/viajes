@@ -36,6 +36,7 @@ import {
   investigarCiudadConIA,
   guardarFichaProfunda,
   ponerFotosDeWikipedia,
+  repasarFotosDeSitios,
 } from '../services/descubrir.js';
 import { situarLosSitios } from '../services/direcciones.js';
 import { buscarDatosDeSitios } from '../services/datos-sitios.js';
@@ -131,6 +132,22 @@ export async function ejecutarFaseSitios(viaje, prompt) {
     if (cuantos) {
       di(`${ciudad}: ya existían ${cuantos} sitios. No los regenero.`);
       generadas += 1;
+
+      // PERO SÍ SE REPASAN LAS FOTOS QUE FALTEN.
+      //
+      // Las fichas viejas se guardaron cuando solo se miraba la Wikipedia en
+      // español, y fuera de los sitios muy famosos ahí no hay artículo: de
+      // veinte sitios de Gdansk llegaron tres con foto. Regenerarlas sería
+      // tirar trabajo bueno, así que se rellena solo el hueco de la foto.
+      try {
+        const destinoDeLaCiudad = punto.destino_id
+          ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)
+          : null;
+        const puestas = await repasarFotosDeSitios(punto, destinoDeLaCiudad?.nombre ?? viaje.destino);
+        if (puestas) di(`   ${ciudad}: ${puestas} foto(s) recuperadas de fichas que no tenían.`);
+      } catch (err) {
+        di(`   ${ciudad}: no pude repasar las fotos (${err.message}).`);
+      }
       continue;
     }
 

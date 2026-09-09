@@ -206,7 +206,9 @@ Devuelve SOLO este JSON:
     "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir, qué no perderse, cuánto tiempo hace falta.",
     "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
     "lat": número, "lon": número,
-    "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
+    "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
+    "titulo_wikipedia_local": "título EXACTO del mismo artículo en la Wikipedia del idioma del país (vacío si dudas)",
+    "idioma_wikipedia_local": "código de ese idioma: pl, it, ja, de…"
   },
   "propuestas": [
     { "nombre": "nombre del lugar", "descripcion": "una sola frase, qué es y por qué está en la lista" }
@@ -238,7 +240,9 @@ Devuelve SOLO este JSON:
       "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir, qué no perderse, cuánto tiempo hace falta.",
       "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
       "lat": número, "lon": número,
-      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español"
+      "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
+      "titulo_wikipedia_local": "título EXACTO del mismo artículo en la Wikipedia del idioma del país (vacío si dudas)",
+      "idioma_wikipedia_local": "código de ese idioma: pl, it, ja, de…"
     }
   ]
 }
@@ -345,6 +349,11 @@ function comoFicha(s) {
     lat: numeroONulo(s.lat),
     lon: numeroONulo(s.lon),
     titulo_wikipedia: s.titulo_wikipedia ? String(s.titulo_wikipedia).trim() : s.nombre.trim(),
+    // El titulo en el idioma del pais es de donde sale la foto cuando la
+    // Wikipedia en espanol no tiene el articulo, que fuera de los sitios muy
+    // famosos es lo normal.
+    titulo_wikipedia_local: textoONulo(s.titulo_wikipedia_local),
+    idioma_wikipedia_local: textoONulo(s.idioma_wikipedia_local),
   };
 }
 

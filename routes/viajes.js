@@ -1632,6 +1632,15 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
   const traslados = trasladosDeLaRuta(viajeId);
   const dias = nochesEntre(viaje.fecha_inicio, viaje.fecha_fin) + 1;
 
+  // Si algún salto no tiene kilómetros, que se calcule por detrás. Igual que en
+  // el mapa: se pinta lo que hay y al recargar está. Los saltos de en medio
+  // (Gdansk → Cracovia) no los calculaba nadie —el mapa solo mide desde la
+  // ciudad de entrada—, así que la ruta decía "0 km (2 tramos sin calcular)"
+  // con los dos tramos resueltos.
+  if (traslados.incompletos && !trabajoActivo(viajeId, 'distancias_ruta')) {
+    encolar(viajeId, 'distancias_ruta');
+  }
+
   res.render('ruta', {
     ruta: rutaDeViaje(viajeId),
     // Si ya se revisó "Antes de viajar", el botón deja de ser un aviso.

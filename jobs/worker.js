@@ -27,7 +27,11 @@ import { resolverIata } from '../lib/iata.js';
 import { reunirAvisos } from '../services/avisos.js';
 import { sincronizarEtapaUnica } from '../services/etapas.js';
 import { filtrosVuelosDeTramo } from '../services/etapa.js';
-import { calcularDesde, referenciaDelViaje } from '../services/distancias-ciudades.js';
+import {
+  calcularDesde,
+  calcularDistanciasDeLaRuta,
+  referenciaDelViaje,
+} from '../services/distancias-ciudades.js';
 import {
   investigarTramo,
   investigarMovilidad,
@@ -581,6 +585,26 @@ async function ejecutarDistancias(trabajo) {
 }
 
 /**
+ * Ejecuta un trabajo de tipo 'distancias_ruta': los kilometros de cada salto de
+ * la ruta de un viaje.
+ *
+ * El trabajo de 'distancias' calcula desde la ciudad de entrada a las
+ * candidatas del mapa, que no es lo mismo: los saltos de en medio (Gdansk ->
+ * Cracovia) no son par de nadie y "Mi ruta" los daba por "sin calcular" aunque
+ * el tramo estuviera resuelto. Esto los pide uno a uno.
+ *
+ * No abre navegador y los pares ya calculados se saltan solos, asi que es
+ * barato y se puede encolar cada vez que se entra en la ruta.
+ */
+async function ejecutarDistanciasDeLaRuta(trabajo) {
+  const { hechas, fallidas } = await calcularDistanciasDeLaRuta(trabajo.viaje_id);
+  console.log(
+    `[worker] Trabajo #${trabajo.id}: ${hechas} salto/s calculado/s` +
+      (fallidas ? ` · ${fallidas} sin dato (se reintentan al volver a la ruta)` : '')
+  );
+}
+
+/**
  * Ejecuta un trabajo de tipo 'transporte_tramo': cómo se va de una ciudad a la
  * siguiente. `referencia_id` es el id del tramo.
  *
@@ -797,7 +821,7 @@ async function ejecutarComerDetalles(trabajo) {
 const TIPOS_CONOCIDOS = [
   'actividades', 'hoteles', 'vuelos', 'avisos',
   'descubrir_destino', 'investigar_ciudad', 'opinar_lienzo',
-  'ficha_actividad', 'preparar_etapa', 'distancias',
+  'ficha_actividad', 'preparar_etapa', 'distancias', 'distancias_ruta',
   'transporte_tramo', 'movilidad_ciudad',
   'geocodificar', 'traslado',
   'comer_buscar', 'comer_detalles',
@@ -1458,6 +1482,7 @@ async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'ficha_actividad') return ejecutarFichaActividad(trabajo);
   if (trabajo.tipo === 'preparar_etapa') return ejecutarPrepararEtapa(trabajo);
   if (trabajo.tipo === 'distancias') return ejecutarDistancias(trabajo);
+  if (trabajo.tipo === 'distancias_ruta') return ejecutarDistanciasDeLaRuta(trabajo);
   if (trabajo.tipo === 'transporte_tramo') return ejecutarTransporteTramo(trabajo);
   if (trabajo.tipo === 'movilidad_ciudad') return ejecutarMovilidadCiudad(trabajo);
   if (trabajo.tipo === 'datos_sitios') return ejecutarDatosDeSitios(trabajo);

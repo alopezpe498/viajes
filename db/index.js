@@ -22,6 +22,19 @@ export const db = new DatabaseSync(RUTA_BD);
 // Las claves ajenas no vienen activadas por defecto en SQLite.
 db.exec('PRAGMA foreign_keys = ON');
 
+// QUE NADIE SE CAIGA POR UN "database is locked".
+//
+// Con el servidor abierto y un trabajo largo escribiendo, dos escrituras que se
+// cruzan hacen que SQLite conteste "database is locked" al instante y el trabajo
+// muera. Le paso al orquestador entero: la fase de excursiones se fue a error a
+// mitad de camino por esto.
+//
+// WAL deja que se lea mientras otro escribe, y el busy_timeout dice que espere
+// cinco segundos en vez de rendirse a la primera. Son los dos ajustes de siempre
+// para una base de datos de fichero, y ninguno cambia lo que se guarda.
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA busy_timeout = 5000');
+
 /**
  * Crea las tablas si no existen.
  *
@@ -342,7 +355,9 @@ export function migrarEsquema() {
   migracionFase4Sitios();
   migracionFase5Excursiones();
   migracionFase1PuertaPorRuta();
+  migracionFase1NochesPorPeso();
   migracionFase6Lienzo();
+  migracionFase6Referencias();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -946,7 +961,9 @@ ENTRADA Y SALIDA, YA FIJADAS CON VUELOS REALES
 CANDIDATAS QUE PROPUSISTE
 {{CANDIDATAS}}
 
-TIEMPOS ESTIMADOS ENTRE ELLAS
+TIEMPOS ENTRE ELLAS. Cada línea dice DE DÓNDE SALE el dato: del catálogo
+(real), medido por carretera, o estimado por ti sin comprobar. Lo que ponga
+"sin dato" es un hueco de verdad: ahí no sabes nada.
 {{TIEMPOS}}
 
 Cierra la ruta. Devuelve SOLO este JSON:
@@ -991,10 +1008,26 @@ EL RESTO DE REGLAS:
 5. Ordena para no dar rodeos: sigue la geografía, no el orden en que se te
    ocurrieron. Un trayecto largo al principio se lleva mejor que al final.
 6. No metas ciudades que no estén en las candidatas.
-7. Reparte las noches según el peso y lo que les interesa, no a partes iguales.
-   Cuenta lo que se comen los vuelos: si se llega de madrugada esa primera noche
-   casi no existe, y si se sale a primera hora la última tampoco.
-8. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
+7. LAS NOCHES SE REPARTEN POR PESO, y el peso de cada candidata está escrito
+   arriba. Una ciudad de peso alto se lleva más noches que una de peso bajo, y
+   una ciudad del PESO MÁXIMO de la lista NO puede quedarse con el mínimo de
+   {{MINIMO_NOCHES}} mientras otra de peso menor tiene más.
+   Con 6 noches y tres ciudades de pesos 5, 4 y 5, lo que sale es 2-2-2.
+   Si aun así una ciudad de peso máximo se queda corta, tiene que ser por una
+   imposibilidad REAL —un horario de vuelo de los de arriba, un trayecto de los
+   de la tabla de tiempos— y la explicas en "motivo" CITANDO ese dato.
+   Cuenta también lo que se comen los vuelos, que sus horas sí las tienes: si se
+   llega de madrugada esa primera noche casi no existe, y si se sale a primera
+   hora la última tampoco.
+8. LOS HORARIOS QUE NO ESTÉN ESCRITOS AQUÍ ARRIBA, NO LOS SABES.
+   Tienes las horas de los vuelos y la tabla de tiempos entre ciudades. Nada
+   más. PROHIBIDO decir que un tren "llega de madrugada", que un bus "sale a
+   primera hora" o cualquier hora concreta que no te hayan dado: eso es
+   inventárselo, y con un invento así se le quitaron dos noches a una ciudad en
+   un viaje de verdad.
+   Si para decidir te falta un horario, DILO tal cual en el "motivo" o en el
+   "resumen" ("no tengo el horario del tren de X a Y") y reparte sin él.
+9. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
    repite paso por una ciudad o si hay un trayecto largo incómodo, se dice y se
    explica por qué compensa. PROHIBIDO llamar "lineal" o "sin rodeos" a una ruta
    que sube y vuelve a bajar: el resumen se lee para decidir si fiarse de lo que
@@ -1542,6 +1575,49 @@ function migracionFase1PuertaPorRuta() {
 }
 
 /**
+ * EL REPARTO DE NOCHES, CON DATOS EN VEZ DE INVENTOS.
+ *
+ * En un viaje a Polonia la IA justifico asi el reparto: "Cracovia absorbe solo
+ * la noche de salida porque llega de madrugada tras 360 min de tren". El tren de
+ * Gdansk a Cracovia sale a las 9:15 y llega sobre las 15:30: ni 360 minutos ni
+ * madrugada. Con ese invento, una ciudad de peso maximo se quedo con una noche.
+ *
+ * Dos cambios, y los dos van juntos: la tabla de tiempos ahora dice DE DONDE
+ * sale cada dato (catalogo, carretera o estimacion suya), y el prompt le
+ * prohibe usar horarios que no le hayan dado. Ademas se le dice en claro que
+ * una ciudad de peso maximo no se queda con el minimo de noches sin una
+ * imposibilidad real y citada.
+ *
+ * Solo se pisa lo que nadie haya editado.
+ */
+function migracionFase1NochesPorPeso() {
+  const CLAVE = '2026-09-fase1-noches-por-peso';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeCiudadesYNoches();
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: las noches se reparten por peso y con horarios de verdad.' +
+      (loEdito
+        ? ' OJO: tu prompt de esta fase esta editado y NO se ha tocado; para coger el criterio nuevo, pulsa «Restaurar de fabrica» en la pantalla del Orquestador.'
+        : '')
+  );
+  return true;
+}
+
+/**
  * LA FASE 6 DEL ORQUESTADOR: el lienzo.
  *
  * Solo el prompt. Los parametros que usa —la comida y el tope de excursiones
@@ -1592,12 +1668,12 @@ Devuelve SOLO este JSON:
       "dia": número,
       "por_que": "media línea: la idea del día",
       "plan": [
-        {"id": número, "franja": "manana|mediodia|tarde|noche", "hora": "10:00"},
+        {"ref": "s3", "franja": "manana|mediodia|tarde|noche", "hora": "10:00"},
         {"tipo": "comida", "franja": "mediodia", "hora": "13:30", "zona": "dónde toca comer"}
       ]
     }
   ],
-  "fuera": [ {"id": número, "por_que": "por qué no cabe"} ]
+  "fuera": [ {"ref": "s7", "por_que": "por qué no cabe"} ]
 }
 
 LAS REGLAS:
@@ -1639,7 +1715,49 @@ LAS REGLAS:
 10. NO HACE FALTA COLOCARLO TODO. Lo que no quepa va a "fuera" con su motivo, y
     se queda apuntado para quien quiera meterlo a mano. Un día razonable con un
     hueco vale más que un día perfecto en el papel e imposible en la calle.
-11. Usa los identificadores tal cual vienen (el número después de la almohadilla).`;
+11. USA LAS REFERENCIAS TAL CUAL VIENEN ("s1", "x2"…). Las que empiezan por "x"
+    son excursiones y las que empiezan por "s", sitios. Si te inventas una que no
+    está en la lista, esa colocación se pierde.
+12. Los sitios marcados como [segundo nivel] entran DESPUÉS de los demás: son el
+    relleno de los huecos que queden, no la primera opción.`;
+}
+
+/**
+ * EL LIENZO TRABAJA CON LAS FICHAS GENERADAS, no con lo apuntado.
+ *
+ * En la primera ejecucion completa el lienzo quedo vacio: pedia candidatos con
+ * "Me lo apunto" puesto y ninguna fase apunta sitios —la 4 los genera y tiene
+ * dicho expresamente que no los apunte—. Ahora se reparten las fichas generadas
+ * y el "Me lo apunto" se hace AL COLOCAR.
+ *
+ * Eso cambia como se nombran las piezas en el prompt: un sitio generado no tiene
+ * id de candidato hasta que se coloca, asi que se usan referencias propias.
+ */
+function migracionFase6Referencias() {
+  const CLAVE = '2026-09-fase6-referencias';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDelLienzo();
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'lienzo'")
+    .get();
+  const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'lienzo'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migración: el lienzo reparte las fichas generadas.' +
+      (loEdito
+        ? ' OJO: tu prompt del lienzo está editado y NO se ha tocado. Pide "id" y el código ahora espera "ref": restáuralo de fábrica o cámbialo a mano, o no se colocará nada.'
+        : '')
+  );
+  return true;
 }
 
 function migracionFichaRevisada() {

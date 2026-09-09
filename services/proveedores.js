@@ -202,7 +202,7 @@ export function filtrosHotelesDe(viaje) {
     tipoAlojamiento: ['hotel', 'apartamento'].includes(guardados.tipoAlojamiento)
       ? guardados.tipoAlojamiento
       : null,
-    // Este es LOCAL: no viaja a Booking, se aplica sobre lo ya leido.
+    // Viaja a Booking (nflt=distance) y ademas se comprueba aqui sobre lo leido.
     distanciaMax: [1, 3].includes(Number(guardados.distanciaMax)) ? Number(guardados.distanciaMax) : null,
   };
 }
@@ -215,7 +215,20 @@ export function kmDelCentro(texto) {
   if (!texto) return null;
   const m = /([\d.,]+)\s*(km|m)\b/i.exec(texto);
   if (!m) return null;
-  const valor = Number(m[1].replace(/\./g, '').replace(',', '.'));
+
+  // OJO CON EL PUNTO. Booking en espanol escribe "1,2 km" (coma decimal) y
+  // en ingles "1.2 km" (punto decimal). Antes se borraban TODOS los puntos
+  // por si eran separador de miles, y eso convertia 1.2 km en 12 km: un
+  // hotel del centro quedaba descartado por estar "a 12 km". El punto solo
+  // separa miles cuando le siguen tres digitos ("1.200 m").
+  let crudo = m[1];
+  if (crudo.includes(',')) {
+    crudo = crudo.replace(/\./g, '').replace(',', '.');
+  } else {
+    crudo = crudo.replace(/\.(?=\d{3}(?:\D|$))/g, '');
+  }
+
+  const valor = Number(crudo);
   if (!Number.isFinite(valor)) return null;
   return m[2].toLowerCase() === 'm' ? valor / 1000 : valor;
 }

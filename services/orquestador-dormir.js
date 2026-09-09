@@ -92,8 +92,16 @@ export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
     desayuno: aflojado.desayuno ? false : auto.desayuno === 'si',
     cancelacionGratis: aflojado.condiciones ? false : auto.cancelacionGratis === 'si',
     tipoAlojamiento: oNulo(auto.tipoAlojamiento),
-    // «Céntrico» es un filtro local sobre la distancia al centro que ya existe.
-    distanciaMax: aflojado.zona ? null : auto.zona === 'centrico' ? 1 : null,
+    // «Céntrico» ya no es solo un filtro local: viaja a Booking dentro del
+    // `nflt`, que es la única forma de que las 20 tarjetas que leemos sean de
+    // verdad las del centro. `aflojado.zona` puede ser un número (radio
+    // ampliado, en km: Booking solo tiene 1, 3 y 5) o `true` (soltar la zona).
+    distanciaMax:
+      auto.zona !== 'centrico'
+        ? null
+        : aflojado.zona === true
+          ? null
+          : Number(aflojado.zona) || 1,
   };
 }
 
@@ -112,6 +120,14 @@ function resumenDeFiltros(f) {
 // =============================================================================
 // LAS FECHAS
 // =============================================================================
+/** Noches que hay entre dos fechas de reserva. */
+function nochesEntreFechas(desde, hasta) {
+  if (!desde || !hasta) return 0;
+  const a = new Date(`${desde}T12:00:00`);
+  const b = new Date(`${hasta}T12:00:00`);
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+
 /**
  * LAS NOCHES DE LA PARADA, ajustadas a lo que hacen los vuelos.
  *
@@ -131,7 +147,13 @@ export function fechasDeLaEtapa(etapa, esPrimera, horaLlegada) {
 
   // "00:40", "01:15"… De madrugada es antes de las 6: a esa hora el día de
   // calendario ya ha cambiado pero la noche es la anterior.
-  const h = Number(String(horaLlegada ?? '').split(':')[0]);
+  //
+  // OJO CON EL HUECO: Number('') es 0, y 0 es "menos de las 6". Sin comprobar
+  // que hay hora de verdad, un vuelo sin horario adelantaba la reserva una noche
+  // y se pagaba una cama que nadie iba a usar. Pasó: "el vuelo llega a las null,
+  // así que la reserva empieza la noche anterior".
+  const texto = String(horaLlegada ?? '').trim();
+  const h = /^\d{1,2}:\d{2}/.test(texto) ? Number(texto.split(':')[0]) : NaN;
   const deMadrugada = esPrimera && Number.isFinite(h) && h < 6;
 
   if (!deMadrugada) return { entrada, salida, adelantada: false };
@@ -143,18 +165,30 @@ export function fechasDeLaEtapa(etapa, esPrimera, horaLlegada) {
 
 /** La hora a la que aterriza el vuelo de ida, si lo hay. */
 function horaDeLlegada(viajeId) {
-  const c = una(
+  // SE MIRAN TODOS LOS VUELOS MARCADOS, y el de ida se reconoce por su tramo.
+  //
+  // Antes se exigía `transporte_id IS NULL`, que era verdad cuando el
+  // orquestador guardaba los vuelos sueltos. Desde que se enganchan a su tramo
+  // —que es lo que los deja en verde en Mi ruta— esa condición no la cumple
+  // ninguno: la hora de llegada salía null y la primera parada se buscaba con
+  // una noche de más.
+  const candidatos = todas(
     `SELECT datos_extra FROM candidatos
-      WHERE viaje_id = ? AND tipo = 'vuelo' AND marcado = 1 AND transporte_id IS NULL
-      ORDER BY id LIMIT 1`,
+      WHERE viaje_id = ? AND tipo = 'vuelo' AND marcado = 1
+      ORDER BY id`,
     viajeId
   );
-  try {
-    const d = JSON.parse(c?.datos_extra ?? '{}');
-    return (d.tramos ?? []).find((t) => t.tramo === 'ida')?.horaLlegada ?? null;
-  } catch {
-    return null;
+
+  for (const c of candidatos) {
+    try {
+      const d = JSON.parse(c?.datos_extra ?? '{}');
+      const ida = (d.tramos ?? []).find((t) => t.tramo === 'ida');
+      if (ida?.horaLlegada) return ida.horaLlegada;
+    } catch {
+      /* datos_extra corrupto: se mira el siguiente */
+    }
   }
+  return null;
 }
 
 // =============================================================================
@@ -250,25 +284,49 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
     }
 
     // --- 2) Buscar, aflojando por orden -----------------------------------
-    const escalones = [];
-    for (let v = 0; v <= maxVeces; v += 1) {
-      const techo = rango ? Math.round(rango.max * (1 + (pasoPct / 100) * v)) : null;
+    // EL ORDEN DE LA ESCALERA IMPORTA, y antes estaba al revés.
+    //
+    // Se subía el precio dos veces (hasta un +50%) antes de tocar la zona, así
+    // que un viaje acababa buscando hoteles de 180 €/noche cuando el que valía
+    // costaba 53. Dormir a 3 km del centro en vez de a 1 molesta bastante menos
+    // que pagar la mitad más por la misma cama, así que el radio se amplía
+    // PRIMERO. Y cuando por fin se toca el precio, la banda se ensancha por los
+    // dos lados: subir solo el techo deja fuera lo barato, que es justo lo que
+    // uno quiere encontrar cuando ya está aflojando.
+    const escalones = [{ rango, aflojado: {}, comoSeLlama: null }];
+
+    const esCentrico = auto.zona === 'centrico';
+    if (esCentrico) {
       escalones.push({
-        rango: rango ? { min: rango.min, max: techo } : null,
-        aflojado: {},
-        comoSeLlama: v === 0 ? null : `subiendo el techo un ${pasoPct * v}% (hasta ${techo} €/noche)`,
+        rango,
+        aflojado: { zona: 3 },
+        comoSeLlama: 'ampliando el radio a 3 km del centro',
       });
     }
-    const ultimoTecho = rango ? Math.round(rango.max * (1 + (pasoPct / 100) * maxVeces)) : null;
-    if (auto.zona === 'centrico') {
+
+    // A partir de aquí se sigue buscando con el radio ya ampliado: sería absurdo
+    // volver a estrecharlo justo cuando estamos ampliando lo demás.
+    const zonaAncha = esCentrico ? { zona: 3 } : {};
+    for (let v = 1; rango && v <= maxVeces; v += 1) {
+      const techo = Math.round(rango.max * (1 + (pasoPct / 100) * v));
+      const suelo = Math.max(0, Math.round(rango.min * (1 - (pasoPct / 100) * v)));
       escalones.push({
-        rango: rango ? { min: rango.min, max: ultimoTecho } : null,
+        rango: { min: suelo, max: techo },
+        aflojado: { ...zonaAncha },
+        comoSeLlama: `ensanchando el precio a ${suelo}-${techo} €/noche`,
+      });
+    }
+
+    const ultimoRango = escalones[escalones.length - 1].rango;
+    if (esCentrico) {
+      escalones.push({
+        rango: ultimoRango,
         aflojado: { zona: true },
         comoSeLlama: 'soltando lo de céntrico',
       });
     }
     escalones.push({
-      rango: rango ? { min: rango.min, max: ultimoTecho } : null,
+      rango: ultimoRango,
       aflojado: { zona: true, desayuno: true, condiciones: true },
       comoSeLlama: 'soltando también el desayuno y la cancelación gratuita',
     });
@@ -294,16 +352,16 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         hoteles = [];
       }
 
-      // «CÉNTRICO» SE APLICA AQUÍ, y hay que aplicarlo.
+      // «CÉNTRICO», SEGUNDA VUELTA: red de seguridad, ya no la única defensa.
       //
-      // La distancia al centro no viaja a Booking: es un filtro local sobre lo
-      // ya leído, igual que en la pantalla de hoteles. Sin este paso la búsqueda
-      // decía en el log «a menos de 1 km del centro» y devolvía un hotel a 3,1
-      // km: prometía céntrico y no lo cumplía.
-      //
-      // Se le da la forma que espera `aplicarFiltrosLocales` en vez de repetir
-      // aquí el parseo de "a 1,2 km del centro": ese trozo ya existe y tiene que
-      // haber uno solo.
+      // El radio va ahora dentro del `nflt` de Booking, así que las tarjetas que
+      // llegan ya deberían cumplirlo. Esto se queda por si alguna se cuela (o si
+      // Booking mide desde otro punto), pero si vuelve a descartar 18 de 20 es
+      // que el filtro de la URL ha dejado de aplicarse: por eso el log dice
+      // cuántas caen aquí. Antes ESTE era el único filtro, y como Booking
+      // devuelve sus «opciones recomendadas» —que no vienen ordenadas por
+      // distancia— tiraba casi todo y el orquestador acababa subiendo el precio
+      // para nada.
       const antes = hoteles.length;
       hoteles = aplicarFiltrosLocales(
         hoteles.map((h) => ({ ...h, extra: { distanciaCentro: h.distanciaCentro } })),
@@ -331,7 +389,13 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
     }
 
     // --- 3) Guardar los candidatos, como los guarda el flujo manual -------
-    const noches = Math.max(1, Number(etapa.noches) || 1);
+    // LAS NOCHES QUE SE HAN BUSCADO, no las que tiene la etapa.
+    //
+    // Casi siempre son las mismas, pero cuando la reserva se adelanta por un
+    // vuelo de madrugada se busca una noche más, y dividir el total de tres
+    // noches entre las dos de la etapa daba un precio por noche inflado un 50%:
+    // el Ibis de Gdansk salió en el log a "202 €/noche" costando 67.
+    const noches = Math.max(1, nochesEntreFechas(fechas.entrada, fechas.salida));
     const ids = [];
 
     for (const h of hoteles) {

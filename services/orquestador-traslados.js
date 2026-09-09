@@ -43,6 +43,7 @@ import {
   guardarDatosDelTramo,
 } from '../services/movilidad.js';
 import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+import { calcularDistanciasDeLaRuta } from '../services/distancias-ciudades.js';
 
 const FASE = 'traslados';
 
@@ -537,6 +538,27 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
   }
 
   di(`${resueltos} de ${etapas.length - 1} salto(s) resueltos.`);
+
+  // LOS KILOMETROS DE LA RUTA, AQUI MISMO.
+  //
+  // "Mi ruta" suma los km de cada salto de una cache que solo llenaba el mapa,
+  // y el mapa mide desde la ciudad de entrada a las candidatas: el salto de en
+  // medio (Gdansk -> Cracovia) no era par de nadie y la ruta decia "0 km (2
+  // tramos sin calcular)" con los dos tramos resueltos y en verde. Se calcula
+  // ahora, que es cuando la ruta ya esta montada. Los pares ya calculados se
+  // saltan solos, asi que no cuesta nada.
+  try {
+    const { hechas, fallidas } = await calcularDistanciasDeLaRuta(viajeId);
+    if (hechas || fallidas) {
+      di(
+        `Kilometros de la ruta: ${hechas} salto(s) calculado(s)` +
+          (fallidas ? `, ${fallidas} sin dato.` : '.')
+      );
+    }
+  } catch (err) {
+    di(`No pude calcular los kilometros de la ruta (${err.message}).`);
+  }
+
   return { saltos: etapas.length - 1, resueltos };
 }
 

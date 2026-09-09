@@ -139,6 +139,14 @@ export const FILTROS_BOOKING = {
     hotel: 'ht_id=204',
     apartamento: 'ht_id=201',
   },
+
+  // Distancia al centro, en los tres escalones que ofrece Booking. El valor va
+  // en METROS y solo valen esos tres: no acepta un radio a medida.
+  distanciaCentro: {
+    1: 'distance=1000',
+    3: 'distance=3000',
+    5: 'distance=5000',
+  },
 };
 
 /**
@@ -174,9 +182,14 @@ export function construirNflt(filtros = {}) {
   const tipo = FILTROS_BOOKING.tipoAlojamiento[filtros.tipoAlojamiento];
   if (tipo) trozos.push(tipo);
 
-  // OJO: la distancia al centro NO va aqui. Es un filtro LOCAL que aplicamos
-  // sobre los resultados ya leidos (ver aplicarFiltrosLocales en el servicio),
-  // para poder cambiarlo al instante sin volver a buscar en Booking.
+  // DISTANCIA AL CENTRO. Antes era solo un filtro local sobre las tarjetas ya
+  // leidas, y eso estaba mal: Booking devuelve sus "opciones recomendadas", que
+  // no vienen ordenadas por distancia, asi que de las 20 primeras podian salir
+  // cero centricas aunque la ciudad tuviera cientos. El filtro local descartaba
+  // 18 de 20 y el orquestador acababa aflojando el PRECIO para nada.
+  // Ahora se le pide a Booking, que si sabe buscar por radio.
+  const radio = FILTROS_BOOKING.distanciaCentro[String(filtros.distanciaMax)];
+  if (radio) trozos.push(radio);
 
   return trozos.length ? trozos.join(';') : null;
 }

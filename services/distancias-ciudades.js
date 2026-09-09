@@ -23,6 +23,8 @@
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { referenciaDeTramo, comoDuracion } from './distancias.js';
+import { geocodificarConGoogle } from '../lib/google.js';
+import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 
 // =============================================================================
 // LOS UMBRALES
@@ -81,6 +83,81 @@ function guardar(ciudadA, ciudadB, ref) {
   );
 }
 
+/**
+ * Situa una ciudad del catalogo que no tenga coordenadas.
+ *
+ * POR QUE HACE FALTA. Las ciudades que llegan del mapa vienen con lat/lon de la
+ * investigacion del destino, pero el orquestador puede meter en la ruta una
+ * ciudad que no estaba en esa lista (Zakopane en Polonia) y la crea a pelo, sin
+ * coordenadas. Sin coordenadas no hay distancia posible, asi que "Mi ruta"
+ * decia "0 km (2 tramos sin calcular)" con los dos tramos resueltos y en verde:
+ * no era que fallara el calculo, es que no habia desde donde calcular.
+ *
+ * Se pregunta por "Ciudad, Pais" para no acabar en la Cracovia de Wisconsin.
+ * Si Google no contesta se devuelve null y se reintenta la proxima vez: una
+ * ciudad sin situar deja su salto sin kilometros y no rompe nada mas.
+ */
+async function asegurarCoordenadas(puntoId) {
+  const p = una(
+    'SELECT id, nombre, lat, lon, destino_id FROM puntos_interes WHERE id = ?',
+    Number(puntoId)
+  );
+  if (!p) return null;
+  if (p.lat != null && p.lon != null) return p;
+
+  const destino = p.destino_id
+    ? una('SELECT nombre, pais FROM destinos WHERE id = ?', p.destino_id)
+    : null;
+  const consulta = [p.nombre, destino?.pais || destino?.nombre]
+    .filter(Boolean)
+    .filter((t, i, xs) => xs.indexOf(t) === i)
+    .join(', ');
+
+  let hallado = null;
+  try {
+    hallado = await geocodificarConGoogle(consulta);
+  } catch (err) {
+    console.warn(`[distancias] no pude situar "${consulta}": ${err.message}`);
+  }
+
+  // SEGUNDA VIA: LA IA, que es de donde salen las coordenadas del resto del
+  // catalogo. Las ciudades del mapa se guardan con el lat/lon que da el modelo
+  // al investigar el destino, asi que preguntarselo aqui no es rebajar la
+  // fuente: es usar la misma. Sirve ademas para cuando la clave de Google no
+  // esta o esta capada por IP, que es justo cuando esto hace mas falta.
+  if (!hallado && hayClaveIA()) {
+    try {
+      const r = await consultarJSON(
+        `Dame las coordenadas del centro de esta ciudad: ${consulta}. ` +
+          'Responde solo {"lat": numero, "lon": numero}. Si no sabes cual es, ' +
+          'responde {"lat": null, "lon": null}: prefiero un hueco a un sitio equivocado.',
+        { maxTokens: 200, paso: `situar ${consulta}` }
+      );
+      const lat = Number(r?.lat);
+      const lon = Number(r?.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        hallado = { lat, lng: lon };
+      }
+    } catch (err) {
+      console.warn(`[distancias] la IA tampoco situo "${consulta}": ${err.message}`);
+    }
+  }
+
+  if (!hallado) {
+    console.warn(`[distancias] sin coordenadas para "${consulta}".`);
+    return null;
+  }
+
+  ejecutar(
+    'UPDATE puntos_interes SET lat = ?, lon = ? WHERE id = ?',
+    hallado.lat,
+    hallado.lng,
+    p.id
+  );
+  console.log(`[distancias] situada "${consulta}": ${hallado.lat}, ${hallado.lng}`);
+  return { ...p, lat: hallado.lat, lon: hallado.lng };
+}
+
 /** Un punto del catálogo con sus coordenadas, o null si no las tiene. */
 function ciudadConCoordenadas(id) {
   const p = una('SELECT id, nombre, lat, lon FROM puntos_interes WHERE id = ?', Number(id));
@@ -128,6 +205,49 @@ export async function calcularDesde(ciudadReferencia, ciudades) {
     if (distanciaGuardada(ciudadReferencia, id)) continue;
 
     const r = await distanciaEntre(ciudadReferencia, id);
+    if (r) hechas++;
+    else fallidas++;
+  }
+
+  return { hechas, fallidas };
+}
+
+/**
+ * Calcula los saltos de UNA RUTA: cada parada con la siguiente.
+ *
+ * POR QUÉ HACÍA FALTA. Lo único que llenaba la caché era el mapa, y el mapa
+ * calcula desde la ciudad de entrada a las candidatas del destino: pares
+ * «entrada ↔ X». Una ruta Varsovia → Gdansk → Cracovia necesita además
+ * Gdansk ↔ Cracovia, que no es par de nadie, así que "Mi ruta" enseñaba
+ * «0 km (2 tramos sin calcular)» con los dos tramos resueltos y en verde.
+ *
+ * Los pares ya calculados se saltan, así que llamar a esto de más no cuesta
+ * nada: el catálogo no caduca.
+ */
+export async function calcularDistanciasDeLaRuta(viajeId) {
+  const etapas = todas(
+    `SELECT id, nombre_ciudad, punto_interes_id
+       FROM etapas WHERE viaje_id = ? AND estado = 'confirmada'
+      ORDER BY orden, id`,
+    viajeId
+  );
+
+  let hechas = 0;
+  let fallidas = 0;
+
+  for (let i = 0; i < etapas.length - 1; i++) {
+    const a = etapas[i];
+    const b = etapas[i + 1];
+    if (!a.punto_interes_id || !b.punto_interes_id) continue;
+    if (Number(a.punto_interes_id) === Number(b.punto_interes_id)) continue;
+    if (distanciaGuardada(a.punto_interes_id, b.punto_interes_id)) continue;
+
+    // Las ciudades que mete el orquestador de su cosecha no traen coordenadas.
+    // Se situan aqui, que es justo cuando se necesitan.
+    await asegurarCoordenadas(a.punto_interes_id);
+    await asegurarCoordenadas(b.punto_interes_id);
+
+    const r = await distanciaEntre(a.punto_interes_id, b.punto_interes_id);
     if (r) hechas++;
     else fallidas++;
   }
