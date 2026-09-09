@@ -36,14 +36,6 @@ const cabezaExtra = '<link rel="stylesheet" href="/css/portada.css">';
       </button>
     </form>
 
-    <%# Los ajustes del que monta los viajes solo.
-        Va aquí arriba y no al pie del panel: el panel es más alto que la
-        pantalla, así que abajo el enlace quedaba fuera de la vista —igual que
-        le pasa al contador de viajes— y un acceso que hay que buscar bajando no
-        es un acceso visible. %>
-    <a class="panel__ajustes" href="/orquestador">
-      <i class="ti ti-adjustments" aria-hidden="true"></i> Orquestador
-    </a>
 
     <%# Trazo de ruta decorativo. %>
     <svg class="panel__ruta" viewBox="0 0 220 160" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -110,7 +102,23 @@ const cabezaExtra = '<link rel="stylesheet" href="/css/portada.css">';
       </g>
     </svg>
 
-    <h2 class="principal__titulo">Mis viajes</h2>
+    <div class="principal__cabecera">
+      <h2 class="principal__titulo">Mis viajes</h2>
+
+      <%# LOS AJUSTES DEL ORQUESTADOR.
+          El icono va en SVG y no con la fuente de Tabler a propósito: la fuente
+          no siempre carga —viene de un CDN— y cuando no carga un icono suelto no
+          se degrada a nada legible, se queda en un hueco. Aquí es el único
+          contenido del botón, así que no puede depender de ella. %>
+      <a class="principal__ajustes" href="/orquestador"
+         title="Ajustes del orquestador" aria-label="Ajustes del orquestador">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </a>
+    </div>
 
     <div class="billetes">
       <% billetes.forEach(b => { %>

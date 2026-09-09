@@ -34,10 +34,11 @@ import {
   fichasDeTramo,
   fichasDeMovilidad,
 } from '../services/movilidad.js';
-import { geocodificarFila, guardarDireccion } from '../services/direcciones.js';
-import { situarLugarConGoogle } from '../lib/google.js';
+import { geocodificarFila } from '../services/direcciones.js';
 import { buscarDatosDeSitios, pedirDatosDeSitios, interpretarHorario } from '../services/datos-sitios.js';
 import { dormir } from '../lib/browser.js';
+import { situarLosSitios } from '../services/direcciones.js';
+import { traerExcursionesSiHacenFalta, esActividadDeVerdad } from '../services/catalogo.js';
 import { ejecutarBusqueda } from '../services/busquedas-sitios.js';
 import {
   FASES,
@@ -48,6 +49,11 @@ import {
   cerrarFase,
 } from '../services/orquestador.js';
 import { ejecutarFaseCiudades } from '../services/orquestador-ciudades.js';
+import { ejecutarFaseTraslados } from '../services/orquestador-traslados.js';
+import { ejecutarFaseDormir } from '../services/orquestador-dormir.js';
+import { ejecutarFaseSitios } from '../services/orquestador-sitios.js';
+import { ejecutarFaseExcursiones } from '../services/orquestador-excursiones.js';
+import { ejecutarFaseLienzo } from '../services/orquestador-lienzo.js';
 
 /**
  * Las fases que ya hacen algo de verdad. Las que no estan aqui siguen siendo
@@ -55,6 +61,11 @@ import { ejecutarFaseCiudades } from '../services/orquestador-ciudades.js';
  */
 const FASES_IMPLEMENTADAS = {
   ciudades_y_noches: ejecutarFaseCiudades,
+  traslados: ejecutarFaseTraslados,
+  dormir: ejecutarFaseDormir,
+  sitios: ejecutarFaseSitios,
+  excursiones: ejecutarFaseExcursiones,
+  lienzo: ejecutarFaseLienzo,
 };
 import { calcularTraslado } from '../services/traslados.js';
 import {
@@ -132,16 +143,6 @@ export function filtrarPreciosAbsurdos(precios) {
  * AMPLIAR AQUÍ si aparecen más. Se comparan en minúsculas y sin acentos contra
  * el título, así que basta con escribirlas en minúscula y sin tildes.
  */
-const PALABRAS_EXCLUIDAS = [
-  'esim',
-  'e-sim',
-  'tarjeta sim',
-  'seguro',          // "Seguro de viaje Civitatis"
-  'traslado',        // cubre también "traslados"
-  'wifi portatil',
-  'alquiler de coche',
-];
-
 /** Quita acentos y pasa a minúsculas, para comparar títulos con tranquilidad. */
 function normalizar(texto) {
   return String(texto ?? '')
@@ -150,11 +151,6 @@ function normalizar(texto) {
     .toLowerCase();
 }
 
-/** ¿Es una actividad de verdad o uno de esos servicios que cuelan? */
-function esActividadDeVerdad(titulo) {
-  const t = normalizar(titulo);
-  return !PALABRAS_EXCLUIDAS.some((palabra) => t.includes(palabra));
-}
 
 /**
  * Traduce el error del provider a algo que se entienda leyéndolo en pantalla.
@@ -527,7 +523,7 @@ async function ejecutarPrepararEtapa(trabajo) {
   // Van al CATALOGO por nombre de ciudad, asi que si otra parada o otro viaje
   // ya las trajo, esto no abre el navegador.
   try {
-    await traerExcursionesSiHacenFalta(trabajo, etapa.nombre_ciudad);
+    await traerExcursionesSiHacenFalta(etapa.nombre_ciudad);
   } catch (err) {
     fallos.push(`excursiones: ${err.message}`);
     console.warn(
@@ -1284,7 +1280,7 @@ async function investigarPunto(trabajo, punto) {
   //
   // Va después de guardar y no antes a propósito: si Places falla, la ficha ya
   // está hecha y lo único que falta son las direcciones.
-  await situarLosSitios(trabajo, punto);
+  await situarLosSitios(punto);
 
   // --- 3c) Y los datos duros, en su propio trabajo -------------------------
   //
@@ -1298,7 +1294,7 @@ async function investigarPunto(trabajo, punto) {
   let excursiones = null;
   if (punto.categoria === 'ciudad') {
     try {
-      excursiones = await traerExcursionesSiHacenFalta(trabajo, punto.nombre);
+      excursiones = await traerExcursionesSiHacenFalta(punto.nombre);
     } catch (err) {
       // Ni una palabra más alta que otra: la ficha ya está hecha.
       console.warn(
@@ -1315,65 +1311,6 @@ async function investigarPunto(trabajo, punto) {
   );
 }
 
-/**
- * SITÚA CON PLACES LOS SITIOS DE UNA CIUDAD RECIÉN INVESTIGADA.
- *
- * Una llamada a Places por sitio, y solo por los que no tengan ya dirección:
- * reinvestigar una ciudad no vuelve a pagar por lo que ya se sabía.
- *
- * Lo que se guarda es doble y las dos cosas hacen falta:
- *   · La DIRECCIÓN, en la tabla `direcciones`, que es de donde tira el buscador
- *     de traslados y el mapa de la parada.
- *   · Las COORDENADAS, en la propia fila del sitio, porque las de la IA son
- *     aproximadas y las de Places son las buenas.
- *
- * Si Google no contesta no pasa nada grave: el sitio se queda sin dirección y
- * se puede escribir a mano. Lo que no se hace es dejarlo a medias en silencio.
- */
-async function situarLosSitios(trabajo, punto) {
-  const sitios = todas(
-    `SELECT s.id, s.nombre, s.lat, s.lon
-       FROM sitios_lugar s
-      WHERE s.punto_interes_id = ?
-        AND NOT EXISTS (
-          SELECT 1 FROM direcciones d
-           WHERE d.tipo_elemento = 'sitio' AND d.elemento_id = s.id
-        )
-      ORDER BY s.orden, s.id`,
-    punto.id
-  );
-  if (!sitios.length) return;
-
-  const ciudad = punto.ciudad_base || punto.nombre;
-  let situados = 0;
-
-  for (const s of sitios) {
-    const enPlaces = await situarLugarConGoogle(s.nombre, ciudad);
-    if (!enPlaces?.direccion) continue;
-
-    guardarDireccion('sitio', s.id, enPlaces.direccion);
-
-    // La dirección ya viene con su punto: se marca situada sin pasar por la
-    // cola de geocodificación, que sería preguntar dos veces lo mismo.
-    if (enPlaces.lat != null && enPlaces.lng != null) {
-      ejecutar(
-        `UPDATE direcciones
-            SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
-                buscada_en = datetime('now'), actualizado_en = datetime('now')
-          WHERE tipo_elemento = 'sitio' AND elemento_id = ?`,
-        enPlaces.lat,
-        enPlaces.lng,
-        s.id
-      );
-      ejecutar('UPDATE sitios_lugar SET lat = ?, lon = ? WHERE id = ?', enPlaces.lat, enPlaces.lng, s.id);
-    }
-    situados += 1;
-  }
-
-  console.log(
-    `[worker] Trabajo #${trabajo.id}: ${situados} de ${sitios.length} sitios situados con Places.`
-  );
-}
 
 /**
  * LOS DATOS DUROS DE LOS SITIOS DE UNA CIUDAD.
@@ -1398,29 +1335,6 @@ async function ejecutarDatosDeSitios(trabajo) {
   console.log(`[worker] Trabajo #${trabajo.id}: ${r.mensaje}`);
 }
 
-/**
- * Las excursiones de una ciudad, del catálogo o de Civitatis.
- *
- * Aquí es donde se nota que la caché de actividades dejó de colgar del viaje y
- * pasó a colgar de la ciudad: si alguien ya miró Kioto en otro viaje, esto no
- * abre el navegador. Solo se scrapea la primera vez.
- */
-async function traerExcursionesSiHacenFalta(trabajo, ciudad) {
-  const cache = estadoCacheCiudad(ciudad);
-  if (cache.total > 0) {
-    console.log(
-      `[worker] Trabajo #${trabajo.id}: ${ciudad} ya tenía ${cache.total} excursiones cacheadas (${cache.vistoEn}). No abro el navegador.`
-    );
-    return cache.total;
-  }
-
-  console.log(`[worker] Trabajo #${trabajo.id}: buscando excursiones de "${ciudad}" en Civitatis`);
-  const actividades = await buscarActividades({ destino: ciudad, maxResultados: MAX_ACTIVIDADES });
-  const utiles = actividades.filter((a) => esActividadDeVerdad(a.titulo));
-  if (!utiles.length) throw new Error(`Civitatis no devolvió actividades de «${ciudad}»`);
-
-  return guardarActividadesEnCatalogo(ciudad, utiles);
-}
 
 /**
  * Ejecuta un trabajo de tipo 'opinar_lienzo'.

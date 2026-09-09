@@ -44,6 +44,7 @@ const VUELOS_POR_BUSQUEDA = 8;
 
 /** Las dos mitades del prompt editable, tal y como se separan en la tabla. */
 const MARCA_CANDIDATAS = '=== PASO 1: CANDIDATAS ===';
+const MARCA_PUERTA = '=== PASO 2: PUERTA DE ENTRADA Y SALIDA ===';
 const MARCA_CIERRE = '=== PASO 3: CIERRE ===';
 
 // =============================================================================
@@ -61,12 +62,23 @@ export function partirPrompt(texto) {
   const j = texto.indexOf(MARCA_CIERRE);
   if (i < 0 || j < 0 || j < i) {
     throw new Error(
-      `El prompt de esta fase tiene que llevar las dos marcas «${MARCA_CANDIDATAS}» y ` +
+      `El prompt de esta fase tiene que llevar las marcas «${MARCA_CANDIDATAS}» y ` +
         `«${MARCA_CIERRE}», en ese orden. Revísalo en el cerebro del orquestador.`
     );
   }
+
+  // LA SECCIÓN DE LA PUERTA PUEDE NO ESTAR, y eso no es un error.
+  //
+  // Se añadió después: un prompt que el usuario editara antes de ese cambio no
+  // la tiene, y su versión manda sobre la de fábrica. Cuando falta, la puerta se
+  // decide con la regla local de siempre —la de menos minutos de vuelo— y se
+  // dice en el log, para que se sepa por qué no está razonando la ruta interna.
+  const k = texto.indexOf(MARCA_PUERTA);
+  const hayPuerta = k > i && k < j;
+
   return {
-    candidatas: texto.slice(i + MARCA_CANDIDATAS.length, j).trim(),
+    candidatas: texto.slice(i + MARCA_CANDIDATAS.length, hayPuerta ? k : j).trim(),
+    puerta: hayPuerta ? texto.slice(k + MARCA_PUERTA.length, j).trim() : null,
     cierre: texto.slice(j + MARCA_CIERRE.length).trim(),
   };
 }
@@ -244,7 +256,7 @@ async function buscarAflojando({ viajeId, origen, destino, fecha, ocupacion, aut
  * repite. Por debajo de ese umbral la diferencia no se nota y gana la ruta que
  * no obliga a desandar.
  */
-async function elegirPuertas({ viaje, candidatas, auto, viajeId }) {
+async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, promptPuerta }) {
   const puertas = candidatas
     .filter((c) => c.puerta)
     .sort((a, b) => b.peso - a.peso)
@@ -303,44 +315,125 @@ async function elegirPuertas({ viaje, candidatas, auto, viajeId }) {
   }
 
   // --- La combinación ------------------------------------------------------
-  const umbral = parametro('umbral_empate_traslado_min', 30);
-  let mejorDistinta = null;
-  let mejorIgual = null;
-
-  for (const [ciudadIda, ida] of idas) {
-    for (const [ciudadVuelta, vuelta] of vueltas) {
-      const total = ida.minutos + vuelta.minutos;
-      const donde = ciudadIda === ciudadVuelta ? 'igual' : 'distinta';
-      const cand = { entrada: ida, salida: vuelta, total };
-      if (donde === 'igual') {
-        if (!mejorIgual || total < mejorIgual.total) mejorIgual = cand;
-      } else if (!mejorDistinta || total < mejorDistinta.total) {
-        mejorDistinta = cand;
-      }
+  //
+  // AQUÍ NO GANA EL VUELO MÁS CORTO, Y ESE ERA EL FALLO.
+  //
+  // Antes se elegía la pareja entrada/salida sumando solo minutos de vuelo, y se
+  // elegía ANTES de pensar la ruta interna. En Polonia salió entrar por Varsovia
+  // y salir por Cracovia con Gdansk en medio: dos horas de vuelo bien elegidas y
+  // una ruta que sube al norte y vuelve a bajar. Lo barato en el aire se pagaba
+  // por tierra, y multiplicado.
+  //
+  // La puerta y la forma de la ruta son la misma decisión, así que se decide
+  // junta: se le dan a la IA las combinaciones con vuelos reales, los pesos de
+  // las candidatas y la matriz de tiempos que ella misma estimó, y elige la que
+  // dé menos tiempo TOTAL —aire más carretera—.
+  const combinaciones = [];
+  for (const [, ida] of idas) {
+    for (const [, vuelta] of vueltas) {
+      combinaciones.push({
+        id: `c${combinaciones.length + 1}`,
+        entrada: ida,
+        salida: vuelta,
+        total: ida.minutos + vuelta.minutos,
+        misma: ida.ciudad === vuelta.ciudad,
+      });
     }
   }
+  combinaciones.sort((a, b) => a.total - b.total);
 
-  let elegida;
-  let porQue;
-  if (mejorDistinta && mejorIgual) {
-    const ahorro = mejorDistinta.total - mejorIgual.total;
-    if (ahorro > umbral) {
-      elegida = mejorIgual;
-      porQue =
-        `entro y salgo por ${mejorIgual.entrada.ciudad} porque hacerlo por sitios distintos ` +
-        `costaba ${ahorro} min más de vuelo, por encima del umbral de ${umbral} min`;
-    } else {
-      elegida = mejorDistinta;
-      porQue =
-        `entro por ${mejorDistinta.entrada.ciudad} y salgo por ${mejorDistinta.salida.ciudad} ` +
-        'para no desandar el camino ' +
-        (ahorro <= 0
-          ? '(no cuesta ni un minuto más de vuelo)'
-          : `(solo ${ahorro} min más de vuelo, por debajo del umbral de ${umbral})`);
+  /**
+   * La regla de siempre, que ahora es el respaldo.
+   *
+   * Sigue valiendo cuando la IA no contesta o cuando el prompt editado no trae
+   * la sección de la puerta: mira solo el aire, prefiere no repetir ciudad y usa
+   * el umbral de empate. Es peor que razonar la ruta, pero deja el viaje montado.
+   */
+  const porMinutosDeVuelo = () => {
+    const distinta = combinaciones.find((c) => !c.misma) ?? null;
+    const igual = combinaciones.find((c) => c.misma) ?? null;
+
+    if (distinta && igual) {
+      const ahorro = distinta.total - igual.total;
+      if (ahorro > umbral) {
+        return {
+          elegida: igual,
+          porQue:
+            `entro y salgo por ${igual.entrada.ciudad} porque hacerlo por sitios distintos ` +
+            `costaba ${ahorro} min más de vuelo, por encima del umbral de ${umbral} min`,
+        };
+      }
+      return {
+        elegida: distinta,
+        porQue:
+          `entro por ${distinta.entrada.ciudad} y salgo por ${distinta.salida.ciudad} ` +
+          'para no desandar el camino ' +
+          (ahorro <= 0
+            ? '(no cuesta ni un minuto más de vuelo)'
+            : `(solo ${ahorro} min más de vuelo, por debajo del umbral de ${umbral})`),
+      };
+    }
+    const unica = distinta ?? igual;
+    return {
+      elegida: unica,
+      porQue: `es la única combinación con vuelos reales (${unica.entrada.ciudad} → ${unica.salida.ciudad})`,
+    };
+  };
+
+  let elegida = null;
+  let porQue = null;
+
+  if (promptPuerta) {
+    try {
+      const r = await consultarJSON(
+        rellenar(promptPuerta, {
+          DESTINO: viaje.destino ?? '',
+          DIAS: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin) + 1,
+          NOCHES: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin),
+          ORIGEN: casa,
+          CANDIDATAS: candidatas
+            .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
+            .join('\n'),
+          TIEMPOS: tiempos.length
+            ? tiempos
+                .map((t) => `- ${t.desde} → ${t.hasta}: ${t.minutos} min en ${t.modo ?? 'transporte'}`)
+                .join('\n')
+            : '(no estimaste tiempos entre ciudades)',
+          COMBINACIONES: combinaciones
+            .map(
+              (c) =>
+                `- ${c.id} · entrar por ${c.entrada.ciudad}, salir por ${c.salida.ciudad}` +
+                `${c.misma ? ' (la misma ciudad)' : ''}
+` +
+                `  vuelos: ${c.entrada.minutos} min de ida + ${c.salida.minutos} min de vuelta = ${c.total} min en el aire`
+            )
+            .join('\n'),
+        }),
+        { maxTokens: 1200, paso: `puerta de entrada a ${viaje.destino}` }
+      );
+      const cual = combinaciones.find((c) => c.id === String(r?.elegida ?? '').trim());
+      if (cual) {
+        elegida = cual;
+        porQue =
+          typeof r?.por_que === 'string' && r.por_que.trim()
+            ? r.por_que.trim()
+            : `entro por ${cual.entrada.ciudad} y salgo por ${cual.salida.ciudad}`;
+      }
+    } catch (err) {
+      anotar(viajeId, 'ciudades_y_noches', `   La IA no pudo elegir la puerta (${err.message}).`);
     }
   } else {
-    elegida = mejorDistinta ?? mejorIgual;
-    porQue = `es la única combinación con vuelos reales (${elegida.entrada.ciudad} → ${elegida.salida.ciudad})`;
+    anotar(
+      viajeId,
+      'ciudades_y_noches',
+      '   Tu prompt no tiene la sección de la puerta: la elijo solo por minutos de vuelo.'
+    );
+  }
+
+  if (!elegida) {
+    const respaldo = porMinutosDeVuelo();
+    elegida = respaldo.elegida;
+    porQue = `${respaldo.porQue} (elegido solo por tiempo de vuelo, sin valorar la ruta interna)`;
   }
 
   anotar(viajeId, 'ciudades_y_noches', `Puerta elegida: ${porQue}.`);
@@ -629,7 +722,16 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
 
   // --- PASO 2 -------------------------------------------------------------
   di('Buscando vuelos reales para decidir por dónde entrar y salir…');
-  const conVuelos = await elegirPuertas({ viaje, candidatas: ciudades, auto, viajeId });
+  const conVuelos = await elegirPuertas({
+    viaje,
+    candidatas: candidatasDeRuta,
+    // La matriz que ella misma estimó en el paso 1. Es lo que le permite ver
+    // que entrar por Varsovia obliga a subir a Gdansk y volver a bajar.
+    tiempos,
+    auto,
+    viajeId,
+    promptPuerta: partes.puerta,
+  });
 
   let entrada;
   let salida;

@@ -334,6 +334,15 @@ export function migrarEsquema() {
   migracionFase1PromptAfinado();
   migracionFase1CiudadUnica();
   migracionFase1DiasVsNoches();
+  migracionFase2Traslados();
+  migracionFase2ConHorario();
+  migracionMargenDelCoche();
+  migracionMargenesRealistas();
+  migracionFase3Dormir();
+  migracionFase4Sitios();
+  migracionFase5Excursiones();
+  migracionFase1PuertaPorRuta();
+  migracionFase6Lienzo();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -860,6 +869,59 @@ REGLAS, y la primera es la que más se incumple:
    Es una orientación, no un horario: no te inventes precisión que no tienes.
 7. Los tiempos y las noches son números enteros. Nada de rangos dentro del JSON.
 
+=== PASO 2: PUERTA DE ENTRADA Y SALIDA ===
+Eres el mismo planificador. Ya se han buscado vuelos REALES a las mejores puertas
+y toca decidir por dónde se entra y por dónde se sale.
+
+EL VIAJE
+- Destino: {{DESTINO}} · {{DIAS}} días, {{NOCHES}} noches
+- Se sale desde: {{ORIGEN}}
+
+LAS CIUDADES QUE PROPUSISTE
+{{CANDIDATAS}}
+
+TIEMPOS QUE ESTIMASTE ENTRE ELLAS
+{{TIEMPOS}}
+
+LAS COMBINACIONES CON VUELOS REALES
+{{COMBINACIONES}}
+
+Devuelve SOLO este JSON:
+
+{ "elegida": "cN", "por_que": "una o dos líneas" }
+
+LA REGLA, Y NO ES LA QUE PARECE:
+
+NO gana la combinación con menos minutos de vuelo. Gana la que da MENOS TIEMPO
+TOTAL contando el aire Y la carretera de la ruta que esa entrada y esa salida
+obligan a hacer por dentro.
+
+Piénsalo así: por cada combinación, imagina la ruta que sale de entrar por una y
+salir por la otra, pasando por las ciudades de más peso. Suma los traslados
+internos de esa ruta con la tabla de tiempos de arriba. Esa suma, más los vuelos,
+es lo que compite.
+
+Media hora ganada en el aire no compensa cuatro horas de tren de más. Un ejemplo
+real de este mismo programa: en Polonia se eligió entrar por Varsovia y salir por
+Cracovia con Gdansk en medio, porque esos vuelos eran algo más cortos. La ruta
+resultante subía al norte y volvía a bajar. Entrando por Gdansk se recorría el
+país de una sola pasada.
+
+EL RESTO DE CRITERIOS:
+
+1. PREFIERE NO REPETIR CIUDAD de entrada y salida: entrar y salir por la misma
+   obliga a volver sobre tus pasos al final del viaje.
+2. PENALIZA las combinaciones que obliguen a pasar DOS VECES por la misma ciudad
+   en mitad de la ruta. Pasar de largo por una ciudad camino de otra es normal;
+   dormir, irse y volver, no.
+3. Que la ruta siga la geografía: de una punta a la otra, sin zigzag.
+4. Las ciudades de más peso tienen que caber. Una combinación que obliga a
+   dejar fuera lo mejor del país no es buena aunque el avión sea corto.
+5. "por_que" DICE LA VERDAD. Si la combinación que eliges desanda camino o repite
+   paso por una ciudad, dilo y explica por qué compensa igual. Está PROHIBIDO
+   describir como "lineal", "sin rodeos" o "de una pasada" una ruta que no lo es:
+   quien lee esto lo hace para saber si fiarse.
+
 === PASO 3: CIERRE ===
 Eres el mismo planificador. Ya hay vuelos reales comprados y la puerta de entrada
 y de salida están DECIDIDAS: no se discuten.
@@ -897,7 +959,7 @@ Cierra la ruta. Devuelve SOLO este JSON:
   "descartadas": [
     {"ciudad": "nombre", "por_que": "por qué se queda fuera"}
   ],
-  "resumen": "dos frases: por qué esta ruta y no otra"
+  "resumen": "dos frases: por qué esta ruta y no otra, dicha con honestidad"
 }
 
 REGLA 1, Y ES LA QUE SE FALLA SIEMPRE: LAS NOCHES SUMAN {{NOCHES}}.
@@ -931,7 +993,12 @@ EL RESTO DE REGLAS:
 6. No metas ciudades que no estén en las candidatas.
 7. Reparte las noches según el peso y lo que les interesa, no a partes iguales.
    Cuenta lo que se comen los vuelos: si se llega de madrugada esa primera noche
-   casi no existe, y si se sale a primera hora la última tampoco.`;
+   casi no existe, y si se sale a primera hora la última tampoco.
+8. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
+   repite paso por una ciudad o si hay un trayecto largo incómodo, se dice y se
+   explica por qué compensa. PROHIBIDO llamar "lineal" o "sin rodeos" a una ruta
+   que sube y vuelve a bajar: el resumen se lee para decidir si fiarse de lo que
+   ha montado la máquina, y un resumen que adorna no sirve para eso.`;
 }
 
 /**
@@ -1014,6 +1081,565 @@ function migracionFase1DiasVsNoches() {
   marcarAplicada(CLAVE);
   console.log('[bd] Migración: el prompt de la fase 1 separa días de noches.');
   return true;
+}
+
+/**
+ * LA FASE 2 DEL ORQUESTADOR: traslados.
+ *
+ * Dos parametros nuevos y el prompt de verdad.
+ *
+ * LOS ACCESOS SON PARAMETROS Y NO CONSTANTES porque son justo lo que cambia de
+ * una persona a otra: quien vive al lado de la estacion y quien tarda cuarenta
+ * minutos en llegar al aeropuerto no deberian recibir la misma recomendacion. Y
+ * son la mitad de la cuenta de puerta a puerta, que es toda esta fase.
+ */
+function migracionFase2Traslados() {
+  const CLAVE = '2026-09-fase2-traslados';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT OR IGNORE INTO parametros_orquestador
+       (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  meter.run('acceso_aeropuerto_min', '45', '45',
+    'Cuánto se tarda del centro al aeropuerto (y del aeropuerto al centro al llegar)', 'minutos', 11);
+  meter.run('acceso_estacion_min', '25', '25',
+    'Lo mismo para la estación de tren o autobús', 'minutos', 12);
+
+  const texto = promptDeTraslados();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'traslados'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: fase 2 del orquestador (traslados).');
+  return true;
+}
+
+/**
+ * EL PROMPT DE FABRICA DE LA FASE 2.
+ *
+ * Se le dan las opciones YA MEDIDAS puerta a puerta y la regla de empate ya
+ * resuelta. No se le pide que calcule: sumar es lo que peor hace y aqui la suma
+ * decide. Se le pide lo que si sabe hacer, que es elegir con criterio de viajero
+ * y poner una hora de salida que no destroce la manana.
+ */
+function promptDeTraslados() {
+  return `Eres quien decide cómo se va de una ciudad a otra en un viaje ya planificado.
+
+EL SALTO
+- De {{DESDE}} a {{HASTA}}, el día {{DIA}}
+- Viajeros: {{VIAJEROS}}
+- Ritmo del viaje: {{RITMO}}
+
+LAS OPCIONES, ya medidas puerta a puerta
+{{OPCIONES}}
+
+REGLA DE EMPATE POR PRECIO (ya comprobada, no la recalcules)
+{{REGLA_DEL_EMPATE}}
+
+Elige una y devuelve SOLO este JSON:
+
+{
+  "elegida": "opN",
+  "hora_salida": "10:05",
+  "por_que": "una línea, concreta: por qué esta y no otra"
+}
+
+REGLAS:
+
+1. LOS TIEMPOS YA ESTÁN CALCULADOS Y SON PUERTA A PUERTA: incluyen ir a la
+   estación o al aeropuerto, la antelación, el trayecto y salir al llegar. No los
+   recalcules ni compares duraciones de trayecto: un vuelo de 55 minutos puede
+   ser peor que un tren de 2h30 y por eso están medidos así.
+2. GANA LA MÁS RÁPIDA PUERTA A PUERTA, salvo que arriba diga que se cumple la
+   regla de empate por precio. Si se cumple, gana la barata.
+3. LA HORA DE SALIDA es la del transporte, y tiene que caber en el día del
+   cambio. Con ritmo tranquilo o normal, nada de salir del hotel antes de las
+   8:00: eso significa no coger nada que salga antes de las 9:00 en tren ni antes
+   de las 10:00 en avión. Con ritmo intenso puedes apretar una hora.
+   Si en "horarios" hay frecuencias en vez de horas concretas, propón una hora
+   razonable que encaje con esa frecuencia.
+4. ENTRE UN TRANSPORTE CON HORARIO Y UNO SIN ÉL, gana el que lo tiene. Un tren
+   o un autobús salen cuando dicen; un coche de alquiler hay que recogerlo,
+   devolverlo y aparcarlo, y un viaje compartido depende de que un desconocido
+   no cancele. Esos minutos no están en la tabla de arriba, así que tenlos en
+   cuenta tú: solo elige coche o viaje compartido si gana por MUCHO —más de una
+   hora— o si no hay transporte público que haga ese trayecto.
+5. Con niños, un transbordo menos vale más que media hora menos.
+6. "por_que" en UNA línea y concreta: "sale a las 10:05 y llega a comer, sin
+   madrugón" sirve; "es la mejor opción" no dice nada.
+7. Devuelve el identificador tal cual viene ("op1", "op2"…). Si te inventas uno
+   que no está en la lista, la elección se pierde.`;
+}
+
+/**
+ * EL PROMPT DE LA FASE 2: mejor un transporte con horario.
+ *
+ * Probado con Polonia, eligio "Alquiler de coches" para ir de Cracovia a Wroclaw
+ * y "BlaBlaCar" para ir de Wroclaw a Varsovia. Los dos ganaban por minutos en la
+ * tabla, y la tabla no sabe que un coche hay que recogerlo y devolverlo ni que
+ * un viaje compartido lo puede cancelar alguien. Esos minutos no se pueden
+ * calcular, asi que se le dicen.
+ */
+function migracionFase2ConHorario() {
+  const CLAVE = '2026-09-fase2-con-horario';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeTraslados();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'traslados'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: la fase 2 prefiere transporte con horario.');
+  return true;
+}
+
+/**
+ * EL MARGEN DEL COCHE, que faltaba en la cuenta de puerta a puerta.
+ *
+ * Recoger un alquiler, revisarlo, devolverlo y aparcar al llegar no esta en la
+ * duracion del trayecto. Sin contarlo, el coche ganaba saltos entre ciudades por
+ * veinte minutos frente a un tren directo. Vale tambien para el viaje compartido,
+ * donde el margen es esperar a alguien que puede no aparecer.
+ */
+function migracionMargenDelCoche() {
+  const CLAVE = '2026-09-margen-del-coche';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.prepare(
+    `INSERT OR IGNORE INTO parametros_orquestador
+       (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run('margen_coche_min', '60', '60',
+    'Lo que se pierde con un coche de alquiler o un viaje compartido: recogerlo, devolverlo, aparcar o esperar al conductor',
+    'minutos', 13);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: margen del coche en el puerta a puerta.');
+  return true;
+}
+
+/**
+ * LOS MARGENES DEL COCHE Y DEL VIAJE COMPARTIDO, con valores realistas.
+ *
+ * El primer intento puso una hora para los dos y salio al reves de lo buscado: a
+ * un alquiler se le quitaba el acceso a la estacion y se le ponia menos margen
+ * que la suma que tenia antes, o sea que se volvia mas rapido. Recoger un coche,
+ * revisarlo, devolverlo con gasolina y aparcar en un centro historico son dos
+ * horas largas; esperar a un BlaBlaCar en su punto de encuentro, tres cuartos.
+ */
+function migracionMargenesRealistas() {
+  const CLAVE = '2026-09-margenes-realistas';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.prepare(
+    `INSERT OR IGNORE INTO parametros_orquestador
+       (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run('margen_viaje_compartido_min', '45', '45',
+    'Lo que se pierde esperando un viaje compartido en su punto de encuentro', 'minutos', 14);
+
+  // El del alquiler sube a lo que de verdad cuesta: solo si nadie lo ha tocado.
+  db.prepare(
+    `UPDATE parametros_orquestador
+        SET valor = CASE WHEN valor = valor_fabrica THEN '120' ELSE valor END,
+            valor_fabrica = '120',
+            descripcion = 'Lo que se pierde con un coche de alquiler: recogerlo, revisarlo, devolverlo y aparcar'
+      WHERE clave = 'margen_coche_min'`
+  ).run();
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: márgenes realistas de coche y viaje compartido.');
+  return true;
+}
+
+/**
+ * LA FASE 3 DEL ORQUESTADOR: dormir.
+ *
+ * Dos parametros de relajacion y el prompt de verdad. Los porcentajes son
+ * parametros y no constantes porque son la unica forma de decir "prefiero pagar
+ * un poco mas antes que dormir a las afueras" sin tocar codigo.
+ */
+function migracionFase3Dormir() {
+  const CLAVE = '2026-09-fase3-dormir';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT OR IGNORE INTO parametros_orquestador
+       (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  meter.run('relajacion_precio_pct', '25', '25',
+    'Cuánto se sube el techo de precio cada vez que una búsqueda de alojamiento no da resultados', '%', 15);
+  meter.run('relajacion_precio_max_veces', '2', '2',
+    'Cuántas veces se puede subir ese techo antes de empezar a soltar otros filtros', 'veces', 16);
+
+  const texto = promptDeDormir();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'dormir'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: fase 3 del orquestador (dormir).');
+  return true;
+}
+
+/** El prompt de fabrica de la fase 3, en sus dos pasos. */
+function promptDeDormir() {
+  return `=== PASO 1: TRADUCIR EL NIVEL DE PRECIO ===
+Conoces el mercado de alojamiento de {{CIUDAD}}.
+
+- Ciudad: {{CIUDAD}}{{PAIS}}
+- Fechas: del {{FECHA_ENTRADA}} al {{FECHA_SALIDA}}
+- Nivel pedido: {{NIVEL}}
+- Viajeros: {{VIAJEROS}}
+- Tipo de alojamiento: {{TIPO}}
+
+¿Cuánto cuesta POR NOCHE un alojamiento decente de nivel "{{NIVEL}}" en {{CIUDAD}}
+en esas fechas, para esos viajeros? Devuelve un rango en euros.
+
+Devuelve SOLO este JSON:
+
+{ "min_por_noche": número, "max_por_noche": número, "por_que": "media línea" }
+
+REGLAS:
+
+1. EL PRECIO ES DE ESA CIUDAD, no de una capital europea cualquiera. Lo mismo
+   vale muy distinto en Cracovia que en Zúrich, y ese es justo el motivo de esta
+   pregunta.
+2. Ten en cuenta la TEMPORADA de esas fechas: en agosto o en Navidad sube.
+3. Es el precio de la HABITACIÓN o el apartamento entero por noche, no por
+   persona.
+4. "económico" no es un albergue con literas ni "alto" es un cinco estrellas de
+   lujo: son gamas de alojamiento normal, decente y bien situado.
+5. El rango tiene que ser ancho de verdad —lo típico es que el techo sea casi el
+   doble del suelo—: si lo aprietas demasiado, la búsqueda se queda sin nada.
+
+=== PASO 2: ELEGIR ===
+Eres quien elige dónde dormir en un viaje ya planificado.
+
+LA PARADA
+- Ciudad: {{CIUDAD}} · {{NOCHES}} noche(s) · {{VIAJEROS}}
+- Se buscó con: {{FILTROS}}
+- ¿Se sale temprano de aquí? {{SALIDA_TEMPRANA}}
+
+LAS OPCIONES
+{{OPCIONES}}
+
+Elige una y devuelve SOLO este JSON:
+
+{ "elegida": "opN", "por_que": "dos líneas como mucho, concretas" }
+
+CRITERIOS, por orden:
+
+1. BIEN SITUADO PARA LO QUE SE VA A HACER: cerca del centro histórico o de la
+   zona donde está lo que se visita. Un hotel barato a cuarenta minutos en
+   autobús cuesta dos horas al día, y eso no sale a cuenta en ninguna moneda.
+2. MEJOR RELACIÓN VALORACIÓN/PRECIO dentro de lo que hay. Un 8,9 a 70 € gana a
+   un 9,4 a 130 €; pero un 7,2 a 45 € no gana a un 8,8 a 60 €.
+3. Si arriba dice que se sale temprano de esta parada, la cercanía a la estación
+   o al aeropuerto cuenta como criterio secundario: no por encima de estar bien
+   situado, pero sí para desempatar.
+4. Desconfía de lo que tenga muy pocas opiniones: una nota de 9,8 con once
+   opiniones dice menos que un 8,6 con dos mil.
+5. "por_que" concreto y en dos líneas como mucho: dónde está, qué tiene y qué
+   se ha descartado a cambio. "Es el mejor" no explica nada.
+6. Devuelve el identificador tal cual ("op1", "op2"…).`;
+}
+
+/**
+ * LA FASE 4 DEL ORQUESTADOR: sitios.
+ *
+ * El prompt de esta fase no genera nada: es el bloque que se le AÑADE a la
+ * generacion de siempre para decirle como usar los intereses declarados. Por eso
+ * es corto y por eso es justo lo que hay que poder afinar: la diferencia entre
+ * "sesga" y "filtra" son dos frases, y la segunda deja un viaje a Cracovia sin
+ * Wawel.
+ */
+function migracionFase4Sitios() {
+  const CLAVE = '2026-09-fase4-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeSitios();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'sitios'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: fase 4 del orquestador (sitios).');
+  return true;
+}
+
+/** El prompt de fabrica de la fase 4: como usar los intereses. */
+function promptDeSitios() {
+  return `LO QUE LE INTERESA A QUIEN VIAJA
+
+Lo ha escrito así: "{{INTERESES}}"
+Y ha marcado estas categorías: {{CATEGORIAS}}
+
+Esto SESGA lo que propones, no lo decide. La diferencia importa:
+
+1. LOS IMPRESCINDIBLES DE LA CIUDAD ENTRAN IGUAL, encajen o no con sus intereses.
+   Quien dice que le interesa la naturaleza no quiere un viaje a Cracovia sin el
+   castillo de Wawel ni el casco viejo: quiere naturaleza ADEMÁS de eso. Dejar
+   fuera lo que todo el mundo va a ver no es personalizar, es fallar.
+2. LO QUE CAMBIA ES EL RESTO. Con los imprescindibles puestos, los huecos que
+   quedan se llenan con lo que encaje con sus intereses antes que con lo
+   genérico. Ahí es donde se nota que el viaje es suyo.
+3. QUE NINGÚN INTERÉS SE QUEDE A CERO. Si ha dicho "naturaleza" y la ciudad
+   tiene algo de eso —un parque grande, un río, una excursión a la montaña o a
+   unas minas—, tiene que aparecer al menos una cosa. Si la ciudad de verdad no
+   tiene nada de eso, no te lo inventes: es una respuesta correcta.
+4. Los intereses valen para los tres bloques, también para el de niños.`;
+}
+
+/**
+ * LA FASE 5 DEL ORQUESTADOR: excursiones.
+ *
+ * UNA COLUMNA Y UN PROMPT.
+ *
+ * `cubierto_por` es la regla del solapamiento hecha dato. Auschwitz es un sitio
+ * de la ficha de Cracovia Y una excursion de Civitatis: son la misma visita
+ * contada dos veces. Si se elige la excursion, el sitio queda marcado como
+ * cubierto por ella, y el lienzo sabra que programar los dos es programar lo
+ * mismo dos veces.
+ *
+ * Guarda el id del candidato de la excursion, no un simple si/no: asi, si se
+ * quita la excursion, se puede saber que sitio vuelve a quedar libre.
+ */
+function migracionFase5Excursiones() {
+  const CLAVE = '2026-09-fase5-excursiones';
+  if (yaAplicada(CLAVE)) return false;
+
+  const cols = db.prepare('PRAGMA table_info(sitios_lugar)').all().map((c) => c.name);
+  if (!cols.includes('cubierto_por')) {
+    db.exec('ALTER TABLE sitios_lugar ADD COLUMN cubierto_por INTEGER');
+  }
+
+  const texto = promptDeExcursiones();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'excursiones'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: fase 5 del orquestador (excursiones).');
+  return true;
+}
+
+/** El prompt de fabrica de la fase 5. */
+function promptDeExcursiones() {
+  return `Eres quien decide qué excursiones merecen la pena en un viaje ya planificado.
+
+LA PARADA
+- Ciudad: {{CIUDAD}} · {{NOCHES}} noche(s) · ritmo {{RITMO}}
+- Viajeros: {{VIAJEROS}}
+- Les interesa: {{INTERESES}}
+- Topes que no puedes superar: {{TOPES}}
+
+LO QUE YA VAN A VER POR SU CUENTA (fichas de sitios de esta parada)
+{{SITIOS}}
+
+LAS EXCURSIONES ENCONTRADAS
+{{EXCURSIONES}}
+
+Devuelve SOLO este JSON:
+
+{
+  "elegidas": [
+    {"id": "exN", "por_que": "una línea", "cubre_sitios": ["nombre exacto de un sitio de la lista de arriba"]}
+  ],
+  "descartadas": [
+    {"id": "exN", "por_que": "una línea"}
+  ]
+}
+
+LA REGLA CENTRAL ES EL SOLAPAMIENTO:
+
+Muchas excursiones son "visitar con guía" un sitio que ya está en su lista. No
+son un extra: son la MISMA visita contada dos veces, y hay que elegir una.
+
+- ELIGE LA EXCURSIÓN cuando el sitio gana mucho con quien lo explique: un campo
+  de concentración, unas minas, un yacimiento, un templo con siglos de historia
+  encima. Sin contexto, la mitad de lo que se ve no se entiende.
+- PRESCINDE DE ELLA cuando el sitio se disfruta solo: miradores, parques,
+  barrios, mercados, paseos. Pagar por que alguien te acompañe a un mirador es
+  pagar por caminar acompañado.
+- Cuando elijas una excursión que cubre un sitio de su lista, PONLO en
+  "cubre_sitios" con el nombre exacto que tiene arriba. Es lo que evita que
+  acaben con la misma visita dos veces en el calendario.
+
+EL RESTO DE CRITERIOS:
+
+1. PRIORIDAD A LO QUE NO SE PUEDE HACER POR LIBRE: una salida en balsa por un
+   cañón, una excursión a un sitio sin transporte público, algo que necesita
+   permiso o guía obligatorio. Ahí la excursión no compite con nada.
+2. CANTIDAD SEGÚN LAS NOCHES Y EL RITMO. Los topes de arriba son el máximo
+   absoluto, no el objetivo. Con 2 noches y ritmo tranquilo no caben dos
+   excursiones de día completo: quedaría un viaje sin ver la ciudad. Es
+   perfectamente correcto no elegir NINGUNA si ninguna aporta.
+3. CON NIÑOS, mira la duración y la hora: una salida de doce horas o a las seis
+   de la mañana no funciona con niños pequeños, por buena que sea.
+4. Los intereses declarados desempatan, pero no mandan sobre lo anterior.
+5. Justifica cada elegida y cada descartada que estuviera cerca de entrar. Las
+   que no vengan a cuento no hace falta ni mencionarlas.
+6. Devuelve los identificadores tal cual ("ex1", "ex2"…).`;
+}
+
+/**
+ * LA PUERTA SE ELIGE POR LA RUTA ENTERA, no por los minutos de vuelo.
+ *
+ * En Polonia salio entrar por Varsovia y salir por Cracovia con Gdansk en medio:
+ * los vuelos eran algo mas cortos y la ruta subia al norte y volvia a bajar. La
+ * puerta y la forma de la ruta son la misma decision, asi que ahora se deciden
+ * juntas y con la matriz de tiempos delante.
+ *
+ * Si el usuario ya edito su prompt, NO se pisa: solo se actualiza el de fabrica,
+ * y el codigo aguanta que su version no tenga la seccion nueva.
+ */
+function migracionFase1PuertaPorRuta() {
+  const CLAVE = '2026-09-fase1-puerta-por-ruta';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeCiudadesYNoches();
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migración: la puerta de entrada se elige por la ruta entera.' +
+      (loEdito
+        ? ' OJO: tu prompt de esta fase está editado y NO se ha tocado; para coger el criterio nuevo, pulsa «Restaurar de fábrica» en la pantalla del Orquestador.'
+        : '')
+  );
+  return true;
+}
+
+/**
+ * LA FASE 6 DEL ORQUESTADOR: el lienzo.
+ *
+ * Solo el prompt. Los parametros que usa —la comida y el tope de excursiones
+ * largas— ya existian de fases anteriores.
+ *
+ * En este prompt hay una prohibicion que parece rara y es la mas importante: NO
+ * se le dice cuantas visitas caben en un dia. Un dia lleno en Brujas y un dia
+ * lleno en Tokio no se parecen en nada, y cualquier numero que se escriba aqui
+ * sera el equivocado en la mitad de las ciudades.
+ */
+function migracionFase6Lienzo() {
+  const CLAVE = '2026-09-fase6-lienzo';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDelLienzo();
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'lienzo'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migración: fase 6 del orquestador (el lienzo).');
+  return true;
+}
+
+/** El prompt de fabrica de la fase 6. */
+function promptDelLienzo() {
+  return `Eres quien reparte los días de un viaje ya planificado. Te toca {{CIUDAD}}.
+
+CÓMO ES ESTE VIAJE
+- Ritmo: {{RITMO}} · Viajeros: {{VIAJEROS}}
+- Franjas del día: {{FRANJAS}}
+- La comida ocupa {{DURACION_COMIDA}} minutos.
+
+LOS DÍAS QUE TIENES
+{{DIAS}}
+
+LO QUE HAY QUE COLOCAR
+{{COLOCABLES}}
+
+Devuelve SOLO este JSON:
+
+{
+  "dias": [
+    {
+      "dia": número,
+      "por_que": "media línea: la idea del día",
+      "plan": [
+        {"id": número, "franja": "manana|mediodia|tarde|noche", "hora": "10:00"},
+        {"tipo": "comida", "franja": "mediodia", "hora": "13:30", "zona": "dónde toca comer"}
+      ]
+    }
+  ],
+  "fuera": [ {"id": número, "por_que": "por qué no cabe"} ]
+}
+
+LAS REGLAS:
+
+1. LOS BLOQUES FIJOS SON INTOCABLES. Un vuelo que llega a las 17:40 o un tren
+   que sale a las 9:40 ya están puestos y no se mueven. Todo lo demás se coloca
+   alrededor.
+2. EL DÍA DE LLEGADA EMPIEZA CUANDO SE LLEGA, no antes: hay que contar el
+   trayecto desde el aeropuerto y un respiro para dejar las maletas. Ese día va
+   algo suave y cerca del hotel, o nada.
+   EL DÍA DE SALIDA TERMINA CUANDO EMPIEZA EL BLOQUE DEL VIAJE. Si se sale por
+   la mañana, ese día no lleva plan: es un día de maletas y aeropuerto.
+3. LAS EXCURSIONES SON ANCLAS. Tienen hora y punto de encuentro: se colocan
+   primero y el resto del día se monta alrededor. Nunca dos excursiones de día
+   completo el mismo día (máximo {{MAX_LARGAS}} por día).
+4. AGRUPA POR ZONAS. Todo lo que esté junto, el mismo día y seguido. Cruzar la
+   ciudad dos veces en una tarde es media tarde perdida. Entre dos sitios
+   consecutivos, cuenta el desplazamiento.
+5. EL MARGEN NO ES RELLENO, ES LO QUE HACE QUE EL PLAN AGUANTE. Deja aire entre
+   visitas libres; deja MÁS aire antes de cualquier cosa con hora de entrada
+   —una excursión, un museo con pase—, porque llegar tarde a eso significa
+   perderlo. Con ritmo intenso se aprieta, pero el margen NO desaparece nunca.
+6. CUÁNTAS COSAS CABEN EN UN DÍA LO DECIDES TÚ MIRANDO LA CIUDAD. En una ciudad
+   compacta, donde todo está a diez minutos andando, caben más cosas que en una
+   donde cada trayecto son cuarenta minutos de metro. El ritmo es una guía, no
+   una cifra: "tranquilo" en una megaciudad pueden ser dos visitas, y en un
+   casco histórico pequeño, cuatro. No repartas por cupo.
+7. COMER TODOS LOS DÍAS, un bloque de {{DURACION_COMIDA}} minutos entre las
+   13:00 y las 15:00 aproximadamente, en la zona donde toque estar a esa hora.
+   No elijas restaurante: solo la zona y la hora.
+   Y no programes nada que pise la cena: con ritmo tranquilo, nada que siga
+   después de las 20:30.
+8. RESPETA LOS HORARIOS REALES. Si algo cierra el día que te toca, muévelo a
+   otro día; si no cabe en ningún otro, déjalo en "fuera" diciendo que cierra.
+   Con ritmo tranquilo no empieces antes de las 9:00 ni acabes más allá de las
+   22:00; con intenso puedes madrugar por una excursión.
+9. CON NIÑOS, alterna. Un plato fuerte y una pausa: un parque, un paseo, un
+   sitio donde se pueda correr. Tres museos seguidos no funcionan.
+10. NO HACE FALTA COLOCARLO TODO. Lo que no quepa va a "fuera" con su motivo, y
+    se queda apuntado para quien quiera meterlo a mano. Un día razonable con un
+    hueco vale más que un día perfecto en el papel e imposible en la calle.
+11. Usa los identificadores tal cual vienen (el número después de la almohadilla).`;
 }
 
 function migracionFichaRevisada() {

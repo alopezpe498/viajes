@@ -17,6 +17,7 @@
 
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
 import { direccionDe, guardarDireccion, pedirGeocodificar } from './direcciones.js';
+import { buscarActividades } from '../providers/civitatis.js';
 
 export { normalizarNombre };
 
@@ -302,4 +303,55 @@ export function fichaDeFila(a) {
     extra,
     buscadaEn: a.detalles_en,
   };
+}
+
+const PALABRAS_EXCLUIDAS = [
+  'esim',
+  'e-sim',
+  'tarjeta sim',
+  'seguro',          // "Seguro de viaje Civitatis"
+  'traslado',        // cubre también "traslados"
+  'wifi portatil',
+  'alquiler de coche',
+];
+
+/** Sin tildes y en minúsculas, para comparar títulos. */
+function normalizarTitulo(texto) {
+  return String(texto ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+/** ¿Es una actividad de verdad o uno de esos servicios que cuelan? */
+export function esActividadDeVerdad(titulo) {
+  const t = normalizarTitulo(titulo);
+  return !PALABRAS_EXCLUIDAS.some((palabra) => t.includes(palabra));
+}
+
+/** Cuántas se le piden a Civitatis por ciudad. */
+const MAX_ACTIVIDADES = 30;
+
+/**
+ * Las excursiones de una ciudad, del catálogo o de Civitatis.
+ *
+ * Aquí es donde se nota que la caché de actividades dejó de colgar del viaje y
+ * pasó a colgar de la ciudad: si alguien ya miró Kioto en otro viaje, esto no
+ * abre el navegador. Solo se scrapea la primera vez.
+ */
+export async function traerExcursionesSiHacenFalta(ciudad) {
+  const cache = estadoCacheCiudad(ciudad);
+  if (cache.total > 0) {
+    console.log(
+      `[catalogo] ${ciudad} ya tenía ${cache.total} excursiones cacheadas (${cache.vistoEn}). No abro el navegador.`
+    );
+    return cache.total;
+  }
+
+  console.log(`[catalogo] buscando excursiones de "${ciudad}" en Civitatis`);
+  const actividades = await buscarActividades({ destino: ciudad, maxResultados: MAX_ACTIVIDADES });
+  const utiles = actividades.filter((a) => esActividadDeVerdad(a.titulo));
+  if (!utiles.length) throw new Error(`Civitatis no devolvió actividades de «${ciudad}»`);
+
+  return guardarActividadesEnCatalogo(ciudad, utiles);
 }

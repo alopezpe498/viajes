@@ -199,6 +199,13 @@
           <button type="button" data-accion="noches" data-id="${e.id}" data-delta="1"
                   aria-label="Una noche más">+</button>
         </span>
+        <span class="etapa__dormir ${e.hotel ? 'etapa__dormir--ok' : ''}"
+              title="${e.hotel ? esc(e.hotel.titulo) : 'Todavía sin alojamiento'}">
+          <i class="ti ${e.hotel ? 'ti-bed' : 'ti-bed-off'}" aria-hidden="true"></i>
+          <span>${e.hotel
+            ? esc(e.hotel.titulo) + (e.hotel.valoracion ? ` · ${e.hotel.valoracion}` : '')
+            : 'Sin alojamiento'}</span>
+        </span>
         <a class="etapa__abrir" href="/etapa/${e.id}">Abrir etapa</a>
         <button class="etapa__clonar" type="button" data-accion="clonar"
                 data-id="${e.id}" data-nombre="${esc(e.nombre)}"

@@ -5895,3 +5895,30 @@ body.con-antes { overflow: hidden; }
 
 /* Las fichas que salieron de una búsqueda van dentro de su tarjeta. */
 .busqueda .rejilla-fichas { margin-top: 14px; }
+
+/* ---------------------------------------------------------------------------
+   EL ALOJAMIENTO DE UNA PARADA, en Mi ruta
+   ---------------------------------------------------------------------------
+   Mismo lenguaje que el «resuelto» de los tramos: verde cuando está decidido y
+   gris cuando falta. Sin él, una ruta con los cuatro hoteles elegidos se veía
+   igual que una recién creada.
+--------------------------------------------------------------------------- */
+.etapa__dormir {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--fondo);
+  color: var(--texto-3);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.etapa__dormir span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.etapa__dormir i { flex: none; font-size: 14px; }
+.etapa__dormir--ok { background: #E7F4EE; color: #245B43; font-weight: 600; }

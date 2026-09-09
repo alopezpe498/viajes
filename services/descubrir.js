@@ -495,7 +495,7 @@ export const NOMBRE_DE_BLOQUE = {
  * enciclopedia — para eso ya está Wikipedia y el enlace — sino lo que te diría
  * alguien que ha estado: a qué hora ir, qué no perderse, dónde está la trampa.
  */
-function promptDeCiudad(punto, nombreDestino, bloque, { excluir = [], edades = [] } = {}) {
+function promptDeCiudad(punto, nombreDestino, bloque, { excluir = [], edades = [], sesgo = null } = {}) {
   const queEs =
     punto.categoria === 'sitio'
       ? `${punto.nombre}, que se visita desde ${punto.ciudad_base || 'la ciudad más cercana'}`
@@ -562,6 +562,9 @@ Devuelve un objeto JSON con esta forma exacta:
   ]
 }
 
+${sesgo ? `
+${sesgo}
+` : ''}
 Reglas:
 - TODO tiene que estar en ${punto.nombre} o a menos de una hora de viaje. Nada de
   otras ciudades del país por muy conocidas que sean: quien lee esto se aloja en
@@ -628,7 +631,11 @@ async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
  * Si falla una pasada que no sea la primera, se sigue con lo que haya. Quedarse
  * sin "otros sitios" es una pena; quedarse sin ficha por eso, una tontería.
  */
-export async function investigarCiudadConIA(punto, nombreDestino, { edadesNinos = [] } = {}) {
+export async function investigarCiudadConIA(
+  punto,
+  nombreDestino,
+  { edadesNinos = [], sesgo = null } = {}
+) {
   const quiero = ['imprescindibles', 'otros'];
   if (edadesNinos.length) quiero.push('ninos');
 
@@ -643,6 +650,9 @@ export async function investigarCiudadConIA(punto, nombreDestino, { edadesNinos 
       tanda = await pedirUnBloque(punto, nombreDestino, bloque, {
         excluir: sitios.map((s) => s.nombre),
         edades: edadesNinos,
+        // Lo que le interesa a quien viaja. Llega solo desde el orquestador: en
+        // el flujo manual nadie ha declarado intereses todavía, y va vacío.
+        sesgo,
       });
     } catch (err) {
       // El primero es obligatorio: sin imprescindibles no hay ficha. Los otros

@@ -1,0 +1,455 @@
+/**
+ * services/orquestador-dormir.js
+ * -----------------------------------------------------------------------------
+ * FASE 3 DEL ORQUESTADOR: un alojamiento por parada.
+ *
+ * La fase 1 dejó las paradas con sus noches y la 2 los traslados con su hora.
+ * Aquí se busca dónde dormir en cada una, con los filtros que se contestaron al
+ * activar el modo automático.
+ *
+ * EL PRECIO SE PREGUNTA POR NIVEL Y SE TRADUCE AQUÍ.
+ *
+ * En la configuración se dice «económico», «medio» o «alto», y no una cifra, por
+ * un motivo que se ve en cuanto el viaje tiene dos ciudades: «medio» en Cracovia
+ * y «medio» en Zúrich no se parecen en nada. Una cifra escrita una vez en la
+ * configuración obligaría a acertarla en todas las paradas a la vez, que es
+ * imposible. Así que la primera llamada a la IA de cada parada traduce el nivel
+ * a un rango de euros por noche PARA ESA CIUDAD Y ESAS FECHAS, y ese rango es el
+ * que va al buscador.
+ *
+ * SI NO HAY NADA, SE AFLOJA POR ORDEN Y SE DICE.
+ *
+ * Primero el techo del precio, que es lo que más suele fallar y lo que menos
+ * duele; después la zona; después el desayuno y la cancelación. La VALORACIÓN
+ * MÍNIMA NO SE TOCA NUNCA: es la única condición que no habla de comodidad sino
+ * de si el sitio está bien o mal, y bajarla para poder cerrar la búsqueda sería
+ * resolver el problema mintiendo.
+ *
+ * Cada escalón queda escrito en el log. Si al final no hay nada, se deja el
+ * hueco y se sigue con la parada siguiente: un viaje con un hotel sin resolver
+ * se arregla en diez minutos; uno que se paró en la segunda ciudad, no.
+ */
+import { todas, una, ejecutar } from '../db/index.js';
+import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
+import { buscarHoteles } from '../providers/booking.js';
+import { ocupacionDe, aplicarFiltrosLocales } from '../services/proveedores.js';
+import { elegirHotel } from '../services/etapa.js';
+import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+
+const FASE = 'dormir';
+
+/** Cuántos alojamientos se piden por parada. Para elegir, de sobra. */
+const MAX_HOTELES = 18;
+
+/** Las dos mitades del prompt editable. */
+const MARCA_PRECIO = '=== PASO 1: TRADUCIR EL NIVEL DE PRECIO ===';
+const MARCA_ELEGIR = '=== PASO 2: ELEGIR ===';
+
+export function partirPrompt(texto) {
+  const i = texto.indexOf(MARCA_PRECIO);
+  const j = texto.indexOf(MARCA_ELEGIR);
+  if (i < 0 || j < 0 || j < i) {
+    throw new Error(
+      `El prompt de esta fase tiene que llevar las dos marcas «${MARCA_PRECIO}» y ` +
+        `«${MARCA_ELEGIR}», en ese orden. Revísalo en el cerebro del orquestador.`
+    );
+  }
+  return {
+    precio: texto.slice(i + MARCA_PRECIO.length, j).trim(),
+    elegir: texto.slice(j + MARCA_ELEGIR.length).trim(),
+  };
+}
+
+export function rellenar(plantilla, datos) {
+  return plantilla.replace(/\{\{([A-Z_]+)\}\}/g, (_, clave) => {
+    const v = datos[clave];
+    return v === undefined || v === null ? '' : String(v);
+  });
+}
+
+// =============================================================================
+// LOS FILTROS
+// =============================================================================
+/**
+ * La configuración del modo automático, traducida a los filtros de siempre.
+ *
+ * `aflojado` dice qué se ha soltado ya en esta parada. Se pasa entero en vez de
+ * ir mutando el objeto para que cada intento sea reproducible: mirando el nivel
+ * de relajación se sabe exactamente con qué se buscó.
+ */
+export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
+  const oNulo = (v) => (v && v !== 'indiferente' ? v : null);
+
+  return {
+    precioMin: rango?.min ?? null,
+    precioMax: rango?.max ?? null,
+    // La valoración mínima va SIEMPRE y no se afloja nunca.
+    notaMinima: auto.notaMinima ? Number(auto.notaMinima) : null,
+    estrellas: null,
+    piscina: false,
+    wifi: false,
+    parking: false,
+    desayuno: aflojado.desayuno ? false : auto.desayuno === 'si',
+    cancelacionGratis: aflojado.condiciones ? false : auto.cancelacionGratis === 'si',
+    tipoAlojamiento: oNulo(auto.tipoAlojamiento),
+    // «Céntrico» es un filtro local sobre la distancia al centro que ya existe.
+    distanciaMax: aflojado.zona ? null : auto.zona === 'centrico' ? 1 : null,
+  };
+}
+
+/** Cómo se lee un intento en el log. */
+function resumenDeFiltros(f) {
+  const t = [];
+  if (f.precioMin || f.precioMax) t.push(`${f.precioMin ?? 0}-${f.precioMax ?? '∞'} €/noche`);
+  if (f.notaMinima) t.push(`nota ≥ ${f.notaMinima}`);
+  if (f.tipoAlojamiento) t.push(f.tipoAlojamiento);
+  if (f.distanciaMax) t.push(`a menos de ${f.distanciaMax} km del centro`);
+  if (f.desayuno) t.push('con desayuno');
+  if (f.cancelacionGratis) t.push('cancelación gratis');
+  return t.join(' · ') || 'sin filtros';
+}
+
+// =============================================================================
+// LAS FECHAS
+// =============================================================================
+/**
+ * LAS NOCHES DE LA PARADA, ajustadas a lo que hacen los vuelos.
+ *
+ * La fecha de entrada de una etapa es el día que se llega. Pero si el vuelo
+ * aterriza de madrugada —a las 00:40 del día 5, por ejemplo— esa noche ya hay
+ * que tener cama, y la reserva empieza el día 4: quien llegue a las 00:40 con
+ * una reserva que empieza el 5 se encuentra el mostrador cerrado.
+ *
+ * Solo se adelanta con la llegada del viaje (el vuelo de ida), y solo en la
+ * primera parada: es la única que depende de un vuelo intercontinental. Los
+ * saltos internos los pone la fase 2 a horas civilizadas.
+ */
+export function fechasDeLaEtapa(etapa, esPrimera, horaLlegada) {
+  const entrada = etapa.fecha_inicio;
+  const salida = etapa.fecha_fin;
+  if (!entrada || !salida) return null;
+
+  // "00:40", "01:15"… De madrugada es antes de las 6: a esa hora el día de
+  // calendario ya ha cambiado pero la noche es la anterior.
+  const h = Number(String(horaLlegada ?? '').split(':')[0]);
+  const deMadrugada = esPrimera && Number.isFinite(h) && h < 6;
+
+  if (!deMadrugada) return { entrada, salida, adelantada: false };
+
+  const antes = new Date(`${entrada}T12:00:00`);
+  antes.setDate(antes.getDate() - 1);
+  return { entrada: antes.toISOString().slice(0, 10), salida, adelantada: true };
+}
+
+/** La hora a la que aterriza el vuelo de ida, si lo hay. */
+function horaDeLlegada(viajeId) {
+  const c = una(
+    `SELECT datos_extra FROM candidatos
+      WHERE viaje_id = ? AND tipo = 'vuelo' AND marcado = 1 AND transporte_id IS NULL
+      ORDER BY id LIMIT 1`,
+    viajeId
+  );
+  try {
+    const d = JSON.parse(c?.datos_extra ?? '{}');
+    return (d.tramos ?? []).find((t) => t.tramo === 'ida')?.horaLlegada ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
+// LA FASE
+// =============================================================================
+export async function ejecutarFaseDormir(viaje, promptEntero) {
+  const viajeId = viaje.id;
+  const di = (t) => anotar(viajeId, FASE, t);
+
+  if (!hayClaveIA()) throw new Error(SIN_CLAVE);
+
+  const partes = partirPrompt(promptEntero);
+  const auto = configAuto(viaje);
+  const { adultos, edadesNinos } = ocupacionDe(viaje);
+  const viajeros = adultos + edadesNinos.length;
+
+  const pasoPct = parametro('relajacion_precio_pct', 25);
+  const maxVeces = parametro('relajacion_precio_max_veces', 2);
+
+  const etapas = todas(
+    "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden, id",
+    viajeId
+  );
+  if (!etapas.length) {
+    di('El viaje no tiene paradas confirmadas: no hay dónde buscar.');
+    return { etapas: 0, resueltas: 0 };
+  }
+
+  const llegada = horaDeLlegada(viajeId);
+  di(`${etapas.length} parada(s) donde buscar alojamiento para ${viajeros} viajero(s).`);
+
+  let resueltas = 0;
+
+  for (const [i, etapa] of etapas.entries()) {
+    const ciudad = etapa.nombre_ciudad;
+
+    if (etapa.tocado_a_mano) {
+      di(`${ciudad}: la has tocado tú; no la toco.`);
+      continue;
+    }
+    const yaElegido = una(
+      "SELECT titulo FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
+      etapa.id
+    );
+    if (yaElegido) {
+      di(`${ciudad}: ya tenías elegido «${yaElegido.titulo}». No lo cambio.`);
+      resueltas += 1;
+      continue;
+    }
+
+    const fechas = fechasDeLaEtapa(etapa, i === 0, llegada);
+    if (!fechas) {
+      apuntarHueco(viajeId, FASE, `${ciudad}: la parada no tiene fechas.`);
+      continue;
+    }
+    if (fechas.adelantada) {
+      di(`${ciudad}: el vuelo llega a las ${llegada}, así que la reserva empieza la noche anterior (${fechas.entrada}).`);
+    }
+
+    di(`Buscando dónde dormir en ${ciudad} (${etapa.noches} noche(s), del ${fechas.entrada} al ${fechas.salida})…`);
+
+    // --- 1) El nivel de precio, traducido a esta ciudad -------------------
+    let rango = null;
+    try {
+      const r = await consultarJSON(
+        rellenar(partes.precio, {
+          CIUDAD: ciudad,
+          PAIS: viaje.destino ?? '',
+          FECHA_ENTRADA: fechas.entrada,
+          FECHA_SALIDA: fechas.salida,
+          NIVEL: auto.nivelPrecio ?? 'medio',
+          VIAJEROS: `${adultos} adulto(s)` + (edadesNinos.length ? ` y ${edadesNinos.length} niño(s)` : ''),
+          TIPO: auto.tipoAlojamiento ?? 'indiferente',
+        }),
+        { maxTokens: 600, paso: `precio de ${ciudad}` }
+      );
+      const min = Math.round(Number(r?.min_por_noche));
+      const max = Math.round(Number(r?.max_por_noche));
+      if (Number.isFinite(min) && Number.isFinite(max) && min > 0 && max >= min) {
+        rango = { min, max, porQue: typeof r?.por_que === 'string' ? r.por_que.trim() : null };
+      }
+    } catch (err) {
+      di(`   No pude traducir el nivel de precio (${err.message}).`);
+    }
+
+    if (rango) {
+      di(`   «${auto.nivelPrecio}» en ${ciudad} ≈ ${rango.min}-${rango.max} €/noche.${rango.porQue ? ` ${rango.porQue}` : ''}`);
+    } else {
+      // SIN RANGO SE BUSCA IGUAL, sin filtro de precio. Es peor —habrá que
+      // elegir entre cosas de todos los precios— pero infinitamente mejor que
+      // quedarse sin buscar.
+      di('   Sin traducción de precio: busco sin filtro de precio.');
+    }
+
+    // --- 2) Buscar, aflojando por orden -----------------------------------
+    const escalones = [];
+    for (let v = 0; v <= maxVeces; v += 1) {
+      const techo = rango ? Math.round(rango.max * (1 + (pasoPct / 100) * v)) : null;
+      escalones.push({
+        rango: rango ? { min: rango.min, max: techo } : null,
+        aflojado: {},
+        comoSeLlama: v === 0 ? null : `subiendo el techo un ${pasoPct * v}% (hasta ${techo} €/noche)`,
+      });
+    }
+    const ultimoTecho = rango ? Math.round(rango.max * (1 + (pasoPct / 100) * maxVeces)) : null;
+    if (auto.zona === 'centrico') {
+      escalones.push({
+        rango: rango ? { min: rango.min, max: ultimoTecho } : null,
+        aflojado: { zona: true },
+        comoSeLlama: 'soltando lo de céntrico',
+      });
+    }
+    escalones.push({
+      rango: rango ? { min: rango.min, max: ultimoTecho } : null,
+      aflojado: { zona: true, desayuno: true, condiciones: true },
+      comoSeLlama: 'soltando también el desayuno y la cancelación gratuita',
+    });
+
+    let hoteles = [];
+    let filtrosUsados = null;
+    for (const escalon of escalones) {
+      const filtros = filtrosDesdeAuto(auto, escalon.rango, escalon.aflojado);
+      if (escalon.comoSeLlama) di(`   Sin resultados. Lo intento ${escalon.comoSeLlama}.`);
+
+      try {
+        hoteles = await buscarHoteles({
+          destino: ciudad,
+          fechaEntrada: fechas.entrada,
+          fechaSalida: fechas.salida,
+          adultos,
+          edadesNinos,
+          filtros,
+          maxResultados: MAX_HOTELES,
+        });
+      } catch (err) {
+        di(`   La búsqueda falló (${err.message}).`);
+        hoteles = [];
+      }
+
+      // «CÉNTRICO» SE APLICA AQUÍ, y hay que aplicarlo.
+      //
+      // La distancia al centro no viaja a Booking: es un filtro local sobre lo
+      // ya leído, igual que en la pantalla de hoteles. Sin este paso la búsqueda
+      // decía en el log «a menos de 1 km del centro» y devolvía un hotel a 3,1
+      // km: prometía céntrico y no lo cumplía.
+      //
+      // Se le da la forma que espera `aplicarFiltrosLocales` en vez de repetir
+      // aquí el parseo de "a 1,2 km del centro": ese trozo ya existe y tiene que
+      // haber uno solo.
+      const antes = hoteles.length;
+      hoteles = aplicarFiltrosLocales(
+        hoteles.map((h) => ({ ...h, extra: { distanciaCentro: h.distanciaCentro } })),
+        filtros
+      );
+      if (antes !== hoteles.length) {
+        di(`   ${antes - hoteles.length} descartado(s) por quedar lejos del centro.`);
+      }
+
+      if (hoteles.length) {
+        filtrosUsados = filtros;
+        di(`   ${hoteles.length} alojamiento(s) con: ${resumenDeFiltros(filtros)}.`);
+        break;
+      }
+    }
+
+    if (!hoteles.length) {
+      apuntarHueco(
+        viajeId,
+        FASE,
+        `${ciudad}: no encontré alojamiento ni aflojando los filtros. Tendrás que buscarlo tú.`
+      );
+      di(`   ${ciudad}: sin alojamiento después de aflojar todo lo que se podía. Lo dejo como hueco.`);
+      continue;
+    }
+
+    // --- 3) Guardar los candidatos, como los guarda el flujo manual -------
+    const noches = Math.max(1, Number(etapa.noches) || 1);
+    const ids = [];
+
+    for (const h of hoteles) {
+      const r = ejecutar(
+        `INSERT INTO candidatos
+           (viaje_id, etapa_id, tipo, titulo, precio, moneda, duracion, valoracion, num_opiniones,
+            url, imagen_url, origen_datos, marcado, datos_extra)
+         VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?, 'booking', 0, ?)`,
+        viajeId,
+        etapa.id,
+        h.nombre ?? '(sin nombre)',
+        h.precioTotal ?? null,
+        h.moneda ?? null,
+        h.estanciaTexto ?? null,
+        h.valoracion ?? null,
+        h.numOpiniones ?? null,
+        h.url ?? null,
+        h.imagenUrl ?? null,
+        JSON.stringify({
+          zona: h.zona ?? null,
+          direccion: h.direccion ?? null,
+          estrellas: h.estrellas ?? null,
+          distanciaCentro: h.distanciaCentro ?? null,
+          esAnuncio: h.esAnuncio ?? false,
+        })
+      );
+      ids.push({ id: Number(r.lastInsertRowid), hotel: h });
+    }
+
+    // --- 4) Elegir --------------------------------------------------------
+    const porNoche = (h) => (h.precioTotal ? Math.round(h.precioTotal / noches) : null);
+
+    const lista = ids
+      .map(
+        ({ id, hotel: h }, n) =>
+          `- op${n + 1} · ${h.nombre}\n` +
+          `  ${h.valoracion ? `valoración ${h.valoracion}` : 'sin valoración'}` +
+          `${h.numOpiniones ? ` (${h.numOpiniones} opiniones)` : ''}` +
+          ` · ${porNoche(h) != null ? `${porNoche(h)} €/noche` : 'precio desconocido'}` +
+          `${h.precioTotal ? ` (${Math.round(h.precioTotal)} € la estancia)` : ''}\n` +
+          `  ${h.zona ?? 'zona desconocida'}` +
+          `${h.distanciaCentro ? ` · ${h.distanciaCentro}` : ''}` +
+          `${h.estrellas ? ` · ${h.estrellas}★` : ''}`
+      )
+      .join('\n');
+
+    // Si la etapa acaba con un traslado temprano, la cercanía a la estación
+    // pasa a contar. Se le dice, porque él no puede saberlo.
+    const salidaTemprana = (() => {
+      const t = una(
+        `SELECT td.horario FROM transportes tr
+           JOIN transporte_datos td ON td.transporte_id = tr.id AND td.ficha_id = tr.ficha_transporte_id
+          WHERE tr.viaje_id = ? AND tr.etapa_origen_id = ?`,
+        viajeId,
+        etapa.id
+      );
+      // Sin traslado desde esta parada no hay hora que mirar. El guardia va
+      // sobre el texto y no sobre el número: `Number('')` es 0, que es finito y
+      // menor que 10, así que la versión anterior daba por "salida temprana" un
+      // tramo inexistente y reventaba al leerle la hora.
+      if (!t?.horario) return null;
+      const h = Number(String(t.horario).split(':')[0]);
+      return Number.isFinite(h) && h < 10 ? t.horario : null;
+    })();
+
+    let elegido = null;
+    try {
+      const r = await consultarJSON(
+        rellenar(partes.elegir, {
+          CIUDAD: ciudad,
+          NOCHES: noches,
+          VIAJEROS: `${adultos} adulto(s)` + (edadesNinos.length ? ` y ${edadesNinos.length} niño(s)` : ''),
+          FILTROS: resumenDeFiltros(filtrosUsados),
+          SALIDA_TEMPRANA: salidaTemprana
+            ? `Sí: al terminar esta parada se sale a las ${salidaTemprana}, así que estar cerca de la estación suma.`
+            : 'No: no hay salida madrugadora desde esta parada.',
+          OPCIONES: lista,
+        }),
+        { maxTokens: 1200, paso: `elegir hotel en ${ciudad}` }
+      );
+      const n = Number(String(r?.elegida ?? '').replace(/\D/g, ''));
+      const cand = ids[n - 1];
+      if (cand) {
+        elegido = { ...cand, porQue: typeof r?.por_que === 'string' ? r.por_que.trim() : null };
+      }
+    } catch (err) {
+      di(`   La IA no pudo elegir (${err.message}).`);
+    }
+
+    // Si no contesta, se coge la mejor relación valoración/precio, que es el
+    // criterio que ella tenía que seguir. Mejor sin el matiz que sin hotel.
+    if (!elegido) {
+      const mejor = [...ids]
+        .filter((x) => x.hotel.valoracion)
+        .sort((a, b) => {
+          const ra = (a.hotel.valoracion ?? 0) / Math.max(porNoche(a.hotel) ?? 1, 1);
+          const rb = (b.hotel.valoracion ?? 0) / Math.max(porNoche(b.hotel) ?? 1, 1);
+          return rb - ra;
+        })[0] ?? ids[0];
+      elegido = { ...mejor, porQue: 'mejor relación valoración/precio, elegido sin la IA' };
+      di('   Elijo yo por relación valoración/precio.');
+    }
+
+    elegirHotel(etapa.id, elegido.id);
+    resueltas += 1;
+
+    const h = elegido.hotel;
+    di(
+      `${ciudad}: ${h.nombre}` +
+        `${h.valoracion ? `, ${h.valoracion}` : ''}` +
+        `${porNoche(h) != null ? `, ${porNoche(h)} €/noche` : ''}` +
+        `${h.distanciaCentro ? `, ${h.distanciaCentro}` : ''}.`
+    );
+    if (elegido.porQue) di(`   Por qué: ${elegido.porQue}`);
+  }
+
+  di(`${resueltas} de ${etapas.length} parada(s) con alojamiento.`);
+  return { etapas: etapas.length, resueltas };
+}
+
+export default { ejecutarFaseDormir, partirPrompt, filtrosDesdeAuto, fechasDeLaEtapa };

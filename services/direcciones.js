@@ -26,7 +26,7 @@
 
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
-import { geocodificarConGoogle, googleDisponible, contadorDeAverias } from '../lib/google.js';
+import { geocodificarConGoogle, googleDisponible, contadorDeAverias, situarLugarConGoogle } from '../lib/google.js';
 
 /**
  * De qué puede tener dirección algo, y en qué tabla vive su id.
@@ -524,4 +524,63 @@ export function paraLaVista(lugares) {
 /** Para el aviso de arranque: ¿está Google en juego o vamos con el plan B? */
 export function fuenteQueSeUsara() {
   return googleDisponible() ? 'google' : 'ninguna';
+}
+
+/**
+ * SITÚA CON PLACES LOS SITIOS DE UNA CIUDAD RECIÉN INVESTIGADA.
+ *
+ * Una llamada a Places por sitio, y solo por los que no tengan ya dirección:
+ * reinvestigar una ciudad no vuelve a pagar por lo que ya se sabía.
+ *
+ * Lo que se guarda es doble y las dos cosas hacen falta:
+ *   · La DIRECCIÓN, en la tabla `direcciones`, que es de donde tira el buscador
+ *     de traslados y el mapa de la parada.
+ *   · Las COORDENADAS, en la propia fila del sitio, porque las de la IA son
+ *     aproximadas y las de Places son las buenas.
+ *
+ * Si Google no contesta no pasa nada grave: el sitio se queda sin dirección y
+ * se puede escribir a mano. Lo que no se hace es dejarlo a medias en silencio.
+ */
+export async function situarLosSitios(punto) {
+  const sitios = todas(
+    `SELECT s.id, s.nombre, s.lat, s.lon
+       FROM sitios_lugar s
+      WHERE s.punto_interes_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM direcciones d
+           WHERE d.tipo_elemento = 'sitio' AND d.elemento_id = s.id
+        )
+      ORDER BY s.orden, s.id`,
+    punto.id
+  );
+  if (!sitios.length) return { situados: 0, total: 0 };
+
+  const ciudad = punto.ciudad_base || punto.nombre;
+  let situados = 0;
+
+  for (const s of sitios) {
+    const enPlaces = await situarLugarConGoogle(s.nombre, ciudad);
+    if (!enPlaces?.direccion) continue;
+
+    guardarDireccion('sitio', s.id, enPlaces.direccion);
+
+    // La dirección ya viene con su punto: se marca situada sin pasar por la
+    // cola de geocodificación, que sería preguntar dos veces lo mismo.
+    if (enPlaces.lat != null && enPlaces.lng != null) {
+      ejecutar(
+        `UPDATE direcciones
+            SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
+                buscada_en = datetime('now'), actualizado_en = datetime('now')
+          WHERE tipo_elemento = 'sitio' AND elemento_id = ?`,
+        enPlaces.lat,
+        enPlaces.lng,
+        s.id
+      );
+      ejecutar('UPDATE sitios_lugar SET lat = ?, lon = ? WHERE id = ?', enPlaces.lat, enPlaces.lng, s.id);
+    }
+    situados += 1;
+  }
+
+  console.log(`[direcciones] ${situados} de ${sitios.length} sitios de ${ciudad} situados con Places.`);
+  return { situados, total: sitios.length };
 }

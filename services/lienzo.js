@@ -310,7 +310,15 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
   const diaDeLaFecha = (fecha) => (fecha ? dias.find((d) => d.fecha === fecha)?.n ?? null : null);
 
   for (const t of tramos) {
-    if (!t.candidato_id && !t.notas) continue;   // pendiente: no se pinta
+    // UN TRAMO RESUELTO SE PINTA, LO RESUELVA QUIEN LO RESUELVA.
+    //
+    // Aquí se miraban dos de las tres formas de tenerlo decidido: el vuelo
+    // (`candidato_id`) y lo escrito a mano (`notas`). Faltaba la tercera, que es
+    // elegir un medio por tierra —el botón de "Cómo llegar"—, que deja
+    // `ficha_transporte_id`. Resultado: elegías el tren de Cracovia a Varsovia,
+    // Mi ruta lo daba por resuelto, y en el lienzo ese día no aparecía nada: el
+    // día del cambio quedaba libre y se podían colocar cosas encima del viaje.
+    if (!t.candidato_id && !t.notas && !t.ficha_transporte_id) continue;
 
     const origen = t.etapa_origen_id ? porEtapa.get(t.etapa_origen_id) : null;
     const destino = t.etapa_destino_id ? porEtapa.get(t.etapa_destino_id) : null;
@@ -378,7 +386,19 @@ const ETIQUETA_TIPO = {
 /** "Shinkansen Tokio → Kioto · 2h15", con lo que se sepa del tramo. */
 function resumenDeSalto(t, origen, destino) {
   const trozos = [];
-  if (t.notas) {
+
+  // El medio elegido por tierra manda sobre la etiqueta genérica: "Shinkansen"
+  // dice más que "Tren", y es lo que se eligió.
+  const ficha = t.ficha_transporte_id
+    ? una('SELECT nombre, duracion FROM catalogo_transporte_tramo WHERE id = ?', t.ficha_transporte_id)
+    : null;
+
+  // El nombre del medio elegido MANDA sobre las notas. Las notas llevan además
+  // la hora ("BlaBlaCar · sale 10:30"), se pasan del ancho del chip y acababan
+  // cayendo a la etiqueta genérica: el día decía "Coche" para un BlaBlaCar.
+  if (ficha?.nombre) {
+    trozos.push(String(ficha.nombre).slice(0, 34));
+  } else if (t.notas) {
     // De las notas, lo primero: el bloque del día es estrecho.
     const corto = String(t.notas).replace(/\s+/g, ' ').split(/[,.;]/)[0].trim();
     trozos.push(corto.length > 3 && corto.length < 34 ? corto : ETIQUETA_TIPO[t.tipo] ?? t.tipo);

@@ -292,6 +292,13 @@ export const FASE_DE_PARAMETRO = {
   max_ciudades_candidatas: 'ciudades_y_noches',
 
   factor_precio_traslado: 'traslados',
+  acceso_aeropuerto_min: 'traslados',
+  acceso_estacion_min: 'traslados',
+  margen_coche_min: 'traslados',
+  margen_viaje_compartido_min: 'traslados',
+
+  relajacion_precio_pct: 'dormir',
+  relajacion_precio_max_veces: 'dormir',
 
   max_excursiones_largas_por_dia: 'excursiones',
   max_excursiones_por_viaje: 'excursiones',

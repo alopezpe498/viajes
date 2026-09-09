@@ -81,29 +81,6 @@
 .panel__nuevo:hover { background: var(--tinte); }
 .panel__nuevo i { font-size: 17px; }
 
-/* El enlace a los ajustes del orquestador, debajo del botón de nuevo viaje. */
-.panel__ajustes {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  /* El panel es una columna flex y estira a sus hijos: sin esto el enlace
-     ocupaba todo el ancho mientras el botón de arriba no, y no parecían de la
-     misma familia. */
-  align-self: flex-start;
-  margin-top: 12px;
-  padding: 8px 15px;
-  border: 1px solid rgba(255, 255, 255, .35);
-  border-radius: 999px;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-  opacity: .85;
-  transition: background .15s, opacity .15s;
-}
-.panel__ajustes:hover { background: rgba(255, 255, 255, .16); opacity: 1; }
-.panel__ajustes i { font-size: 16px; }
-
 .panel__dato {
   margin: auto 0 0;
   font-size: 13px;
@@ -136,14 +113,47 @@
 }
 .principal > *:not(.fondo-mapa) { position: relative; }
 
+/* La fila del título: el rótulo a la izquierda y los ajustes a la derecha. */
+.principal__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+  position: relative;
+  z-index: 1;
+}
+
 .principal__titulo {
   font-size: 15px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .08em;
   color: var(--texto-3);
-  margin: 0 0 18px;
+  margin: 0;
 }
+
+/* El engranaje. Discreto en reposo y con el azul de la casa al pasar por
+   encima, como el resto de acciones secundarias. */
+.principal__ajustes {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--texto-3);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.principal__ajustes:hover {
+  color: var(--acento);
+  border-color: var(--acento);
+  background: var(--fondo);
+}
+.principal__ajustes:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 
 .billetes {
   display: flex;

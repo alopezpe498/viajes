@@ -90,9 +90,31 @@ export function fichasDeTramo(ciudadA, ciudadB) {
   }));
 }
 
-/** Guarda una ficha de tramo. Sirve para lo que trae la IA y para lo escrito a mano. */
+/**
+ * Guarda una ficha de tramo. Sirve para lo que trae la IA y para lo escrito a mano.
+ *
+ * NO REPITE LO QUE YA ESTÁ. Dos sitios pueden pedir investigar el mismo tramo a
+ * la vez —el orquestador y el trabajo de la cola lo hicieron— y esto era un
+ * INSERT a pelo: el resultado era el catálogo con cada tren, cada bus y cada
+ * coche por duplicado, y una lista de ocho opciones que en realidad eran cuatro.
+ *
+ * La misma pareja de ciudades, el mismo medio y el mismo nombre es la misma
+ * cosa. Se devuelve la que ya había en vez de crear otra.
+ */
 export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
   const [a, b] = parOrdenado(ciudadA, ciudadB);
+
+  const nombre = texto(ficha.nombre) ?? MEDIOS[medioValido(ficha.medio)].etiqueta;
+  const yaEsta = una(
+    `SELECT * FROM catalogo_transporte_tramo
+      WHERE ciudad_a_norm = ? AND ciudad_b_norm = ? AND medio = ? AND lower(nombre) = lower(?)`,
+    a.norm,
+    b.norm,
+    medioValido(ficha.medio),
+    nombre
+  );
+  if (yaEsta) return yaEsta;
+
   const r = ejecutar(
     `INSERT INTO catalogo_transporte_tramo
        (ciudad_a_norm, ciudad_b_norm, ciudad_a, ciudad_b, medio, nombre,

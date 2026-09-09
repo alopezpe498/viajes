@@ -223,15 +223,29 @@ export function rutaDeViaje(viajeId) {
       diferencia: Math.abs(totales - usadas),
     },
     candidatos: candidatas.map((e) => ({ id: e.id, nombre: e.nombre_ciudad })),
-    etapas: confirmadas.map((e) => ({
-      id: e.id,
-      nombre: e.nombre_ciudad,
-      orden: e.orden,
-      noches: e.noches ?? 0,
-      fechaInicio: e.fecha_inicio,
-      fechaFin: e.fecha_fin,
-      puntoInteresId: e.punto_interes_id,
-    })),
+    etapas: confirmadas.map((e) => {
+      // DÓNDE SE DUERME, que hasta ahora no se veía en la ruta.
+      //
+      // Los tramos ya decían si estaban resueltos y las paradas no decían nada:
+      // podías tener el hotel elegido en las cuatro ciudades y la ruta se veía
+      // igual que el primer día. Es el mismo «resuelto o pendiente» que los
+      // tramos, y por eso se enseña igual.
+      const hotel = una(
+        `SELECT titulo, valoracion FROM candidatos
+          WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1 LIMIT 1`,
+        e.id
+      );
+      return {
+        id: e.id,
+        nombre: e.nombre_ciudad,
+        orden: e.orden,
+        noches: e.noches ?? 0,
+        fechaInicio: e.fecha_inicio,
+        fechaFin: e.fecha_fin,
+        puntoInteresId: e.punto_interes_id,
+        hotel: hotel ? { titulo: hotel.titulo, valoracion: hotel.valoracion } : null,
+      };
+    }),
     tramos: tramosParaPintar(viajeId, confirmadas),
     casa: ciudadDeCasa(viajeId),
   };
