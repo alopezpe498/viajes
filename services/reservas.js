@@ -168,6 +168,10 @@ export function reservaDeCandidato(candidatoId) {
     viajeId: c.viaje_id,
     tipo: c.tipo,
     titulo: c.titulo,
+    // De qué cuelga. La pantalla de la etapa lo necesita para saber qué reserva
+    // es de qué salto: un viaje tiene varios traslados y todos son 'traslado'.
+    transporteId: c.transporte_id ?? null,
+    etapaId: c.etapa_id ?? null,
     reservado: Boolean(c.reservado),
     reservable: TIPOS_RESERVABLES.includes(c.tipo),
     localizador: r?.localizador ?? null,

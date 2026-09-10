@@ -258,6 +258,62 @@ export function guardarDatosDelTramo(transporteId, fichaId, datos) {
  * Elegir cambia también el `tipo` del tramo, que es lo que pinta su icono en la
  * ruta y en el lienzo: si voy en bus, el chip no puede seguir diciendo avión.
  */
+/**
+ * EL CANDIDATO DE UN TRASLADO ELEGIDO.
+ *
+ * UN BILLETE DE TREN SE RESERVA IGUAL QUE UN VUELO, y hasta ahora no había
+ * dónde apuntar su localizador: `reservas` cuelga siempre de un candidato, los
+ * vuelos tenían el suyo desde que se elegían y los traslados por tierra no
+ * tenían ninguno. El tipo 'traslado' estaba declarado en `TIPOS_RESERVABLES`
+ * desde el principio; lo que faltaba era que alguien creara la fila.
+ *
+ * DOS CUIDADOS, y los dos importan:
+ *
+ *   · SIN PRECIO. El precio del traslado vive en `transportes.precio_estimado`,
+ *     que es de donde lo lee el presupuesto con su ámbito. Ponerlo también aquí
+ *     lo sumaría dos veces en el panel de «Tu selección».
+ *
+ *   · SIN TOCAR `transportes.candidato_id`. Ese campo significa «el vuelo
+ *     elegido» y lo miran el presupuesto y el lienzo para saber si un salto se
+ *     resolvió volando. El candidato del traslado apunta al revés, con
+ *     `transporte_id`, y así ningún otro sitio se entera de que existe.
+ */
+function asegurarCandidatoDeTraslado(tramo, ficha) {
+  const ya = una(
+    "SELECT id FROM candidatos WHERE transporte_id = ? AND tipo = 'traslado'",
+    tramo.id
+  );
+
+  const titulo = String(ficha.nombre || MEDIOS[medioValido(ficha.medio)].etiqueta).slice(0, 200);
+  const identidad = JSON.stringify({ de: 'tramo', deId: ficha.id });
+
+  if (ya) {
+    // Cambiar de medio en el mismo salto no crea otro: se renombra el que hay y
+    // se conserva su reserva, que puede seguir siendo la buena.
+    ejecutar(
+      'UPDATE candidatos SET titulo = ?, datos_extra = ?, url = ? WHERE id = ?',
+      titulo,
+      identidad,
+      ficha.web || null,
+      ya.id
+    );
+    return ya.id;
+  }
+
+  const r = ejecutar(
+    `INSERT INTO candidatos
+       (viaje_id, transporte_id, tipo, titulo, moneda, duracion, url, origen_datos, marcado, datos_extra)
+     VALUES (?, ?, 'traslado', ?, NULL, ?, ?, 'catalogo', 1, ?)`,
+    tramo.viaje_id,
+    tramo.id,
+    titulo,
+    ficha.duracion || null,
+    ficha.web || null,
+    identidad
+  );
+  return Number(r.lastInsertRowid);
+}
+
 export function elegirMedio(transporteId, fichaId) {
   const t = una('SELECT * FROM transportes WHERE id = ?', Number(transporteId));
   if (!t) return null;
@@ -265,6 +321,12 @@ export function elegirMedio(transporteId, fichaId) {
   const soltar = !fichaId || Number(t.ficha_transporte_id) === Number(fichaId);
   if (soltar) {
     ejecutar('UPDATE transportes SET ficha_transporte_id = NULL WHERE id = ?', t.id);
+    // Sin medio elegido no hay nada que reservar: se va también su candidato, y
+    // con él su localizador. Es el mismo criterio que al desmarcar un vuelo.
+    ejecutar(
+      "DELETE FROM candidatos WHERE transporte_id = ? AND tipo = 'traslado'",
+      t.id
+    );
     // `elegidaId` es lo que devuelve también `comoLlegarDeTramo`: la pantalla
     // repinta con el mismo campo venga de donde venga.
     return { elegido: false, transporteId: t.id, elegidaId: null };
@@ -283,6 +345,9 @@ export function elegirMedio(transporteId, fichaId) {
     tipo,
     t.id
   );
+
+  asegurarCandidatoDeTraslado(t, ficha);
+
   return { elegido: true, transporteId: t.id, elegidaId: ficha.id };
 }
 

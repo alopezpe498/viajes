@@ -377,6 +377,7 @@ export function migrarEsquema() {
   migracionRegla1ConVariosPaises();
   migracionPuertaSinUnSoloPais();
   migracionCorrectivoAtenas();
+  migracionReservaDeTraslados();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4551,6 +4552,61 @@ y no se vio lo que se iba a ver.
   console.log(
     '[bd] Migracion: correctivo de Atenas (ocupacion de excursiones, dias utiles y guillotina).' +
       (pendientes ? ` ${pendientes} colocacion(es) sin duracion se rellenaran al leer el lienzo.` : '')
+  );
+  return true;
+}
+
+/**
+ * LOS TRASLADOS YA ELEGIDOS TAMBIEN SE RESERVAN.
+ *
+ * `reservas` cuelga siempre de un candidato. Los vuelos tenian el suyo desde que
+ * se elegian; los traslados por tierra no tenian ninguno, asi que el tipo
+ * 'traslado' estaba declarado en TIPOS_RESERVABLES desde el primer dia y no
+ * habia ni una fila que lo usara: ni check, ni cajon, ni localizador.
+ *
+ * De aqui en adelante lo crea `elegirMedio`. Esto es para los saltos que ya
+ * estaban resueltos: se les da su candidato con la ficha que tienen elegida.
+ *
+ * SIN PRECIO A PROPOSITO. El del traslado vive en `transportes.precio_estimado`,
+ * que es de donde lo lee el presupuesto con su ambito; ponerlo tambien en el
+ * candidato lo sumaria dos veces en el panel de "Tu seleccion".
+ */
+function migracionReservaDeTraslados() {
+  const CLAVE = '2026-09-reserva-de-traslados';
+  if (yaAplicada(CLAVE)) return false;
+
+  const resueltos = db
+    .prepare(
+      `SELECT t.id, t.viaje_id, f.id AS ficha_id, f.nombre, f.duracion, f.web
+         FROM transportes t
+         JOIN catalogo_transporte_tramo f ON f.id = t.ficha_transporte_id
+        WHERE t.ficha_transporte_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM candidatos c
+             WHERE c.transporte_id = t.id AND c.tipo = 'traslado')`
+    )
+    .all();
+
+  const meter = db.prepare(
+    `INSERT INTO candidatos
+       (viaje_id, transporte_id, tipo, titulo, duracion, url, origen_datos, marcado, datos_extra)
+     VALUES (?, ?, 'traslado', ?, ?, ?, 'catalogo', 1, ?)`
+  );
+
+  for (const t of resueltos) {
+    meter.run(
+      t.viaje_id,
+      t.id,
+      String(t.nombre || 'Traslado').slice(0, 200),
+      t.duracion || null,
+      t.web || null,
+      JSON.stringify({ de: 'tramo', deId: t.ficha_id })
+    );
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: ${resueltos.length} traslado(s) ya elegido(s) pasan a ser reservables.`
   );
   return true;
 }

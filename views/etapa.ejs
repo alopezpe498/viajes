@@ -326,7 +326,12 @@ const ICONO_TIPO = {
 
         <div class="rejilla-fichas">
           <% queVer.excursiones.forEach(c => { %>
-            <%- include('parciales/excursion', { c, viaje, etapa, colocaciones, diasDeLaEtapa }) %>
+            <%# `reservas` va aquí porque el cajón de la excursión ya existía en
+                su parcial pero nadie se lo pasaba: el `typeof reservas` de
+                dentro daba «undefined» y el bloque no se pintaba nunca. %>
+            <%- include('parciales/excursion', {
+                  c, viaje, etapa, colocaciones, diasDeLaEtapa, reservas,
+                }) %>
           <% }) %>
         </div>
       </section>
@@ -859,6 +864,22 @@ const ICONO_TIPO = {
                   <%- include('parciales/ficha-transporte', { f, transporteId: t.id }) %>
                 <% }) %>
               </div>
+
+              <%# EL BILLETE DE ESTE SALTO.
+                  Un tren o un bus se reservan igual que un vuelo, y hasta ahora
+                  no había dónde apuntar su localizador. Sale solo cuando hay un
+                  medio ELEGIDO: mientras se está comparando no hay nada que
+                  reservar, igual que en la lista de vuelos. %>
+              <% if (t.medios.elegidaId && reservas) { %>
+                <%
+                  const suReserva = [...reservas.values()].find(
+                    (r) => r && r.tipo === 'traslado' && r.transporteId === t.id
+                  );
+                %>
+                <% if (suReserva) { %>
+                  <%- include('parciales/reserva', { reserva: suReserva }) %>
+                <% } %>
+              <% } %>
             </div>
           <% } %>
 
@@ -957,7 +978,8 @@ const ICONO_TIPO = {
                         idRapida: t.resultados.idRapida,
                         fechaIda: dia(t.fechaIda),
                         fechaVuelta: dia(t.fechaVuelta),
-                        urlMarcar: `/tramo/${t.id}/vuelos/${v.id}/marcar`
+                        urlMarcar: `/tramo/${t.id}/vuelos/${v.id}/marcar`,
+                        reservas,
                       }) %>
                 <% }) %>
               <% } %>

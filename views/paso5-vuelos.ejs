@@ -168,7 +168,8 @@ if (estado === 'hecho' && vuelos.length) {
                 v, idBarata, idRapida,
                 fechaIda: fechaCorta(viaje.fecha_inicio),
                 fechaVuelta: fechaCorta(viaje.fecha_fin),
-                urlMarcar: `/viajes/${viaje.id}/candidatos/${v.id}/marcar`
+                urlMarcar: `/viajes/${viaje.id}/candidatos/${v.id}/marcar`,
+                reservas: typeof reservas !== 'undefined' ? reservas : null,
               }) %>
         <% }) %>
       </div>
