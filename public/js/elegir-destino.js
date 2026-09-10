@@ -204,6 +204,22 @@
         const paises = await rp.json().catch(() => ({}));
         if (mia !== consulta) return;
 
+        // SI ESTO FALLA, QUE SE VEA. El fallo callado costó una tarde: con el
+        // servidor arrancado antes de que existiera la ruta, la petición
+        // devolvía un 404 con HTML, `rp.json()` reventaba, el catch lo tragaba y
+        // el buscador seguía al geocodificador como si nada. Desde fuera era
+        // idéntico a «la detección no funciona».
+        //
+        // Se sigue sin bloquear el viaje —quedarse sin poder elegir destino sería
+        // peor—, pero ahora la consola lo dice.
+        if (!rp.ok) {
+          console.warn(
+            `[mundo] no pude interpretar el destino (el servidor respondió ${rp.status}). ` +
+              'Si esperabas la detección de varios países, reinicia el servidor: ' +
+              'esa ruta puede no existir todavía en el proceso que está corriendo.'
+          );
+        }
+
         if (rp.ok && paises.multipais) {
           window.location.href = paises.url;
           return;
