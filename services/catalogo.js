@@ -17,7 +17,7 @@
 
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
 import { direccionDe, guardarDireccion, pedirGeocodificar } from './direcciones.js';
-import { buscarActividades } from '../providers/civitatis.js';
+import { buscarActividades, descubrirSlug } from '../providers/civitatis.js';
 
 export { normalizarNombre };
 
@@ -339,7 +339,7 @@ const MAX_ACTIVIDADES = 30;
  * pasó a colgar de la ciudad: si alguien ya miró Kioto en otro viaje, esto no
  * abre el navegador. Solo se scrapea la primera vez.
  */
-export async function traerExcursionesSiHacenFalta(ciudad) {
+export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudadBase = null } = {}) {
   const cache = estadoCacheCiudad(ciudad);
   if (cache.total > 0) {
     console.log(
@@ -348,8 +348,31 @@ export async function traerExcursionesSiHacenFalta(ciudad) {
     return cache.total;
   }
 
-  console.log(`[catalogo] buscando excursiones de "${ciudad}" en Civitatis`);
-  const actividades = await buscarActividades({ destino: ciudad, maxResultados: MAX_ACTIVIDADES });
+  // EL SLUG SE DESCUBRE ANTES DE DAR NADA POR MUERTO.
+  //
+  // "Tesalonica" y "Meteora" no existen como slug —son "salonica" y
+  // "kalambaka"— y las dos paradas del viaje a Grecia se quedaron sin una sola
+  // excursión. El descubrimiento mira el índice del país y, si el nombre
+  // principal falla, prueba con la ciudad base de la parada. Se guarda, así que
+  // esto se paga una vez por ciudad y no en cada viaje.
+  const slug = await descubrirSlug(ciudad, {
+    pais,
+    tambien: [ciudadBase].filter((x) => x && x !== ciudad),
+  });
+
+  if (!slug) {
+    throw new Error(
+      `«${ciudad}» no tiene destino en Civitatis (lo he buscado también en el índice` +
+        `${pais ? ` de ${pais}` : ''}${ciudadBase ? ` y como «${ciudadBase}»` : ''}).`
+    );
+  }
+
+  console.log(`[catalogo] buscando excursiones de "${ciudad}" en Civitatis (slug "${slug}")`);
+  const actividades = await buscarActividades({
+    destino: ciudad,
+    slug,
+    maxResultados: MAX_ACTIVIDADES,
+  });
   const utiles = actividades.filter((a) => esActividadDeVerdad(a.titulo));
   if (!utiles.length) throw new Error(`Civitatis no devolvió actividades de «${ciudad}»`);
 

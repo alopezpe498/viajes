@@ -361,6 +361,9 @@ export function migrarEsquema() {
   migracionOrigenDelPrecioDeTramo();
   migracionDuracionesPorCategoria();
   migracionPasadasDeRevision();
+  migracionVueltaDecente();
+  migracionCorrectivoGrecia();
+  migracionSlugsDeCivitatis();
   migracionFase6Lienzo();
   migracionFase6Referencias();
   migracionRegistroDelOrquestador();
@@ -1040,7 +1043,16 @@ EL RESTO DE REGLAS:
    Cuenta también lo que se comen los vuelos, que sus horas sí las tienes: si se
    llega de madrugada esa primera noche casi no existe, y si se sale a primera
    hora la última tampoco.
-8. LOS HORARIOS QUE NO ESTÉN ESCRITOS AQUÍ ARRIBA, NO LOS SABES.
+8. LAS NOCHES SON EL MEDIO; LO QUE REPARTES ES TIEMPO ÚTIL.
+   Con la tabla de tiempos y los horarios de los vuelos, estima a qué hora se
+   llega a cada parada y cuánto día real le queda: una parada a la que se llega
+   a mediodía y de la que se sale a la mañana siguiente da media tarde, no un
+   día. Si un sitio pide un día entero (monasterios repartidos, un yacimiento
+   grande, una ciudad densa), la noche extra va ahí ANTES que a una parada que
+   ya tiene un día completo y no lo llena.
+   Escribe en el motivo la cuenta de tiempo útil de las paradas que queden
+   justas.
+9. LOS HORARIOS QUE NO ESTÉN ESCRITOS AQUÍ ARRIBA, NO LOS SABES.
    Tienes las horas de los vuelos y la tabla de tiempos entre ciudades. Nada
    más. PROHIBIDO decir que un tren "llega de madrugada", que un bus "sale a
    primera hora" o cualquier hora concreta que no te hayan dado: eso es
@@ -1048,12 +1060,12 @@ EL RESTO DE REGLAS:
    un viaje de verdad.
    Si para decidir te falta un horario, DILO tal cual en el "motivo" o en el
    "resumen" ("no tengo el horario del tren de X a Y") y reparte sin él.
-9. TU PUNTO DE PARTIDA ES LA RUTA PREVISTA: tu trabajo es repartir las noches
+10. TU PUNTO DE PARTIDA ES LA RUTA PREVISTA: tu trabajo es repartir las noches
    sobre ella, no inventar otra. Los vuelos se compraron con esa ruta delante.
    Solo puedes apartarte de ella si al repartir aparece una imposibilidad real
    —una parada se queda a 0 noches, un mínimo que no se cumple—, y entonces lo
    dices en el resumen: qué has cambiado respecto a la prevista y por qué.
-10. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
+11. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
    repite paso por una ciudad o si hay un trayecto largo incómodo, se dice y se
    explica por qué compensa. PROHIBIDO llamar "lineal" o "sin rodeos" a una ruta
    que sube y vuelve a bajar: el resumen se lee para decidir si fiarse de lo que
@@ -1889,6 +1901,176 @@ function migracionPasadasDeRevision() {
 }
 
 /**
+ * EL PROMPT DE LA VUELTA: un directo de madrugada no siempre gana.
+ *
+ * En un viaje a Grecia la vuelta ATH -> BCN se eligio a las 4:10 de la
+ * madrugada por ser el unico directo del dia. Cumplia todos los filtros y por
+ * eso nadie lo discutio, pero esa eleccion se come la ultima noche entera del
+ * viaje: hay que salir del hotel a las dos.
+ *
+ * "Directo" deja de ser una regla y pasa a ser una preferencia con juicio. Y el
+ * juicio se le pide a la IA con las dos opciones delante y una regla escrita,
+ * que es editable como todas las demas.
+ */
+export function promptDelVueloDeVuelta() {
+  return `Hay que elegir el vuelo de vuelta de {{CIUDAD}} a casa el {{FECHA}}.
+
+LAS DOS OPCIONES SOBRE LA MESA
+
+- DIRECTO: sale a las {{DIRECTO_SALIDA}}, llega a las {{DIRECTO_LLEGADA}},
+  {{DIRECTO_DURACION}} de viaje{{DIRECTO_ESCALAS}}.
+- CON ESCALA: sale a las {{ESCALA_SALIDA}}, llega a las {{ESCALA_LLEGADA}},
+  {{ESCALA_DURACION}} de viaje{{ESCALA_ESCALAS}}.
+
+LA REGLA
+
+Un directo que sale de madrugada mata la ultima noche del viaje. Prefiere la
+escala si llega a hora decente y no anade mas de {{MAX_HORAS_EXTRA}} horas de
+viaje total; si la escala tampoco cumple la franja o alarga mas que eso, gana el
+directo.
+
+Se considera hora decente salir a partir de las {{HORA_MINIMA}}.
+
+Devuelve SOLO este JSON:
+
+{"elegido": "directo" | "escala", "por_que": "una linea, concreta"}
+
+Y que el "por_que" diga la cuenta: cuantas horas de mas y que se gana a cambio.`;
+}
+
+/**
+ * LOS DOS NUMEROS DE LA VUELTA.
+ *
+ * A partir de que hora se considera que un vuelo de vuelta respeta la ultima
+ * noche, y cuanto viaje de mas se acepta a cambio de no madrugar de esa manera.
+ * Son parametros porque la respuesta no es la misma para todo el mundo: hay
+ * quien prefiere plantarse en casa a mediodia aunque le cueste levantarse a las
+ * dos de la manana.
+ */
+function migracionVueltaDecente() {
+  const CLAVE = '2026-09-vuelta-decente';
+  if (yaAplicada(CLAVE)) return false;
+
+  const desde = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+
+  meter.run(
+    'hora_minima_salida_vuelta',
+    '08:00',
+    '08:00',
+    'Antes de esta hora, el vuelo de vuelta se come la ultima noche del viaje',
+    'hora',
+    desde + 1
+  );
+  meter.run(
+    'max_horas_extra_por_escala',
+    '2',
+    '2',
+    'Cuanto viaje de mas se acepta por una escala que salve esa ultima noche',
+    'horas',
+    desde + 2
+  );
+
+  const texto = promptDelVueloDeVuelta();
+  db.prepare(
+    `INSERT INTO prompts_orquestador (fase, prompt_actual, prompt_fabrica)
+     VALUES ('vuelo_de_vuelta', ?, ?)
+     ON CONFLICT (fase) DO UPDATE SET
+       prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN excluded.prompt_actual ELSE prompt_actual END,
+       prompt_fabrica = excluded.prompt_fabrica`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: la vuelta de madrugada se discute, con sus dos parametros y su prompt.');
+  return true;
+}
+
+/**
+ * DOS CORRECTIVOS DE PROMPT TRAS EL VIAJE A GRECIA.
+ *
+ * FASE 1: las noches se repartian por peso y salia bien en noches y mal en
+ * tiempo real. Meteora, que pide un dia entero de monasterios, recibio una noche
+ * —llegada a las 14:05 y salida a las 10:00, o sea media tarde— y Delfos, que se
+ * ve en un dia, recibio dos. La regla nueva le hace contar TIEMPO UTIL, que es
+ * lo que de verdad se reparte.
+ *
+ * FASE 6: la IA intentaba colocar los bloques fijos —el vuelo, el traslado—
+ * porque los veia en la descripcion del dia, y el cotejo de colocaciones los
+ * contaba como perdidas. Ahora la seccion de los dias dice en claro que esos ya
+ * estan puestos y no son suyos.
+ *
+ * Solo se pisa lo que nadie haya editado.
+ */
+function migracionCorrectivoGrecia() {
+  const CLAVE = '2026-09-correctivo-grecia';
+  if (yaAplicada(CLAVE)) return false;
+
+  const pisar = (fase, texto) => {
+    const fila = db
+      .prepare('SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = ?')
+      .get(fase);
+    const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+    db.prepare(
+      `UPDATE prompts_orquestador
+          SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+              prompt_fabrica = ?
+        WHERE fase = ?`
+    ).run(texto, texto, fase);
+    return loEdito;
+  };
+
+  const editados = [
+    pisar('ciudades_y_noches', promptDeCiudadesYNoches()) ? 'ciudades y noches' : null,
+    pisar('lienzo', promptDelLienzo()) ? 'lienzo' : null,
+  ].filter(Boolean);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: reparto por tiempo util (fase 1) y bloques fijos declarados (fase 6).' +
+      (editados.length
+        ? ` OJO: tu prompt de ${editados.join(' y ')} esta editado y NO se ha tocado; para coger el criterio nuevo, pulsa «Restaurar de fabrica».`
+        : '')
+  );
+  return true;
+}
+
+/**
+ * LOS SLUGS DE CIVITATIS, DESCUBIERTOS Y GUARDADOS.
+ *
+ * El slug se fabricaba desde el nombre en español y con eso basta para Roma o
+ * Cracovia, pero no para las transliteraciones: "Tesalonica" no existe en
+ * Civitatis —se llama "salonica"— y "Meteora" tampoco —es "kalambaka"—. Las dos
+ * paradas del viaje a Grecia se quedaron sin excursiones por eso.
+ *
+ * Ahora el slug se DESCUBRE en el indice de destinos del pais y se guarda aqui,
+ * para no repetir el descubrimiento en cada viaje. `slug` a NULL significa "lo
+ * he buscado y ese destino no esta en Civitatis", que tambien es una respuesta y
+ * evita volver a abrir el navegador para nada.
+ */
+function migracionSlugsDeCivitatis() {
+  const CLAVE = '2026-09-slugs-civitatis';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS civitatis_destinos (
+      nombre_norm TEXT PRIMARY KEY,
+      nombre      TEXT NOT NULL,
+      slug        TEXT,
+      pais        TEXT,
+      visto_en    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: los slugs de Civitatis se descubren una vez y se guardan.');
+  return true;
+}
+
+/**
  * EL REGISTRO DEL ORQUESTADOR, QUE YA NO SE BORRA.
  *
  * Hasta ahora lo que iba diciendo cada fase vivia en `orquestador_fases.log`, y
@@ -1989,6 +2171,11 @@ CÓMO ES ESTE VIAJE
 - La comida ocupa {{DURACION_COMIDA}} minutos.
 
 LOS DÍAS QUE TIENES
+
+Los bloques marcados como FIJO —vuelos y traslados— YA ESTÁN COLOCADOS. No son
+tuyos: no los pongas en "plan", no les inventes referencia y no los muevas. Tu
+trabajo es repartir lo de la lista de colocables ALREDEDOR de ellos.
+
 {{DIAS}}
 
 LO QUE HAY QUE COLOCAR

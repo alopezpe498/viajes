@@ -34,7 +34,15 @@ import { buscarVuelosKayak } from '../providers/kayak.js';
 import { ocupacionDe, ciudadDeCasa } from '../services/proveedores.js';
 import { asegurarDestino, destinoPorNombre } from '../services/catalogo.js';
 import { recalcularRuta } from '../services/ruta.js';
-import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
+import {
+  anotar,
+  apuntarHueco,
+  parametro,
+  parametroTexto,
+  promptDeFase,
+  configAuto,
+  ORIGENES,
+} from '../services/orquestador.js';
 import { fichasDeTramo } from '../services/movilidad.js';
 import { distanciaEntre, distanciaGuardada } from '../services/distancias-ciudades.js';
 
@@ -326,6 +334,172 @@ async function buscarAflojando({ viajeId, origen, destino, fecha, ocupacion, aut
   return null;
 }
 
+/** "04:10" -> 250. Los minutos desde medianoche, para comparar horas. */
+function enMinutosDelDia(hora) {
+  const m = String(hora ?? '').match(/(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/** La hora a la que sale una opción de vuelo, de su primer tramo. */
+function horaDeSalida(opcion) {
+  return (opcion?.tramos ?? [])[0]?.horaSalida ?? null;
+}
+
+/** Cuántas escalas tiene, sumando las de todos sus tramos. */
+function escalasDe(opcion) {
+  return (opcion?.tramos ?? []).reduce((n, t) => n + (Number(t.escalas) || 0), 0);
+}
+
+/**
+ * LA VUELTA DE MADRUGADA SE DISCUTE.
+ *
+ * Un directo que sale a las 4:10 cumple todos los filtros y se lleva por delante
+ * la última noche del viaje: hay que salir del hotel a las dos. Pasó en Grecia y
+ * nadie lo evaluó, porque «directo» era una regla y no una preferencia.
+ *
+ * Aquí se convierte en preferencia CON JUICIO: si el mejor vuelo sale antes de
+ * la hora mínima, se busca también el mejor con escala que sí salga a hora
+ * decente, y con las dos opciones delante decide la IA con la regla escrita en
+ * su prompt —editable como los demás—. Si no hay alternativa, se queda el que
+ * había y se dice.
+ *
+ * Devuelve el hallazgo que gane, con la misma forma que traía.
+ */
+async function afinarLaVuelta({ viajeId, hallazgo, origen, destino, fecha, ocupacion, auto, ciudad }) {
+  const horaMinima = parametroTexto('hora_minima_salida_vuelta', '08:00');
+  const tope = enMinutosDelDia(horaMinima);
+  const salida = enMinutosDelDia(horaDeSalida(hallazgo.opcion));
+
+  if (tope == null || salida == null || salida >= tope) return hallazgo;
+
+  anotar(
+    viajeId,
+    'ciudades_y_noches',
+    `   La vuelta desde ${ciudad} saldría a las ${horaDeSalida(hallazgo.opcion)}, antes de las ` +
+      `${horaMinima}: eso se come la última noche. Busco alternativa con escala.`,
+    ORIGENES.scraping
+  );
+
+  // La alternativa: mismo día, sin exigir directo, y que salga a hora decente.
+  let conEscala = null;
+  try {
+    const opciones = await buscarVuelosKayak({
+      origen,
+      destino,
+      fechaIda: fecha,
+      fechaVuelta: null,
+      adultos: ocupacion.adultos,
+      edadesNinos: ocupacion.edadesNinos,
+      filtros: filtrosDesdeConfig(auto, { sinFranja: true, sinEscalas: true }),
+      maxResultados: VUELOS_POR_BUSQUEDA,
+    });
+
+    // De las que salen a hora decente, la más corta.
+    const decentes = (opciones ?? []).filter((o) => {
+      const h = enMinutosDelDia(horaDeSalida(o));
+      return h != null && h >= tope;
+    });
+    conEscala = laMasCorta(decentes);
+    if (conEscala) conEscala = { ...conEscala, opciones };
+  } catch (err) {
+    anotar(viajeId, 'ciudades_y_noches', `   No pude buscar la alternativa (${err.message}).`);
+  }
+
+  if (!conEscala) {
+    anotar(
+      viajeId,
+      'ciudades_y_noches',
+      `   No hay ningún vuelo ese día que salga a partir de las ${horaMinima}: se queda el de madrugada.`,
+      ORIGENES.scraping
+    );
+    return hallazgo;
+  }
+
+  // --- Con las dos opciones delante, decide la IA --------------------------
+  const maxExtra = parametro('max_horas_extra_por_escala', 2);
+  const comoOpcion = (h) => ({
+    salida: horaDeSalida(h.opcion) ?? '?',
+    llegada: (h.opcion?.tramos ?? []).at(-1)?.horaLlegada ?? '?',
+    duracion: comoTexto(h.minutos),
+    escalas: escalasDe(h.opcion),
+  });
+  const d = comoOpcion(hallazgo);
+  const e = comoOpcion(conEscala);
+
+  let gana = null;
+  let porQue = null;
+  try {
+    const r = await consultarJSON(
+      rellenar(promptDeFase('vuelo_de_vuelta'), {
+        CIUDAD: ciudad,
+        FECHA: fecha,
+        DIRECTO_SALIDA: d.salida,
+        DIRECTO_LLEGADA: d.llegada,
+        DIRECTO_DURACION: d.duracion,
+        DIRECTO_ESCALAS: d.escalas ? `, ${d.escalas} escala(s)` : ', directo',
+        ESCALA_SALIDA: e.salida,
+        ESCALA_LLEGADA: e.llegada,
+        ESCALA_DURACION: e.duracion,
+        ESCALA_ESCALAS: e.escalas ? `, ${e.escalas} escala(s)` : ', directo',
+        MAX_HORAS_EXTRA: maxExtra,
+        HORA_MINIMA: horaMinima,
+      }),
+      { maxTokens: 500, paso: `vuelo de vuelta desde ${ciudad}` }
+    );
+    gana = r?.elegido === 'escala' ? 'escala' : r?.elegido === 'directo' ? 'directo' : null;
+    porQue = typeof r?.por_que === 'string' ? r.por_que.trim() : null;
+  } catch (err) {
+    anotar(viajeId, 'ciudades_y_noches', `   La IA no pudo elegir la vuelta (${err.message}).`);
+  }
+
+  // SIN RESPUESTA, LA REGLA EN CÓDIGO. Es la misma que se le ha pedido a ella:
+  // la escala gana si no alarga más de lo permitido.
+  if (!gana) {
+    const alarga = (conEscala.minutos ?? 0) - (hallazgo.minutos ?? 0);
+    gana = alarga <= maxExtra * 60 ? 'escala' : 'directo';
+    porQue = `aplicando la regla sin la IA: la escala alarga ${comoTexto(Math.max(0, alarga))}`;
+  }
+
+  anotar(
+    viajeId,
+    'ciudades_y_noches',
+    `   Vuelta desde ${ciudad}: gana ${gana === 'escala' ? `la escala de ${e.salida}` : `el directo de ${d.salida}`}` +
+      `${porQue ? `. ${porQue}` : '.'}`,
+    ORIGENES.ia
+  );
+
+  return gana === 'escala' ? conEscala : hallazgo;
+}
+
+/**
+ * Deja escrito, en los avisos DEL VIAJE, que la vuelta se come la última noche.
+ *
+ * Categoría propia («vuelo») para que el trabajo de avisos —que rehace los suyos
+ * enteros cada vez que se actualizan— no se lo lleve por delante.
+ */
+function avisarSiLaVueltaEsDeMadrugada(viaje, horaSalida, ciudad, di) {
+  const tope = enMinutosDelDia(parametroTexto('hora_minima_salida_vuelta', '08:00'));
+  const sale = enMinutosDelDia(horaSalida);
+  if (tope == null || sale == null || sale >= tope) return;
+
+  ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'vuelo'", viaje.id);
+  ejecutar(
+    `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+     VALUES (?, 'vuelo', 'info', ?, ?)`,
+    viaje.id,
+    `El vuelo de vuelta sale a las ${horaSalida}`,
+    `La última noche en ${ciudad} queda prácticamente eliminada: con esa hora hay que ` +
+      'salir del hotel de madrugada. Miré si había alguna alternativa a hora decente y ' +
+      'esto es lo mejor que había ese día.'
+  );
+
+  di(
+    `Aviso para el viaje: el vuelo de vuelta sale a las ${horaSalida}; ` +
+      'la última noche queda prácticamente eliminada.',
+    ORIGENES.scraping
+  );
+}
+
 /**
  * ELIGE POR DÓNDE SE ENTRA Y POR DÓNDE SE SALE.
  *
@@ -391,8 +565,23 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       viajeId, origen: iata, destino: iataCasa, fecha: viaje.fecha_fin,
       ocupacion, auto, comoSeLlama: `vuelta desde ${p.nombre}`,
     });
-    if (vuelta) vueltas.set(p.nombre, { ...vuelta, iata, ciudad: p.nombre });
-    else anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: sin ninguna vuelta utilizable.`);
+    if (vuelta) {
+      // «Directo» es una preferencia, no una regla: si sale de madrugada, se
+      // mira si compensa una escala que salga a hora decente.
+      const afinada = await afinarLaVuelta({
+        viajeId,
+        hallazgo: vuelta,
+        origen: iata,
+        destino: iataCasa,
+        fecha: viaje.fecha_fin,
+        ocupacion,
+        auto,
+        ciudad: p.nombre,
+      });
+      vueltas.set(p.nombre, { ...afinada, iata, ciudad: p.nombre });
+    } else {
+      anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: sin ninguna vuelta utilizable.`);
+    }
   }
 
   if (!idas.size || !vueltas.size) {
@@ -1132,6 +1321,14 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
       `Salida desde ${salida} el ${viaje.fecha_fin} a las ${tVta.horaSalida ?? '?'}.`;
     // Las horas son las del billete que devolvió Kayak, no una estimación.
     di(horariosReales, ORIGENES.scraping);
+
+    // Y SI AUN ASÍ LA VUELTA ES DE MADRUGADA, QUE SE VEA EN EL VIAJE.
+    //
+    // A veces no hay alternativa y el vuelo de las 4:10 es el que hay. Eso no es
+    // un error del montaje, pero sí algo que hay que saber antes de reservar la
+    // última noche: se deja como aviso del viaje, junto a los del clima y los
+    // papeles, que es donde se miran las cosas que condicionan el plan.
+    avisarSiLaVueltaEsDeMadrugada(viaje, tVta.horaSalida, salida, di);
   }
 
   // --- PASO 3 -------------------------------------------------------------

@@ -606,6 +606,9 @@ function calcularAvisos(dias, colocados, fijos, viajeId) {
   // 6) Y si has puesto algo mientras vas dentro del tren.
   avisos.push(...avisosDeTraslado(dias, colocados, fijos));
 
+  // 6b) Y si algo pisa el vuelo de llegada o el de salida, a la hora exacta.
+  avisos.push(...avisosContraFijos(dias, colocados, fijos));
+
   // 7) Y si un día se ha quedado sin comer.
   avisos.push(...avisosDeComida(dias, colocados, fijos));
 
@@ -763,7 +766,12 @@ function avisosDeTraslado(dias, colocados, fijos) {
     const dentro = colocados.filter((c) => {
       if (c.dia !== d.n) return false;
       const suya = enMinutos(c.hora);
-      if (suya != null) return suya >= desde && suya < hasta;
+      if (suya != null) {
+        // Empieza dentro del viaje, o acaba después de que el viaje arranque:
+        // las dos cosas son estar en dos sitios a la vez.
+        const acaba = suya + (Number(c.duracionMin) || 0);
+        return (suya >= desde && suya < hasta) || (suya < desde && acaba > desde);
+      }
       const borde = bordesDeFranja(c.franja);
       return borde ? borde.desde >= desde && borde.hasta <= hasta : false;
     });
@@ -774,11 +782,82 @@ function avisosDeTraslado(dias, colocados, fijos) {
       dia: d.n,
       tipo: 'durante-el-traslado',
       idsAfectados: dentro.map((c) => c.id),
+      libreDesde: salto.horaFin,
       texto:
         `El viaje ocupa de ${salto.hora} a ${salto.horaFin} — ` +
         `tienes ${dentro.length} ${dentro.length === 1 ? 'cosa puesta' : 'cosas puestas'} ` +
         'mientras vas de camino',
     });
+  }
+
+  return avisos;
+}
+
+/**
+ * LO QUE PISA UN BLOQUE FIJO, MEDIDO EN HORAS.
+ *
+ * Los avisos de «antes de llegar» y «después de irte» comparaban FRANJAS, y una
+ * franja es de cuatro horas: el museo de 9:00 a 11:00 y el vuelo de las 9:40
+ * están los dos en «mañana», así que no había nada que avisar. En Polonia eso
+ * dejó a alguien en un museo mientras su avión despegaba.
+ *
+ * Aquí se compara con la hora en la mano, que es como se viaja:
+ *
+ *   · Nada puede empezar después de que arranque el bloque de salida del día,
+ *     ni acabar más tarde de esa hora.
+ *   · Nada puede empezar antes de que termine el bloque de llegada.
+ *
+ * Solo mira lo que tiene hora: sin hora no hay nada que comparar, y de eso ya
+ * avisan las comprobaciones por franja de más arriba.
+ */
+function avisosContraFijos(dias, colocados, fijos) {
+  const avisos = [];
+
+  for (const d of dias) {
+    const delDia = colocados.filter((c) => c.dia === d.n && enMinutos(c.hora) != null);
+    if (!delDia.length) continue;
+
+    const salida = fijos.find((f) => f.dia === d.n && f.donde === 'vuelta' && f.hora);
+    const llegada = fijos.find((f) => f.dia === d.n && f.donde === 'ida' && f.hora);
+
+    if (salida) {
+      const arranca = enMinutos(salida.hora);
+      const pisan = delDia.filter((c) => {
+        const empieza = enMinutos(c.hora);
+        const acaba = empieza + (Number(c.duracionMin) || 0);
+        return empieza >= arranca || acaba > arranca;
+      });
+
+      if (pisan.length) {
+        avisos.push({
+          dia: d.n,
+          tipo: 'pisa-la-salida',
+          idsAfectados: pisan.map((c) => c.id),
+          libreHasta: salida.hora,
+          texto:
+            `El viaje de vuelta sale a las ${salida.hora} y ` +
+            `${pisan.length === 1 ? 'hay algo que sigue' : `hay ${pisan.length} cosas que siguen`} ` +
+            'a esa hora',
+        });
+      }
+    }
+
+    if (llegada) {
+      const termina = enMinutos(llegada.hora);
+      const antes = delDia.filter((c) => enMinutos(c.hora) < termina);
+      if (antes.length) {
+        avisos.push({
+          dia: d.n,
+          tipo: 'pisa-la-llegada',
+          idsAfectados: antes.map((c) => c.id),
+          libreDesde: llegada.hora,
+          texto:
+            `Se llega a las ${llegada.hora} y ` +
+            `${antes.length === 1 ? 'hay algo puesto' : `hay ${antes.length} cosas puestas`} ` +
+            'antes de esa hora',
+        });
+      }
+    }
   }
 
   return avisos;
@@ -1205,6 +1284,100 @@ export function duracionDeLoColocado(candidatoId) {
 
   const clave = PARAMETRO_DE_CATEGORIA[sitio.categoria] ?? 'visita_por_defecto_min';
   return { minutos: parametro(clave, 90), supuesta: true, nombre: sitio.nombre };
+}
+
+/**
+ * HASTA QUÉ HORA SE PUEDE EMPEZAR ALGO, SEGÚN LO QUE SEA.
+ *
+ * Cuando la ficha trae horario se saca de ahí la hora de cierre MÁS TEMPRANA de
+ * las que aparezcan: "Lu: 10:00-15:00, Ma-Do: 10:00-20:00" se lee como que a las
+ * 15:00 puede estar cerrado. Es el mismo criterio prudente que con las
+ * duraciones —mejor que sobre— y evita mandar a alguien a un museo que cierra.
+ *
+ * Sin horario legible se cae a la categoría: un mirador aguanta hasta tarde, un
+ * museo no. No es una lista de precisión, es un tope de sentido común para que
+ * la revisión no resuelva un solape mandando la catedral a las once de la noche.
+ */
+const CIERRE_POR_CATEGORIA = {
+  museos: 17 * 60,
+  monumentos: 18 * 60,
+  naturaleza: 19 * 60,
+  miradores: 21 * 60,
+  'barrios y paseos': 22 * 60,
+  'gastronomía': 23 * 60,
+  'ocio y parques': 20 * 60,
+  'compras y mercados': 20 * 60,
+};
+
+export function cierraALasMinutos(sitio) {
+  const horas = [...String(sitio?.horarios ?? '').matchAll(/(\d{1,2}):(\d{2})/g)]
+    .map((m) => Number(m[1]) * 60 + Number(m[2]))
+    // Una hora de cierre no es de madrugada: lo que salga antes de las 12 es la
+    // hora de apertura, y compararse con ella dejaría todo fuera.
+    .filter((m) => m >= 12 * 60);
+
+  if (horas.length) return Math.min(...horas);
+  // Sin horario NI categoría, las ocho de la tarde: mandar una visita a las
+  // nueve de la noche «porque cabía» es resolver un aviso creando un plan falso.
+  return CIERRE_POR_CATEGORIA[sitio?.categoria] ?? 20 * 60;
+}
+
+/**
+ * UNA HORA LIBRE DE VERDAD DENTRO DE UNA FRANJA.
+ *
+ * Devuelve la primera hora a la que cabe algo de `duracion` minutos en esa
+ * franja de ese día: sin pisar lo que ya hay, sin pisar los bloques fijos y sin
+ * pasarse de la hora a la que cierra el sitio. Null si no cabe.
+ *
+ * Existe porque la revisión movía las cosas de franja SIN hora, y un bloque sin
+ * hora no se solapa con nada: el aviso desaparecía y el problema se quedaba.
+ * Esconder no es resolver.
+ */
+export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = null, cierraA = null }) {
+  const bordes = bordesDeFranja(franja);
+  if (!bordes) return null;
+
+  const ocupado = [];
+  for (const c of lienzo.colocados.filter((x) => x.dia === dia)) {
+    const inicio = enMinutos(c.hora);
+    if (inicio == null) continue;
+    ocupado.push([inicio, inicio + (Number(c.duracionMin) || 0)]);
+  }
+  for (const f of lienzo.fijos.filter((x) => x.dia === dia)) {
+    const inicio = enMinutos(f.hora);
+    if (inicio == null) continue;
+    const fin = enMinutos(f.horaFin) ?? inicio;
+
+    // CADA BLOQUE FIJO OCUPA LO QUE DE VERDAD OCUPA:
+    //
+    //  · la llegada, todo el día HASTA su hora (antes no se está en la ciudad);
+    //  · la salida, desde su hora hasta el final del día;
+    //  · un traslado, de su salida a su llegada.
+    //
+    // Sin lo primero, el buscador de huecos daba por libre la mañana del día de
+    // llegada y la revisión mandaba museos a las 09:00 de un día en el que el
+    // avión aterriza a las 13:30.
+    if (f.donde === 'ida') ocupado.push([0, Math.max(inicio, fin)]);
+    else if (f.donde === 'vuelta') ocupado.push([inicio, 24 * 60]);
+    else ocupado.push([inicio, Math.max(fin, inicio)]);
+  }
+  ocupado.sort((a, b) => a[0] - b[0]);
+
+  // La mañana empieza a las 0:00 en la definición de la franja, pero nadie
+  // empieza una visita a medianoche: el día real arranca a las 9.
+  const INICIO_DEL_DIA = 9 * 60;
+  const minimo = Math.max(bordes.desde, INICIO_DEL_DIA, enMinutos(noAntesDe) ?? 0);
+  const tope = Math.min(bordes.hasta, cierraA ?? 24 * 60);
+
+  let candidata = minimo;
+  for (const [ini, fin] of ocupado) {
+    if (candidata + duracion <= ini) break;      // cabe antes de esta ocupación
+    if (fin > candidata) candidata = fin;        // se empuja detrás
+  }
+
+  if (candidata + duracion > tope) return null;
+  if (candidata >= bordes.hasta) return null;    // ya no es esta franja
+  return comoHora(candidata);
 }
 
 /** Cambia de día o de franja. La etapa se recalcula: el día manda. */

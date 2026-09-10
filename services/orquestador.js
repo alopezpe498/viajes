@@ -311,6 +311,9 @@ export const FASE_DE_PARAMETRO = {
   visita_por_defecto_min: 'lienzo',
   max_revisiones_lienzo: 'lienzo',
 
+  hora_minima_salida_vuelta: 'ciudades_y_noches',
+  max_horas_extra_por_escala: 'ciudades_y_noches',
+
   max_excursiones_largas_por_dia: 'excursiones',
   max_excursiones_por_viaje: 'excursiones',
 
@@ -348,6 +351,14 @@ const GENERAL = {
  * ejecuta sería mentirle a las dos.
  */
 export const PROMPTS_SUELTOS = [
+  {
+    clave: 'vuelo_de_vuelta',
+    etiqueta: 'Vuelos · la vuelta de madrugada',
+    icono: 'ti-plane-departure',
+    explica:
+      'Cuando el único directo del día sale de madrugada, esto decide si compensa una escala ' +
+      'que salga a hora decente. Se usa solo si aparece ese conflicto.',
+  },
   {
     clave: 'traslados_investigar',
     etiqueta: 'Traslados · qué medios hay',
@@ -412,6 +423,19 @@ export function parametro(clave, respaldo = null) {
   }
   const n = Number(p.valor);
   return Number.isFinite(n) ? n : respaldo;
+}
+
+/**
+ * Un parámetro que NO es un número: una hora como «08:00».
+ *
+ * `parametro()` devuelve el respaldo cuando el valor no se puede convertir, que
+ * es lo correcto para los minutos y los topes, pero deja fuera a los pocos que
+ * son texto con formato. Este los devuelve tal cual, ya recortados.
+ */
+export function parametroTexto(clave, respaldo = null) {
+  const p = una('SELECT valor FROM parametros_orquestador WHERE clave = ?', clave);
+  const t = String(p?.valor ?? '').trim();
+  return t || respaldo;
 }
 
 /** Guarda un parámetro. Devuelve la fila ya actualizada, o null si no existe. */

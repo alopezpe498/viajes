@@ -43,6 +43,8 @@ import {
   retocar,
   quitar,
   duracionDeLoColocado,
+  horaLibreEn,
+  cierraALasMinutos,
   FRANJAS,
 } from '../services/lienzo.js';
 import { datosDeSitio, interpretarHorario } from '../services/datos-sitios.js';
@@ -306,6 +308,117 @@ function sacarDelPlan(colocado, di, motivo) {
 }
 
 /**
+ * NINGÚN BLOQUE DEL ORQUESTADOR SE QUEDA SIN HORA.
+ *
+ * Un «--:--» no es un plan: es un hueco que además vuelve invisible el bloque
+ * para el validador —sin hora no se solapa con nada— y así los avisos
+ * desaparecían sin haberse resuelto.
+ *
+ * Si la IA no dio hora, se busca el primer hueco real de su franja. Y si ahí no
+ * cabe, se le pone igualmente la hora en que empieza su franja: es preferible un
+ * conflicto VISIBLE, que la revisión sabrá resolver, a un bloque escondido.
+ *
+ * Los «--:--» que pone el usuario a mano son asunto suyo y no se tocan: esto
+ * solo mira lo que acaba de colocar la fase.
+ */
+function ponerHorasQueFalten(viajeId, di) {
+  let lienzo = lienzoDeViaje(viajeId);
+  const sinHora = lienzo.colocados.filter((c) => !c.hora);
+  if (!sinHora.length) return 0;
+
+  let puestas = 0;
+  for (const c of sinHora) {
+    const duracion = Number(c.duracionMin) || 60;
+    const quien = deQuienEs(c);
+    const sitio =
+      quien?.de === 'sitio' && quien.deId
+        ? una('SELECT horarios, categoria FROM sitios_lugar WHERE id = ?', quien.deId)
+        : null;
+    const cierre = sitio ? cierraALasMinutos(sitio) : null;
+
+    const hueco =
+      horaLibreEn(lienzo, { dia: c.dia, franja: c.franja, duracion, cierraA: cierre }) ??
+      CLAVES_FRANJA.map((f) =>
+        horaLibreEn(lienzo, { dia: c.dia, franja: f, duracion, cierraA: cierre })
+      ).find(Boolean);
+
+    // El borde de su franja como último recurso: con hora, aunque chirríe.
+    const borde = FRANJAS.find((f) => f.clave === c.franja);
+    const hora =
+      hueco ?? `${String(Math.max(9, borde?.desde ?? 9)).padStart(2, '0')}:00`;
+
+    retocar(c.id, { hora });
+    if (!hueco) {
+      di(`   ${c.nombre} se queda a las ${hora}: no había hueco limpio y prefiero que se vea.`);
+    }
+    puestas += 1;
+    lienzo = lienzoDeViaje(viajeId);
+  }
+
+  return puestas;
+}
+
+/**
+ * RECOLOCAR ALGO CON HORA, O SACARLO. No hay tercera opción.
+ *
+ * La revisión movía los bloques de franja sin darles hora, y un bloque sin hora
+ * no se solapa con nada: el aviso desaparecía y el problema se quedaba dentro.
+ * Eso es esconderlo del validador, no resolverlo.
+ *
+ * Aquí se busca un hueco DE VERDAD —con su hora, sin pisar nada, antes de que
+ * cierre el sitio— probando las franjas que quedan de ese día y después los
+ * otros días de la misma parada. Si no lo hay, el bloque sale del plan con su
+ * motivo, que también es resolver.
+ *
+ * Devuelve true si lo ha recolocado.
+ */
+function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = false } = {}) {
+  const quien = deQuienEs(colocado);
+  const sitio =
+    quien?.de === 'sitio' && quien.deId
+      ? una('SELECT horarios, categoria FROM sitios_lugar WHERE id = ?', quien.deId)
+      : null;
+
+  const cierre = sitio ? cierraALasMinutos(sitio) : null;
+  const duracion = Number(colocado.duracionMin) || 60;
+
+  const franjasDesde = (clave) => CLAVES_FRANJA.slice(CLAVES_FRANJA.indexOf(clave) + 1);
+
+  // 1) Lo que queda del mismo día, detrás de donde estaba.
+  for (const franja of franjasDesde(colocado.franja)) {
+    const hora = horaLibreEn(lienzo, {
+      dia: colocado.dia,
+      franja,
+      duracion,
+      noAntesDe: desde,
+      cierraA: cierre,
+    });
+    if (hora) {
+      mover(colocado.id, { dia: colocado.dia, franja });
+      retocar(colocado.id, { hora });
+      return { movido: true, dia: colocado.dia, franja, hora };
+    }
+  }
+
+  if (mismoDia) return { movido: false };
+
+  // 2) Otro día de la misma parada, empezando por el primero.
+  const diaActual = lienzo.dias.find((d) => d.n === colocado.dia);
+  for (const d of lienzo.dias.filter((x) => x.etapaId === diaActual?.etapaId && x.n !== colocado.dia)) {
+    for (const franja of CLAVES_FRANJA) {
+      const hora = horaLibreEn(lienzo, { dia: d.n, franja, duracion, cierraA: cierre });
+      if (hora) {
+        mover(colocado.id, { dia: d.n, franja });
+        retocar(colocado.id, { hora });
+        return { movido: true, dia: d.n, franja, hora };
+      }
+    }
+  }
+
+  return { movido: false };
+}
+
+/**
  * UNA PASADA DE CORRECCIONES. Devuelve cuántas cosas ha tocado.
  *
  * Cada tipo de aviso tiene su arreglo. Lo que no sepa arreglar se queda como
@@ -368,22 +481,41 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida) {
       const libre = franjaDesde(fijo?.horaFin ?? fijo?.hora);
 
       // La hora a la que queda libre el día: la de llegada del viaje.
-      const quedaLibre = fijo?.horaFin ?? fijo?.hora ?? null;
+      const quedaLibre = aviso.libreDesde ?? fijo?.horaFin ?? fijo?.hora ?? null;
 
       for (const c of afectados) {
-        if (libre && CLAVES_FRANJA.indexOf(libre) > CLAVES_FRANJA.indexOf(c.franja)) {
-          mover(c.id, { dia: c.dia, franja: libre });
-          // Con la hora puesta, y no en blanco: la franja de mediodía empieza a
-          // las 13:00 y el tren llega a las 14:04, así que «mediodía» a secas
-          // seguiría solapando media hora con el viaje. Diciendo la hora, el
-          // plan es explícito y quien lo lee sabe desde cuándo cuenta.
-          retocar(c.id, { hora: quedaLibre });
-          di(
-            `   Día ${aviso.dia}: ${c.nombre} se va a ${libre}` +
-              `${quedaLibre ? `, desde las ${quedaLibre}` : ''}, después del viaje.`
-          );
+        const r = recolocarConHora(viajeId, lienzo, c, { desde: quedaLibre });
+        if (r.movido) {
+          di(`   Día ${aviso.dia}: ${c.nombre} pasa al día ${r.dia} a las ${r.hora}, después del viaje.`);
         } else {
-          fuera.push(sacarDelPlan(c, di, 'no cabía después del viaje de ese día'));
+          fuera.push(sacarDelPlan(c, di, 'no cabía después del viaje ni en otro día'));
+        }
+        tocados += 1;
+      }
+      continue;
+    }
+
+    if (aviso.tipo === 'pisa-la-salida') {
+      // Delante del vuelo o fuera: detrás no hay día.
+      for (const c of afectados) {
+        const r = recolocarConHora(viajeId, lienzo, c, { mismoDia: false });
+        if (r.movido) {
+          di(`   Día ${aviso.dia}: ${c.nombre} pasa al día ${r.dia} a las ${r.hora}, antes del vuelo.`);
+        } else {
+          fuera.push(sacarDelPlan(c, di, 'seguía a la hora del vuelo de vuelta y no cabía antes'));
+        }
+        tocados += 1;
+      }
+      continue;
+    }
+
+    if (aviso.tipo === 'pisa-la-llegada') {
+      for (const c of afectados) {
+        const r = recolocarConHora(viajeId, lienzo, c, { desde: aviso.libreDesde });
+        if (r.movido) {
+          di(`   Día ${aviso.dia}: ${c.nombre} pasa a las ${r.hora}, ya con el viaje hecho.`);
+        } else {
+          fuera.push(sacarDelPlan(c, di, 'caía antes de llegar y no había hueco después'));
         }
         tocados += 1;
       }
@@ -428,8 +560,19 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida) {
             !cierra.includes(diaSemana(d.fecha))
         );
         if (destino) {
-          mover(c.id, { dia: destino.n, franja: c.franja });
-          di(`   ${c.nombre} cerraba ese día: lo paso al día ${destino.n}.`);
+          const duracion = Number(c.duracionMin) || 60;
+          const hora =
+            horaLibreEn(lienzo, { dia: destino.n, franja: c.franja, duracion }) ??
+            CLAVES_FRANJA.map((f) => horaLibreEn(lienzo, { dia: destino.n, franja: f, duracion })).find(
+              Boolean
+            );
+          if (hora) {
+            mover(c.id, { dia: destino.n, franja: franjaDesde(hora) ?? c.franja });
+            retocar(c.id, { hora });
+            di(`   ${c.nombre} cerraba ese día: lo paso al día ${destino.n} a las ${hora}.`);
+          } else {
+            fuera.push(sacarDelPlan(c, di, 'cierra ese día y el otro día no tiene hueco'));
+          }
         } else {
           fuera.push(sacarDelPlan(c, di, 'cierra el único día que había para verlo'));
         }
@@ -464,16 +607,22 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida) {
         continue;
       }
 
-      const siguiente = CLAVES_FRANJA[CLAVES_FRANJA.indexOf(ultimo.franja) + 1];
-      if (siguiente) {
-        mover(ultimo.id, { dia: ultimo.dia, franja: siguiente });
-        retocar(ultimo.id, { hora: null });
+      const r = recolocarConHora(viajeId, lienzo, ultimo, { desde: aviso.libreDesde });
+      if (r.movido) {
         di(
-          `   Día ${aviso.dia}: ${ultimo.nombre} se va a ${siguiente}` +
-            `${aviso.tipo === 'solape' ? ', que se solapaba con lo anterior.' : ', que no daba tiempo.'}`
+          `   Día ${aviso.dia}: ${ultimo.nombre} pasa al día ${r.dia}, ${r.franja} a las ${r.hora}` +
+            `${aviso.tipo === 'solape' ? ' (se solapaba con lo anterior).' : ' (no daba tiempo).'}`
         );
       } else {
-        fuera.push(sacarDelPlan(ultimo, di, 'no daba tiempo a llegar y no quedaba día'));
+        fuera.push(
+          sacarDelPlan(
+            ultimo,
+            di,
+            aviso.tipo === 'solape'
+              ? 'se solapaba y no había hueco con hora en ningún día de la parada'
+              : 'no daba tiempo a llegar y no había hueco en ningún día de la parada'
+          )
+        );
       }
       tocados += 1;
     }
@@ -761,6 +910,10 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
         di(`   Fuera: ${pieza.nombre}${f.por_que ? ` (${f.por_que})` : ''}`);
       }
     }
+
+    // Y ninguna tarjeta se queda sin hora: un «--:--» es invisible para el
+    // validador, y lo invisible no se puede corregir después.
+    ponerHorasQueFalten(viajeId, di);
 
     // EL COTEJO: lo declarado contra lo que hay.
     for (const x of perdidos) {

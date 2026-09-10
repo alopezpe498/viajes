@@ -527,7 +527,20 @@ async function ejecutarPrepararEtapa(trabajo) {
   // Van al CATALOGO por nombre de ciudad, asi que si otra parada o otro viaje
   // ya las trajo, esto no abre el navegador.
   try {
-    await traerExcursionesSiHacenFalta(etapa.nombre_ciudad);
+    // El país y la ciudad base viajan con la petición: son lo que permite
+    // encontrar el destino cuando el nombre en español no es el slug (Tesalónica
+    // está en Civitatis como «salonica»; Meteora, como «kalambaka»).
+    const punto = etapa.punto_interes_id
+      ? una('SELECT ciudad_base, destino_id FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
+      : null;
+    const pais = punto?.destino_id
+      ? una('SELECT pais, nombre FROM destinos WHERE id = ?', punto.destino_id)
+      : null;
+
+    await traerExcursionesSiHacenFalta(etapa.nombre_ciudad, {
+      pais: pais?.pais ?? pais?.nombre ?? null,
+      ciudadBase: punto?.ciudad_base ?? null,
+    });
   } catch (err) {
     fallos.push(`excursiones: ${err.message}`);
     console.warn(
@@ -1127,7 +1140,12 @@ async function ejecutarAvisos(trabajo) {
   db.exec('BEGIN');
   try {
     // Los de este viaje se rehacen enteros: son una foto, no una selección.
-    db.prepare('DELETE FROM avisos WHERE viaje_id = ?').run(viaje.id);
+    //
+    // Menos los de categoría 'vuelo', que no los pone esta búsqueda sino el
+    // orquestador al elegir los billetes —«la vuelta sale a las 4:10 y se come
+    // la última noche»—. Borrarlos aquí sería tirar un aviso que nadie va a
+    // volver a generar.
+    db.prepare("DELETE FROM avisos WHERE viaje_id = ? AND categoria <> 'vuelo'").run(viaje.id);
     for (const a of avisos) {
       insertar.run(viaje.id, a.categoria, a.severidad, a.titulo, a.texto ?? null, a.url ?? null);
     }
@@ -1318,7 +1336,13 @@ async function investigarPunto(trabajo, punto) {
   let excursiones = null;
   if (punto.categoria === 'ciudad') {
     try {
-      excursiones = await traerExcursionesSiHacenFalta(punto.nombre);
+      const suDestino = punto.destino_id
+        ? una('SELECT pais, nombre FROM destinos WHERE id = ?', punto.destino_id)
+        : null;
+      excursiones = await traerExcursionesSiHacenFalta(punto.nombre, {
+        pais: suDestino?.pais ?? suDestino?.nombre ?? null,
+        ciudadBase: punto.ciudad_base ?? null,
+      });
     } catch (err) {
       // Ni una palabra más alta que otra: la ficha ya está hecha.
       console.warn(

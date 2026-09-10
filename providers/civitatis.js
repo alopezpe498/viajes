@@ -60,6 +60,8 @@ import {
   pausaHumana,
   TIMEOUT_LARGO,
 } from '../lib/browser.js';
+// La cache de slugs vive en la base: un descubrimiento por ciudad y para siempre.
+import { una, ejecutar } from '../db/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -122,6 +124,113 @@ export function destinoASlug(destino) {
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * EL SLUG NO SE DEDUCE: SE DESCUBRE.
+ *
+ * Fabricarlo desde el nombre en espanol funciona para Roma y falla para todo lo
+ * que se translitera: "Tesalonica" es "salonica" en Civitatis, y "Meteora" ni
+ * siquiera tiene pagina propia —sus excursiones estan en "kalambaka"—. En el
+ * viaje a Grecia esas dos paradas se quedaron sin una sola excursion, y el log
+ * decia "no existe en Civitatis", que era verdad a medias: no existia ESE slug.
+ *
+ * El indice de destinos de cada pais —https://www.civitatis.com/es/grecia/— trae
+ * los destinos con su nombre y su URL. Ahi se busca, comparando nombres
+ * normalizados y permitiendo que uno contenga al otro ("tesalonica" contiene
+ * "salonica"). Lo que se encuentre se guarda para no volver a mirarlo.
+ *
+ * @param {string} nombre    La ciudad tal y como la llamamos nosotros.
+ * @param {object} opciones
+ * @param {string} opciones.pais        Para saber en que indice buscar.
+ * @param {string[]} opciones.tambien   Otros nombres que valen (la ciudad base).
+ * @returns {Promise<string|null>} el slug real, o null si no esta en Civitatis.
+ */
+export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) {
+  const candidatos = [nombre, ...tambien].filter(Boolean);
+  const normal = (t) =>
+    String(t ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '')
+      .trim();
+
+  // 1) Lo que ya se sepa de esta ciudad, aunque lo que se sepa sea que no esta.
+  for (const c of candidatos) {
+    const fila = una('SELECT slug FROM civitatis_destinos WHERE nombre_norm = ?', normal(c));
+    if (fila) return fila.slug ?? null;
+  }
+
+  const guardar = (queNombre, slug) =>
+    ejecutar(
+      `INSERT INTO civitatis_destinos (nombre_norm, nombre, slug, pais)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (nombre_norm) DO UPDATE SET slug = excluded.slug, visto_en = datetime('now')`,
+      normal(queNombre),
+      String(queNombre),
+      slug,
+      pais
+    );
+
+  const { contexto, pagina } = await abrirNavegador();
+  try {
+    // 2) El slug directo, que acierta la mayoria de las veces.
+    for (const c of candidatos) {
+      const slug = destinoASlug(c);
+      await pagina.goto(`${BASE}/${slug}/`, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
+      await pausaHumana(400, 900);
+      if (!/^\/es\/?$/.test(new URL(pagina.url()).pathname)) {
+        console.log(`[civitatis] "${c}" existe tal cual: ${slug}`);
+        guardar(nombre, slug);
+        return slug;
+      }
+    }
+
+    // 3) El indice del pais, que es donde estan los nombres de verdad.
+    if (!pais) {
+      guardar(nombre, null);
+      return null;
+    }
+
+    const slugPais = destinoASlug(pais);
+    await pagina.goto(`${BASE}/${slugPais}/`, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
+    await pausaHumana(600, 1200);
+
+    const destinos = await pagina.evaluate(() =>
+      [...document.querySelectorAll('a[href^="/es/"]')]
+        .map((a) => ({
+          slug: (a.getAttribute('href') || '').replace(/^\/es\//, '').replace(/\/$/, ''),
+          texto: (a.textContent || '').replace(/\s+/g, ' ').trim(),
+        }))
+        .filter((x) => /^[a-z0-9-]+$/.test(x.slug))
+    );
+
+    // El texto del enlace trae el nombre y luego los contadores ("Salonica 14
+    // actividades..."): interesa lo de delante del primer numero.
+    const soloNombre = (t) => String(t).split(/\s\d/)[0].trim();
+
+    for (const c of candidatos) {
+      const buscado = normal(c);
+      const encaja = destinos.find((d) => {
+        const suyo = normal(soloNombre(d.texto));
+        if (!suyo || !buscado) return false;
+        return suyo === buscado || buscado.includes(suyo) || suyo.includes(buscado);
+      });
+
+      if (encaja) {
+        console.log(`[civitatis] "${c}" en el indice de ${pais}: ${encaja.slug}`);
+        guardar(nombre, encaja.slug);
+        return encaja.slug;
+      }
+    }
+
+    console.log(`[civitatis] "${nombre}" no esta en el indice de ${pais}.`);
+    guardar(nombre, null);
+    return null;
+  } finally {
+    await contexto.close().catch(() => {});
+  }
 }
 
 /** Guarda una captura para poder ver que habia en pantalla cuando algo fallo. */
@@ -279,7 +388,7 @@ function normalizarMoneda(simbolo) {
  * @param {string} opciones.destino          Ciudad ("Berlin", "berlin", "Nueva York")
  * @param {number} [opciones.maxResultados]  Cuantas actividades como maximo (30)
  */
-export async function buscarActividades({ destino, maxResultados = 30 }) {
+export async function buscarActividades({ destino, maxResultados = 30, slug: slugDado = null }) {
   if (!destino || !String(destino).trim()) {
     throw new Error('[civitatis] Falta el destino.');
   }
@@ -287,7 +396,9 @@ export async function buscarActividades({ destino, maxResultados = 30 }) {
     throw new Error(`[civitatis] maxResultados debe ser un entero positivo (recibido: ${maxResultados}).`);
   }
 
-  const slug = destinoASlug(destino);
+  // El slug ya descubierto manda sobre el fabricado: "Tesalonica" no existe en
+  // Civitatis, pero "salonica" si, y quien llama ya lo ha averiguado.
+  const slug = slugDado || destinoASlug(destino);
   const { contexto, pagina } = await abrirNavegador();
 
   try {

@@ -94,7 +94,20 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
     let cuantas = 0;
     try {
       const antes = actividadesDeCiudad(ciudad).length;
-      cuantas = await traerExcursionesSiHacenFalta(ciudad);
+      // Con el país y la ciudad base delante: sin ellos, una parada cuyo
+      // nombre no coincide con su slug se queda sin excursiones y parece que
+      // Civitatis no tiene nada, cuando lo que no teníamos era la dirección.
+      const punto = etapa.punto_interes_id
+        ? una('SELECT ciudad_base, destino_id FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
+        : null;
+      const suDestino = punto?.destino_id
+        ? una('SELECT pais, nombre FROM destinos WHERE id = ?', punto.destino_id)
+        : null;
+
+      cuantas = await traerExcursionesSiHacenFalta(ciudad, {
+        pais: suDestino?.pais ?? suDestino?.nombre ?? viaje.destino ?? null,
+        ciudadBase: punto?.ciudad_base ?? null,
+      });
       if (antes) di(`   ${ciudad}: ya existían ${antes} excursiones. No vuelvo a buscar.`);
     } catch (err) {
       // ESTO SÍ ES UN HUECO: la búsqueda ha fallado y no se sabe qué hay.
