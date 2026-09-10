@@ -60,6 +60,10 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
+import {
+  avisarDeParadasQueNoCaben,
+  avisarDeParadasSinSusImprescindibles,
+} from '../services/orquestador-paradas-cortas.js';
 
 const FASE = 'lienzo';
 
@@ -381,6 +385,52 @@ function ponerHorasQueFalten(viajeId, di) {
  *
  * Devuelve true si lo ha recolocado.
  */
+/**
+ * ¿ES ESTE UN DÍA EN EL QUE NO SE PLANIFICA NADA?
+ *
+ * Los días de llegada y de salida no son días normales con menos horas: son días
+ * cuyo plan es el viaje. El lienzo lo dice en su propio resumen —«salida: solo
+ * tiempo para maletas y aeropuerto»— y luego la revisión le metía el Museo de la
+ * Acrópolis a las 9:00 porque, contando minutos, cabía: acababa a las 11:00 y la
+ * presentación era a las 12:25. Cabía y contradecía el criterio, dejando el
+ * margen a cero.
+ *
+ * La cuenta es simple: cuánto tiempo queda de verdad entre que se sale del
+ * aeropuerto al llegar y que hay que estar en él para irse. Por debajo de
+ * `minutos_utiles_dia_de_viaje` ese día no admite nada de la revisión, y lo que
+ * no quepa en otro sitio sale del lienzo con su motivo, que ya se sabe hacer.
+ *
+ * Lo que la IA colocara ahí a propósito no se toca: esto solo frena a la
+ * revisión, que es quien movía cosas sin mirar el criterio del día.
+ */
+export function esDiaDeViaje(lienzo, dia) {
+  const fijos = (lienzo.fijos ?? []).filter((f) => f.dia === dia);
+  if (!fijos.length) return false;
+
+  const llegada = fijos.find((f) => f.donde === 'ida');
+  const salida = fijos.find((f) => f.donde === 'vuelta');
+  const salto = fijos.find((f) => f.donde === 'salto');
+  if (!llegada && !salida && !salto) return false;
+
+  const minimo = parametro('minutos_utiles_dia_de_viaje', 240);
+
+  // Desde cuándo se puede empezar: al salir del aeropuerto o del traslado.
+  const empieza = Math.max(
+    enMinutosDelDia(llegada?.horaFin ?? llegada?.hora) ?? 0,
+    enMinutosDelDia(salto?.horaFin) ?? 0,
+    9 * 60
+  );
+
+  // Hasta cuándo: cuando arranca el bloque de la salida, si lo hay.
+  const acaba = Math.min(
+    enMinutosDelDia(salida?.hora) ?? 24 * 60,
+    enMinutosDelDia(salto?.hora) ?? 24 * 60,
+    22 * 60
+  );
+
+  return acaba - empieza < minimo;
+}
+
 function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = false } = {}) {
   const quien = deQuienEs(colocado);
   const sitio =
@@ -394,7 +444,14 @@ function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = 
   const franjasDesde = (clave) => CLAVES_FRANJA.slice(CLAVES_FRANJA.indexOf(clave) + 1);
 
   // 1) Lo que queda del mismo día, detrás de donde estaba.
-  for (const franja of franjasDesde(colocado.franja)) {
+  //
+  // Salvo que ese día sea de viaje: ahí no se busca hueco ni para lo que ya
+  // estaba, porque el problema es justo que no debería estar.
+  const franjasDelDia = esDiaDeViaje(lienzo, colocado.dia)
+    ? []
+    : franjasDesde(colocado.franja);
+
+  for (const franja of franjasDelDia) {
     const hora = horaLibreEn(lienzo, {
       dia: colocado.dia,
       franja,
@@ -413,7 +470,11 @@ function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = 
 
   // 2) Otro día de la misma parada, empezando por el primero.
   const diaActual = lienzo.dias.find((d) => d.n === colocado.dia);
-  for (const d of lienzo.dias.filter((x) => x.etapaId === diaActual?.etapaId && x.n !== colocado.dia)) {
+  const candidatos = lienzo.dias.filter(
+    (x) => x.etapaId === diaActual?.etapaId && x.n !== colocado.dia && !esDiaDeViaje(lienzo, x.n)
+  );
+
+  for (const d of candidatos) {
     for (const franja of CLAVES_FRANJA) {
       const hora = horaLibreEn(lienzo, { dia: d.n, franja, duracion, cierraA: cierre });
       if (hora) {
@@ -1034,6 +1095,24 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   }
 
   sinColocarEnTotal += sacados.length;
+
+  // ¿SE DUERME EN ALGÚN SITIO SIN VER EL MOTIVO?
+  //
+  // Va aquí, al final, y no en la fase 1: allí la promesa de «cabe» era una
+  // suposición porque los traslados aún no existían. Ahora sí: los horarios
+  // reales están elegidos y las fichas tienen sus tiempos de visita.
+  di('Comprobando si las paradas cortas dan para lo que se va a ver…');
+  const noCaben = avisarDeParadasQueNoCaben(viaje, di);
+  // Y la otra cara: paradas de peso que SÍ están en la ruta pero cuyos
+  // imprescindibles no han acabado en ningún día.
+  avisarDeParadasSinSusImprescindibles(viaje, di);
+  if (noCaben) {
+    apuntarHueco(
+      viajeId,
+      FASE,
+      `${noCaben} parada(s) donde se duerme sin que quepa su motivo principal; míralo en los avisos.`
+    );
+  }
 
   // UNA EXCURSIÓN QUE NO CABE NO PUEDE DESAPARECER EN SILENCIO.
   //

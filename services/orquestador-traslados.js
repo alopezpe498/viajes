@@ -128,7 +128,7 @@ export function aPrecio(texto) {
  * hotel, no cuánto dura la cosa: con la hora de salida del tren y la antelación
  * puede dejar la mañana libre de verdad.
  */
-export function puertaAPuerta(modo, minutosTrayecto, params) {
+export function puertaAPuerta(modo, minutosTrayecto, params, posicionamiento = 0) {
   const esVuelo = modo === 'vuelo' || modo === 'avion';
   // Un coche de alquiler y un viaje compartido te llevan de puerta a puerta: no
   // hay estación a la que ir. Pero eso NO los hace más rápidos, y en la primera
@@ -166,8 +166,23 @@ export function puertaAPuerta(modo, minutosTrayecto, params) {
   // al revés.
   const salida = acceso;
 
-  const total = acceso + antelacion + (minutosTrayecto ?? 0) + salida;
-  return { acceso, antelacion, trayecto: minutosTrayecto ?? 0, salida, total };
+  // EL POSICIONAMIENTO: llegar hasta donde de verdad sale eso.
+  //
+  // Un vuelo SKG→ATH para salir de Meteora no empieza en Meteora: empieza tres
+  // horas antes, en la carretera a Tesalónica. Sin contarlo, la opción decía
+  // «3h 25min puerta a puerta» cuando eran seis y media, y con ese número se
+  // eligió. No se prohíbe retroceder —a veces compensa—: se deja de esconder.
+  const posicion = Math.max(0, Number(posicionamiento) || 0);
+
+  const total = posicion + acceso + antelacion + (minutosTrayecto ?? 0) + salida;
+  return {
+    posicion,
+    acceso,
+    antelacion,
+    trayecto: minutosTrayecto ?? 0,
+    salida,
+    total,
+  };
 }
 
 /** "2h 50min" a partir de minutos. */
@@ -222,6 +237,61 @@ async function opcionesPorTierra(ciudadA, ciudadB, viajeId) {
 }
 
 /**
+ * ¿ESTÁ ESE AEROPUERTO EN LA CIUDAD DE LA QUE SALIMOS?
+ *
+ * `resolverIata` devuelve el aeropuerto que sirve a una ciudad, y eso no es lo
+ * mismo que un aeropuerto EN esa ciudad: para Kalambaka (Meteora) devuelve SKG,
+ * que está en Tesalónica, a tres horas por carretera. El puerta a puerta lo daba
+ * por gratis, y con ese número —«3h 25min»— se eligió volar desde un sitio al
+ * que había que volver primero.
+ *
+ * Se pregunta por los DOS extremos del salto: volver al aeropuerto de origen
+ * cuesta tiempo, y aterrizar lejos del destino también.
+ *
+ * Devuelve 0 cuando el aeropuerto es de la propia ciudad, que es el caso normal
+ * y no cuesta nada. Si la consulta falla se devuelve 0 y se dice: es lo mismo
+ * que había antes, no una regresión nueva.
+ */
+async function posicionamientoHasta(ciudad, iata) {
+  if (!ciudad || !iata) return { minutos: 0, ciudad: null };
+
+  try {
+    const r = await consultarJSON(
+      [
+        `¿El aeropuerto ${iata} está en ${ciudad} o en otra ciudad?`,
+        '',
+        'REGLAS:',
+        '1. "mismaCiudad" es true si el aeropuerto sirve a esa ciudad y está en',
+        `   ella o en su área metropolitana —el trayecto normal al aeropuerto—.`,
+        '2. Es false si hay que desplazarse a OTRA ciudad para cogerlo. Ejemplo:',
+        '   para Kalambaka el aeropuerto es SKG, que está en Tesalónica.',
+        '3. "minutos" es el tiempo POR CARRETERA de esa ciudad al aeropuerto,',
+        '   solo cuando mismaCiudad es false. Si es true, 0.',
+        '4. Si no lo sabes con seguridad, pon mismaCiudad true y minutos 0: es',
+        '   preferible quedarse como estábamos a inventarse tres horas.',
+        '',
+        'Devuelve SOLO este JSON:',
+        '{"mismaCiudad": false, "ciudadDelAeropuerto": "Tesalónica", "minutos": 180}',
+      ].join('\n'),
+      { maxTokens: 300, paso: `situar el aeropuerto ${iata} respecto a ${ciudad}` }
+    );
+
+    if (r?.mismaCiudad !== false) return { minutos: 0, ciudad: null };
+
+    const minutos = Number(r?.minutos);
+    if (!Number.isFinite(minutos) || minutos <= 0) return { minutos: 0, ciudad: null };
+
+    return {
+      minutos: Math.min(minutos, 8 * 60), // un tope de cordura
+      ciudad: String(r?.ciudadDelAeropuerto ?? '').trim() || null,
+    };
+  } catch (err) {
+    console.warn(`[traslados] no pude situar ${iata} respecto a ${ciudad}: ${err.message}`);
+    return { minutos: 0, ciudad: null };
+  }
+}
+
+/**
  * Los vuelos internos, y solo cuando tienen alguna posibilidad.
  *
  * Se buscan si la fase 1 estimó que ese salto se hace en avión, o si por tierra
@@ -255,6 +325,19 @@ async function opcionesEnAvion({ viaje, ciudadA, ciudadB, mejorTierra, loDijoLaF
   const fecha = etapa?.fecha_fin;
   if (!fecha) return { opciones: [], porQue: 'ese salto no tiene fecha' };
 
+  // DÓNDE ESTÁN DE VERDAD ESOS AEROPUERTOS. Se pregunta una vez por salto, y
+  // solo cuando ya se ha decidido que merece la pena mirar vuelos.
+  const [salida, llegada] = await Promise.all([
+    posicionamientoHasta(ciudadA, iataA),
+    posicionamientoHasta(ciudadB, iataB),
+  ]);
+  const posicionamiento = salida.minutos + llegada.minutos;
+
+  const nota = [
+    salida.minutos ? `${comoTexto(salida.minutos)} hasta ${salida.ciudad ?? iataA}` : null,
+    llegada.minutos ? `${comoTexto(llegada.minutos)} desde ${llegada.ciudad ?? iataB}` : null,
+  ].filter(Boolean);
+
   const { adultos, edadesNinos } = ocupacionDe(viaje);
   const oNulo = (v) => (v && v !== 'indiferente' ? v : null);
 
@@ -281,11 +364,17 @@ async function opcionesEnAvion({ viaje, ciudadA, ciudadB, mejorTierra, loDijoLaF
             vuelo: v,
             indice: i,
             modo: 'vuelo',
-            nombre: `${v.aerolinea ?? 'Vuelo'} ${iataA}→${iataB}`,
+            // EL NOMBRE DICE LO QUE CUESTA LLEGAR. Sin esto, «Vuelo SKG→ATH»
+            // parece salir de donde estás, y no: salía de tres horas más allá.
+            nombre:
+              `${v.aerolinea ?? 'Vuelo'} ${iataA}→${iataB}` +
+              (nota.length ? ` (incluye ${nota.join(' y ')})` : ''),
             trayecto: aMinutos(t.duracion),
             precio: v.precio ?? null,
             horario: t.horaSalida ?? null,
-            nota: t.escalas ? `${t.escalas} escala(s)` : 'directo',
+            nota: [t.escalas ? `${t.escalas} escala(s)` : 'directo', ...nota].join(' · '),
+            // Viaja con la opción para que el bloque puerta a puerta lo sume.
+            posicionamiento,
           };
         })
         .filter((o) => o.trayecto),
@@ -497,20 +586,78 @@ export function reglaDelAhorroGrande(medidas, params) {
   const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
   if (conPrecio.length < 2) return null;
 
-  const rapida = medidas[0];
   const barata = [...conPrecio].sort((a, b) => a.precio - b.precio)[0];
-  if (barata.id === rapida.id || rapida.precio == null) return null;
 
-  const veces = rapida.precio / barata.precio;
-  const pierde = barata.bloque.total - rapida.bloque.total;
+  // LA REGLA NO SE ANCLA EN LA MÁS RÁPIDA, Y AQUÍ ESTUVO LA REGRESIÓN.
+  //
+  // Antes se comparaba la barata contra `medidas[0]` —la más rápida de todas— y
+  // se rendía si esa no tenía precio. En Nafplio → Atenas la más rápida era una
+  // opción sin tarifa encontrada, así que la regla moría antes de mirar el par
+  // que importaba: traslado privado de 180 € contra autobús de 15,70 €, once
+  // veces más barato y solo una hora más lento. No salió en el registro porque
+  // nunca llegó a evaluarse.
+  //
+  // Ahora se compara la barata contra TODAS las que son más rápidas y tienen
+  // precio, y gana el par con más ahorro. Que la más rápida del todo tenga o no
+  // tarifa deja de decidir si la regla existe.
+  const candidatas = conPrecio
+    .filter((o) => o.id !== barata.id && o.bloque.total < barata.bloque.total)
+    .map((cara) => ({
+      cara,
+      veces: cara.precio / barata.precio,
+      pierde: barata.bloque.total - cara.bloque.total,
+    }))
+    .filter((x) => x.veces >= params.factorAhorro && x.pierde <= params.maxExtraAhorro)
+    // El par más llamativo primero: el que más veces multiplica el precio.
+    .sort((a, b) => b.veces - a.veces);
 
-  if (veces < params.factorAhorro || pierde > params.maxExtraAhorro) return null;
+  if (!candidatas.length) return null;
+
+  const { cara, veces, pierde } = candidatas[0];
 
   return (
     `Se cumple la regla del ahorro grande: «${barata.nombre}» cuesta ${barata.precio} € ` +
-    `frente a ${rapida.precio} € (${veces.toFixed(1)} veces menos) y solo pierde ` +
+    `frente a ${cara.precio} € de «${cara.nombre}» (${veces.toFixed(1)} veces menos) y solo pierde ` +
     `${comoTexto(Math.max(0, pierde))}. Elígela salvo que haya un motivo de peso ` +
     '(niños, equipaje, horario).'
+  );
+}
+
+/**
+ * LO QUE SE MIRÓ Y NO LLEGÓ A REGLA.
+ *
+ * Cuando el ahorro grande NO se activa hay dos motivos posibles y no dan la
+ * misma información: o no hay dos precios que comparar, o los hay y la cuenta no
+ * sale. El registro tiene que distinguirlos, porque «no se activó» a secas es
+ * exactamente lo que hizo que esta regresión pasara desapercibida una ejecución
+ * entera.
+ */
+export function porQueNoHayAhorroGrande(medidas, params) {
+  const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
+  if (conPrecio.length < 2) {
+    return `Ahorro grande no evaluable: solo ${conPrecio.length} opción(es) con precio.`;
+  }
+
+  const barata = [...conPrecio].sort((a, b) => a.precio - b.precio)[0];
+  const masRapidas = conPrecio.filter(
+    (o) => o.id !== barata.id && o.bloque.total < barata.bloque.total
+  );
+  if (!masRapidas.length) {
+    return `Ahorro grande no aplica: «${barata.nombre}» ya es la más barata Y la más rápida.`;
+  }
+
+  const cerca = masRapidas
+    .map((c) => ({
+      nombre: c.nombre,
+      veces: c.precio / barata.precio,
+      pierde: barata.bloque.total - c.bloque.total,
+    }))
+    .sort((a, b) => b.veces - a.veces)[0];
+
+  return (
+    `Ahorro grande no llega: «${barata.nombre}» es ${cerca.veces.toFixed(1)} veces más barata que ` +
+    `«${cerca.nombre}» (hacen falta ${params.factorAhorro}) y pierde ${comoTexto(Math.max(0, cerca.pierde))} ` +
+    `(el tope son ${comoTexto(params.maxExtraAhorro)}).`
   );
 }
 
@@ -669,7 +816,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     const medidas = opciones.map((o, n) => ({
       ...o,
       id: `op${n + 1}`,
-      bloque: o.bloque ?? puertaAPuerta(o.modo, o.trayecto, params),
+      bloque: o.bloque ?? puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0),
     }));
     medidas.sort((a, b) => a.bloque.total - b.bloque.total);
 
@@ -682,6 +829,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
           .map(
             (o) =>
               `${o.nombre} [${comoTexto(o.bloque.total)} puerta a puerta` +
+              `${o.bloque.posicion ? `, ${comoTexto(o.bloque.posicion)} de ellos solo en llegar al aeropuerto` : ''}` +
               `${o.precio != null ? `, ${o.precio} €` : ', precio no encontrado'}]`
           )
           .join(' · '),
@@ -736,7 +884,14 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
 
     // --- Y el ahorro grande, que es el otro escalón de la misma idea ------
     const reglaDelAhorro = reglaDelAhorroGrande(medidas, params);
-    if (reglaDelAhorro) di(`   ${reglaDelAhorro}`, ORIGENES.busqueda);
+    if (reglaDelAhorro) {
+      di(`   ${reglaDelAhorro}`, ORIGENES.busqueda);
+    } else {
+      // SE DICE TAMBIÉN CUANDO NO SE ACTIVA. Un silencio no distingue «la regla
+      // se miró y no salía» de «la regla no llegó a correr», y esa diferencia es
+      // justo la que dejó pasar una regresión durante toda una ejecución.
+      di(`   ${porQueNoHayAhorroGrande(medidas, params)}`, ORIGENES.busqueda);
+    }
 
     // --- La elección ------------------------------------------------------
     const datos = {

@@ -380,6 +380,7 @@ export function migrarEsquema() {
   migracionReservaDeTraslados();
   migracionTiempoDeLaIA();
   migracionPararElOrquestador();
+  migracionCorrectivoMeteora();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4692,6 +4693,49 @@ function migracionPararElOrquestador() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el orquestador se puede parar y abortar desde la app.');
+  return true;
+}
+
+/**
+ * CORRECTIVO DE METEORA: lo que la IA afirma y nadie comprobaba.
+ *
+ * Tres numeros nuevos, y los tres existen porque una promesa de la fase 1 se dio
+ * por buena sin verificarla contra los traslados reales:
+ *
+ *   desplazamiento_local_min · Lo que se tarda de un imprescindible al siguiente
+ *       cuando no estan en el propio pueblo. En Meteora los monasterios estan a
+ *       15-20 minutos del centro de Kalambaka, y seis visitas no son seis
+ *       visitas: son seis visitas mas dos horas de coche que nadie contaba.
+ *
+ *   minutos_utiles_dia_de_viaje · Por debajo de esto, un dia de llegada o de
+ *       salida no admite nada de la revision. El dia 7 de Grecia declaraba
+ *       "solo tiempo para maletas y aeropuerto" y la revision le metio el Museo
+ *       de la Acropolis a las 9:00 porque, contando minutos, cabia. Cabia y
+ *       dejaba el margen a cero.
+ *
+ *   peso_minimo_joya · Ya existia como `peso_minimo_aviso_candidata` para las
+ *       candidatas que se caen de la ruta; ahora el mismo umbral vale para el
+ *       caso nuevo: una parada de ese peso cuyos imprescindibles quedan TODOS
+ *       sin colocar es una joya perdida aunque la parada exista.
+ */
+function migracionCorrectivoMeteora() {
+  const CLAVE = '2026-09-correctivo-meteora';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('desplazamiento_local_min', '20', 'Lo que se tarda de un sitio imprescindible al siguiente dentro de una parada', 'minutos');
+  nuevo('minutos_utiles_dia_de_viaje', '240', 'Por debajo de esto, un dia de llegada o salida no admite nada de la revision', 'minutos');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: correctivo de Meteora (tiempo util verificado y dias de viaje intocables).');
   return true;
 }
 
