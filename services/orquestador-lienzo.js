@@ -50,7 +50,15 @@ import {
 import { datosDeSitio, interpretarHorario } from '../services/datos-sitios.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { alternarApuntado } from '../services/etapa.js';
-import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
+import {
+  anotar,
+  apuntarHueco,
+  parametro,
+  parametroTexto,
+  configAuto,
+  ORIGENES,
+} from '../services/orquestador.js';
+import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 
 const FASE = 'lienzo';
 
@@ -424,7 +432,7 @@ function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = 
  * Cada tipo de aviso tiene su arreglo. Lo que no sepa arreglar se queda como
  * está y se dirá al final: mejor un aviso escrito que un arreglo inventado.
  */
-function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida) {
+function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '22:00') {
   let tocados = 0;
   const porId = new Map(lienzo.colocados.map((c) => [c.id, c]));
 
@@ -581,8 +589,25 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida) {
       continue;
     }
 
-    if (aviso.tipo === 'no-llegas' || aviso.tipo === 'solape') {
-      // El segundo de la pareja es el que no cabe: se va a la franja siguiente.
+    // LOS CUATRO SE ARREGLAN IGUAL: la tarjeta que sobra se busca otro hueco
+    // con hora, y si no lo hay se saca del plan diciendo por qué.
+    //
+    //   solape / no-llegas · choca con lo de al lado.
+    //   muy-tarde          · empieza cuando ya no se empieza nada.
+    //   recien-llegado     · está pegada a un aterrizaje.
+    //
+    // Los dos últimos son nuevos y llegan aquí a propósito: la primera versión
+    // los dejaba sin rama, y un aviso sin rama se convierte en «no he sabido
+    // resolverlo», que para algo tan mecánico como mover una hora es rendirse
+    // antes de intentarlo.
+    if (
+      aviso.tipo === 'no-llegas' ||
+      aviso.tipo === 'solape' ||
+      aviso.tipo === 'muy-tarde' ||
+      aviso.tipo === 'recien-llegado'
+    ) {
+      // El último de la lista es el que sobra: en un solape es el segundo de la
+      // pareja, y en los otros dos es el único que hay.
       const ultimo = afectados[afectados.length - 1];
       if (!ultimo) continue;
 
@@ -607,22 +632,27 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida) {
         continue;
       }
 
+      const PORQUE_SE_MUEVE = {
+        solape: ' (se solapaba con lo anterior).',
+        'no-llegas': ' (no daba tiempo).',
+        'muy-tarde': ' (empezaba demasiado tarde).',
+        'recien-llegado': ' (era nada más aterrizar).',
+      };
+      const PORQUE_SE_VA = {
+        solape: 'se solapaba y no había hueco con hora en ningún día de la parada',
+        'no-llegas': 'no daba tiempo a llegar y no había hueco en ningún día de la parada',
+        'muy-tarde': `empezaba a partir de las ${horaTope} y no había hueco antes en ningún día`,
+        'recien-llegado': 'caía justo al aterrizar y no había hueco después en ningún día',
+      };
+
       const r = recolocarConHora(viajeId, lienzo, ultimo, { desde: aviso.libreDesde });
       if (r.movido) {
         di(
           `   Día ${aviso.dia}: ${ultimo.nombre} pasa al día ${r.dia}, ${r.franja} a las ${r.hora}` +
-            `${aviso.tipo === 'solape' ? ' (se solapaba con lo anterior).' : ' (no daba tiempo).'}`
+            (PORQUE_SE_MUEVE[aviso.tipo] ?? '.')
         );
       } else {
-        fuera.push(
-          sacarDelPlan(
-            ultimo,
-            di,
-            aviso.tipo === 'solape'
-              ? 'se solapaba y no había hueco con hora en ningún día de la parada'
-              : 'no daba tiempo a llegar y no había hueco en ningún día de la parada'
-          )
-        );
+        fuera.push(sacarDelPlan(ultimo, di, PORQUE_SE_VA[aviso.tipo] ?? 'no había hueco'));
       }
       tocados += 1;
     }
@@ -661,6 +691,11 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // Por qué se quedó fuera cada cosa, según lo dijo la propia IA o el cotejo.
   // Se guarda por candidato para poder explicarlo al final por su nombre.
   const motivosDeFuera = new Map();
+
+  // La hora a partir de la cual no se empieza nada. Se lee una vez y se usa en
+  // los dos sitios que la necesitan: el prompt y el filtro de lo que entra.
+  const horaTope = parametroTexto('hora_maxima_inicio', '22:00');
+  const topeDelDia = enMinutosDelDia(horaTope) ?? 22 * 60;
   let sinColocarEnTotal = 0;
 
   for (const etapa of etapas) {
@@ -881,6 +916,23 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
           continue;
         }
 
+        // EL TOPE SE MIRA ANTES DE COLOCAR, no después.
+        //
+        // El validador también lo avisa, pero avisar de algo que no debió
+        // entrar es peor que no dejarlo entrar: la tarjeta ya está puesta, con
+        // su hora, y quien la lea se la cree. Aquí se rechaza y el motivo va al
+        // cotejo de lo perdido, que es donde se explica lo que no cupo.
+        const empieza = enMinutosDelDia(item.hora);
+        if (empieza != null && empieza >= topeDelDia) {
+          perdidos.push({
+            ref: refDeclarada,
+            dia: n,
+            motivo:
+              `lo puso a las ${item.hora} y a partir de las ${horaTope} ya no se empieza nada`,
+          });
+          continue;
+        }
+
         const fila = colocar(viajeId, { candidatoId, dia: n, franja, hora: item.hora ?? null });
         if (!fila) {
           perdidos.push({ ref: refDeclarada, dia: n, motivo: `el lienzo no aceptó «${pieza.nombre}»` });
@@ -965,7 +1017,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
     di(`Revisión ${pasada} de ${maxPasadas}: el lienzo deja ${final.avisos.length} aviso(s).`);
     for (const a of final.avisos) di(`   · Día ${a.dia}: ${a.texto}`);
 
-    const tocados = corregirAvisos(viajeId, final, di, sacados, duracionComida);
+    const tocados = corregirAvisos(viajeId, final, di, sacados, duracionComida, horaTope);
     if (!tocados) {
       di('   Ninguno de esos avisos tiene un arreglo que yo sepa hacer.');
       break;

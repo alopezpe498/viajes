@@ -799,11 +799,33 @@ body{
      ======================================================================== */
   function pintarAntesDeViajar() {
     var fichas = DATOS.antesDeViajar || [];
-    if (!fichas.length) return;
+    var fro = DATOS.fronteras;
+    if (!fichas.length && !fro) return;
 
     document.getElementById('antes-titulo-dosier').hidden = false;
 
     var h = '';
+
+    /* --- LOS CRUCES DE FRONTERA, PRIMERO Y UNA SOLA VEZ ------------------
+       No son de ninguno de los dos paises: son del viaje. Y en el dosier
+       pesan mas que en la pantalla, porque esto es lo que se lleva encima el
+       dia que hay que enseñar el pasaporte en un puesto fronterizo. */
+    if (fro && (fro.cruces || []).length) {
+      h += '<div class="pais pais--fronteras">';
+      h += '<h3 class="pais__nombre">Cruces de frontera</h3>';
+      h += '<p class="pais__fecha">' +
+           fro.secuencia.map(function (t) { return esc(t.pais); }).join(' → ') + '</p>';
+      fro.cruces.forEach(function (c) {
+        h += '<p class="pais__dato"><strong>' + esc(c.desde) + ' → ' + esc(c.hasta) + '</strong>' +
+             (c.entre ? esc(c.entre) + '. ' : '') +
+             (c.dobleEntrada
+               ? '<span class="pais__marca">Entras dos veces en este pais</span> '
+               : '') +
+             esc(c.quePide || '') + '</p>';
+      });
+      if (fro.nota) h += '<p class="pais__dato">' + esc(fro.nota) + '</p>';
+      h += '</div>';
+    }
     fichas.forEach(function (f) {
       h += '<div class="pais">';
       h += '<h3 class="pais__nombre">' + esc(f.pais) + '</h3>';

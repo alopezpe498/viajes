@@ -373,6 +373,10 @@ export function migrarEsquema() {
   migracionPresupuesto();
   migracionClima();
   migracionReservaAnticipada();
+  migracionMultipais();
+  migracionRegla1ConVariosPaises();
+  migracionPuertaSinUnSoloPais();
+  migracionCorrectivoAtenas();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4084,6 +4088,470 @@ function migracionReservaAnticipada() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: aviso de reserva anticipada en los sitios.');
+  return true;
+}
+
+/**
+ * VIAJES DE MAS DE UN PAIS.
+ *
+ * Hasta ahora `viajes.destino` era un pais y punto: la regla 1 de la fase 1 dice
+ * que proponer una ciudad de otro pais es el peor fallo posible, y esa regla es
+ * la que ha mantenido a raya las alucinaciones. La regla se queda; lo que cambia
+ * es contra que se compara. Deja de ser "no te salgas de Croacia" y pasa a ser
+ * "no te salgas de EXACTAMENTE estos paises", con la lista delante.
+ *
+ * `destino` NO se toca: sigue siendo lo que el usuario escribio ("Croacia y
+ * Montenegro") y es lo que se lee en el chip de Mi ruta. Lo que se anade es la
+ * lista interpretada, que es con lo que trabajan las fases.
+ *
+ *   paises          · JSON con los nombres en espanol: ["Croacia","Montenegro"].
+ *                     Vacio o null = viaje de un pais, y todo sigue igual que
+ *                     antes. Esa es la garantia de que esto no toca el flujo
+ *                     que ya funciona.
+ *   paises_estado   · 'interpretado' (la IA ha leido el texto y espera un si),
+ *                     'confirmado' (el usuario ha cerrado la lista y el
+ *                     orquestador puede arrancar).
+ *   paises_dialogo  · JSON con la ultima opinion de la IA sobre la seleccion.
+ *                     Se guarda para que recargar la pantalla no la pierda ni
+ *                     obligue a volver a preguntar.
+ *
+ *   fronteras       · JSON con los cruces que hace la ruta CONFIRMADA. Va aqui y
+ *                     no en `fichas_pais` porque no depende del pais sino del
+ *                     ORDEN real de las paradas: la misma pareja de paises da
+ *                     un cruce o dos segun por donde se vuelva.
+ */
+function migracionMultipais() {
+  const CLAVE = '2026-09-viajes-de-varios-paises';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('viajes', 'paises', 'TEXT');
+  anadirColumnaSiFalta('viajes', 'paises_estado', 'TEXT');
+  anadirColumnaSiFalta('viajes', 'paises_dialogo', 'TEXT');
+  anadirColumnaSiFalta('viajes', 'fronteras', 'TEXT');
+  anadirColumnaSiFalta('viajes', 'fronteras_en', 'TEXT');
+
+  const meter = db.prepare(
+    `INSERT INTO prompts_orquestador (fase, prompt_actual, prompt_fabrica)
+     VALUES (?, ?, ?)
+     ON CONFLICT (fase) DO UPDATE SET
+       prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN excluded.prompt_actual ELSE prompt_actual END,
+       prompt_fabrica = excluded.prompt_fabrica`
+  );
+  meter.run('paises_interpretar', promptDeInterpretarPaises(), promptDeInterpretarPaises());
+  meter.run('paises_criterio', promptDeCriterioDePaises(), promptDeCriterioDePaises());
+  meter.run('fronteras', promptDeFronteras(), promptDeFronteras());
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: viajes de mas de un pais.');
+  return true;
+}
+
+/**
+ * DE LO QUE ESCRIBE EL USUARIO A UNA LISTA DE PAISES.
+ *
+ * Es un paso de lectura, no de criterio: aqui no se opina sobre si el viaje
+ * tiene sentido, solo se traduce "Croacia y Montenegro" a dos nombres. Y si el
+ * texto es ambiguo se DICE, en vez de elegir por su cuenta: preguntar cuesta un
+ * clic y adivinar mal cuesta un viaje entero montado sobre el pais equivocado.
+ */
+function promptDeInterpretarPaises() {
+  return `Un usuario ha escrito esto como destino de su viaje:
+
+"{{TEXTO}}"
+
+Dime QUE PAISES son. Nada mas: no opines sobre el viaje, no propongas ciudades,
+no digas si es buena idea. Solo lee.
+
+REGLAS:
+1. Nombres de pais en ESPANOL y en su forma habitual: "Bosnia y Herzegovina",
+   "Republica Checa", "Corea del Sur".
+2. Si el texto nombra una REGION o una CIUDAD, devuelve el pais al que pertenece
+   y dilo en "nota": "Toscana" es Italia, "Bali" es Indonesia.
+3. Si algo esta mal escrito pero se entiende sin duda ("Cracovia", "Montenegr"),
+   corrigelo y sigue.
+4. "seguro" es false cuando el texto es AMBIGUO de verdad: un nombre que puede
+   ser dos paises, una region que se reparte entre varios ("Laponia" es Finlandia,
+   Suecia, Noruega y Rusia), o algo que no reconoces. Con false explica la duda
+   en "nota" y pon en "paises" tu mejor lectura para que se pueda confirmar o
+   corregir. NO inventes un pais para rellenar.
+5. El orden importa: devuelvelos en el orden en que los escribio el usuario.
+
+Devuelve SOLO este JSON:
+{"paises": ["Croacia", "Montenegro"], "seguro": true, "nota": null}`;
+}
+
+/**
+ * EL DIALOGO DE CRITERIO, y la distincion que lo hace util.
+ *
+ * Hay dos formas de que una combinacion no funcione y no se parecen en nada:
+ *
+ *   "no te lo recomiendo"  es una opinion. Se puede insistir, y el orquestador
+ *                          lo monta tal cual: es el viaje de quien lo hace.
+ *   "no cabe"              es aritmetica. Si solo los traslados minimos entre
+ *                          esos paises se comen los dias que hay, no hay viaje
+ *                          que montar, y dejar insistir seria mentir.
+ *
+ * Por eso se le pide que marque cual de las dos es, y con que numeros lo dice.
+ * Sin esa distincion, el boton de "asi lo quiero" o no existe —y entonces la
+ * app decide por ti— o existe siempre —y entonces te deja montar un imposible—.
+ *
+ * NADA DE BUSQUEDAS EN ESTE PASO. Es criterio de viajero sobre un mapa: que hay
+ * entre esos paises, cuanto se tarda, cuantas fronteras. Los precios y los
+ * horarios llegan despues, en las fases que si buscan.
+ */
+function promptDeCriterioDePaises() {
+  return `Eres un planificador de viajes con experiencia real en la zona. Te doy
+una combinacion de paises y unos dias, y quiero tu criterio ANTES de montar nada.
+
+EL VIAJE
+- Paises que quiere visitar: {{SELECCION}}
+- Todos los que menciono: {{TODOS}}
+- Fechas: del {{FECHA_INICIO}} al {{FECHA_FIN}} ({{DIAS}} dias)
+- Salen desde: {{ORIGEN}}
+- Viajeros: {{VIAJEROS}}
+- Ritmo: {{RITMO}}
+
+Evalua ESA SELECCION. Para cada pais de la lista completa, di si entra o no y
+por que, en UNA frase.
+
+REGLAS:
+1. Piensa en TIEMPO UTIL, no en kilometros. Lo que mata un viaje corto no es la
+   distancia: son los cruces de frontera, los cambios de alojamiento y las
+   medias jornadas que se van en traslados. Un pais que obliga a un tercer
+   cruce para dos noches casi nunca compensa.
+2. "veredicto" del viaje entero es UNO de estos dos, y la diferencia importa:
+     "cabe"     la combinacion es viable, aunque no sea la que tu elegirias.
+                Se puede montar. Si no te gusta, dilo en "opinion" y en las
+                frases de cada pais, pero el veredicto sigue siendo "cabe".
+     "no_cabe"  MATERIALMENTE imposible: solo los traslados minimos entre esos
+                paises se comen los dias disponibles y no queda viaje. Usa esto
+                SOLO con numeros detras, y ponlos en "por_que_no_cabe":
+                cuantas horas de traslado minimo y cuantos dias hay.
+   No uses "no_cabe" porque te parezca apretado o poco recomendable. Apretado es
+   "cabe" con una opinion clara. "no_cabe" es que no existe manera.
+3. "recomendado" es tu criterio pais a pais: true si lo dejarias dentro con
+   estos dias, false si lo quitarias. Puedes recomendar quitar un pais y que el
+   veredicto siga siendo "cabe": son cosas distintas.
+4. En "opinion", DOS o TRES frases sobre la seleccion actual: que ruta tendria
+   sentido, que se gana quitando algo, que se pierde. Habla claro y sin adornos.
+5. NADA de precios, horarios ni datos que no puedas saber de memoria. Esto es
+   criterio geografico y de tiempos, y se enseña como tal.
+6. En espanol de Espana.
+
+Devuelve SOLO este JSON:
+{
+  "veredicto": "cabe",
+  "por_que_no_cabe": null,
+  "opinion": "Croacia y Montenegro en 7 dias se hace bien por la costa...",
+  "paises": [
+    {"nombre": "Croacia", "recomendado": true, "por_que": "Es el eje del viaje y por donde se entra."},
+    {"nombre": "Montenegro", "recomendado": false, "por_que": "Da para un viaje propio y te obliga a un tercer cruce que se come medio dia."}
+  ]
+}`;
+}
+
+/**
+ * LOS CRUCES DE FRONTERA DE UNA RUTA YA DECIDIDA.
+ *
+ * Esto no se puede preguntar antes: depende del ORDEN de las paradas. La misma
+ * pareja de paises da un cruce o dos segun por donde se vuelva, y el caso que
+ * de verdad pilla a la gente es la DOBLE ENTRADA —volar de vuelta desde
+ * Singapur despues de haber pasado por Malasia exige poder entrar dos veces en
+ * Singapur—, que no se ve mirando la lista de paises: se ve mirando la ruta.
+ */
+function promptDeFronteras() {
+  return `Esta es la ruta REAL y ya decidida de un viaje, en orden:
+
+{{RUTA}}
+
+El viajero tiene pasaporte de {{PASAPORTE}}. Vuela desde {{ORIGEN}} y vuelve a
+{{ORIGEN}}.
+
+Dime que pasos de frontera hace esta ruta y que hace falta en cada uno.
+
+REGLAS:
+1. UN punto por cada cruce que se hace de verdad, en el orden del viaje. Si dos
+   paradas seguidas son del mismo pais, ahi no hay frontera y no se menciona.
+2. "tipo" es "terrestre", "aereo" o "maritimo", segun como se cruce en ESTA ruta.
+3. "que_pide": que documentacion y que trato tiene ese paso concreto para ese
+   pasaporte, en una o dos frases. Si es un paso Schengen interno sin control,
+   dilo: tambien es informacion.
+4. LA DOBLE ENTRADA es lo mas importante de esta lista. Si la ruta ENTRA MAS DE
+   UNA VEZ en el mismo pais —porque se vuelve a pasar por el, o porque el vuelo
+   de vuelta sale de alli—, tiene que salir un punto con "dobleEntrada": true
+   explicando que hacen falta dos entradas y que eso puede exigir un visado de
+   entradas multiples. Es el fallo que se descubre en el mostrador.
+5. No inventes tasas ni importes. Si no estas seguro de un requisito, dilo en
+   vez de afirmarlo: esto se lee para preparar papeles con semanas.
+6. En espanol de Espana y en frases cortas.
+
+Devuelve SOLO este JSON:
+{
+  "cruces": [
+    {"desde": "Croacia", "hasta": "Montenegro", "entre": "Dubrovnik → Kotor",
+     "tipo": "terrestre", "que_pide": "...", "dobleEntrada": false}
+  ],
+  "nota": null
+}`;
+}
+
+/**
+ * LA REGLA 1 DE LA FASE 1, AHORA CON UNA LISTA DELANTE.
+ *
+ * La regla decia "no te salgas de {{DESTINO}}" y funcionaba: es la que ha
+ * mantenido a raya las alucinaciones —para un viaje a Paris llego a proponer
+ * Amberes y Brujas—. No se relaja: se le cambia el objeto. Deja de ser "no te
+ * salgas de Croacia" y pasa a ser "no te salgas de EXACTAMENTE estos paises",
+ * con la lista escrita. Con un solo pais la lista tiene un elemento y la regla
+ * dice literalmente lo mismo que decia antes.
+ *
+ * Se sustituye SOLO ese parrafo. El resto del prompt —los pesos, los tiempos,
+ * el minimo de noches— no tiene nada que ver con esto y no se toca. Y si el
+ * usuario habia editado el prompt a mano, no se le pisa: se actualiza el de
+ * fabrica y el suyo se queda, que es la regla de siempre de esta tabla.
+ */
+function migracionRegla1ConVariosPaises() {
+  const CLAVE = '2026-09-regla1-varios-paises';
+  if (yaAplicada(CLAVE)) return false;
+
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  if (!fila) { marcarAplicada(CLAVE); return false; }
+
+  const VIEJO = `1. NO TE SALGAS DE {{DESTINO}}. Si el destino es un país, todas las ciudades son
+   de ese país. Si el destino es UNA CIUDAD, el viaje es esa ciudad: la única
+   candidata es ella, y solo añades otra si de verdad merece dormir allí —no un
+   sitio que se ve en media jornada y se vuelve a cenar—. Proponer ciudades de
+   otro país es el peor fallo que puedes cometer aquí.`;
+
+  const NUEVO = `1. NO TE SALGAS DE ESTOS PAÍSES: {{LISTA_PAISES}}. Todas las ciudades que
+   propongas tienen que estar en uno de ellos. Proponer una ciudad de fuera de
+   esa lista es el peor fallo que puedes cometer aquí.
+   Si el destino es UNA CIUDAD, el viaje es esa ciudad: la única candidata es
+   ella, y solo añades otra si de verdad merece dormir allí —no un sitio que se
+   ve en media jornada y se vuelve a cenar—.
+   Cuando la lista tiene VARIOS países, las candidatas de todos compiten juntas
+   por peso y por geografía: no repartas cupos por país ni metas una ciudad
+   floja solo para que ese país aparezca. Si con los días que hay un país solo
+   da para una parada —o para ninguna—, eso es un resultado correcto.`;
+
+  const cambiar = (t) => (t && t.includes(VIEJO) ? t.replace(VIEJO, NUEVO) : t);
+
+  const nuevaFabrica = cambiar(fila.prompt_fabrica);
+  // Al prompt en uso solo se le toca si era el de fabrica; si lo editaste tú,
+  // se queda como lo dejaste.
+  const nuevoActual =
+    fila.prompt_actual === fila.prompt_fabrica ? nuevaFabrica : fila.prompt_actual;
+
+  db.prepare(
+    "UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = 'ciudades_y_noches'"
+  ).run(nuevoActual, nuevaFabrica);
+
+  const hecho = nuevaFabrica !== fila.prompt_fabrica;
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: la regla 1 de la fase 1 ${hecho ? 'ya habla de una lista de paises' : 'NO se pudo cambiar (texto distinto del esperado)'}.`
+  );
+  return true;
+}
+
+/**
+ * DOS FRASES DEL PROMPT DE LA PUERTA QUE HABLABAN DE "EL PAIS".
+ *
+ * No eran reglas de "no te salgas": son el criterio de por donde entrar y salir,
+ * que es open-jaw y no sabe de fronteras. Pero decian "lo mejor del pais" y
+ * "recorrer el pais de una sola pasada", y con dos paises eso empuja al modelo a
+ * optimizar uno solo. Se cambia "pais" por "viaje", que es lo que de verdad se
+ * esta recorriendo, y la regla dice lo mismo en los dos casos.
+ */
+function migracionPuertaSinUnSoloPais() {
+  const CLAVE = '2026-09-puerta-sin-un-solo-pais';
+  if (yaAplicada(CLAVE)) return false;
+
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  if (!fila) { marcarAplicada(CLAVE); return false; }
+
+  const CAMBIOS = [
+    ['Entrando por Gdansk se recorría el\npaís de una sola pasada.',
+     'Entrando por Gdansk se recorría la\nruta de una sola pasada.'],
+    ['dejar fuera lo mejor del país no es buena aunque el avión sea corto.',
+     'dejar fuera lo mejor del viaje no es buena aunque el avión sea corto.'],
+  ];
+
+  const cambiar = (t) => {
+    let salida = t ?? '';
+    for (const [viejo, nuevo] of CAMBIOS) {
+      if (salida.includes(viejo)) salida = salida.replace(viejo, nuevo);
+    }
+    return salida;
+  };
+
+  const nuevaFabrica = cambiar(fila.prompt_fabrica);
+  const nuevoActual = fila.prompt_actual === fila.prompt_fabrica ? nuevaFabrica : fila.prompt_actual;
+
+  db.prepare(
+    "UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = 'ciudades_y_noches'"
+  ).run(nuevoActual, nuevaFabrica);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: el prompt de la puerta ${nuevaFabrica !== fila.prompt_fabrica ? 'ya no asume un solo pais' : 'no necesitaba cambios'}.`
+  );
+  return true;
+}
+
+/**
+ * CORRECTIVO DE ATENAS: lo que costo tres excursiones fuera del lienzo.
+ *
+ * DOS PARAMETROS para que una excursion colocada ocupe de verdad. Hasta ahora
+ * `duracionDeLoColocado` solo sabia de sitios, asi que una excursion entraba con
+ * duracion NULA y era invisible para el validador: el crucero de diez horas del
+ * dia 6 ocupaba lo mismo que nada y la revision le mando encima el Museo de la
+ * Acropolis a las 9:00. Cuando el catalogo dice "dia completo" sin numero, hace
+ * falta un valor; cuando no dice nada, otro.
+ *
+ * Y DOS REGLAS DE PROMPT, que es donde estaban los otros dos fallos:
+ *
+ *   Las excursiones se elegian sin saber cuantos dias libres tenia la parada.
+ *   Atenas tenia UNO —dia de llegada, dia de la Acropolis, dia de salida— y se
+ *   preseleccionaron tres de dia completo. Elegir menos y que entre todo vale
+ *   mas que elegir mucho y que sobre: el aviso de "apuntada pero sin sitio"
+ *   tiene que ser la excepcion, no el resultado normal de la fase.
+ *
+ *   Y la guillotina de las dos noches se aplicaba a unos si y a otros no: Delfos
+ *   fuera "por no llegar a 2 noches" y Nauplia dentro con 1. Puede haber
+ *   excepcion —un transito geografico obligado—, pero entonces tiene que caber
+ *   lo que se va a ver alli. Parar a dormir en Nauplia y que Micenas no quepa es
+ *   quedarse con lo peor de las dos opciones.
+ */
+function migracionCorrectivoAtenas() {
+  const CLAVE = '2026-09-correctivo-atenas';
+  if (yaAplicada(CLAVE)) return false;
+
+  // --- 1) Lo que ocupa una excursion cuando no lo dice con numeros ---------
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('excursion_dia_completo_min', '480', 'Lo que ocupa una excursion que dice "dia completo" sin dar horas', 'minutos');
+  nuevo('excursion_por_defecto_min', '180', 'Lo que ocupa una excursion que no dice cuanto dura', 'minutos');
+
+  // --- 2) La fase de excursiones sabe cuantos dias hay ---------------------
+  const exc = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'excursiones'")
+    .get();
+  if (exc) {
+    const REGLA_DIAS = `
+DIAS DISPONIBLES, Y ESTO MANDA SOBRE TODO LO DEMAS:
+En {{CIUDAD}} hay {{DIAS_UTILES}} dia(s) con hueco para una excursion LARGA (de
+media jornada o mas). Son los dias de la parada menos el de llegada, el de
+salida y los que ya se comen los traslados.
+
+NO preselecciones mas excursiones de dia completo que dias disponibles. Si hay
+un dia, eliges UNA; si hay cero, no eliges ninguna larga por buena que sea, y lo
+dices en el motivo. Las cortas (dos o tres horas) no gastan ese cupo: caben
+dentro de un dia que ya tiene otras cosas.
+
+Elegir menos y que entre todo vale mas que elegir mucho y que sobre. Una
+excursion preseleccionada que despues no cabe en ningun dia no es media victoria:
+es una tarjeta marcada que no esta en el viaje.
+`;
+
+    const ponRegla = (t) => {
+      if (!t || t.includes('{{DIAS_UTILES}}')) return t;
+      // Va delante de las reglas, que es donde se lee antes de decidir.
+      const marca = '\nREGLAS';
+      const i = t.indexOf(marca);
+      return i > 0 ? t.slice(0, i) + '\n' + REGLA_DIAS + t.slice(i) : t + '\n' + REGLA_DIAS;
+    };
+
+    const nuevaFabrica = ponRegla(exc.prompt_fabrica);
+    const nuevoActual = exc.prompt_actual === exc.prompt_fabrica ? nuevaFabrica : exc.prompt_actual;
+    db.prepare(
+      "UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = 'excursiones'"
+    ).run(nuevoActual, nuevaFabrica);
+  }
+
+  // --- 3) La guillotina de las dos noches, con su excepcion razonada -------
+  const ciu = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  if (ciu) {
+    const REGLA_NOCHES = `
+LA REGLA DE LAS DOS NOCHES SE APLICA IGUAL PARA TODOS, O SE RAZONA:
+Una parada por debajo de {{MINIMO_NOCHES}} noches solo vale si se cumplen LAS
+DOS cosas a la vez:
+  (a) es transito geografico obligado de la ruta —se pasa por ahi si o si—, y
+  (b) lo que se va a ver alli cabe en el tiempo util que le queda.
+
+Si (b) no se cumple, elige una de las tres y dilo en "por_que":
+  · darle la segunda noche quitandosela a otra parada,
+  · convertirla en parada DE PASO sin noche (comer y una visita corta de camino),
+  · o dejarla fuera.
+
+Lo que no vale es parar a dormir en un sitio cuyo motivo principal no cabe. Paso
+de verdad: Delfos se quedo fuera "por no llegar a 2 noches" y Nauplia entro con
+una, y Micenas —que era la razon de parar en Nauplia— no cupo. Se pago la noche
+y no se vio lo que se iba a ver.
+`;
+
+    const ponRegla = (t) => {
+      if (!t || t.includes('LA REGLA DE LAS DOS NOCHES SE APLICA IGUAL')) return t;
+      return t + '\n' + REGLA_NOCHES;
+    };
+
+    const nuevaFabrica = ponRegla(ciu.prompt_fabrica);
+    const nuevoActual = ciu.prompt_actual === ciu.prompt_fabrica ? nuevaFabrica : ciu.prompt_actual;
+    db.prepare(
+      "UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = 'ciudades_y_noches'"
+    ).run(nuevoActual, nuevaFabrica);
+  }
+
+  // --- 4) Las excursiones YA COLOCADAS, que entraron con duracion nula -----
+  //
+  // No es cosmetico: mientras `duracion_min` sea NULL, esa tarjeta ocupa cero
+  // para el validador y se le puede colocar otra encima. Se rellena con la
+  // duracion del propio candidato, que es la del catalogo de Civitatis. Solo
+  // toca lo que esta a NULL: una duracion escrita a mano no se pisa.
+  const rellenadas = db
+    .prepare(
+      `UPDATE itinerario
+          SET duracion_min = (
+            SELECT CASE
+              WHEN c.duracion LIKE '%dia completo%' OR c.duracion LIKE '%día completo%' THEN 480
+              ELSE NULL END
+            FROM candidatos c WHERE c.id = itinerario.candidato_id)
+        WHERE duracion_min IS NULL
+          AND candidato_id IN (SELECT id FROM candidatos WHERE tipo = 'actividad')
+          AND EXISTS (SELECT 1 FROM candidatos c WHERE c.id = itinerario.candidato_id
+                        AND (c.duracion LIKE '%dia completo%' OR c.duracion LIKE '%día completo%'))`
+    )
+    .run();
+
+  // Las que dan horas concretas ("8h 30m - 9h") no se pueden convertir en SQL
+  // sin reimplementar el lector de duraciones, asi que se marcan para que las
+  // rellene el codigo la primera vez que se lea el lienzo.
+  const pendientes = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM itinerario
+        WHERE duracion_min IS NULL
+          AND candidato_id IN (SELECT id FROM candidatos WHERE tipo IN ('actividad', 'comer'))`
+    )
+    .get().n;
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: correctivo de Atenas (ocupacion de excursiones, dias utiles y guillotina).' +
+      (pendientes ? ` ${pendientes} colocacion(es) sin duracion se rellenaran al leer el lienzo.` : '')
+  );
   return true;
 }
 

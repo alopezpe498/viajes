@@ -45,6 +45,7 @@ import {
 } from '../services/orquestador.js';
 import { fichasDeTramo } from '../services/movilidad.js';
 import { distanciaEntre, distanciaGuardada } from '../services/distancias-ciudades.js';
+import { paisesDelViaje, esMultipais } from '../services/paises.js';
 
 /** Cuántas puertas se prueban con vuelos de verdad. Cada una son dos búsquedas. */
 const MAX_PUERTAS = 3;
@@ -1214,8 +1215,20 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   // El tipo sale del catálogo cuando el destino ya está en él. Cuando no está,
   // no se inventa: se le dice que lo deduzca, que para eso sabe geografía.
   const enCatalogo = viaje.destino ? destinoPorNombre(viaje.destino) : null;
-  const formaDelDestino =
-    enCatalogo?.tipo === 'ciudad'
+
+  // LA LISTA DE PAÍSES LEGÍTIMOS, que es contra lo que compara la regla 1.
+  //
+  // Con varios países la trae confirmada el diálogo de la pantalla de países;
+  // con uno solo es el destino de siempre, así que la regla dice literalmente
+  // lo mismo que decía antes y el flujo de un país no se entera de nada.
+  const paises = paisesDelViaje(viaje);
+  const listaPaises = paises.length ? paises.join(', ') : viaje.destino || '(sin destino)';
+  const variosPaises = esMultipais(viaje);
+
+  const formaDelDestino = variosPaises
+    ? `«${viaje.destino}» son VARIOS PAÍSES: ${listaPaises}. El viaje los recorre en ` +
+      'una sola ruta, cruzando de uno a otro; no es un viaje por país.'
+    : enCatalogo?.tipo === 'ciudad'
       ? `«${viaje.destino}» es UNA CIUDAD: el viaje entero transcurre allí.`
       : enCatalogo?.tipo
         ? `«${viaje.destino}» es un país o una región: hay varias ciudades entre las que elegir.`
@@ -1223,6 +1236,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
 
   const datos = {
     DESTINO: viaje.destino || '(sin destino)',
+    LISTA_PAISES: listaPaises,
     FORMA_DEL_DESTINO: formaDelDestino,
     DIAS: dias,
     NOCHES: nochesTotales,

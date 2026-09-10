@@ -1,0 +1,86 @@
+<%
+/**
+ * EL DIÁLOGO DE PAÍSES: qué entra en el viaje y qué se queda fuera.
+ *
+ * Es la única pantalla del flujo automático donde la aplicación no decide sola,
+ * y por eso existe: con más de un país hay una pregunta de verdad —¿entra
+ * Montenegro?— que depende de cuántos días hay y de cuánto se está dispuesto a
+ * pasar en la carretera. Eso no lo puede resolver un peso ni un parámetro.
+ *
+ * LA IA PROPONE Y EXPLICA; EL USUARIO MANDA. Cada país trae su frase, marcado o
+ * desmarcado. Al cambiar la selección, la IA vuelve a opinar sobre lo nuevo, las
+ * veces que haga falta. Y el botón de insistir está ahí para cuando el usuario
+ * no esté de acuerdo: el viaje es suyo.
+ *
+ * CON UNA EXCEPCIÓN, Y SOLO UNA. Si la combinación no cabe MATERIALMENTE —los
+ * traslados mínimos ya se comen los días— insistir sería mentir, así que ahí no
+ * hay botón: hay que quitar algo o añadir días. Es la diferencia entre «no te lo
+ * recomiendo» y «no existe manera», y se ve en la pantalla.
+ *
+ * Espera: viaje, paises, dialogo, confirmado, dias.
+ */
+const pieExtra = '<script src="/js/paises.js" defer></script>';
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Países · ${viaje.nombre}`,
+      extraCabeza: '',
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido" data-viaje="<%= viaje.id %>">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <%= viaje.nombre %>
+      </p>
+      <h1 class="ruta-cabecera__titulo">¿Qué países entran en el viaje?</h1>
+      <p class="paises-lectura">
+        Escribiste <strong>«<%= viaje.destino %>»</strong> y he entendido
+        <strong><%= paises.join(', ') %></strong>.
+        Son <strong><%= dias %></strong> día<%= dias === 1 ? '' : 's' %>.
+      </p>
+    </header>
+
+    <%# ==================== LA OPINIÓN ==================== %>
+    <section class="paises-opinion" id="paises-opinion">
+      <p class="antes__cargando">
+        <span class="rueda" aria-hidden="true"></span> Pensando qué combinación tiene sentido…
+      </p>
+    </section>
+
+    <%# ==================== LA LISTA ==================== %>
+    <h2 class="seccion-titulo">Marca los que quieras</h2>
+    <ul class="paises-lista" id="paises-lista">
+      <% paises.forEach(p => { %>
+        <li class="pais-fila" data-pais="<%= p %>">
+          <label class="pais-fila__marca">
+            <input type="checkbox" checked data-marca value="<%= p %>">
+            <span class="pais-fila__nombre"><%= p %></span>
+          </label>
+          <p class="pais-fila__porque" data-porque></p>
+        </li>
+      <% }) %>
+    </ul>
+
+    <%# ==================== LO QUE SE HACE CON ELLO ==================== %>
+    <div class="paises-acciones">
+      <button class="boton boton--primario" type="button" id="paises-confirmar">
+        <i class="ti ti-check" aria-hidden="true"></i>
+        <span id="paises-confirmar-texto">Así lo quiero</span>
+      </button>
+      <span class="paises-estado" id="paises-estado"></span>
+    </div>
+
+    <p class="paises-pie">
+      El resto lo decide el orquestador como siempre: qué ciudades de esos países,
+      cuántas noches en cada una y por dónde se entra y se sale.
+    </p>
+
+  </div>
+</main>
+
+<script type="application/json" id="datos-paises"><%- JSON.stringify({ paises, dialogo }) %></script>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

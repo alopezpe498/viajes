@@ -175,6 +175,17 @@ import {
   refrescarAvisosDeReserva,
   revisarReservasAnticipadas,
 } from '../services/reservas-anticipadas.js';
+import { calcularFronteras } from '../services/paises.js';
+import {
+  interpretarDestino,
+  guardarInterpretacion,
+  confirmarPaises,
+  opinarSobreSeleccion,
+  paisesDelViaje,
+  esMultipais,
+  estadoDePaises,
+  dialogoGuardado,
+} from '../services/paises.js';
 import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-pais.js';
 import { actualizarAhora, climaDelPais } from '../services/clima.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
@@ -1456,6 +1467,38 @@ router.post('/api/destinos/elegir', async (req, res) => {
 
   try {
     const tipo = req.body.tipo === 'ciudad' ? 'ciudad' : 'pais';
+
+    // ¿ES UN VIAJE DE VARIOS PAÍSES? Se pregunta ANTES de tocar nada.
+    //
+    // El destino es texto libre y ahora acepta «Croacia y Montenegro». Con más
+    // de un país el viaje no puede arrancar solo: hay una decisión de verdad
+    // que tomar —cuáles entran— y la toma el usuario, con criterio delante y
+    // antes de gastar un euro en scraping.
+    //
+    // Solo se pregunta cuando lo escrito puede ser una lista: con un punto en
+    // el mapa (tipo 'ciudad') o con una sola palabra sin conjunciones, no hay
+    // nada que interpretar y no se paga una llamada por nada.
+    if (tipo !== 'ciudad' && pareceVariosPaises(nombre)) {
+      const lectura = await interpretarDestino(nombre);
+      if (lectura.paises.length > 1 || !lectura.seguro) {
+        // El texto del usuario se queda como ámbito del viaje; la lista
+        // interpretada espera confirmación en su pantalla.
+        ejecutar('UPDATE viajes SET destino = ? WHERE id = ?', nombre, viaje.id);
+        guardarInterpretacion(viaje.id, lectura.paises);
+        console.log(
+          `[rutas] Viaje #${viaje.id}: «${nombre}» son ${lectura.paises.length} país(es); a confirmar.`
+        );
+        return res.json({
+          modo: 'paises',
+          url: `/viajes/${viaje.id}/paises`,
+          paises: lectura.paises,
+          seguro: lectura.seguro,
+          nota: lectura.nota,
+        });
+      }
+      // Un solo país y sin dudas: sigue el camino de siempre, sin enterarse.
+    }
+
     const { destinoId } = await elegirDestinoParaViaje(viaje, {
       nombre,
       tipo,
@@ -1540,6 +1583,113 @@ router.post('/api/destinos/elegir', async (req, res) => {
  *
  * Devuelve el id del destino del catálogo, que es a donde hay que ir después.
  */
+// =============================================================================
+// VIAJES DE VARIOS PAISES — confirmar la lectura y hablar del criterio
+// =============================================================================
+/**
+ * La pantalla del dialogo.
+ *
+ * Se llega aqui en cuanto el destino escrito resulta ser mas de un pais, y no
+ * se sale hasta confirmar: es el unico punto del flujo donde hay una decision
+ * que la aplicacion no puede tomar sola.
+ */
+router.get('/viajes/:id/paises', cargarViaje, (req, res) => {
+  const viaje = req.viaje;
+  const paises = paisesDelViaje(viaje);
+
+  // Con un solo pais aqui no hay nada que decidir: se vuelve al flujo normal.
+  if (paises.length < 2) {
+    return res.redirect(
+      viaje.automatico ? `/viajes/${viaje.id}/orquestador` : `/viaje/${viaje.id}/ruta`
+    );
+  }
+
+  res.render('paises', {
+    viaje,
+    paises,
+    dialogo: dialogoGuardado(viaje),
+    confirmado: estadoDePaises(viaje) === 'confirmado',
+    dias: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin) + 1,
+  });
+});
+
+/**
+ * Que opina la IA de ESTA seleccion.
+ *
+ * Se llama al abrir la pantalla sin opinion previa y cada vez que el usuario
+ * marca o desmarca algo. Es una llamada corta y sin busquedas: solo criterio.
+ */
+router.post('/api/viajes/:id/paises/opinar', cargarViaje, async (req, res) => {
+  try {
+    const dialogo = await opinarSobreSeleccion(req.viaje, req.body?.seleccion);
+    res.json({ dialogo });
+  } catch (err) {
+    console.error('[rutas] no pude opinar sobre los paises:', err);
+    res.status(502).json({ error: err.message || 'No se pudo consultar el criterio.' });
+  }
+});
+
+/**
+ * "Asi lo quiero": se cierra la lista y arranca el viaje.
+ *
+ * EL VETO DEL "NO CABE" SE COMPRUEBA AQUI, en el servidor, y no solo en la
+ * pantalla. Un boton escondido con CSS no es una regla: si la ultima opinion
+ * guardada dice que esa seleccion no cabe materialmente, esto no la deja pasar
+ * aunque llegue la peticion.
+ */
+router.post('/api/viajes/:id/paises/confirmar', cargarViaje, (req, res) => {
+  const viaje = req.viaje;
+  const seleccion = Array.isArray(req.body?.seleccion) ? req.body.seleccion : [];
+
+  const dialogo = dialogoGuardado(viaje);
+  const mismaSeleccion =
+    dialogo &&
+    dialogo.seleccion?.length === seleccion.length &&
+    dialogo.seleccion.every((p) => seleccion.includes(p));
+
+  if (dialogo && mismaSeleccion && dialogo.veredicto === 'no_cabe') {
+    return res.status(409).json({
+      error: 'Esa combinacion no cabe en los dias que hay.',
+      porQueNoCabe: dialogo.porQueNoCabe,
+    });
+  }
+
+  const r = confirmarPaises(viaje.id, seleccion);
+  if (r.error) return res.status(400).json(r);
+
+  // EL CATALOGO, UNA FILA POR PAIS. El destino del viaje sigue siendo el texto
+  // que se escribio ("Croacia y Montenegro"), que es lo que se lee en Mi ruta;
+  // pero la pantalla de descubrir necesita un destino por pais al que ir.
+  for (const pais of seleccion) asegurarDestino(pais, { tipo: 'pais' });
+
+  if (viaje.automatico) {
+    lanzarOrquestador(viaje.id);
+    console.log(`[rutas] Viaje #${viaje.id}: paises confirmados (${seleccion.join(', ')}); arranca.`);
+    return res.json({ url: `/viajes/${viaje.id}/orquestador` });
+  }
+
+  res.json({ url: `/elegir-destino/${viaje.id}` });
+});
+
+/**
+ * ¿MERECE LA PENA PREGUNTARLE A LA IA SI ESTO SON VARIOS PAÍSES?
+ *
+ * Es un filtro barato para no pagar una llamada por cada «Portugal». Si el
+ * texto no tiene ninguna señal de lista —una coma, una «y», un guion, un «+»—
+ * no hay nada que interpretar y se sigue por el camino de siempre.
+ *
+ * Se equivoca por el lado bueno: si deja pasar algo que no era una lista, la
+ * interpretación devuelve un país y no pasa nada. Lo que no puede es cortar una
+ * lista de verdad, y por eso la «y» se busca como palabra suelta —«Uruguay» no
+ * es una lista— y también entran los guiones, que es como mucha gente los
+ * escribe.
+ */
+function pareceVariosPaises(texto) {
+  const t = String(texto ?? '').trim();
+  if (t.length < 6) return false;
+  return /,|y|e|\+|\/| - | y | más /i.test(t);
+}
+
 async function elegirDestinoParaViaje(viaje, { nombre, tipo = 'pais', lat = null, lon = null }) {
   const nombreViaje = viaje.nombre === 'Viaje sin nombre' ? `Viaje a ${nombre}` : viaje.nombre;
 
@@ -1791,6 +1941,26 @@ router.post('/api/etapas/:etapaId/reservas-anticipadas', async (req, res) => {
   } catch (err) {
     console.error('[rutas] no pude revisar las reservas anticipadas:', err);
     res.status(500).json({ error: err.message || 'No se pudo revisar.' });
+  }
+});
+
+/**
+ * LOS CRUCES DE FRONTERA DE LA RUTA.
+ *
+ * Se pide aparte de la ficha, como el clima: depende del ORDEN de las paradas y
+ * no del pais, asi que ni caduca con la ficha ni se rehace cuando se actualiza
+ * un visado. Y pedirlo no toca nada mas.
+ */
+router.post('/api/viaje/:viajeId/fronteras', async (req, res) => {
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', Number(req.params.viajeId));
+  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  try {
+    const fronteras = await calcularFronteras(viaje);
+    res.json({ fronteras });
+  } catch (err) {
+    console.error('[rutas] no pude calcular las fronteras:', err);
+    res.status(502).json({ error: err.message || 'No se pudieron consultar las fronteras.' });
   }
 });
 

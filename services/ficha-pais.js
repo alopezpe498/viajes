@@ -31,6 +31,7 @@ import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { situarDestino, textoDeExteriores, festivosEntre } from './avisos.js';
 import { asegurarClimaTipico, climaDelPais } from './clima.js';
+import { secuenciaDePaises, hayFronteras, fronterasGuardadas } from './paises.js';
 
 /** Desde dónde se viaja. Todo lo de papeles se responde para este pasaporte. */
 const PASAPORTE = 'España';
@@ -431,8 +432,25 @@ export async function fichasDelViaje(viajeId) {
     });
   }
 
+  // LOS CRUCES DE FRONTERA, UNA VEZ Y NO POR PAÍS.
+  //
+  // Un cruce no es de ninguno de los dos países: es del viaje. Y depende del
+  // ORDEN real de las paradas, no de la lista de países —la misma pareja da un
+  // cruce o dos según por dónde se vuelva—, así que solo tiene sentido cuando
+  // la ruta ya está confirmada. Aquí se LEE lo que haya; pedirlo es cosa de la
+  // pantalla, como con la ficha y el clima.
+  const secuencia = secuenciaDePaises(viajeId);
+  const fronteras = {
+    hay: hayFronteras(viajeId),
+    // La ruta en países, que ya vale por sí sola: se ve de un vistazo que se
+    // entra dos veces en el mismo sitio aunque no haya llegado la consulta.
+    secuencia: secuencia.map((t) => ({ pais: t.pais, ciudades: t.ciudades })),
+    datos: fronterasGuardadas(viaje),
+  };
+
   return {
     viajeId,
+    fronteras,
     // ¿Ya se ha revisado esto? Es lo que hace que el botón de Mi ruta pase de
     // aviso a resuelto. Se guarda cuándo, no solo que sí: dentro de dos meses
     // "revisado el 8 de septiembre" dice más que un tic.
@@ -496,4 +514,33 @@ export function fichasParaElDosier(viajeId) {
     .map((f) => comoFicha(f, viaje.fecha_inicio));
 }
 
-export default { paisesDelViaje, fichasDelViaje, generarFicha, fichasParaElDosier, marcarRevisado };
+/**
+ * LOS CRUCES DE FRONTERA, EN PLANO Y SIN PEDIR NADA.
+ *
+ * El dosier se genera sin red y de forma síncrona, así que aquí solo se lee lo
+ * que haya guardado. Si nadie ha abierto la ficha todavía, no hay cruces y el
+ * dosier sale sin ese bloque: mejor que quedarse esperando una consulta.
+ */
+export function fronterasParaElDosier(viajeId) {
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) return null;
+
+  const secuencia = secuenciaDePaises(viajeId);
+  if (secuencia.length < 2) return null;
+
+  const guardadas = fronterasGuardadas(viaje);
+  return {
+    secuencia: secuencia.map((t) => ({ pais: t.pais, ciudades: t.ciudades })),
+    cruces: guardadas?.cruces ?? [],
+    nota: guardadas?.nota ?? null,
+  };
+}
+
+export default {
+  paisesDelViaje,
+  fichasDelViaje,
+  generarFicha,
+  fichasParaElDosier,
+  fronterasParaElDosier,
+  marcarRevisado,
+};

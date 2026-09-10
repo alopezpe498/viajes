@@ -36,6 +36,9 @@
   const pidiendoClima = new Set();
   /** Y los que ya se han pedido solos en esta apertura: una vez y no más. */
   const climaPedido = new Set();
+  /** Los cruces de frontera se piden una vez por apertura, como el clima. */
+  let pidiendoFronteras = false;
+  let fronterasPedidas = false;
 
   const esc = (t) => {
     const d = document.createElement('div');
@@ -177,6 +180,15 @@
         refrescarClima(p, { silencioso: true });
       }
     }
+
+    // Y los cruces de frontera, la primera vez que se abre una ficha de un
+    // viaje que cruza alguna. Mismo criterio que el clima: un bloque vacio con
+    // un boton es un bloque que nadie pulsa, pero tampoco se rehace en cada
+    // apertura porque no cambia de un dia para otro.
+    if (datos.fronteras?.hay && !datos.fronteras.datos && !fronterasPedidas) {
+      fronterasPedidas = true;
+      pedirFronteras(true);
+    }
   }
 
   function pintarCargando() {
@@ -202,7 +214,10 @@
     zonaPaises.hidden = datos.paises.length < 2;
 
     const actual = datos.paises.find((p) => p.norm === paisAbierto);
-    zonaCuerpo.innerHTML = actual ? cuerpoDePais(actual) : '';
+    // LAS FRONTERAS VAN ARRIBA Y FUERA DE LAS PESTAÑAS. Un cruce no es de
+    // ninguno de los dos países: es del viaje, y meterlo dentro de una pestaña
+    // obligaría a elegir en cuál, que es una pregunta sin respuesta.
+    zonaCuerpo.innerHTML = bloqueFronteras() + (actual ? cuerpoDePais(actual) : '');
   }
 
   zonaPaises.addEventListener('click', (ev) => {
@@ -213,6 +228,11 @@
   });
 
   zonaCuerpo.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-fronteras]')) {
+      pedirFronteras();
+      return;
+    }
+
     const clima = ev.target.closest('[data-clima]');
     if (clima) {
       const p = datos.paises.find((x) => x.norm === clima.dataset.clima);
@@ -589,6 +609,104 @@
     `<button class="antes-pie__actualizar" type="button" data-actualizar="${esc(p.norm)}">` +
     '<i class="ti ti-refresh" aria-hidden="true"></i> Actualizar</button>' +
     '</footer>';
+
+
+  // ===========================================================================
+  // LOS CRUCES DE FRONTERA
+  // ---------------------------------------------------------------------------
+  // Una sola vez y fuera de las pestañas: un cruce no es de ninguno de los dos
+  // países, es del viaje. Y depende del ORDEN de las paradas, así que solo
+  // aparece cuando la ruta ya está confirmada.
+  //
+  // Lo que de verdad justifica este bloque es la DOBLE ENTRADA: volar de vuelta
+  // desde un país por el que ya se pasó exige poder entrar en él dos veces, y
+  // eso no se ve mirando la lista de países ni la ficha de ninguno de ellos. Se
+  // ve mirando la secuencia, que es lo que se pinta arriba del todo.
+  // ===========================================================================
+  function bloqueFronteras() {
+    const f = datos.fronteras;
+    if (!f?.hay) return '';
+
+    const ruta =
+      '<p class="frontera-ruta">' +
+      f.secuencia.map((t) => `<span class="frontera-ruta__pais">${esc(t.pais)}</span>`).join(
+        '<i class="ti ti-arrow-right" aria-hidden="true"></i>'
+      ) +
+      '</p>';
+
+    const boton =
+      `<button class="antes-pie__actualizar" type="button" data-fronteras ${pidiendoFronteras ? 'disabled' : ''}>` +
+      '<i class="ti ti-refresh" aria-hidden="true"></i> ' +
+      (pidiendoFronteras ? 'Consultando…' : f.datos ? 'Actualizar' : 'Consultar') +
+      '</button>';
+
+    const cruces = (f.datos?.cruces ?? []).length
+      ? '<ul class="fronteras">' +
+        f.datos.cruces
+          .map(
+            (c) =>
+              `<li class="frontera ${c.dobleEntrada ? 'frontera--doble' : ''}">` +
+              '<p class="frontera__titulo">' +
+              `<i class="ti ${ICONO_CRUCE[c.tipo] ?? 'ti-border-all'}" aria-hidden="true"></i> ` +
+              `${esc(c.desde)} → ${esc(c.hasta)}` +
+              (c.entre ? `<span class="frontera__entre">${esc(c.entre)}</span>` : '') +
+              '</p>' +
+              (c.dobleEntrada
+                ? '<p class="frontera__doble"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ' +
+                  'Entras dos veces en este país: comprueba que tu permiso lo admite.</p>'
+                : '') +
+              (c.quePide ? `<p class="frontera__pide">${esc(c.quePide)}</p>` : '') +
+              '</li>'
+          )
+          .join('') +
+        '</ul>'
+      : `<p class="antes-dato__nota">${
+          pidiendoFronteras
+            ? 'Mirando qué pide cada paso de frontera…'
+            : 'Todavía no se han consultado los pasos de frontera de esta ruta.'
+        }</p>`;
+
+    return (
+      '<section class="antes-bloque">' +
+      '<h3 class="antes-bloque__titulo"><i class="ti ti-border-all" aria-hidden="true"></i> ' +
+      'Cruces de frontera</h3>' +
+      ruta +
+      cruces +
+      (f.datos?.nota ? `<p class="antes-dato__nota">${esc(f.datos.nota)}</p>` : '') +
+      '<footer class="antes-pie">' +
+      `<span class="antes-pie__fecha">${
+        f.datos?.calculadoEn ? `Consultado el ${esc(f.datos.calculadoEn.slice(0, 10))}` : ''
+      }</span>` +
+      boton +
+      '</footer></section>'
+    );
+  }
+
+  const ICONO_CRUCE = {
+    terrestre: 'ti-car',
+    aereo: 'ti-plane',
+    maritimo: 'ti-ship',
+  };
+
+  async function pedirFronteras(silencioso = false) {
+    if (pidiendoFronteras) return;
+    pidiendoFronteras = true;
+    const dondeIba = zonaCuerpo.scrollTop;
+    if (!silencioso) pintar();
+
+    try {
+      const r = await fetch(`/api/viaje/${viajeId}/fronteras`, { method: 'POST' });
+      const cuerpo = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(cuerpo.error || `Error ${r.status}`);
+      if (datos.fronteras) datos.fronteras.datos = cuerpo.fronteras;
+    } catch (err) {
+      console.error('[antes] no se pudieron consultar las fronteras:', err);
+    } finally {
+      pidiendoFronteras = false;
+      pintar();
+      zonaCuerpo.scrollTop = dondeIba;
+    }
+  }
 
   // ===========================================================================
   // GENERAR UN PAÍS

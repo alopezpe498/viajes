@@ -185,7 +185,15 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
     // La del catálogo se sigue enseñando cuando no hay una tecleada: es una
     // orientación útil ("2 horas", "7 horas") y no estorba.
     duracionCatalogo: f.duracion,
-    duracionMin: f.duracion_min ?? null,
+    // LA DURACIÓN NUNCA ES NULA SI SE PUEDE SABER.
+    //
+    // Lo tecleado manda; y cuando no hay nada tecleado —las colocaciones de
+    // antes de este arreglo, que entraron con NULL— se saca de la ficha o del
+    // catálogo AL LEER. Sin esto, una excursión colocada hace tres semanas
+    // seguiría ocupando cero y se le podría poner un museo encima, que es
+    // exactamente el fallo que se está arreglando.
+    duracionMin:
+      f.duracion_min ?? (f.candidato_id ? duracionDeLoColocado(f.candidato_id).minutos : null),
     movilidadId: f.movilidad_id ?? null,
     trasladoId: f.traslado_id ?? null,
     // Dos orígenes para el medio, y no se pisan: una ficha de "Moverse" trae su
@@ -616,8 +624,65 @@ function calcularAvisos(dias, colocados, fijos, viajeId) {
   const avisos = [];
   const indice = (clave) => CLAVES_FRANJA.indexOf(clave);
 
+  // A QUÉ HORA DEJA DE EMPEZARSE NADA, y cuánto se respeta tras aterrizar.
+  //
+  // Estos dos números existían desde el correctivo del Peloponeso, pero solo los
+  // miraba `horaLibreEn`, que es el buscador de huecos de la REVISIÓN. El camino
+  // normal —la fase colocando lo que dijo la IA— no pasaba por ahí, así que en
+  // Tesalónica se colocó Ladadika a las 23:15 el día que se aterrizaba a las
+  // 22:25 y nadie protestó. Un número que solo se comprueba en un camino no es
+  // una regla: es una casualidad. Aquí lo ve el validador, en todos los días y
+  // venga de donde venga lo colocado.
+  const topeDelDia = enMinutos(parametroTexto('hora_maxima_inicio', '22:00')) ?? 22 * 60;
+  const margenTrasLlegar = parametro('margen_tras_llegada_min', 60);
+
   for (const d of dias) {
     const delDia = colocados.filter((c) => c.dia === d.n);
+
+    // --- Nada que empiece a partir del tope, en ningún día ------------------
+    const tardias = delDia.filter((c) => {
+      const h = enMinutos(c.hora);
+      return h != null && h >= topeDelDia;
+    });
+    if (tardias.length) {
+      avisos.push({
+        dia: d.n,
+        tipo: 'muy-tarde',
+        idsAfectados: tardias.map((c) => c.id),
+        texto:
+          `${tardias.map((c) => c.nombre).join(', ')}: a partir de las ` +
+          `${comoHora(topeDelDia)} ya no se empieza nada`,
+      });
+    }
+
+    // --- Ni pegado a una llegada de noche -----------------------------------
+    //
+    // El día de la llegada no empieza al aterrizar: empieza al salir del
+    // aeropuerto con las maletas, y todavía hay que llegar al hotel. Aterrizar a
+    // las 22:25 y tener algo a las 23:15 no es un plan apretado: es un plan que
+    // no existe.
+    const llegadaDelDia = fijos.find((f) => f.dia === d.n && f.donde === 'ida');
+    const finDeLlegada = llegadaDelDia
+      ? enMinutos(llegadaDelDia.horaFin) ?? enMinutos(llegadaDelDia.hora)
+      : null;
+    if (finDeLlegada != null) {
+      const pronto = delDia.filter((c) => {
+        const h = enMinutos(c.hora);
+        return h != null && h < finDeLlegada + margenTrasLlegar && !tardias.includes(c);
+      });
+      if (pronto.length) {
+        avisos.push({
+          dia: d.n,
+          tipo: 'recien-llegado',
+          idsAfectados: pronto.map((c) => c.id),
+          libreDesde: comoHora(finDeLlegada + margenTrasLlegar),
+          texto:
+            `Sales del aeropuerto a las ${comoHora(finDeLlegada)} — ` +
+            `${pronto.map((c) => c.nombre).join(', ')} no cabe hasta las ` +
+            `${comoHora(finDeLlegada + margenTrasLlegar)}`,
+        });
+      }
+    }
 
     // 1) Cosas puestas ANTES de llegar.
     const llegada = fijos.find((f) => f.dia === d.n && f.donde === 'ida');
@@ -1097,6 +1162,16 @@ const COMO_SE_VA = {
  * no hay nada que comparar, y comparar la primera con la tercera sería avisar
  * de un salto que nadie va a dar.
  */
+/**
+ * ¿Esto es una comida?
+ *
+ * Las colocadas por el orquestador son texto manual («Comer · Lublin»); las
+ * apuntadas desde la pestaña son candidatos de tipo `comer`. Las dos cuentan.
+ */
+function esComer(c) {
+  return c?.tipo === 'comer' || /^comer\b/i.test(String(c?.nombre ?? ''));
+}
+
 function avisosDeTiempo(dias, colocados) {
   const avisos = [];
   const orden = (clave) => CLAVES_FRANJA.indexOf(clave);
@@ -1124,6 +1199,20 @@ function avisosDeTiempo(dias, colocados) {
       // Un traslado ya ES el trayecto: avisar de que no da tiempo a hacer el
       // trayecto para llegar al trayecto no tiene sentido.
       if (a.tipo === 'traslado' || b.tipo === 'traslado') continue;
+
+      // COMER DURANTE UNA EXCURSIÓN DE JORNADA NO ES UN SOLAPE.
+      //
+      // En una excursión de nueve horas se come: la propia IA la coloca y
+      // escribe «Comer · Lublin (incluida en excursión)». Con las excursiones
+      // ocupando ya su bloque de verdad, eso empezó a salir como conflicto, y
+      // no lo es: es lo que pasa en una excursión larga.
+      //
+      // La excepción es SOLO en ese sentido. Un museo dentro del bloque del
+      // crucero sigue siendo imposible —que es el fallo que se está
+      // arreglando—, y una comida sigue ocupando frente a cualquier visita.
+      if (esComer(a) !== esComer(b) && (a.tipo === 'actividad' || b.tipo === 'actividad')) {
+        continue;
+      }
 
       // Fin de lo primero: su hora más lo que dure. Sin duración tecleada se
       // toma la hora de inicio, que es lo más prudente.
@@ -1316,17 +1405,68 @@ export function minutosDeVisita(texto) {
   return techo > 0 && techo <= 24 * 60 ? techo : null;
 }
 
-/** El sitio de catálogo del que sale un candidato, si sale de uno. */
-function sitioDelCandidato(candidatoId) {
+/**
+ * DE DÓNDE SALE UN CANDIDATO Y CUÁNTO DURA LO SUYO.
+ *
+ * Antes esto solo sabía de sitios: cualquier otra cosa devolvía null, y null
+ * acaba siendo duración cero. Con eso, una excursión de diez horas colocada a
+ * las 8:00 era INVISIBLE para el validador de solapes —ocupaba el mismo hueco
+ * que nada—, y la revisión podía mandarle un museo encima a las 9:00 y declarar
+ * después que el lienzo quedaba limpio. Pasó en Atenas con el crucero y el
+ * Museo de la Acrópolis.
+ *
+ * Ahora se distinguen los tres orígenes que existen, porque los tres ocupan:
+ *
+ *   sitio     · lo que diga su ficha (`tiempo_visita`), que viene de la búsqueda.
+ *   actividad · la duración del catálogo de excursiones («8h 30m - 9h»), que es
+ *               el dato más fiable de los tres: lo publica quien la vende.
+ *   comer     · una comida también ocupa. No dura lo que dure el restaurante:
+ *               dura lo que se está sentado, y eso ya es un parámetro.
+ */
+function origenDelCandidato(candidatoId) {
   const c = una('SELECT * FROM candidatos WHERE id = ?', Number(candidatoId));
   if (!c) return null;
+
+  let e = null;
   try {
-    const e = c.datos_extra ? JSON.parse(c.datos_extra) : null;
-    if (e?.de !== 'sitio' || e?.deId == null) return null;
-    return una('SELECT id, nombre, tiempo_visita, categoria FROM sitios_lugar WHERE id = ?', Number(e.deId));
+    e = c.datos_extra ? JSON.parse(c.datos_extra) : null;
   } catch {
-    return null;
+    e = null;
   }
+
+  if (e?.de === 'sitio' && e.deId != null) {
+    const s = una(
+      'SELECT id, nombre, tiempo_visita, categoria FROM sitios_lugar WHERE id = ?',
+      Number(e.deId)
+    );
+    return s ? { clase: 'sitio', ...s } : null;
+  }
+
+  // La excursión: primero lo que se guardó con el candidato y, si ahí no está,
+  // la fila del catálogo. Se mira el candidato antes porque es lo que se eligió.
+  if (c.tipo === 'actividad') {
+    const delCatalogo =
+      e?.deId != null
+        ? una('SELECT duracion FROM catalogo_actividades WHERE id = ?', Number(e.deId))
+        : null;
+    return {
+      clase: 'actividad',
+      id: c.id,
+      nombre: c.titulo,
+      duracion: c.duracion ?? delCatalogo?.duracion ?? null,
+      categoria: null,
+    };
+  }
+
+  if (c.tipo === 'comer') return { clase: 'comer', id: c.id, nombre: c.titulo };
+
+  return null;
+}
+
+/** El sitio de catálogo del que sale un candidato, si sale de uno. */
+function sitioDelCandidato(candidatoId) {
+  const o = origenDelCandidato(candidatoId);
+  return o?.clase === 'sitio' ? o : null;
 }
 
 /** De la categoría del sitio al parámetro que dice cuánto se le reserva. */
@@ -1351,14 +1491,36 @@ const PARAMETRO_DE_CATEGORIA = {
  * ningún aviso, porque todas duraban cero.
  */
 export function duracionDeLoColocado(candidatoId) {
-  const sitio = sitioDelCandidato(candidatoId);
-  if (!sitio) return { minutos: null, supuesta: false, nombre: null };
+  const o = origenDelCandidato(candidatoId);
+  if (!o) return { minutos: null, supuesta: false, nombre: null };
 
-  const delDato = minutosDeVisita(sitio.tiempo_visita);
-  if (delDato) return { minutos: delDato, supuesta: false, nombre: sitio.nombre };
+  // UNA EXCURSIÓN DURA LO QUE DICE QUIEN LA VENDE. Y cuando lo que dice es
+  // «día completo» sin número, se le da la jornada entera: es exactamente lo
+  // que significa, y dejarlo en null la volvería invisible otra vez.
+  if (o.clase === 'actividad') {
+    const delDato = minutosDeVisita(o.duracion);
+    if (delDato) return { minutos: delDato, supuesta: false, nombre: o.nombre };
 
-  const clave = PARAMETRO_DE_CATEGORIA[sitio.categoria] ?? 'visita_por_defecto_min';
-  return { minutos: parametro(clave, 90), supuesta: true, nombre: sitio.nombre };
+    const esDiaCompleto = /d[ií]a completo|jornada completa|todo el d[ií]a/i.test(
+      String(o.duracion ?? '')
+    );
+    return {
+      minutos: esDiaCompleto ? parametro('excursion_dia_completo_min', 480) : parametro('excursion_por_defecto_min', 180),
+      supuesta: true,
+      nombre: o.nombre,
+    };
+  }
+
+  // Una comida ocupa lo que se está sentado, no lo que abre el restaurante.
+  if (o.clase === 'comer') {
+    return { minutos: parametro('duracion_comida_min', 75), supuesta: true, nombre: o.nombre };
+  }
+
+  const delDato = minutosDeVisita(o.tiempo_visita);
+  if (delDato) return { minutos: delDato, supuesta: false, nombre: o.nombre };
+
+  const clave = PARAMETRO_DE_CATEGORIA[o.categoria] ?? 'visita_por_defecto_min';
+  return { minutos: parametro(clave, 90), supuesta: true, nombre: o.nombre };
 }
 
 /**

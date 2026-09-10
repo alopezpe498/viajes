@@ -40,7 +40,7 @@ import { medioElegidoDeTramo } from './movilidad.js';
 import { trasladosDeEtapa, trasladosDeElementos } from './traslados.js';
 import { fichasDeComer } from './comer.js';
 import { direccionDeCandidato, direccionDe } from './direcciones.js';
-import { fichasParaElDosier, paisesDelViaje } from './ficha-pais.js';
+import { fichasParaElDosier, fronterasParaElDosier, paisesDelViaje } from './ficha-pais.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RAIZ = path.join(__dirname, '..');
@@ -743,6 +743,10 @@ export function datosDelDosier(viajeId) {
     // buscar. La fecha se enseña sin disimulo: un requisito de entrada de hace
     // tres meses puede haber cambiado, y quien lo lea tiene que poder juzgarlo.
     antesDeViajar: fichasParaElDosier(viajeId),
+    // LOS CRUCES DE FRONTERA VAN CON LAS FICHAS, y una sola vez: no son de
+    // ninguno de los dos países. En el dosier importan más que en la pantalla,
+    // porque es lo que se lleva encima el día que hay que enseñar el pasaporte.
+    fronteras: fronterasParaElDosier(viajeId),
     generadoEn: new Date().toISOString(),
   };
 }

@@ -31,6 +31,7 @@ import { traerExcursionesSiHacenFalta, actividadesDeCiudad } from '../services/c
 import { alternarApuntado } from '../services/etapa.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
+import { lienzoDeViaje } from '../services/lienzo.js';
 
 const FASE = 'excursiones';
 
@@ -50,6 +51,38 @@ export function duracionEnMinutos(texto) {
   const m = t.match(/(\d+)\s*min/);
   if (m) return Number(m[1]);
   return null;
+}
+
+/**
+ * CUÁNTOS DÍAS DE ESTA PARADA ADMITEN UNA EXCURSIÓN LARGA.
+ *
+ * No son las noches. Una parada de tres noches puede tener UN solo día libre: el
+ * de llegada se va en el vuelo y el hotel, el de salida en el traslado a la
+ * siguiente ciudad, y en medio queda uno. Contar noches y elegir excursiones por
+ * ese número es lo que llenó Atenas de tres excursiones de jornada completa
+ * cuando solo cabía una.
+ *
+ * Se cuentan los días de la etapa a los que NO se les ha comido ya el día un
+ * bloque fijo —la llegada, el salto a la siguiente ciudad, el vuelo de vuelta—.
+ * Los fijos ya están decididos cuando corre esta fase: los puso la fase 2.
+ *
+ * Devuelve null cuando todavía no hay lienzo del que sacarlo; quien llama decide
+ * qué hacer con eso, y lo que hace es no prometer un número que no sabe.
+ */
+export function diasUtilesDeEtapa(viajeId, etapaId) {
+  const lienzo = lienzoDeViaje(viajeId);
+  if (!lienzo?.dias?.length) return null;
+
+  const suyos = lienzo.dias.filter((d) => d.etapaId === etapaId).map((d) => d.n);
+  if (!suyos.length) return null;
+
+  const ocupados = new Set(
+    (lienzo.fijos ?? [])
+      .filter((f) => suyos.includes(f.dia))
+      .map((f) => f.dia)
+  );
+
+  return { total: suyos.length, libres: suyos.filter((n) => !ocupados.has(n)).length };
 }
 
 /** Una excursión es "de día completo" a partir de seis horas. */
@@ -181,6 +214,25 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
     }
 
     const noches = Math.max(0, Number(etapa.noches) || 0);
+
+    // LOS DÍAS LIBRES DE VERDAD, antes de elegir nada. Va al registro porque es
+    // el número que explica por qué se eligieron una o tres.
+    const utiles = diasUtilesDeEtapa(viajeId, etapa.id);
+    if (utiles) {
+      di(
+        `   ${ciudad}: ${utiles.total} día(s) de parada, ${utiles.libres} con hueco para una ` +
+          'excursión larga (los demás se los comen la llegada, la salida o el traslado).'
+      );
+    }
+
+    // Y EL TOPE DE LARGAS SALE DE AHÍ, no de las noches. Antes era «las que
+    // quepan en las noches», que es otra cosa: en Atenas daban tres y solo había
+    // un día libre. Si no se sabe, se conserva el criterio viejo.
+    const topeLargasReal =
+      utiles != null
+        ? Math.min(maxLargasPorDia * Math.max(utiles.libres, 0), Math.max(utiles.libres, 0))
+        : null;
+
     const topes =
       `como mucho ${maxLargasPorDia} excursión(es) de día completo por día, y esta parada tiene ` +
       `${noches} noche(s)` +
@@ -197,6 +249,7 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         [auto.intereses, (auto.categorias ?? []).join(', ')].filter(Boolean).join(' · ') ||
         '(no lo han dicho)',
       TOPES: topes,
+      DIAS_UTILES: utiles == null ? 'no lo sé' : String(utiles.libres),
       SITIOS: sitios.length
         ? sitios.map((s) => `- ${s.nombre}${s.categoria ? ` (${s.categoria})` : ''}`).join('\n')
         : '(esta parada todavía no tiene fichas de sitios)',
@@ -242,7 +295,12 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
       }))
       .filter((e) => e.actividad);
 
-    const topeLargas = Math.max(0, maxLargasPorDia * Math.max(noches, 1));
+    // El tope que se hace cumplir en código, no solo en el prompt: si la IA pide
+    // tres excursiones de jornada y solo hay un día libre, entran las que caben.
+    const topeLargas =
+      topeLargasReal != null
+        ? topeLargasReal
+        : Math.max(0, maxLargasPorDia * Math.max(noches, 1));
     const elegidas = [];
     let largas = 0;
 

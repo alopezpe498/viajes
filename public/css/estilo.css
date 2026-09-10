@@ -6580,3 +6580,130 @@ body.con-antes { overflow: hidden; }
 @media (max-width: 700px) {
   .pill--volver__texto { display: none; }
 }
+
+/* =============================================================================
+   EL DIALOGO DE PAISES (viajes de mas de un pais)
+   ========================================================================== */
+.paises-lectura { color: var(--texto-2); font-size: 14px; margin: 6px 0 0; }
+
+.paises-opinion {
+  margin: 18px 0 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--acento);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+}
+
+.paises-opinion--pensando { opacity: .55; }
+
+/* "No cabe" no es una opinion mas: se ve distinto porque quita el boton. */
+.paises-opinion--no-cabe { border-left-color: var(--alerta-tx); background: var(--alerta-bg); }
+
+.paises-veredicto {
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--alerta-tx);
+  font-weight: 700;
+}
+
+.paises-numeros { margin: 0 0 8px; color: var(--alerta-tx); font-size: 14px; }
+.paises-texto { margin: 0; color: var(--texto); font-size: 14px; line-height: 1.5; }
+
+.paises-lista { margin: 0 0 22px; padding: 0; list-style: none; display: grid; gap: 8px; }
+
+.pais-fila {
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+}
+
+.pais-fila--no-recomendado { background: var(--fondo); }
+
+.pais-fila__marca { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.pais-fila__nombre { font-weight: 650; font-size: 16px; }
+
+.pais-fila__porque {
+  margin: 5px 0 0 28px;
+  color: var(--texto-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pais-fila__sello {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.paises-acciones { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.paises-estado { color: var(--texto-2); font-size: 13px; }
+.paises-estado--malo { color: var(--alerta-tx); }
+
+.paises-pie { margin: 14px 0 0; color: var(--texto-3); font-size: 13px; }
+
+/* =============================================================================
+   CRUCES DE FRONTERA (viajes de mas de un pais)
+   ========================================================================== */
+.frontera-ruta {
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.frontera-ruta__pais {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-weight: 600;
+}
+
+.frontera-ruta i { color: var(--texto-3); }
+
+.fronteras { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 8px; }
+
+.frontera {
+  padding: 10px 12px;
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--acento);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+}
+
+/* La doble entrada es el fallo que se descubre en el mostrador: se ve distinto. */
+.frontera--doble { border-left-color: var(--prec-tx); background: var(--prec-bg); }
+
+.frontera__titulo {
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 650;
+}
+
+.frontera__entre { color: var(--texto-2); font-weight: 400; font-size: 13px; }
+
+.frontera__doble {
+  margin: 0 0 5px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--prec-tx);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.frontera__pide { margin: 0; color: var(--texto-2); font-size: 13px; line-height: 1.45; }

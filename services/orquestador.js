@@ -380,6 +380,30 @@ export const PROMPTS_SUELTOS = [
       'Los precios NO se piden aquí: se buscan aparte, porque de memoria salían inventados.',
   },
   {
+    clave: 'paises_interpretar',
+    etiqueta: 'Países · leer el destino escrito',
+    icono: 'ti-map-search',
+    explica:
+      'Traduce lo que escribes («Croacia y Montenegro») a una lista de países. Solo lee: no opina ' +
+      'sobre el viaje. Si el texto es ambiguo lo dice en vez de elegir por su cuenta.',
+  },
+  {
+    clave: 'paises_criterio',
+    etiqueta: 'Países · qué combinación tiene sentido',
+    icono: 'ti-scale',
+    explica:
+      'Con más de un país, opina sobre la combinación antes de montar nada: cuáles dejaría y ' +
+      'cuáles quitaría, y si de verdad no cabe en los días que hay. Solo criterio, sin búsquedas.',
+  },
+  {
+    clave: 'fronteras',
+    etiqueta: 'Países · cruces de frontera',
+    icono: 'ti-border-all',
+    explica:
+      'Con la ruta ya decidida, qué pide cada paso de frontera y si hay que poder entrar dos ' +
+      'veces en algún país. Depende del orden de las paradas, así que se pide al final.',
+  },
+  {
     clave: 'gasto_diario',
     etiqueta: 'Presupuesto · gasto diario en destino',
     icono: 'ti-wallet',
