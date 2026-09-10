@@ -1676,6 +1676,69 @@ router.post('/api/viajes/:id/paises/confirmar', cargarViaje, (req, res) => {
 });
 
 /**
+ * INTERPRETA EL DESTINO TAL Y COMO LO ESCRIBIÓ EL USUARIO.
+ *
+ * ESTA RUTA EXISTE POR UN FALLO CONCRETO. La deteccion de varios paises estaba
+ * metida en `/api/destinos/elegir`, que parecia el sitio natural: es donde se
+ * fija el destino del viaje. Pero para cuando se llega ahi, el texto ya no
+ * existe: el buscador del mapa manda primero lo escrito al geocodificador de
+ * Google, Google lo resuelve a UN sitio —"Viaje por Bosnia, croacia y
+ * montenegro" se convierte en "Croacia"— y lo que viaja al servidor es ese
+ * nombre ya aplastado. La deteccion se ejecutaba, miraba "Croacia" y decidia,
+ * con toda la razon, que era un viaje de un pais.
+ *
+ * Asi que se pregunta ANTES, sobre el texto de verdad y sin geocodificar nada.
+ * Con un pais se sigue el camino de siempre —Google, mapa, boton de investigar—
+ * y esto no ha costado mas que una comprobacion barata.
+ */
+router.post('/api/viajes/:id/destino/interpretar', cargarViaje, async (req, res) => {
+  const viaje = req.viaje;
+  const texto = String(req.body?.texto ?? '').trim();
+  if (!texto) return res.status(400).json({ error: 'Falta el destino.' });
+
+  // EL FILTRO BARATO PRIMERO. Sin coma, sin "y", sin "+", no hay lista posible y
+  // no se paga una llamada a la IA por cada "Portugal" que alguien teclee.
+  if (!pareceVariosPaises(texto)) {
+    return res.json({ multipais: false, texto });
+  }
+
+  try {
+    const lectura = await interpretarDestino(texto);
+
+    // Un solo pais: se sigue por el camino de siempre. Que el texto tuviera una
+    // coma no lo convierte en un viaje de varios paises —"Bali, Indonesia" es
+    // uno— y aqui es donde se distingue.
+    if (lectura.paises.length <= 1 && lectura.seguro) {
+      return res.json({ multipais: false, texto, paises: lectura.paises });
+    }
+
+    // El texto del usuario se queda como ambito del viaje; la lista interpretada
+    // espera confirmacion en su pantalla.
+    ejecutar('UPDATE viajes SET destino = ? WHERE id = ?', texto.slice(0, 200), viaje.id);
+    guardarInterpretacion(viaje.id, lectura.paises);
+
+    console.log(
+      `[rutas] Viaje #${viaje.id}: «${texto}» son ${lectura.paises.length} pais(es)` +
+        `${lectura.seguro ? '' : ' (con dudas)'}; a confirmar.`
+    );
+
+    res.json({
+      multipais: true,
+      paises: lectura.paises,
+      seguro: lectura.seguro,
+      nota: lectura.nota,
+      url: `/viajes/${viaje.id}/paises`,
+    });
+  } catch (err) {
+    // SI LA IA FALLA, NO SE BLOQUEA EL VIAJE. Se sigue por el camino de siempre:
+    // peor es quedarse sin poder elegir destino porque la interpretacion no
+    // contesto.
+    console.warn(`[rutas] no pude interpretar «${texto}»: ${err.message}`);
+    res.json({ multipais: false, texto, error: err.message });
+  }
+});
+
+/**
  * ¿MERECE LA PENA PREGUNTARLE A LA IA SI ESTO SON VARIOS PAÍSES?
  *
  * Es un filtro barato para no pagar una llamada por cada «Portugal». Si el

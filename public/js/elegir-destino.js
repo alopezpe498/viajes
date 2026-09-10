@@ -185,6 +185,31 @@
 
     const mia = ++consulta;
     try {
+      // ================== ¿ESTO SON VARIOS PAÍSES? ==================
+      //
+      // VA ANTES DE GOOGLE Y NO DESPUÉS, y ese orden es todo el arreglo.
+      // Geocodificar «Viaje por Bosnia, croacia y montenegro» devuelve UN sitio
+      // —Croacia—, y a partir de ahí el texto original ya no existe: lo que
+      // seguía viajando al servidor era «Croacia», así que la detección miraba
+      // un solo país y decidía, con toda la razón, que era un viaje normal.
+      //
+      // El servidor descarta de balde lo que no puede ser una lista, así que un
+      // «Portugal» no cuesta ni una llamada a la IA.
+      if (viajeId) {
+        const rp = await fetch(`/api/viajes/${viajeId}/destino/interpretar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ texto }),
+        });
+        const paises = await rp.json().catch(() => ({}));
+        if (mia !== consulta) return;
+
+        if (rp.ok && paises.multipais) {
+          window.location.href = paises.url;
+          return;
+        }
+      }
+
       const r = await fetch(`/api/geocodificar-texto?q=${encodeURIComponent(texto)}`, {
         headers: { Accept: 'application/json' },
       });
