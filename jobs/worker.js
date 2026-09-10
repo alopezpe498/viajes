@@ -59,6 +59,16 @@ import { ejecutarFaseSitios } from '../services/orquestador-sitios.js';
 import { ejecutarFaseExcursiones } from '../services/orquestador-excursiones.js';
 import { ejecutarFaseLienzo } from '../services/orquestador-lienzo.js';
 import { asegurarEstimacion } from '../services/presupuesto.js';
+import {
+  paradaPedida,
+  limpiarParada,
+  pasoDeLaFase,
+  limpiarParcialesDeFase,
+  dejarFaseAMedias,
+  vaciarColaDelViaje,
+  anotarParada,
+  anotarAborto,
+} from '../services/orquestador-parada.js';
 
 /**
  * Las fases que ya hacen algo de verdad. Las que no estan aqui siguen siendo
@@ -1467,7 +1477,43 @@ async function ejecutarOrquestador(trabajo) {
   let conHuecos = 0;
   let conError = 0;
 
+  // Una petición vieja no puede parar la ejecución de hoy: si alguien paró el
+  // montaje anterior y ahora le da a montar otra vez, esa marca ya no vale.
+  limpiarParada(viajeId);
+
+  let parada = null;
+
   for (const fase of FASES) {
+    // --- EL PUNTO DE CONTROL ENTRE FASES -----------------------------------
+    //
+    // Es el mínimo garantizado: aunque una fase no mire nada por dentro, aquí se
+    // para siempre, y se para en el sitio más limpio que hay —entre dos fases no
+    // hay nada a medias por definición—.
+    parada = paradaPedida(viajeId);
+    if (parada) {
+      console.log(`[worker] Trabajo #${trabajo.id}: parada «${parada}» pedida antes de «${fase.clave}».`);
+      break;
+    }
+
+    // LO QUE YA ESTÁ HECHO NO SE REHACE.
+    //
+    // Es lo que convierte «volver a encolar» en «reanudar»: tras una parada, las
+    // fases que llegaron a terminar siguen en 'hecho' y aquí se saltan, así que
+    // el montaje arranca en la primera pendiente, que es donde se dejó.
+    //
+    // «Volver a montar» sigue rehaciendo todo, porque `lanzarOrquestador` deja
+    // las seis en 'pendiente' antes de encolar: la diferencia está allí, no aquí.
+    const yaEstaba = una(
+      'SELECT estado FROM orquestador_fases WHERE viaje_id = ? AND fase = ?',
+      viajeId,
+      fase.clave
+    )?.estado;
+    if (['hecho', 'con_huecos'].includes(yaEstaba)) {
+      console.log(`[worker] Trabajo #${trabajo.id}: «${fase.clave}» ya estaba ${yaEstaba}; la salto.`);
+      if (yaEstaba === 'con_huecos') conHuecos += 1;
+      continue;
+    }
+
     empezarFase(viajeId, fase.clave);
 
     try {
@@ -1491,9 +1537,41 @@ async function ejecutarOrquestador(trabajo) {
         anotar(viajeId, fase.clave, `Prompt cargado de la tabla (${prompt.length} caracteres).`);
       }
 
+      // ¿Han pedido parar MIENTRAS corría esta fase? La fase ha terminado
+      // entera, así que se cierra como lo que es —hecha— y se para después.
+      // Cortar aquí una fase completa sería tirar trabajo bueno.
       const final = cerrarFase(viajeId, fase.clave, 'hecho');
       if (final === 'con_huecos') conHuecos += 1;
+
+      parada = paradaPedida(viajeId);
+      if (parada === 'limpia') {
+        anotarParada(viajeId, fase.clave, fase.etiqueta, pasoDeLaFase(viajeId, fase.clave));
+        limpiarParada(viajeId);
+        console.log(`[worker] Trabajo #${trabajo.id}: parado limpio tras «${fase.clave}».`);
+        return;
+      }
     } catch (err) {
+      // --- ¿ESTO ES UN FALLO O ES QUE LA HAN CORTADO? ----------------------
+      //
+      // Un aborto llega hasta aquí como un error cualquiera —la llamada de IA
+      // cancelada, el navegador cerrado de golpe—, y tratarlo como un fallo
+      // dejaría la fase en 'error' y seguiría con la siguiente, que es
+      // exactamente lo contrario de lo que se ha pedido.
+      parada = paradaPedida(viajeId);
+      if (parada === 'abortar') {
+        const paso = pasoDeLaFase(viajeId, fase.clave);
+        const { borrado } = limpiarParcialesDeFase(viajeId, fase.clave);
+        dejarFaseAMedias(viajeId, fase.clave);
+        anotarAborto(viajeId, fase.clave, fase.etiqueta, paso, borrado);
+        vaciarColaDelViaje(viajeId);
+        limpiarParada(viajeId);
+        console.log(
+          `[worker] Trabajo #${trabajo.id}: ABORTADO en «${fase.clave}». ` +
+            `Parciales limpiados: ${JSON.stringify(borrado)}.`
+        );
+        return;
+      }
+
       // Aquí muere el fallo de una fase. Se anota, se cierra en error y se sigue
       // con la siguiente: un viaje con una fase caída es algo que se puede
       // repasar; un viaje que se paró en la segunda no es nada.
@@ -1506,6 +1584,31 @@ async function ejecutarOrquestador(trabajo) {
       cerrarFase(viajeId, fase.clave, 'error');
       console.warn(`[worker] Trabajo #${trabajo.id}: fase «${fase.clave}» falló (${err.message}).`);
     }
+  }
+
+  // Un aborto que llega justo entre dos fases no revienta nada: se atiende
+  // aquí, con la fase que estuviera abierta cerrada como pendiente.
+  if (parada === 'abortar') {
+    const abierta = FASES.map((f) => f.clave).find(
+      (f) => una('SELECT estado FROM orquestador_fases WHERE viaje_id = ? AND fase = ?', viajeId, f)
+        ?.estado === 'en_curso'
+    );
+    if (abierta) {
+      const etiqueta = FASES.find((f) => f.clave === abierta)?.etiqueta ?? abierta;
+      const { borrado } = limpiarParcialesDeFase(viajeId, abierta);
+      dejarFaseAMedias(viajeId, abierta);
+      anotarAborto(viajeId, abierta, etiqueta, pasoDeLaFase(viajeId, abierta), borrado);
+    }
+    vaciarColaDelViaje(viajeId);
+    limpiarParada(viajeId);
+    console.log(`[worker] Trabajo #${trabajo.id}: abortado entre fases.`);
+    return;
+  }
+
+  if (parada === 'limpia') {
+    limpiarParada(viajeId);
+    console.log(`[worker] Trabajo #${trabajo.id}: parado limpio entre fases.`);
+    return;
   }
 
   // --- Y EL PRESUPUESTO, QUE NO ES UNA FASE -------------------------------

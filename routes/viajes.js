@@ -176,6 +176,10 @@ import {
   revisarReservasAnticipadas,
 } from '../services/reservas-anticipadas.js';
 import { calcularFronteras } from '../services/paises.js';
+import { pedirParada, paradaPedida } from '../services/orquestador-parada.js';
+import { reanudarOrquestador } from '../services/orquestador.js';
+import { abortarLlamadasDeIA } from '../lib/ia.js';
+import { abortarNavegadores } from '../lib/browser.js';
 import {
   interpretarDestino,
   guardarInterpretacion,
@@ -2615,6 +2619,69 @@ router.get('/viajes/:id/orquestador/estado', cargarViaje, (req, res) => {
 router.post('/viajes/:id/orquestador/lanzar', cargarViaje, (req, res) => {
   const r = lanzarOrquestador(req.viaje.id);
   res.json(r);
+});
+
+/**
+ * REANUDAR: sigue por donde se quedo, sin rehacer lo que ya esta hecho.
+ *
+ * Es la vuelta de cualquiera de las dos paradas. No reinicia las fases —eso es
+ * «volver a montar»—: encola y deja que el bucle se salte las resueltas.
+ */
+router.post('/viajes/:id/orquestador/reanudar', cargarViaje, (req, res) => {
+  const r = reanudarOrquestador(req.viaje.id);
+  if (r.nadaQueHacer) {
+    return res.status(409).json({ error: 'No queda ninguna fase pendiente en este viaje.' });
+  }
+  res.json(r);
+});
+
+/**
+ * PARAR EL MONTAJE. Dos niveles, y son dos cosas distintas.
+ *
+ *   'limpia'  · Se deja pedida la parada y se contesta al instante. El worker la
+ *               ve entre paso y paso, termina lo que tiene entre manos y no
+ *               empieza lo siguiente. No hay nada que limpiar porque no se corta
+ *               nada por la mitad.
+ *
+ *   'abortar' · Ademas de dejar la marca, se CORTA lo que este en vuelo: la
+ *               llamada de IA que espera respuesta y el navegador que este
+ *               scrapeando. Eso hace que la fase reviente, y el worker —que ve
+ *               la marca en su catch— limpia lo parcial en vez de tratarlo como
+ *               un fallo.
+ *
+ * La marca se deja SIEMPRE antes de cortar nada. Si se cortara primero, la fase
+ * reventaria, el worker miraria la marca, no la encontraria todavia y lo daria
+ * por un error normal: seguiria con la fase siguiente en vez de parar.
+ */
+router.post('/viajes/:id/orquestador/parar', cargarViaje, async (req, res) => {
+  const viaje = req.viaje;
+  const modo = req.body?.modo === 'abortar' ? 'abortar' : 'limpia';
+
+  const trabajando = Boolean(trabajoActivo(viaje.id, 'orquestador', viaje.id));
+  if (!trabajando) {
+    return res.status(409).json({ error: 'Ese viaje no se esta montando ahora mismo.' });
+  }
+
+  pedirParada(viaje.id, modo);
+
+  if (modo === 'limpia') {
+    console.log(`[rutas] Viaje #${viaje.id}: parada limpia pedida.`);
+    return res.json({ modo, mensaje: 'Parara en cuanto termine el paso que tiene entre manos.' });
+  }
+
+  // El freno de emergencia: se corta lo que este esperando.
+  const llamadas = abortarLlamadasDeIA();
+  const navegadores = await abortarNavegadores();
+  console.log(
+    `[rutas] Viaje #${viaje.id}: ABORTO. ${llamadas} llamada(s) de IA y ${navegadores} navegador(es) cortados.`
+  );
+
+  res.json({
+    modo,
+    llamadas,
+    navegadores,
+    mensaje: 'Cortado. Se esta limpiando lo que quedo a medias.',
+  });
 });
 
 /**

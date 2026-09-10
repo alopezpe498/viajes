@@ -522,3 +522,25 @@
   font-weight: 600;
 }
 .auto-chip input:focus-visible + span { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* --- Parar el montaje ------------------------------------------------------
+   Dos botones, y el segundo tiene que dar un poco de respeto: corta en seco y
+   despues hay que barrer lo que quedo escrito a medias. */
+.orq-parada {
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.orq-parada__nota { color: var(--texto-2); font-size: 13px; }
+
+.boton--peligro {
+  background: var(--alerta-tx);
+  border-color: var(--alerta-tx);
+  color: #fff;
+}
+
+.boton--peligro:hover { filter: brightness(1.08); }
+.boton--peligro:disabled { opacity: .55; }

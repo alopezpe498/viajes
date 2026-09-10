@@ -52,6 +52,7 @@ import {
 } from '../services/orquestador.js';
 import { calcularDistanciasDeLaRuta } from '../services/distancias-ciudades.js';
 import { ambitoDeTramo, POR_GRUPO } from '../services/presupuesto.js';
+import { hayQueParar } from '../services/orquestador-parada.js';
 
 const FASE = 'traslados';
 
@@ -575,6 +576,16 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
   for (let i = 0; i < etapas.length - 1; i += 1) {
     const desde = etapas[i];
     const hasta = etapas[i + 1];
+
+    // Entre salto y salto no hay nada a medias: el anterior está guardado y del
+    // siguiente no se ha tocado nada. Ver el punto de control de la fase 4.
+    if (hayQueParar(viajeId, FASE, `${desde.nombre_ciudad} → ${hasta.nombre_ciudad}`)) {
+      di(
+        `Parada pedida: lo dejo antes de ${desde.nombre_ciudad} → ${hasta.nombre_ciudad}.`,
+        ORIGENES.ninguno
+      );
+      break;
+    }
     const tramo = una(
       'SELECT * FROM transportes WHERE viaje_id = ? AND etapa_origen_id = ? AND etapa_destino_id = ?',
       viajeId,

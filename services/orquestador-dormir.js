@@ -35,6 +35,7 @@ import { buscarHoteles } from '../providers/booking.js';
 import { ocupacionDe, aplicarFiltrosLocales } from '../services/proveedores.js';
 import { elegirHotel } from '../services/etapa.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
+import { hayQueParar } from '../services/orquestador-parada.js';
 
 const FASE = 'dormir';
 
@@ -223,6 +224,20 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
   let resueltas = 0;
 
   for (const [i, etapa] of etapas.entries()) {
+    // EL PUNTO DE CONTROL DE LA PARADA.
+    //
+    // Entre ciudad y ciudad no hay nada a medias: la anterior está terminada y
+    // de la siguiente no se ha tocado nada. Es el mejor sitio para dejarlo, y
+    // por eso se mira aquí y no dentro del trabajo de una ciudad.
+    //
+    // Se corta con `break` y NO con una excepción: la fase devuelve lo que lleve
+    // hecho y el worker la cierra como terminada. Lo hecho, hecho queda; lo que
+    // falte lo hará el relanzado.
+    if (hayQueParar(viajeId, FASE, etapa.nombre_ciudad)) {
+      di(`Parada pedida: lo dejo antes de ${etapa.nombre_ciudad}.`, ORIGENES.ninguno);
+      break;
+    }
+
     const ciudad = etapa.nombre_ciudad;
 
     if (etapa.tocado_a_mano) {

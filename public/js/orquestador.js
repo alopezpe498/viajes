@@ -41,6 +41,23 @@
       const relleno = document.getElementById('orq-relleno');
       if (relleno) relleno.style.width = `${datos.porcentaje}%`;
 
+      // La caja de parada: se esconde en cuanto deja de haber algo corriendo, y
+      // mientras tanto dice si ya se ha pedido parar. Entre que se pulsa y que
+      // el worker llega a su punto de control pueden pasar segundos, y sin esto
+      // parece que el botón no ha hecho nada.
+      const caja = document.getElementById('orq-parada');
+      if (caja) caja.hidden = !datos.trabajando;
+
+      const nota = document.getElementById('orq-parada-nota');
+      if (nota) {
+        nota.textContent =
+          datos.parando === 'limpia'
+            ? 'Parando en cuanto termine el paso que tiene entre manos…'
+            : datos.parando === 'abortar'
+              ? 'Abortando y limpiando lo que quedó a medias…'
+              : '«Parar» acaba el paso en marcha y lo deja ahí. «Abortar ya» corta en seco.';
+      }
+
       const bajada = document.getElementById('orq-bajada');
       if (bajada) {
         bajada.textContent = datos.trabajando
@@ -104,6 +121,62 @@
         }
       }
     };
+
+    // =========================================================================
+    // PARAR Y ABORTAR
+    // -------------------------------------------------------------------------
+    // El de abortar pregunta antes, y no por cortesía: corta una llamada a
+    // mitad y después hay que barrer lo que quedó escrito. El otro no pregunta
+    // porque no rompe nada — como mucho, esperas unos segundos de más.
+    // =========================================================================
+    const pedirParada = async (modo, boton) => {
+      const nota = document.getElementById('orq-parada-nota');
+      const otros = [
+        document.getElementById('orq-parar'),
+        document.getElementById('orq-abortar'),
+      ];
+      for (const b of otros) if (b) b.disabled = true;
+      if (nota) nota.textContent = modo === 'abortar' ? 'Cortando…' : 'Pidiendo la parada…';
+
+      try {
+        const r = await fetch(`/viajes/${viajeId}/orquestador/parar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modo }),
+        });
+        const cuerpo = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(cuerpo.error || `El servidor respondió ${r.status}`);
+        if (nota) nota.textContent = cuerpo.mensaje ?? 'Hecho.';
+      } catch (err) {
+        if (nota) nota.textContent = `No se pudo parar: ${err.message}`;
+        for (const b of otros) if (b) b.disabled = false;
+      }
+    };
+
+    document
+      .getElementById('orq-parar')
+      ?.addEventListener('click', (ev) => pedirParada('limpia', ev.currentTarget));
+
+    document.getElementById('orq-abortar')?.addEventListener('click', (ev) => {
+      if (!confirm('¿Seguro? Se cancela todo de inmediato.')) return;
+      pedirParada('abortar', ev.currentTarget);
+    });
+
+    document.getElementById('orq-reanudar')?.addEventListener('click', async (ev) => {
+      const boton = ev.currentTarget;
+      const nota = document.getElementById('orq-reanudar-nota');
+      boton.disabled = true;
+      if (nota) nota.textContent = 'Reanudando…';
+      try {
+        const r = await fetch(`/viajes/${viajeId}/orquestador/reanudar`, { method: 'POST' });
+        const cuerpo = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(cuerpo.error || `El servidor respondió ${r.status}`);
+        location.reload();
+      } catch (err) {
+        if (nota) nota.textContent = err.message;
+        boton.disabled = false;
+      }
+    });
 
     if (panel.dataset.trabajando) {
       const reloj = setInterval(async () => {

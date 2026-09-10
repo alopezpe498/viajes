@@ -379,6 +379,7 @@ export function migrarEsquema() {
   migracionCorrectivoAtenas();
   migracionReservaDeTraslados();
   migracionTiempoDeLaIA();
+  migracionPararElOrquestador();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4647,6 +4648,50 @@ function migracionTiempoDeLaIA() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el tiempo de espera de la IA es un parametro (180 s) y hay reintento.');
+  return true;
+}
+
+/**
+ * PODER PARAR EL ORQUESTADOR SIN MATAR EL PROCESO.
+ *
+ * Hasta ahora, si algo iba mal a mitad de un viaje, la unica salida era `pm2
+ * kill`: se perdia el trabajo entero y la base quedaba como quedara. Dos niveles
+ * de parada, y son dos cosas distintas:
+ *
+ *   'limpia'  · Se pide y se espera. El orquestador termina la operacion que
+ *               tenga entre manos —la llamada de IA que ya salio, el scraping ya
+ *               lanzado— y NO empieza la siguiente. No queda nada a medias
+ *               porque no se corta nada por la mitad.
+ *
+ *   'abortar' · Freno de emergencia. Se cancela lo que este en vuelo, se vacia
+ *               la cola y despues se limpia lo que esa fase hubiera dejado
+ *               escrito a medias. Es el que se usa cuando algo esta colgado.
+ *
+ * `marcas` ES LO QUE HACE POSIBLE LIMPIAR SIN DESTROZAR NADA. Al empezar una
+ * fase se apunta el ultimo id de cada tabla del viaje. Si esa fase se aborta, lo
+ * que haya por ENCIMA de esos ids es suyo y solo suyo: se borra sin tocar una
+ * sola fila de las fases anteriores, que estan todas por debajo.
+ *
+ * Los ids son autoincrementales, asi que "por encima de" es exactamente "creado
+ * despues", sin necesitar una columna de fecha que estas tablas no tienen.
+ */
+function migracionPararElOrquestador() {
+  const CLAVE = '2026-09-parar-el-orquestador';
+  if (yaAplicada(CLAVE)) return false;
+
+  // La peticion de parada, en el viaje: solo hay una ejecucion por viaje a la
+  // vez, asi que no hace falta una tabla para esto.
+  anadirColumnaSiFalta('viajes', 'orquestador_parada', 'TEXT');
+
+  // La foto de por donde iba la base cuando empezo cada fase.
+  anadirColumnaSiFalta('orquestador_fases', 'marcas', 'TEXT');
+
+  // Y el paso concreto dentro de la fase, para poder decir "parado tras la fase
+  // sitios, paso Varsovia" en vez de solo el nombre de la fase.
+  anadirColumnaSiFalta('orquestador_fases', 'paso', 'TEXT');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el orquestador se puede parar y abortar desde la app.');
   return true;
 }
 

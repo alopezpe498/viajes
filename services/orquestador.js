@@ -660,6 +660,12 @@ export function progresoDeViaje(viajeId) {
 
   const activo = Boolean(trabajoActivo(viajeId, 'orquestador', viajeId));
   const ultimo = ultimoTrabajo(viajeId, 'orquestador', viajeId);
+
+  // ¿Hay una parada pedida y todavía sin atender? La pantalla lo enseña para
+  // que quien pulsó el botón sepa que se le ha oído: entre que se pide y que el
+  // worker llega a su punto de control pueden pasar segundos.
+  const parada =
+    una('SELECT orquestador_parada FROM viajes WHERE id = ?', viajeId)?.orquestador_parada ?? null;
   const resueltas = fases.filter((f) => f.resuelta).length;
 
   return {
@@ -668,6 +674,9 @@ export function progresoDeViaje(viajeId) {
     // de "terminado hace un rato".
     empezado: Boolean(ultimo) || fases.some((f) => f.estado !== 'pendiente'),
     trabajando: activo,
+    // 'limpia' | 'abortar' | null. Solo cuenta mientras haya algo corriendo:
+    // una marca huérfana de una ejecución anterior no es una parada en curso.
+    parando: activo ? parada : null,
     terminado: !activo && resueltas === fases.length,
     resueltas,
     total: fases.length,
@@ -693,6 +702,36 @@ export function progresoDeViaje(viajeId) {
  * y arrancar con la mitad en «hecho» de la vuelta anterior enseñaría un progreso
  * que no es el de ahora.
  */
+/**
+ * REANUDA DESDE DONDE SE QUEDÓ.
+ *
+ * `lanzarOrquestador` REINICIA: borra las seis filas y las deja pendientes, que
+ * es lo correcto cuando alguien pide volver a montar el viaje. Después de una
+ * parada eso sería tirar el trabajo bueno: las fases que llegaron a terminar ya
+ * están hechas y no hay que rehacerlas.
+ *
+ * Así que esto encola sin tocar los estados. El bucle del worker se salta las
+ * que ya están resueltas, así que arranca en la primera pendiente — que es
+ * justamente donde se paró.
+ */
+export function reanudarOrquestador(viajeId) {
+  if (trabajoActivo(viajeId, 'orquestador', viajeId)) {
+    return { yaEstaba: true, viajeId };
+  }
+
+  const pendientes = todas(
+    `SELECT fase FROM orquestador_fases
+      WHERE viaje_id = ? AND estado NOT IN ('hecho', 'con_huecos')
+      ORDER BY orden`,
+    viajeId
+  ).map((f) => f.fase);
+
+  if (!pendientes.length) return { nadaQueHacer: true, viajeId };
+
+  encolar(viajeId, 'orquestador', viajeId);
+  return { viajeId, pendientes };
+}
+
 export function lanzarOrquestador(viajeId) {
   if (trabajoActivo(viajeId, 'orquestador', viajeId)) {
     return { yaEstaba: true, viajeId };
@@ -751,6 +790,43 @@ export function faseEnCurso() {
   return enCurso;
 }
 
+/**
+ * LAS TABLAS DEL VIAJE QUE UNA FASE PUEDE LLENAR.
+ *
+ * Todas llevan `viaje_id`, así que todo lo que hay en ellas es de este viaje.
+ * El CATÁLOGO no está aquí a propósito: `sitios_lugar` y
+ * `catalogo_transporte_tramo` son conocimiento del mundo compartido entre
+ * viajes, y barrerlos por abortar un montaje se llevaría por delante lo que otro
+ * viaje ya había investigado.
+ *
+ * `itinerario` va primero al borrar porque cuelga de `candidatos`: al revés, el
+ * CASCADE se llevaría colocaciones de fases anteriores.
+ */
+export const TABLAS_DEL_VIAJE = ['itinerario', 'candidatos', 'transportes', 'traslados', 'etapas'];
+
+/**
+ * POR DÓNDE VA LA BASE DE ESTE VIAJE AHORA MISMO.
+ *
+ * Se guarda al empezar cada fase y es lo que permite, si hay que abortar, borrar
+ * lo que escribió ESA fase y nada más: los ids son autoincrementales, así que
+ * «por encima de este id» es exactamente «creado después de empezar la fase».
+ * Sin esto habría que adivinar qué era de quién, y adivinar borrando no.
+ */
+export function fotoDeLaBase(viajeId) {
+  const foto = {};
+  for (const tabla of TABLAS_DEL_VIAJE) {
+    try {
+      foto[tabla] = una(
+        `SELECT COALESCE(MAX(id), 0) AS n FROM ${tabla} WHERE viaje_id = ?`,
+        viajeId
+      ).n;
+    } catch {
+      foto[tabla] = 0; // tabla que no existe en una base vieja: no hay nada suyo
+    }
+  }
+  return foto;
+}
+
 export function empezarFase(viajeId, fase) {
   enCurso = { viajeId, fase };
 
@@ -769,10 +845,12 @@ export function empezarFase(viajeId, fase) {
 
   ejecutar(
     `UPDATE orquestador_fases
-        SET estado = 'en_curso', huecos = NULL, pasada = ?,
+        SET estado = 'en_curso', huecos = NULL, pasada = ?, paso = NULL,
+            marcas = ?,
             empezado_en = datetime('now'), terminado_en = NULL
       WHERE viaje_id = ? AND fase = ?`,
     previa + 1,
+    JSON.stringify(fotoDeLaBase(viajeId)),
     viajeId,
     fase
   );

@@ -59,6 +59,7 @@ import {
   ORIGENES,
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
+import { hayQueParar } from '../services/orquestador-parada.js';
 
 const FASE = 'lienzo';
 
@@ -700,6 +701,13 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
 
   for (const etapa of etapas) {
     const ciudad = etapa.nombre_ciudad;
+
+    // Entre salto y salto no hay nada a medias: el anterior está guardado y del
+    // siguiente no se ha tocado nada. Ver el punto de control de la fase 4.
+    if (hayQueParar(viajeId, FASE, ciudad)) {
+      di(`Parada pedida: lo dejo antes de ${ciudad}.`, ORIGENES.ninguno);
+      break;
+    }
 
     // El lienzo se relee en cada etapa: lo colocado en la anterior ya cuenta.
     const lienzo = lienzoDeViaje(viajeId);

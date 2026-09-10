@@ -69,6 +69,31 @@ const cuandoCorto = (iso) => {
       </p>
     </header>
 
+    <%# ===================== PARAR ESTO =====================
+        Dos botones y muy distintos a la vista, porque hacen cosas muy
+        distintas. El normal espera a que termine el paso que hay en marcha y no
+        deja nada a medias; el rojo corta en seco y después hay que barrer.
+
+        Solo salen mientras haya algo corriendo: un botón de parar en una
+        pantalla parada no para nada y solo confunde. %>
+    <div class="orq-parada" id="orq-parada" <%= progreso.trabajando ? '' : 'hidden' %>>
+      <button class="boton boton--secundario" type="button" id="orq-parar">
+        <i class="ti ti-player-pause" aria-hidden="true"></i> Parar
+      </button>
+      <button class="boton boton--peligro" type="button" id="orq-abortar">
+        <i class="ti ti-hand-stop" aria-hidden="true"></i> Abortar ya
+      </button>
+      <span class="orq-parada__nota" id="orq-parada-nota">
+        <% if (progreso.parando === 'limpia') { %>
+          Parando en cuanto termine el paso que tiene entre manos…
+        <% } else if (progreso.parando === 'abortar') { %>
+          Abortando y limpiando lo que quedó a medias…
+        <% } else { %>
+          «Parar» acaba el paso en marcha y lo deja ahí. «Abortar ya» corta en seco.
+        <% } %>
+      </span>
+    </div>
+
     <%# La barra: cuántas fases están resueltas, con hueco o sin él. %>
     <div class="orq-barra" role="progressbar" aria-valuemin="0" aria-valuemax="100"
          aria-valuenow="<%= progreso.porcentaje %>" aria-label="Progreso del montaje">
@@ -157,6 +182,19 @@ const cuandoCorto = (iso) => {
           <% }) %>
         </ul>
       </section>
+    <% } %>
+
+    <%# REANUDAR: sale cuando el montaje esta parado a medias, que es justo lo
+        que deja una parada. No rehace lo hecho: sigue por la primera pendiente. %>
+    <% if (!progreso.trabajando && progreso.empezado && !progreso.terminado) { %>
+      <div class="orq-parada">
+        <button class="boton boton--primario" type="button" id="orq-reanudar">
+          <i class="ti ti-player-play" aria-hidden="true"></i> Reanudar donde se quedó
+        </button>
+        <span class="orq-parada__nota" id="orq-reanudar-nota">
+          Las fases ya hechas no se repiten.
+        </span>
+      </div>
     <% } %>
 
     <div class="orq-pie">

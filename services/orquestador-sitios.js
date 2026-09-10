@@ -42,7 +42,8 @@ import { situarLosSitios } from '../services/direcciones.js';
 import { buscarDatosDeSitios } from '../services/datos-sitios.js';
 import { destinoPorNombre } from '../services/catalogo.js';
 import { ocupacionDe } from '../services/proveedores.js';
-import { anotar, apuntarHueco, configAuto } from '../services/orquestador.js';
+import { anotar, apuntarHueco, configAuto, ORIGENES } from '../services/orquestador.js';
+import { hayQueParar } from '../services/orquestador-parada.js';
 
 const FASE = 'sitios';
 
@@ -109,6 +110,20 @@ export async function ejecutarFaseSitios(viaje, prompt) {
 
   for (const etapa of etapas) {
     const ciudad = etapa.nombre_ciudad;
+
+    // EL PUNTO DE CONTROL DE LA PARADA.
+    //
+    // Entre ciudad y ciudad no hay nada a medias: la anterior está terminada y
+    // de la siguiente no se ha tocado nada. Es el mejor sitio para dejarlo, y
+    // por eso se mira aquí y no dentro del trabajo de una ciudad.
+    //
+    // Se corta con `break` y NO con una excepción: la fase devuelve lo que lleve
+    // hecho y el worker la cierra como terminada. Lo hecho, hecho queda; lo que
+    // falte lo hará el relanzado.
+    if (hayQueParar(viajeId, FASE, ciudad)) {
+      di(`Parada pedida: lo dejo antes de ${ciudad}.`, ORIGENES.ninguno);
+      break;
+    }
 
     const punto = etapa.punto_interes_id
       ? una('SELECT * FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
