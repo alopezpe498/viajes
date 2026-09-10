@@ -378,6 +378,7 @@ export function migrarEsquema() {
   migracionPuertaSinUnSoloPais();
   migracionCorrectivoAtenas();
   migracionReservaDeTraslados();
+  migracionTiempoDeLaIA();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4608,6 +4609,44 @@ function migracionReservaDeTraslados() {
   console.log(
     `[bd] Migracion: ${resueltos.length} traslado(s) ya elegido(s) pasan a ser reservables.`
   );
+  return true;
+}
+
+/**
+ * EL TIEMPO QUE SE LE DA A LA IA PARA CONTESTAR.
+ *
+ * Estaba escrito a fuego en `lib/ia.js`: sesenta segundos, con el comentario
+ * "un minuto es de sobra". Y lo era con Haiku. Al cambiar a Sonnet dejo de
+ * serlo: contesta mejor y mas despacio, y fases enteras empezaron a caerse con
+ * "La IA tardo mas de 60 s al investigar Tesalonica".
+ *
+ * Un numero que depende del modelo que tengas puesto no puede vivir en una
+ * constante: vive donde se puedan cambiar los demas, y se lee en cada llamada
+ * para que cambiarlo no obligue a reiniciar nada.
+ *
+ * Y UN REINTENTO, porque un timeout no es un error de logica: casi siempre es
+ * una respuesta que venia larga o un momento malo de la red. Volver a
+ * preguntarlo una vez sale mas barato que dar la fase por perdida y relanzarla
+ * entera a mano.
+ */
+function migracionTiempoDeLaIA() {
+  const CLAVE = '2026-09-timeout-de-la-ia';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('timeout_ia_segundos', '180', 'Cuanto se espera a que la IA conteste antes de darlo por perdido', 'segundos');
+  nuevo('reintentos_ia', '1', 'Cuantas veces se vuelve a preguntar cuando la IA se pasa de tiempo', 'veces');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el tiempo de espera de la IA es un parametro (180 s) y hay reintento.');
   return true;
 }
 

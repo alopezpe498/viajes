@@ -728,7 +728,32 @@ export function lanzarOrquestador(viajeId) {
  * Arrastrar los de la vuelta anterior sería pedir que se repase a mano algo que
  * a lo mejor esta vuelta ya ha resuelto.
  */
+/**
+ * QUIÉN ESTÁ TRABAJANDO AHORA MISMO.
+ *
+ * Sirve para que cosas que están MUY por debajo —la llamada a la IA, en
+ * `lib/ia.js`— puedan dejar una nota en el registro de la fase sin que haya que
+ * arrastrar el viaje y la fase por siete capas de argumentos.
+ *
+ * ES UNA VARIABLE GLOBAL, Y AQUÍ SÍ SE PUEDE. La cola ejecuta los trabajos DE
+ * UNO EN UNO —está en `jobs/cola.js` y es lo que impide que dos scrapers peleen
+ * por el mismo Chrome—, así que en este proceso no hay dos fases a la vez. Si
+ * algún día se ejecutaran en paralelo, esto habría que pasarlo por argumento; el
+ * comentario está aquí para que se vea antes de romperlo.
+ *
+ * Fuera del orquestador vale null, y quien la lea no anota nada: una consulta
+ * desde la pantalla de una etapa no pertenece a ninguna fase.
+ */
+let enCurso = null;
+
+/** El viaje y la fase que se están ejecutando, o null. */
+export function faseEnCurso() {
+  return enCurso;
+}
+
 export function empezarFase(viajeId, fase) {
+  enCurso = { viajeId, fase };
+
   // LA PASADA SE CUENTA DESDE EL REGISTRO, no desde esta fila.
   //
   // «Volver a montar» borra y recrea las filas de `orquestador_fases`, así que
@@ -886,6 +911,9 @@ export function apuntarHueco(viajeId, fase, texto) {
  * usuario va a mirar.
  */
 export function cerrarFase(viajeId, fase, estado = 'hecho') {
+  // Se suelta aquí: lo que venga después ya no es de esta fase.
+  if (enCurso?.viajeId === viajeId && enCurso?.fase === fase) enCurso = null;
+
   const fila = una(
     'SELECT huecos FROM orquestador_fases WHERE viaje_id = ? AND fase = ?',
     viajeId,
