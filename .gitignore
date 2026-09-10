@@ -22,3 +22,7 @@ dosieres/
 Thumbs.db
 Desktop.ini
 *.log
+
+db/viajes.db
+db/viajes.db-shm
+db/viajes.db-wal
