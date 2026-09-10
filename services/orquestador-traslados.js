@@ -92,7 +92,22 @@ export function aMinutos(texto) {
 
 /** "89 €", "unos 30-40 EUR" -> 89 / 30. El suelo, que es lo que se compara. */
 export function aPrecio(texto) {
-  const m = String(texto ?? '').match(/(\d+(?:[.,]\d+)?)/);
+  const t = String(texto ?? '');
+
+  // SOLO EUROS, Y SI NO SE SABE LA MONEDA NO HAY NUMERO.
+  //
+  // Desde que los precios los trae la busqueda, vienen como los escribe la
+  // fuente: "Entre 40 PLN y 94 PLN (~9 EUR a 22 EUR)". Leer el primer numero
+  // daba 40 y lo comparaba con euros, o sea que un tren de 9 EUR entraba en la
+  // regla del empate como si costara 40. Se busca el primer numero que este
+  // en euros y se ignoran los que llevan otra moneda pegada.
+  if (!/€|\beur/i.test(t)) return null;
+
+  // El numero entero, no un trozo suyo: sin los bordes, al descartar "40 PLN"
+  // el buscador se quedaba con el "0" de al lado y devolvia 4.
+  const m = t.match(
+    /(?<![\d.,])(\d+(?:[.,]\d+)?)(?![\d.,])(?!\s*(?:PLN|z\u0142|CZK|HUF|RON|GBP|USD|CHF|SEK|NOK|DKK|K\u010d))/i
+  );
   return m ? Number(m[1].replace(',', '.')) : null;
 }
 
@@ -181,7 +196,14 @@ async function opcionesPorTierra(ciudadA, ciudadB, viajeId) {
       modo: f.medio,
       nombre: f.nombre,
       trayecto: aMinutos(f.duracion),
-      precio: aPrecio(f.precio),
+      // EL PRECIO SOLO CUENTA SI SE SABE DE DÓNDE SALE.
+      //
+      // Las fichas viejas llevan precios que escribió el modelo de memoria —el
+      // Pendolino a 120 € cuando cuesta 25, un alquiler de coche a 1 €— y
+      // entraban en la regla del empate como si fueran ciertos. Ahora solo se
+      // usa el que trajo la búsqueda o el que escribiste tú; el resto es un
+      // hueco declarado, que es la verdad.
+      precio: ['busqueda', 'manual'].includes(f.precio_origen) ? aPrecio(f.precio) : null,
       horario: f.frecuencia || null,
       nota: f.nota || null,
     }))
@@ -196,10 +218,19 @@ async function opcionesPorTierra(ciudadA, ciudadB, viajeId) {
  * Se buscan si la fase 1 estimó que ese salto se hace en avión, o si por tierra
  * se va por encima de cinco horas. En un salto de dos horas en tren, abrir el
  * navegador para mirar vuelos es tiempo tirado: el avión no puede ganar.
+ *
+ * `mejorTierra` ES EL TIEMPO REAL PUERTA A PUERTA de la mejor opción terrestre,
+ * no la estimación de la fase 1 ni el tiempo dentro del vagón. Esa distinción
+ * costó un vuelo sin mirar: en Polonia la estimación dijo «menos de cinco horas»
+ * para Gdansk → Cracovia, que puerta a puerta son más de seis, y el avión ni se
+ * consultó. La matriz estimada sirve para descartar candidatas lejísimas sin
+ * gastar búsquedas; nunca para decidir tierra contra aire en la ruta ya elegida.
  */
 async function opcionesEnAvion({ viaje, ciudadA, ciudadB, mejorTierra, loDijoLaFase1, auto }) {
   const mereceLaPena = loDijoLaFase1 || !mejorTierra || mejorTierra > TIERRA_LARGA_MIN;
-  if (!mereceLaPena) return { opciones: [], porQue: 'por tierra se llega en menos de cinco horas' };
+  if (!mereceLaPena) {
+    return { opciones: [], porQue: 'por tierra se llega en menos de cinco horas puerta a puerta' };
+  }
 
   const iataA = await resolverIata(ciudadA);
   const iataB = await resolverIata(ciudadB);
@@ -283,7 +314,14 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
   if (opcion.clase === 'tierra') {
     elegirMedio(tramo.id, opcion.fichaId);
     guardarDatosDelTramo(tramo.id, opcion.fichaId, {
-      horario: horaSalida,
+      // LA HORA ES UN PLAN, NO UN HORARIO PUBLICADO.
+      //
+      // El catálogo guarda frecuencias («cada 30 minutos»), no salidas
+      // concretas: esta hora la elige la IA para que el día cuadre. Guardarla a
+      // secas la convertía en «sale 09:00» en Mi ruta, que se lee como el
+      // horario del billete. Con «sobre las» sigue sirviendo para colocar el
+      // traslado en el lienzo sin fingir un dato que nadie ha consultado.
+      horario: horaSalida ? `sobre las ${horaSalida}` : null,
       precioReal: opcion.precio != null ? String(opcion.precio) : null,
       referencia: null,
       nota: porQue,
@@ -366,12 +404,18 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       return [];
     }
   })();
-  const loEstimoEnAvion = (a, b) =>
-    estimados.some(
-      (t) =>
-        t.modo === 'vuelo' &&
-        ((t.desde === a && t.hasta === b) || (t.desde === b && t.hasta === a))
-    );
+  const delPar = (a, b) =>
+    estimados.find(
+      (t) => (t.desde === a && t.hasta === b) || (t.desde === b && t.hasta === a)
+    ) ?? null;
+
+  const loEstimoEnAvion = (a, b) => delPar(a, b)?.modo === 'vuelo';
+
+  /** Los minutos que la fase 1 se imaginó para ese salto, si se imaginó alguno. */
+  const minutosEstimados = (a, b) => {
+    const n = Number(delPar(a, b)?.minutos);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
 
   di(`${etapas.length} paradas: ${etapas.length - 1} salto(s) que resolver.`);
 
@@ -406,7 +450,34 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       di(`   No pude mirar por tierra: ${err.message}`);
     }
 
-    const mejorTierra = porTierra.length ? Math.min(...porTierra.map((o) => o.trayecto)) : null;
+    // LA TIERRA SE MIDE PUERTA A PUERTA ANTES DE DECIDIR NADA.
+    //
+    // Antes se comparaba con el umbral el tiempo del trayecto —lo que dura el
+    // tren— y, encima, la estimación de la fase 1 podía dar el salto por corto
+    // sin haber mirado ninguna opción real. Así se quedó sin consultar el vuelo
+    // de Gdansk a Cracovia: «menos de cinco horas» decía la estimación, y son
+    // seis y cuarto puerta a puerta contando ir a la estación y la antelación.
+    //
+    // El bloque puerta a puerta se calcula aquí una sola vez y viaja con la
+    // opción hasta el final: es el número que decide si se mira el avión y
+    // también el que compite después.
+    const medidasTierra = porTierra.map((o) => ({
+      ...o,
+      bloque: puertaAPuerta(o.modo, o.trayecto, params),
+    }));
+    const mejorTierra = medidasTierra.length
+      ? Math.min(...medidasTierra.map((o) => o.bloque.total))
+      : null;
+
+    const estimado = minutosEstimados(desde.nombre_ciudad, hasta.nombre_ciudad);
+    if (estimado != null && estimado <= TIERRA_LARGA_MIN && mejorTierra > TIERRA_LARGA_MIN) {
+      di(
+        `   La estimación decía ${comoTexto(estimado)}, pero la mejor opción real son ` +
+          `${comoTexto(mejorTierra)}: miro también vuelo interno.`,
+        ORIGENES.busqueda
+      );
+    }
+
     const aire = await opcionesEnAvion({
       viaje,
       ciudadA: desde.nombre_ciudad,
@@ -417,7 +488,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     });
     if (aire.porQue) di(`   Sin mirar vuelos: ${aire.porQue}.`);
 
-    const opciones = [...porTierra, ...aire.opciones];
+    const opciones = [...medidasTierra, ...aire.opciones];
 
     if (!opciones.length) {
       apuntarHueco(
@@ -430,10 +501,14 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     }
 
     // --- Puerta a puerta, que es lo que compite --------------------------
-    const medidas = opciones.map((o, n) => {
-      const bloque = puertaAPuerta(o.modo, o.trayecto, params);
-      return { ...o, id: `op${n + 1}`, bloque };
-    });
+    //
+    // Las terrestres ya vienen medidas de arriba —con ese número se decidió si
+    // mirar vuelos—, así que aquí solo les falta el bloque a las de avión.
+    const medidas = opciones.map((o, n) => ({
+      ...o,
+      id: `op${n + 1}`,
+      bloque: o.bloque ?? puertaAPuerta(o.modo, o.trayecto, params),
+    }));
     medidas.sort((a, b) => a.bloque.total - b.bloque.total);
 
     // Duraciones y precios salen del catálogo de tramos, que se llenó con el
@@ -442,7 +517,11 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     di(
       `   ${medidas.length} opción(es): ` +
         medidas
-          .map((o) => `${o.nombre} [${comoTexto(o.bloque.total)} puerta a puerta${o.precio != null ? `, ${o.precio} €` : ''}]`)
+          .map(
+            (o) =>
+              `${o.nombre} [${comoTexto(o.bloque.total)} puerta a puerta` +
+              `${o.precio != null ? `, ${o.precio} €` : ', precio no encontrado'}]`
+          )
           .join(' · '),
       ORIGENES.busqueda
     );
@@ -455,6 +534,27 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     const rapida = medidas[0];
     const barata = [...medidas].sort((a, b) => (a.precio ?? 1e9) - (b.precio ?? 1e9))[0];
     let reglaDelEmpate = null;
+
+    // SIN LOS DOS PRECIOS NO HAY REGLA, Y SE DICE.
+    //
+    // La regla compara «cuánto más tarda» contra «cuántas veces más cuesta».
+    // Con un precio a medias la comparación no existe, y antes eso pasaba en
+    // silencio: ahora gana la más rápida, como siempre, pero queda escrito por
+    // qué no se ha mirado el dinero. Sin el aviso, un empate que no se evalúa se
+    // confunde con un empate que se evaluó y no salió.
+    // Se mira sobre TODAS las opciones y no solo sobre la rápida y la barata: si
+    // no hay ningún precio, la «barata» acaba siendo la propia rápida y el aviso
+    // no llegaba a saltar justo en el caso en que menos se sabe.
+    const sinPrecio = medidas.filter((o) => o.precio == null);
+    if (medidas.length > 1 && sinPrecio.length) {
+      di(
+        `   Empate por precio no aplicable: falta el precio de ` +
+          `${sinPrecio.map((o) => `${o.id} (${o.nombre})`).join(', ')}. ` +
+          'Gana la más rápida puerta a puerta.',
+        ORIGENES.ninguno
+      );
+    }
+
     if (
       barata.id !== rapida.id &&
       rapida.precio != null &&
@@ -488,7 +588,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
             `- ${o.id} · ${o.nombre} (${o.modo})\n` +
             `  puerta a puerta: ${comoTexto(o.bloque.total)} = ${o.bloque.acceso} ir + ` +
             `${o.bloque.antelacion} de antelación + ${o.bloque.trayecto} de trayecto + ${o.bloque.salida} al llegar\n` +
-            `  precio: ${o.precio != null ? `${o.precio} €` : 'no lo sé'}` +
+            `  precio: ${o.precio != null ? `${o.precio} €` : 'precio no encontrado'}` +
             `${o.horario ? `\n  horarios: ${o.horario}` : ''}` +
             `${o.nota ? `\n  nota: ${o.nota}` : ''}`
         )
@@ -535,7 +635,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
 
     di(
       `${desde.nombre_ciudad} → ${hasta.nombre_ciudad}: ${eleccion.opcion.nombre}` +
-        `${eleccion.hora ? ` de ${eleccion.hora}` : ''}, ` +
+        `${eleccion.hora ? ` sobre las ${eleccion.hora}` : ''}, ` +
         `${comoTexto(eleccion.opcion.bloque.total)} puerta a puerta.`
     );
     if (eleccion.porQue) di(`   Por qué: ${eleccion.porQue}`);

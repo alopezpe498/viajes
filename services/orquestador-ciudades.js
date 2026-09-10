@@ -148,6 +148,64 @@ function saneaCandidatas(respuesta, tope) {
   return { ciudades, tiempos };
 }
 
+/**
+ * LA RUTA QUE LA IA DICE HABER SUMADO, comprobada contra las candidatas vivas.
+ *
+ * En Polonia el paso 2 eligió la puerta sumando los traslados de una ruta que
+ * pasaba por Łódź —descartada por no llegar al mínimo de noches— y después el
+ * paso 3 montó otra distinta. Los vuelos se compraron con las cuentas de un
+ * recorrido que no existió nunca.
+ *
+ * Ahora la declara, y aquí se comprueba lo único comprobable: que solo lleve
+ * ciudades que siguen en juego y que empiece y acabe donde mandan los vuelos.
+ * Lo que no cuadre se dice en el registro y la ruta se descarta como base; el
+ * paso 3 seguirá funcionando como antes, pero se sabrá por qué.
+ *
+ * Devuelve los nombres tal y como están en las candidatas —no como los escribió
+ * la IA—, o null si no vale.
+ */
+export function saneaRutaPrevista(crudo, candidatas, elegida, avisar) {
+  if (!Array.isArray(crudo) || crudo.length < 2) return null;
+
+  const porNombre = new Map(candidatas.map((c) => [normalizarNombre(c.nombre), c.nombre]));
+  const fuera = [];
+  const dentro = [];
+
+  for (const x of crudo) {
+    const nombre = typeof x === 'string' ? x.trim() : '';
+    if (!nombre) continue;
+    const bueno = porNombre.get(normalizarNombre(nombre));
+    if (!bueno) {
+      fuera.push(nombre);
+      continue;
+    }
+    // Repetir la ciudad al final (ida y vuelta por el mismo sitio) es legítimo;
+    // repetirla dos veces seguidas es un descuido de la IA.
+    if (dentro[dentro.length - 1] !== bueno) dentro.push(bueno);
+  }
+
+  if (fuera.length) {
+    avisar(
+      `   OJO: la ruta que dice haber sumado incluye ${fuera.join(', ')}, que no ` +
+        'está entre las candidatas vivas. Esos tiempos no debían entrar en su cuenta.'
+    );
+  }
+
+  const empieza = normalizarNombre(dentro[0] ?? '') === normalizarNombre(elegida.entrada.ciudad);
+  const acaba =
+    normalizarNombre(dentro[dentro.length - 1] ?? '') === normalizarNombre(elegida.salida.ciudad);
+
+  if (dentro.length < 2 || !empieza || !acaba) {
+    avisar(
+      '   La ruta prevista no empieza en la entrada y acaba en la salida de los ' +
+        'vuelos elegidos, así que no la uso como base del reparto.'
+    );
+    return null;
+  }
+
+  return dentro;
+}
+
 // =============================================================================
 // PASO 2: LAS PUERTAS, CON VUELOS DE VERDAD
 // =============================================================================
@@ -439,6 +497,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
 
   let elegida = null;
   let porQue = null;
+  let rutaPrevista = null;
 
   if (promptPuerta) {
     try {
@@ -475,6 +534,23 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
           typeof r?.por_que === 'string' && r.por_que.trim()
             ? r.por_que.trim()
             : `entro por ${cual.entrada.ciudad} y salgo por ${cual.salida.ciudad}`;
+
+        // LA RUTA CON LA QUE HA HECHO LA CUENTA. Se guarda para dársela al paso
+        // 3: la puerta y los vuelos se han decidido sobre ESE recorrido, y
+        // repartir las noches sobre otro distinto convierte la decisión en humo.
+        rutaPrevista = saneaRutaPrevista(r?.ruta_prevista, candidatas, cual, (t) =>
+          anotar(viajeId, 'ciudades_y_noches', t)
+        );
+        const suyos = Math.round(Number(r?.minutos_internos));
+        if (rutaPrevista) {
+          anotar(
+            viajeId,
+            'ciudades_y_noches',
+            `   Ruta con la que ha echado la cuenta: ${rutaPrevista.join(' → ')}` +
+              (Number.isFinite(suyos) && suyos > 0 ? ` (${comoTexto(suyos)} de traslados internos)` : ''),
+            ORIGENES.ia
+          );
+        }
       }
     } catch (err) {
       anotar(viajeId, 'ciudades_y_noches', `   La IA no pudo elegir la puerta (${err.message}).`);
@@ -494,7 +570,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   }
 
   anotar(viajeId, 'ciudades_y_noches', `Puerta elegida: ${porQue}.`);
-  return { puertas: elegida, porQue };
+  return { puertas: elegida, porQue, rutaPrevista };
 }
 
 // =============================================================================
@@ -1066,6 +1142,16 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     ENTRADA: entrada,
     SALIDA: salida,
     HORARIOS_VUELOS: horariosReales,
+    // LA RUTA SOBRE LA QUE SE COMPRARON LOS VUELOS.
+    //
+    // El paso 2 no elige la puerta por los minutos de vuelo: los suma con los
+    // traslados de la ruta que esa puerta obliga a hacer. Esa ruta es ahora un
+    // dato, no una idea que se quedó en su cabeza, y el cierre parte de ella.
+    // Cuando no la haya declarado —o no cuadre con las candidatas— se dice, y el
+    // paso 3 trabaja como antes.
+    RUTA_PREVISTA: conVuelos.rutaPrevista
+      ? conVuelos.rutaPrevista.join(' → ')
+      : '(no quedó declarada al elegir la puerta: monta la ruta con el criterio de siempre)',
     // Solo las que pueden ser parada. Las de excursión no se le enseñan
     // siquiera: si están en la lista, acaba metiéndolas.
     CANDIDATAS: candidatasDeRuta
@@ -1187,6 +1273,23 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   // parada de menor peso. Se corrige aquí en vez de volver a preguntar: mover
   // una noche de una lista es aritmética, y la aritmética la hace mejor el
   // código que el modelo.
+  // ¿SE HA APARTADO DE LA RUTA PREVISTA? Se dice, sin más.
+  //
+  // El prompt le pide que parta de ella y que, si se aparta, lo explique en el
+  // resumen. Esto no se lo impide —a veces apartarse es lo correcto—, pero deja
+  // el hecho escrito: en Polonia la puerta se eligió sumando un recorrido y el
+  // cierre montó otro, y no había forma de verlo salvo leyendo dos párrafos y
+  // comparándolos a mano.
+  if (conVuelos.rutaPrevista) {
+    const igual = (lista) => lista.map((x) => normalizarNombre(x)).join(' → ');
+    if (igual(conVuelos.rutaPrevista) !== igual(ruta.map((p) => p.ciudad))) {
+      di(
+        `La ruta final NO es la prevista al elegir la puerta. Prevista: ` +
+          `${conVuelos.rutaPrevista.join(' → ')}. Final: ${ruta.map((p) => p.ciudad).join(' → ')}.`
+      );
+    }
+  }
+
   // Hasta tres pases: cada uno mueve UNA noche y se vuelve a mirar. Más de tres
   // correcciones ya no es afinar un reparto, es rehacerlo, y eso no toca aquí.
   for (let pase = 0; pase < 3; pase += 1) {

@@ -140,6 +140,7 @@
 
 .orq-origen--scraping { background: var(--verde-bg); color: var(--verde-tx); }
 .orq-origen--busqueda { background: var(--info-bg);  color: var(--info-tx); }
+.orq-origen--estimacion { background: var(--fondo); color: var(--texto-2); box-shadow: inset 0 0 0 1px var(--borde-fuerte); }
 .orq-origen--ia       { background: var(--prec-bg);  color: var(--prec-tx); }
 
 /* LAS PASADAS ANTERIORES, plegadas. */

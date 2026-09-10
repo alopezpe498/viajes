@@ -278,7 +278,13 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
     }
 
     if (rango) {
-      di(`   «${auto.nivelPrecio}» en ${ciudad} ≈ ${rango.min}-${rango.max} €/noche.${rango.porQue ? ` ${rango.porQue}` : ''}`);
+      // Una ESTIMACIÓN declarada: nadie ha buscado este rango, lo pone la IA
+      // para acotar la búsqueda. Se enseña con «≈» y se etiqueta como lo que es,
+      // que no es lo mismo que un precio inventado haciéndose pasar por dato.
+      di(
+        `   «${auto.nivelPrecio}» en ${ciudad} ≈ ${rango.min}-${rango.max} €/noche.${rango.porQue ? ` ${rango.porQue}` : ''}`,
+        ORIGENES.estimacion
+      );
     } else {
       // SIN RANGO SE BUSCA IGUAL, sin filtro de precio. Es peor —habrá que
       // elegir entre cosas de todos los precios— pero infinitamente mejor que
@@ -341,7 +347,9 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
       // Los números de esta línea son los de nuestra propia escalera (el radio al
       // que ampliamos, el porcentaje que ensanchamos), no datos de fuera.
       if (escalon.comoSeLlama) {
-        di(`   Sin resultados. Lo intento ${escalon.comoSeLlama}.`, ORIGENES.ninguno);
+        // Los números de esta línea son los de nuestra escalera aplicados sobre
+        // la estimación de arriba: ni dato ni invención.
+        di(`   Sin resultados. Lo intento ${escalon.comoSeLlama}.`, ORIGENES.estimacion);
       }
 
       try {
@@ -383,7 +391,7 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         // Cuántos ha devuelto Booking; los filtros que se leen ahí dentro llevan
       // el rango de precio que se inventó la IA, y por eso la línea no se marca
       // como scraping: el número de resultados es real, la horquilla no.
-      di(`   ${hoteles.length} alojamiento(s) con: ${resumenDeFiltros(filtros)}.`);
+      di(`   ${hoteles.length} alojamiento(s) con: ${resumenDeFiltros(filtros)}.`, ORIGENES.estimacion);
         break;
       }
     }

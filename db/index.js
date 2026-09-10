@@ -356,6 +356,11 @@ export function migrarEsquema() {
   migracionFase5Excursiones();
   migracionFase1PuertaPorRuta();
   migracionFase1NochesPorPeso();
+  migracionFase1RutaPrevista();
+  migracionPromptDeTramos();
+  migracionOrigenDelPrecioDeTramo();
+  migracionDuracionesPorCategoria();
+  migracionPasadasDeRevision();
   migracionFase6Lienzo();
   migracionFase6Referencias();
   migracionRegistroDelOrquestador();
@@ -906,7 +911,10 @@ LAS COMBINACIONES CON VUELOS REALES
 
 Devuelve SOLO este JSON:
 
-{ "elegida": "cN", "por_que": "una o dos líneas" }
+{ "elegida": "cN",
+  "ruta_prevista": ["ciudad de entrada", "...", "ciudad de salida"],
+  "minutos_internos": número,
+  "por_que": "una o dos líneas" }
 
 LA REGLA, Y NO ES LA QUE PARECE:
 
@@ -939,6 +947,13 @@ EL RESTO DE CRITERIOS:
    paso por una ciudad, dilo y explica por qué compensa igual. Está PROHIBIDO
    describir como "lineal", "sin rodeos" o "de una pasada" una ruta que no lo es:
    quien lee esto lo hace para saber si fiarse.
+6. "ruta_prevista" es LA ruta cuyos traslados internos has sumado para elegir.
+   Solo puede contener ciudades candidatas NO descartadas, empezando por la
+   entrada y acabando en la salida. Si una ciudad no está en la ruta, sus tiempos
+   no entran en la suma: sumar minutos de un recorrido distinto del que declaras
+   es el fallo exacto que motivó este cambio.
+7. "minutos_internos" es esa suma, con la tabla de tiempos de arriba, tramo a
+   tramo.
 
 === PASO 3: CIERRE ===
 Eres el mismo planificador. Ya hay vuelos reales comprados y la puerta de entrada
@@ -960,6 +975,9 @@ ENTRADA Y SALIDA, YA FIJADAS CON VUELOS REALES
 - Se entra por: {{ENTRADA}}
 - Se sale por: {{SALIDA}}
 - {{HORARIOS_VUELOS}}
+
+RUTA PREVISTA AL ELEGIR LA PUERTA (con los vuelos ya comprados sobre esta base)
+{{RUTA_PREVISTA}}
 
 CANDIDATAS QUE PROPUSISTE
 {{CANDIDATAS}}
@@ -1030,7 +1048,12 @@ EL RESTO DE REGLAS:
    un viaje de verdad.
    Si para decidir te falta un horario, DILO tal cual en el "motivo" o en el
    "resumen" ("no tengo el horario del tren de X a Y") y reparte sin él.
-9. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
+9. TU PUNTO DE PARTIDA ES LA RUTA PREVISTA: tu trabajo es repartir las noches
+   sobre ella, no inventar otra. Los vuelos se compraron con esa ruta delante.
+   Solo puedes apartarte de ella si al repartir aparece una imposibilidad real
+   —una parada se queda a 0 noches, un mínimo que no se cumple—, y entonces lo
+   dices en el resumen: qué has cambiado respecto a la prevista y por qué.
+10. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
    repite paso por una ciudad o si hay un trayecto largo incómodo, se dice y se
    explica por qué compensa. PROHIBIDO llamar "lineal" o "sin rodeos" a una ruta
    que sube y vuelve a bajar: el resumen se lee para decidir si fiarse de lo que
@@ -1617,6 +1640,251 @@ function migracionFase1NochesPorPeso() {
         ? ' OJO: tu prompt de esta fase esta editado y NO se ha tocado; para coger el criterio nuevo, pulsa «Restaurar de fabrica» en la pantalla del Orquestador.'
         : '')
   );
+  return true;
+}
+
+/**
+ * LA PUERTA DECLARA LA RUTA QUE HA SUMADO, Y EL CIERRE PARTE DE ELLA.
+ *
+ * En un viaje a Polonia el paso 2 justifico su eleccion sumando los traslados de
+ * una ruta que pasaba por Lodz —una ciudad que estaba descartada— y despues el
+ * paso 3 monto otra ruta distinta. O sea: los vuelos se compraron con las
+ * cuentas de un recorrido que no existio nunca, y nadie podia verlo porque la
+ * ruta que se sumaba no se escribia en ninguna parte.
+ *
+ * Dos cambios que van juntos:
+ *
+ *   · El paso 2 devuelve "ruta_prevista" y "minutos_internos": la ruta cuyos
+ *     tramos ha sumado y cuanto suman. Con eso, el codigo puede comprobar que
+ *     solo lleva candidatas vivas y dejarlo escrito en el registro.
+ *   · El paso 3 la recibe como punto de partida y solo puede apartarse de ella
+ *     por una imposibilidad real, diciendolo en el resumen.
+ *
+ * Solo se pisa lo que nadie haya editado.
+ */
+function migracionFase1RutaPrevista() {
+  const CLAVE = '2026-09-fase1-ruta-prevista';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeCiudadesYNoches();
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: la puerta declara su ruta prevista y el cierre parte de ella.' +
+      (loEdito
+        ? ' OJO: tu prompt de esta fase esta editado y NO se ha tocado; para coger el criterio nuevo, pulsa «Restaurar de fabrica» en la pantalla del Orquestador.'
+        : '')
+  );
+  return true;
+}
+
+/**
+ * EL PROMPT DE INVESTIGAR UN TRAMO, y por que ya no pide precios.
+ *
+ * Vivia escondido en services/movilidad.js. Ahora esta aqui como los demas, con
+ * su fila en `prompts_orquestador`, editable desde la pantalla del Orquestador:
+ * un prompt que decide cosas y que no se puede leer ni corregir desde la
+ * aplicacion es un prompt que nadie revisa.
+ *
+ * Y LO IMPORTANTE: SE LE PROHIBE DAR PRECIOS.
+ *
+ * Este prompt devolvia el precio de cada medio y el modelo lo escribia de
+ * memoria: el Pendolino de Gdansk a Cracovia salio a 120 EUR (cuesta unos 25),
+ * FlixBus a 90 y un alquiler de coche a 1 EUR. Y en la ejecucion anterior, otros
+ * numeros distintos para los mismos trayectos. Eso no es un dato: es un numero
+ * con aspecto de dato, y encima entraba en la regla del empate, o sea que
+ * decidia.
+ *
+ * La linea se traza donde de verdad esta:
+ *
+ *   · QUE MEDIOS HAY y QUIEN LOS OPERA es conocimiento estable: que entre esas
+ *     dos ciudades hay tren de PKP Intercity y autobuses de FlixBus no cambia de
+ *     un martes a otro, y el modelo lo sabe.
+ *   · CUANTO SE TARDA y CADA CUANTO SALE cambia poco y sirve para ordenar. Se le
+ *     pide, pero marcado como estimacion.
+ *   · CUANTO CUESTA cambia cada dia, por hora y por antelacion. Ese sale de la
+ *     busqueda, en un paso aparte, o se queda vacio.
+ */
+export function promptDeInvestigarTramo() {
+  return `Dime como se va de {{DESDE}} a {{HASTA}} por tierra: que medios existen
+de verdad hoy y quien los opera.
+
+Un objeto por medio disponible: autobus, tren, ferry, coche de alquiler, traslado
+privado. NO incluyas el avion: eso lo lleva la aplicacion por otro sitio.
+
+Devuelve SOLO este JSON:
+{"medios":[{
+  "medio":"bus|tren|ferry|coche|traslado",
+  "nombre":"nombre de la compañia o del servicio, corto",
+  "duracion":"2 h 30",
+  "frecuencia":"cada 2 h, 6 salidas al dia",
+  "nota":"donde se coge, si hay que reservar, que conviene saber",
+  "notaSentido":"solo si algun dato cambia segun la direccion; si no, cadena vacia",
+  "web":"url oficial si la hay, si no cadena vacia"
+}]}
+
+REGLAS:
+
+1. NO HAY CAMPO DE PRECIO Y NO DEBES INVENTARTE UNO. Si escribes un precio en
+   cualquier campo, el dato se tira entero. El precio de cada opcion lo busca
+   despues la aplicacion; si no lo encuentra, se queda vacio y se dice.
+2. "duracion" y "frecuencia" son una ESTIMACION tuya y asi se van a enseñar. Da
+   la que mejor sepas, en redondo, sin fingir precision: "unas 3 h" vale mas que
+   "3 h 07".
+3. El resto de datos, si no los sabes, cadena VACIA. NO te los inventes: es peor
+   un horario falso que un hueco.
+4. Entre 2 y 5 medios. Si de verdad solo hay uno, devuelve uno.
+5. Si entre esas dos ciudades no hay transporte terrestre razonable, devuelve
+   {"medios":[]}.
+6. En español de España.`;
+}
+
+/**
+ * EL PROMPT DE LOS TRAMOS SALE DEL CODIGO Y DEJA DE PEDIR PRECIOS.
+ *
+ * Dos cosas a la vez, porque son la misma: el texto se guarda en
+ * `prompts_orquestador` —asi se puede leer y corregir desde la pantalla— y en
+ * ese mismo movimiento se le quita el campo del precio, que era de donde salian
+ * los 120 EUR del Pendolino.
+ *
+ * No hay nada que pisar: es una fila nueva.
+ */
+function migracionPromptDeTramos() {
+  const CLAVE = '2026-09-prompt-tramos-sin-precio';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeInvestigarTramo();
+  db.prepare(
+    `INSERT INTO prompts_orquestador (fase, prompt_actual, prompt_fabrica)
+     VALUES ('traslados_investigar', ?, ?)
+     ON CONFLICT (fase) DO UPDATE SET
+       prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN excluded.prompt_actual ELSE prompt_actual END,
+       prompt_fabrica = excluded.prompt_fabrica`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el prompt de investigar tramos ya es editable y no pide precios.');
+  return true;
+}
+
+/**
+ * DE DONDE SALE EL PRECIO DE CADA OPCION DE TRASLADO.
+ *
+ * Hasta ahora la columna `precio` no decia su procedencia, y como el prompt se
+ * los inventaba, todo el catalogo esta lleno de precios que parecen datos. Esta
+ * columna los separa:
+ *
+ *   'busqueda' · lo trajo el Modo IA de Google en el paso de precios.
+ *   'manual'   · lo escribiste tu en la ficha.
+ *   NULL       · no se sabe de donde salio. Son las filas de antes de este
+ *                cambio, y se tratan como precio DESCONOCIDO: se siguen viendo
+ *                (no se borra nada), pero no entran en la regla del empate ni se
+ *                le pasan a la IA como si fueran ciertos.
+ */
+function migracionOrigenDelPrecioDeTramo() {
+  const CLAVE = '2026-09-origen-precio-tramo';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('catalogo_transporte_tramo', 'precio_origen', 'TEXT');
+
+  // Lo que escribio una persona SI se sabe de donde viene.
+  db.exec(
+    "UPDATE catalogo_transporte_tramo SET precio_origen = 'manual' " +
+      "WHERE origen = 'manual' AND precio IS NOT NULL AND precio <> ''"
+  );
+
+  const sinRastro = db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM catalogo_transporte_tramo WHERE precio IS NOT NULL AND precio <> '' AND precio_origen IS NULL"
+    )
+    .get().n;
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: los precios de traslado guardan su procedencia.' +
+      (sinRastro ? ` ${sinRastro} precio(s) antiguos quedan como desconocidos: se ven, pero ya no deciden.` : '')
+  );
+  return true;
+}
+
+/**
+ * CUANTO DURA UNA VISITA CUANDO NADIE LO HA DICHO.
+ *
+ * Las fichas traen `tiempo_visita` de la busqueda ("2-3 horas", "45 min"), pero
+ * no todas: en el viaje de Polonia el lienzo coloco doce cosas y ninguna llevaba
+ * duracion. Sin duraciones el validador no puede ver un solape —todo dura cero
+ * y todo cabe—, asi que el dia se llenaba y nadie avisaba.
+ *
+ * Cuando no hay dato se aplica un valor por categoria. Son numeros de
+ * servilleta, y por eso son parametros: un museo pide mas que un mirador, y
+ * quien mejor sabe cuanto pide cada cosa es quien viaja.
+ */
+function migracionDuracionesPorCategoria() {
+  const CLAVE = '2026-09-duraciones-por-categoria';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, 'minutos', ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+
+  const desde = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const porCategoria = [
+    ['visita_museos_min', 120, 'Lo que se reserva para un museo si su ficha no dice cuanto se tarda'],
+    ['visita_monumentos_min', 75, 'Lo mismo para un monumento o un edificio que se visita por dentro'],
+    ['visita_naturaleza_min', 120, 'Lo mismo para un parque, un bosque o una playa'],
+    ['visita_miradores_min', 45, 'Lo mismo para un mirador: se sube, se mira y se baja'],
+    ['visita_barrios_min', 90, 'Lo mismo para un barrio o un paseo'],
+    ['visita_gastronomia_min', 60, 'Lo mismo para un sitio de comer o de probar algo'],
+    ['visita_ocio_min', 150, 'Lo mismo para un parque de ocio o una actividad larga'],
+    ['visita_compras_min', 60, 'Lo mismo para un mercado o una zona de tiendas'],
+    ['visita_por_defecto_min', 90, 'Y cuando ni siquiera se sabe de que categoria es'],
+  ];
+
+  porCategoria.forEach(([clave, valor, descripcion], i) => {
+    meter.run(clave, String(valor), String(valor), descripcion, desde + i + 1);
+  });
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: duraciones por categoria para lo que se coloca en el lienzo.');
+  return true;
+}
+
+/**
+ * CUANTAS VECES SE REVISA EL LIENZO ANTES DE RENDIRSE.
+ *
+ * La fase 6 termina consultando los avisos de verdad y corrigiendo lo que
+ * chirrie. Cada pasada cuesta una llamada, asi que se le pone tope: con dos o
+ * tres se arregla lo que se puede arreglar, y lo que quede se dice en el
+ * registro en vez de declarar que todo cuadra.
+ */
+function migracionPasadasDeRevision() {
+  const CLAVE = '2026-09-pasadas-revision-lienzo';
+  if (yaAplicada(CLAVE)) return false;
+
+  const desde = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES ('max_revisiones_lienzo', '2', '2',
+             'Cuantas veces se revisa y corrige el lienzo antes de dejar el aviso escrito',
+             'pasadas', ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run(desde + 1);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: tope de pasadas de revision del lienzo.');
   return true;
 }
 

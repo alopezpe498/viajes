@@ -300,6 +300,17 @@ export const FASE_DE_PARAMETRO = {
   relajacion_precio_pct: 'dormir',
   relajacion_precio_max_veces: 'dormir',
 
+  visita_museos_min: 'lienzo',
+  visita_monumentos_min: 'lienzo',
+  visita_naturaleza_min: 'lienzo',
+  visita_miradores_min: 'lienzo',
+  visita_barrios_min: 'lienzo',
+  visita_gastronomia_min: 'lienzo',
+  visita_ocio_min: 'lienzo',
+  visita_compras_min: 'lienzo',
+  visita_por_defecto_min: 'lienzo',
+  max_revisiones_lienzo: 'lienzo',
+
   max_excursiones_largas_por_dia: 'excursiones',
   max_excursiones_por_viaje: 'excursiones',
 
@@ -324,6 +335,29 @@ const GENERAL = {
  * «General» no tiene prompt porque no es una fase: no se le pide nada a la IA
  * en general, se le pide en cada paso.
  */
+/**
+ * PROMPTS QUE NO SON UNA FASE, pero que deciden igual.
+ *
+ * «traslados_investigar» es el que pregunta qué medios hay entre dos ciudades.
+ * No es una de las seis fases —lo llama la fase 2, y también la pestaña «Cómo
+ * llegar» de una etapa a mano—, pero vivía escondido en el código y ahí no lo
+ * revisaba nadie. Ahora se edita como los demás.
+ *
+ * Van aparte de FASES a propósito: FASES es la lista que recorre el worker y la
+ * que pinta la pantalla de progreso, y meter aquí una séptima fase que nadie
+ * ejecuta sería mentirle a las dos.
+ */
+export const PROMPTS_SUELTOS = [
+  {
+    clave: 'traslados_investigar',
+    etiqueta: 'Traslados · qué medios hay',
+    icono: 'ti-search',
+    explica:
+      'Lo que se le pregunta a la IA para saber qué transporte existe entre dos ciudades. ' +
+      'Los precios NO se piden aquí: se buscan aparte, porque de memoria salían inventados.',
+  },
+];
+
 export function seccionesDelOrquestador() {
   const todosLosParametros = parametros();
   const todosLosPrompts = new Map(prompts().map((p) => [p.fase, p]));
@@ -331,7 +365,7 @@ export function seccionesDelOrquestador() {
   const deLaSeccion = (clave) =>
     todosLosParametros.filter((p) => (FASE_DE_PARAMETRO[p.clave] ?? 'general') === clave);
 
-  return [GENERAL, ...FASES].map((s) => {
+  return [GENERAL, ...FASES, ...PROMPTS_SUELTOS].map((s) => {
     const clave = s.clave;
     return {
       clave,
@@ -409,7 +443,9 @@ export function prompts() {
   const filas = new Map(
     todas('SELECT * FROM prompts_orquestador').map((p) => [p.fase, p])
   );
-  return FASES.map((f) => {
+  // Las seis fases y los prompts sueltos: la pantalla los edita igual, y dejar
+  // uno fuera de esta lista es dejarlo otra vez sin quien lo revise.
+  return [...FASES, ...PROMPTS_SUELTOS].map((f) => {
     const p = filas.get(f.clave);
     return {
       fase: f.clave,
@@ -668,7 +704,13 @@ export const ORIGENES = {
   scraping: 'scraping',
   busqueda: 'busqueda',
   ia: 'ia',
-  // Y una cuarta que no es un origen: «aquí no hay ningún dato del mundo». Se
+  // Una estimación DECLARADA como tal: el rango de precio de «medio» en una
+  // ciudad, la matriz de tiempos entre candidatas. No es un dato del mundo y no
+  // finge serlo, así que tampoco es una alarma: lo que hay que poder cazar de un
+  // vistazo es un precio con etiqueta [IA], no un «≈ 60-120 €/noche» que ya se
+  // presenta como lo que es.
+  estimacion: 'estimacion',
+  // Y una quinta que no es un origen: «aquí no hay ningún dato del mundo». Se
   // usa cuando la línea lleva números que son NUESTROS —el radio al que hemos
   // ampliado la búsqueda, un tope de la configuración— y que el detector
   // confundiría con un dato traído de fuera. Una etiqueta de más en algo que no
@@ -680,6 +722,7 @@ export const ORIGENES = {
 export const NOMBRE_DE_ORIGEN = {
   scraping: 'scraping',
   busqueda: 'búsqueda',
+  estimacion: 'estimación',
   ia: 'IA',
 };
 

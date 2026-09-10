@@ -20,6 +20,7 @@ import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
 import { pedirInterpretarHorario } from './datos-sitios.js';
 import { ciudadDeCasa } from './proveedores.js';
+import { parametro } from './orquestador.js';
 
 /** Las cuatro franjas, con sus horas orientativas. */
 export const FRANJAS = [
@@ -284,6 +285,62 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
  * Los pendientes no pintan nada: un bloque ámbar que dice "aún no sé cómo vas"
  * ocuparía sitio en el día sin aportar. Para eso está la pantalla de ruta.
  */
+/** "sobre las 09:30" -> "09:30". La hora, venga como venga escrita. */
+function horaSuelta(texto) {
+  const m = String(texto ?? '').match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return `${String(h).padStart(2, '0')}:${m[2]}`;
+}
+
+/** "11:00" + 375 min -> "17:15". Si se pasa de medianoche, se queda en 23:59. */
+function sumarMinutos(hora, minutos) {
+  const base = horaSuelta(hora);
+  const m = Number(minutos);
+  if (!base || !Number.isFinite(m) || m <= 0) return null;
+  const [h, mm] = base.split(':').map(Number);
+  const total = Math.min(h * 60 + mm + Math.round(m), 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/**
+ * LO QUE OCUPA UN SALTO, de puerta a puerta.
+ *
+ * La fase 2 guarda las dos piezas: la hora que eligió (en `transporte_datos`) y
+ * el desglose puerta a puerta (en `transportes.datos_extra.bloque`). Aquí se
+ * juntan, porque un traslado no es un instante: el Pendolino de las 11:00 con
+ * seis horas por delante deja el día libre a las 17:15, no a las 11:00.
+ *
+ * Sin esto, el bloque del salto entraba en el lienzo como un punto en la mañana
+ * y la IA de la fase 6 concluía «llegada por la mañana» y llenaba la tarde de
+ * una ciudad por la que todavía se iba en tren.
+ */
+function ocupacionDelSalto(t) {
+  const datos = t.ficha_transporte_id
+    ? una(
+        'SELECT horario FROM transporte_datos WHERE transporte_id = ? AND ficha_id = ?',
+        t.id,
+        t.ficha_transporte_id
+      )
+    : null;
+
+  // La hora sale de lo elegido; si no la hay, de las notas escritas a mano.
+  const hora = horaSuelta(datos?.horario) ?? horaSuelta(t.notas);
+
+  let minutos = null;
+  try {
+    const extra = t.datos_extra ? JSON.parse(t.datos_extra) : null;
+    const total = Number(extra?.bloque?.total);
+    if (Number.isFinite(total) && total > 0) minutos = Math.round(total);
+  } catch {
+    /* datos_extra corrupto: el bloque se queda sin duración */
+  }
+
+  return { hora, minutos, fin: sumarMinutos(hora, minutos) };
+}
+
 function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
   if (!dias.length) return [];
 
@@ -333,6 +390,10 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     let franjaPorDefecto;
     let texto;
     let icono;
+    // Un salto ocupa un rato; un vuelo de ida o de vuelta se pinta como el punto
+    // en que se llega o se sale, que es como se lee.
+    let duracionMin = null;
+    let horaFin = null;
 
     if (donde === 'ida') {
       // Se llega el dia en que empieza la primera parada.
@@ -352,10 +413,15 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     } else {
       // Un salto se hace el dia en que empieza la etapa a la que se llega.
       dia = diaDeLaFecha(destino.fecha_inicio) ?? (diasDeEtapa.get(destino.id) ?? [])[0] ?? null;
-      hora = null;
+      const ocupa = ocupacionDelSalto(t);
+      hora = ocupa.hora;
+      duracionMin = ocupa.minutos;
+      horaFin = ocupa.fin;
       franjaPorDefecto = 'manana';
       icono = ICONO_TIPO[t.tipo] ?? 'ti-arrow-right';
-      texto = resumenDeSalto(t, origen, destino);
+      texto =
+        resumenDeSalto(t, origen, destino) +
+        (ocupa.hora && ocupa.fin ? ` · ${ocupa.hora} → ${ocupa.fin}` : '');
     }
 
     if (!dia) continue;
@@ -365,6 +431,11 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       dia,
       franja: franjaNatural(hora) ?? franjaPorDefecto,
       hora,
+      // Hasta cuándo dura y cuándo queda el día libre. Lo usan los avisos —para
+      // ver qué se ha puesto encima del viaje— y la fase 6, que necesita saber a
+      // qué hora empieza de verdad el día.
+      duracionMin,
+      horaFin,
       donde,
       icono,
       texto,
@@ -532,6 +603,12 @@ function calcularAvisos(dias, colocados, fijos, viajeId) {
   // 5) Y si un sitio cierra justo el día en que lo has puesto.
   avisos.push(...avisosDeCierre(dias, colocados, viajeId));
 
+  // 6) Y si has puesto algo mientras vas dentro del tren.
+  avisos.push(...avisosDeTraslado(dias, colocados, fijos));
+
+  // 7) Y si un día se ha quedado sin comer.
+  avisos.push(...avisosDeComida(dias, colocados, fijos));
+
   return avisos;
 }
 
@@ -650,6 +727,112 @@ function avisosDeCierre(dias, colocados, viajeId) {
 
   // Lo que falte por interpretar se encola, sin bloquear este pintado.
   for (const id of porInterpretar) pedirInterpretarHorario(viajeId, id);
+
+  return avisos;
+}
+
+/** Los minutos del día que ocupa una franja, para comparar con un traslado. */
+function bordesDeFranja(clave) {
+  const f = FRANJAS.find((x) => x.clave === clave);
+  return f ? { desde: f.desde * 60, hasta: f.hasta * 60 } : null;
+}
+
+/**
+ * LO QUE SE HA PUESTO MIENTRAS SE VA DENTRO DEL TRANSPORTE.
+ *
+ * El salto ya no es un punto en el día: ocupa de su hora de salida a su hora de
+ * llegada. Todo lo que caiga dentro de esa ventana es un plan imposible, y hasta
+ * ahora no lo veía nadie: en el viaje de Polonia el Castillo de Wawel y una
+ * comida quedaron colocados mientras los viajeros iban en un tren que llegaba a
+ * las 17:15.
+ *
+ * Se avisa de lo que cae dentro de la ventana: lo que tiene hora, por su hora;
+ * lo que no la tiene, cuando su franja entera queda comida por el viaje.
+ */
+function avisosDeTraslado(dias, colocados, fijos) {
+  const avisos = [];
+
+  for (const d of dias) {
+    const salto = fijos.find((f) => f.dia === d.n && f.donde === 'salto' && f.hora && f.horaFin);
+    if (!salto) continue;
+
+    const desde = enMinutos(salto.hora);
+    const hasta = enMinutos(salto.horaFin);
+    if (desde == null || hasta == null || hasta <= desde) continue;
+
+    const dentro = colocados.filter((c) => {
+      if (c.dia !== d.n) return false;
+      const suya = enMinutos(c.hora);
+      if (suya != null) return suya >= desde && suya < hasta;
+      const borde = bordesDeFranja(c.franja);
+      return borde ? borde.desde >= desde && borde.hasta <= hasta : false;
+    });
+
+    if (!dentro.length) continue;
+
+    avisos.push({
+      dia: d.n,
+      tipo: 'durante-el-traslado',
+      idsAfectados: dentro.map((c) => c.id),
+      texto:
+        `El viaje ocupa de ${salto.hora} a ${salto.horaFin} — ` +
+        `tienes ${dentro.length} ${dentro.length === 1 ? 'cosa puesta' : 'cosas puestas'} ` +
+        'mientras vas de camino',
+    });
+  }
+
+  return avisos;
+}
+
+/**
+ * EL DÍA QUE SE QUEDA SIN COMER.
+ *
+ * Comer es diario. Un día con plan y sin bloque de comida es un descuido, no una
+ * decisión: en Polonia el día 3 se quedó sin comida y nadie dijo nada.
+ *
+ * NO se avisa cuando el día no da para comer allí: se llega a las 20:00, se vuela
+ * a las 12:00 o el viaje ocupa toda la franja del mediodía. En esos días la
+ * comida cae en un aeropuerto o en un tren, y pedirla en el lienzo sería pedir
+ * algo que no existe.
+ */
+function avisosDeComida(dias, colocados, fijos) {
+  const avisos = [];
+  const MEDIODIA = { desde: 13 * 60, hasta: 15 * 60 };
+
+  for (const d of dias) {
+    const delDia = colocados.filter((c) => c.dia === d.n);
+    if (!delDia.length) continue;                       // día vacío: nada que decir
+
+    const hayComida = delDia.some(
+      (c) => /^comer\b/i.test(String(c.nombre ?? '')) || c.tipo === 'comer'
+    );
+    if (hayComida) continue;
+
+    // ¿Cabe comer ese día en la ciudad? Se mira la ventana libre.
+    const llegada = fijos.find((f) => f.dia === d.n && f.donde === 'ida');
+    const salida = fijos.find((f) => f.dia === d.n && f.donde === 'vuelta');
+    const salto = fijos.find((f) => f.dia === d.n && f.donde === 'salto');
+
+    const empieza = Math.max(
+      enMinutos(llegada?.hora) ?? 0,
+      (salto?.horaFin ? enMinutos(salto.horaFin) : null) ?? 0
+    );
+    // El salto se pinta en el día en que se LLEGA, así que acota por dónde
+    // empieza el día, no por dónde acaba: la tarde de ese día sí es de esta
+    // ciudad. Contarlo como final dejaba el día 3 de Polonia sin comida y sin
+    // aviso, que es justo el caso que esto viene a cazar.
+    const acaba = enMinutos(salida?.hora) ?? 24 * 60;
+
+    // Si la ventana libre no toca la hora de comer, no se pide comida.
+    if (empieza >= MEDIODIA.hasta || acaba <= MEDIODIA.desde) continue;
+
+    avisos.push({
+      dia: d.n,
+      tipo: 'sin-comida',
+      idsAfectados: [],
+      texto: 'Este día tiene plan pero no tiene dónde comer',
+    });
+  }
 
   return avisos;
 }
@@ -788,12 +971,35 @@ function avisosDeTiempo(dias, colocados) {
       // trayecto para llegar al trayecto no tiene sentido.
       if (a.tipo === 'traslado' || b.tipo === 'traslado') continue;
 
-      const trayecto = trayectoEntre(a, b);
-      if (!trayecto) continue;
-
       // Fin de lo primero: su hora más lo que dure. Sin duración tecleada se
       // toma la hora de inicio, que es lo más prudente.
       const acabaA = empiezaA + (Number(a.duracionMin) || 0);
+
+      // EL SOLAPE, ANTES QUE EL TRAYECTO.
+      //
+      // Lo de «no llegas» necesita saber cuánto se tarda de una cosa a otra, y
+      // sin direcciones no lo sabe: se rendía ahí. Pero dos visitas que se pisan
+      // se pisan aunque estén en el mismo edificio —el Castillo de Wawel de
+      // 09:00 a 12:00 y la catedral a las 11:15, que están dentro del mismo
+      // recinto—, y eso no hace falta medirlo para verlo.
+      if (acabaA > empiezaB) {
+        avisos.push({
+          dia: d.n,
+          tipo: 'solape',
+          idsAfectados: [b.id],
+          // A qué hora queda libre lo anterior. Va en el aviso para que quien lo
+          // corrija no tenga que sacarlo del texto: el texto es para leerlo.
+          libreDesde: comoHora(acabaA),
+          texto:
+            `${a.nombre} acaba a las ${comoHora(acabaA)} y ${b.nombre} empieza a las ` +
+            `${comoHora(empiezaB)}: se solapan`,
+        });
+        continue;
+      }
+
+      const trayecto = trayectoEntre(a, b);
+      if (!trayecto) continue;
+
       const llegaria = acabaA + trayecto.minutos;
       if (llegaria <= empiezaB) continue;
 
@@ -801,6 +1007,7 @@ function avisosDeTiempo(dias, colocados) {
         dia: d.n,
         tipo: 'no-llegas',
         idsAfectados: [b.id],
+        libreDesde: comoHora(llegaria),
         texto:
           `Sales de ${a.nombre} a las ${comoHora(acabaA)} y el trayecto son ` +
           `${comoRato(trayecto.minutos)} ${COMO_SE_VA[trayecto.modo] ?? ''}`.trimEnd() +
@@ -879,6 +1086,15 @@ export function colocar(
     ? hacerSitio(viajeId, n, franja, Number(orden))
     : siguienteOrden(viajeId, n, franja);
 
+  // LA DURACIÓN SE PONE SOLA SI NADIE LA DA.
+  //
+  // Vale para los dos caminos —el orquestador y el botón de la pantalla—, porque
+  // los dos pasan por aquí. Lo que se coloca sin duración es invisible para el
+  // validador de solapes, y un día con cuatro visitas de duración nula parece
+  // perfectamente vacío.
+  const duracionFinal =
+    Number(duracionMin) || (candidatoId ? duracionDeLoColocado(candidatoId).minutos : null);
+
   const r = ejecutar(
     `INSERT INTO itinerario
        (viaje_id, etapa_id, dia, franja, candidato_id, texto_manual, hora, orden,
@@ -893,11 +1109,102 @@ export function colocar(
     normalizarHora(hora),
     posicion,
     Number(movilidadId) || null,
-    Number(duracionMin) || null,
+    Number(duracionFinal) || null,
     Number(trasladoId) || null,
     medio || null
   );
   return una('SELECT * FROM itinerario WHERE id = ?', Number(r.lastInsertRowid));
+}
+
+/**
+ * "2-3 horas" -> 180. "45 min" -> 45. "1h 30min" -> 90.
+ *
+ * SE COGE EL TECHO DEL RANGO, siempre. Es el mismo principio que los márgenes de
+ * los traslados: si la ficha dice que se tardan de dos a tres horas y se reserva
+ * hora y media, el día cuadra en el papel y no en la calle. Mejor que sobre.
+ *
+ * Devuelve null si no hay nada que entender, que es distinto de cero: cero
+ * significaría que la visita no ocupa, y entonces todo cabe en todas partes.
+ */
+export function minutosDeVisita(texto) {
+  const t = String(texto ?? '').toLowerCase().replace(',', '.');
+  if (!t.trim()) return null;
+
+  // "1h 30", "1 h 30 min", "2 h 15": las dos piezas de la misma medida. El
+  // "min" del final es opcional porque casi nunca viene: "2 h 15" se leia por
+  // el camino de abajo como dos medidas sueltas y salian 15 horas.
+  const compuesto = t.match(
+    /(\d+(?:\.\d+)?)\s*h(?:oras?)?\s*(?:y\s*)?([0-5]?\d)\s*(?:m\w*)?(?![\d:])/
+  );
+  if (compuesto) return Math.round(Number(compuesto[1]) * 60 + Number(compuesto[2]));
+
+  // Todos los números que haya, con su unidad. Del rango se coge el mayor.
+  const trozos = [...t.matchAll(/(\d+(?:\.\d+)?)\s*(h|hora|horas|min|minutos?)?/g)]
+    .map((m) => {
+      const n = Number(m[1]);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      const unidad = m[2] ?? '';
+      // Sin unidad se hereda la del final: "2-3 horas" son horas las dos.
+      if (unidad.startsWith('h')) return Math.round(n * 60);
+      if (unidad.startsWith('m')) return Math.round(n);
+      return { crudo: n };
+    })
+    .filter(Boolean);
+
+  if (!trozos.length) return null;
+
+  const enHoras = /h(ora)?/.test(t) && !/min/.test(t.split(/h(ora)?/)[0] ?? '');
+  const minutos = trozos.map((x) =>
+    typeof x === 'number' ? x : Math.round(x.crudo * (enHoras ? 60 : 1))
+  );
+
+  const techo = Math.max(...minutos);
+  return techo > 0 && techo <= 24 * 60 ? techo : null;
+}
+
+/** El sitio de catálogo del que sale un candidato, si sale de uno. */
+function sitioDelCandidato(candidatoId) {
+  const c = una('SELECT * FROM candidatos WHERE id = ?', Number(candidatoId));
+  if (!c) return null;
+  try {
+    const e = c.datos_extra ? JSON.parse(c.datos_extra) : null;
+    if (e?.de !== 'sitio' || e?.deId == null) return null;
+    return una('SELECT id, nombre, tiempo_visita, categoria FROM sitios_lugar WHERE id = ?', Number(e.deId));
+  } catch {
+    return null;
+  }
+}
+
+/** De la categoría del sitio al parámetro que dice cuánto se le reserva. */
+const PARAMETRO_DE_CATEGORIA = {
+  museos: 'visita_museos_min',
+  monumentos: 'visita_monumentos_min',
+  naturaleza: 'visita_naturaleza_min',
+  miradores: 'visita_miradores_min',
+  'barrios y paseos': 'visita_barrios_min',
+  'gastronomía': 'visita_gastronomia_min',
+  'ocio y parques': 'visita_ocio_min',
+  'compras y mercados': 'visita_compras_min',
+};
+
+/**
+ * CUÁNTO OCUPA LO QUE SE ESTÁ COLOCANDO.
+ *
+ * Primero lo que diga su ficha, que viene de la búsqueda. Si no lo dice, el
+ * valor de su categoría, que es una suposición nuestra y se anuncia como tal a
+ * quien llame. Sin esto, todo se colocaba con duración nula y el validador no
+ * podía ver un solape: en el viaje de Polonia el día 6 tenía cuatro cosas y
+ * ningún aviso, porque todas duraban cero.
+ */
+export function duracionDeLoColocado(candidatoId) {
+  const sitio = sitioDelCandidato(candidatoId);
+  if (!sitio) return { minutos: null, supuesta: false, nombre: null };
+
+  const delDato = minutosDeVisita(sitio.tiempo_visita);
+  if (delDato) return { minutos: delDato, supuesta: false, nombre: sitio.nombre };
+
+  const clave = PARAMETRO_DE_CATEGORIA[sitio.categoria] ?? 'visita_por_defecto_min';
+  return { minutos: parametro(clave, 90), supuesta: true, nombre: sitio.nombre };
 }
 
 /** Cambia de día o de franja. La etapa se recalcula: el día manda. */

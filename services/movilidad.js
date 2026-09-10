@@ -26,6 +26,7 @@
 
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { consultarJSONConGoogle } from '../lib/ia.js';
+import { promptDeFase } from './orquestador.js';
 import { trabajoActivo, ultimoTrabajo, encolar } from '../jobs/cola.js';
 import { direccionesDe } from './direcciones.js';
 
@@ -113,13 +114,37 @@ export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
     medioValido(ficha.medio),
     nombre
   );
-  if (yaEsta) return yaEsta;
+  if (yaEsta) {
+    // UN PRECIO CON RASTRO MEJORA A UNO SIN RASTRO, y solo en ese sentido.
+    //
+    // El catálogo está lleno de precios que escribió el modelo de memoria —«45-220 $»
+    // para el tren de Gdansk a Varsovia—, y como esta función devolvía la ficha
+    // existente sin tocarla, ahí se quedaban para siempre. Si ahora llega uno
+    // traído por la búsqueda y el guardado no sabe de dónde salió, se sustituye.
+    // Nunca al revés: lo que ya tiene rastro no lo pisa nadie.
+    const nuevoPrecio = texto(ficha.precio);
+    if (nuevoPrecio && ficha.precioOrigen && !yaEsta.precio_origen) {
+      ejecutar(
+        'UPDATE catalogo_transporte_tramo SET precio = ?, precio_origen = ? WHERE id = ?',
+        nuevoPrecio,
+        texto(ficha.precioOrigen),
+        yaEsta.id
+      );
+      console.log(
+        `[movilidad] ${yaEsta.nombre} (${a.nombre}→${b.nombre}): precio sin rastro ` +
+          `«${yaEsta.precio ?? '-'}» sustituido por «${nuevoPrecio}» de la búsqueda.`
+      );
+      return una('SELECT * FROM catalogo_transporte_tramo WHERE id = ?', yaEsta.id);
+    }
+    return yaEsta;
+  }
 
   const r = ejecutar(
     `INSERT INTO catalogo_transporte_tramo
        (ciudad_a_norm, ciudad_b_norm, ciudad_a, ciudad_b, medio, nombre,
-        duracion, frecuencia, precio, nota, nota_sentido, web, orden, origen)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        duracion, frecuencia, precio, nota, nota_sentido, web, orden, origen,
+        precio_origen)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     a.norm,
     b.norm,
     a.nombre,
@@ -133,7 +158,10 @@ export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
     texto(ficha.notaSentido),
     texto(ficha.web),
     Number(ficha.orden) || 0,
-    origen
+    origen,
+    // De dónde sale el precio. Sin esto, un precio guardado no se distingue de
+    // uno inventado, que es como llegamos aquí.
+    texto(ficha.precioOrigen) ?? (origen === 'manual' && texto(ficha.precio) ? 'manual' : null)
   );
   return una('SELECT * FROM catalogo_transporte_tramo WHERE id = ?', Number(r.lastInsertRowid));
 }
@@ -448,34 +476,83 @@ export function pedirMovilidadDeCiudad(etapaId) {
 // LO QUE SE LE PREGUNTA A LA IA
 // =============================================================================
 /**
- * El prompt del tramo.
+ * EL PROMPT DE UN TRAMO, ahora desde la tabla y con los huecos rellenos.
  *
- * Se le pide EXPRESAMENTE que busque y que no invente: un horario o un precio
- * de autobús cambian, y un modelo sin buscar te los da igual de convencido.
- * Mejor un campo vacío que un dato falso con el que alguien pierda un bus.
+ * Antes decía aquí que se le pedía «expresamente que busque y que no invente».
+ * Se le pedía, sí, y aun así devolvía el Pendolino a 120 €: pedirlo no basta
+ * cuando el JSON tiene una casilla de precio esperando a que la rellene. Ahora
+ * esa casilla no existe y el precio lo trae una búsqueda aparte.
+ *
+ * El texto vive en `prompts_orquestador` (fase «traslados_investigar») para que
+ * se pueda leer y corregir desde la pantalla del Orquestador, como el de las
+ * seis fases. Aquí solo se le meten las dos ciudades.
  */
 export function promptDeTramo(ciudadA, ciudadB) {
-  return `Busca en la web cómo ir de ${ciudadA} a ${ciudadB} y devuelve los medios de transporte reales que existen hoy.
+  return promptDeFase('traslados_investigar')
+    .replace(/\{\{DESDE\}\}/g, ciudadA)
+    .replace(/\{\{HASTA\}\}/g, ciudadB);
+}
 
-Un objeto por medio disponible: autobús, tren, ferry, coche de alquiler, traslado privado. NO incluyas el avión: eso lo lleva la aplicación por otro sitio.
+/**
+ * EL PRECIO DE CADA OPCIÓN, BUSCADO. Nunca de memoria.
+ *
+ * El paso anterior dice qué medios hay y quién los opera —eso el modelo lo
+ * sabe—, pero no cuánto cuestan: los precios que daba de memoria eran falsos y
+ * distintos en cada ejecución (el Pendolino de Gdansk a Cracovia, 120 € en una
+ * vuelta y otra cifra en la siguiente; un alquiler de coche a 1 €).
+ *
+ * Así que se pregunta aparte, por su nombre y todos de una vez —una búsqueda
+ * por tramo, no una por opción—, y lo que salga se extrae del texto de Google
+ * con prohibición expresa de completar. Lo que no aparezca se queda a null, que
+ * es una respuesta y se enseña como tal.
+ */
+async function preciosDeLasOpciones(ciudadA, ciudadB, medios) {
+  const nombres = medios.map((m) => texto(m?.nombre)).filter(Boolean);
+  if (!nombres.length) return new Map();
 
-Devuelve SOLO este JSON:
-{"medios":[{
-  "medio":"bus|tren|ferry|coche|traslado",
-  "nombre":"nombre de la compañía o del servicio, corto",
-  "duracion":"2 h 30",
-  "frecuencia":"cada 2 h, 6 salidas al día",
-  "precio":"8-12 €",
-  "nota":"dónde se coge, si hay que reservar, qué conviene saber",
-  "notaSentido":"solo si algún dato cambia según la dirección; si no, cadena vacía",
-  "web":"url oficial si la hay, si no cadena vacía"
-}]}
+  const prompt = [
+    `Del texto de arriba, saca el PRECIO del billete de ${ciudadA} a ${ciudadB}`,
+    'para cada uno de estos servicios:',
+    ...nombres.map((n) => `- ${n}`),
+    '',
+    'REGLAS:',
+    '1. SOLO lo que esté escrito en ese texto. Tienes PROHIBIDO poner un precio',
+    '   que sepas por tu cuenta: un precio inventado no se distingue de uno real',
+    '   y acaba decidiendo por qué medio viaja alguien.',
+    '2. Si el precio de un servicio no aparece, pon null. Es la respuesta',
+    '   correcta muchas veces y no es un fallo.',
+    '3. Copia el precio como venga, con su horquilla si la tiene: "25-35 €",',
+    '   "desde 19 €". No lo redondees.',
+    '4. EN EUROS SI EL TEXTO LOS DA. Cuando venga en moneda local y el propio',
+    '   texto ponga al lado el equivalente en euros, copia los euros. Si solo hay',
+    '   moneda local, cópiala tal cual con su nombre: vale más un precio en',
+    '   złotys que un euro convertido a ojo por ti.',
+    '5. Devuelve el nombre EXACTAMENTE como te lo he escrito arriba.',
+    '',
+    'Devuelve SOLO este JSON:',
+    '{"precios":[{"nombre":"…","precio":null}]}',
+  ].join('\n');
 
-REGLAS:
-- Si un dato no lo encuentras, deja la cadena VACÍA. NO te lo inventes: es peor un horario falso que un hueco.
-- Entre 2 y 5 medios. Si de verdad solo hay uno, devuelve uno.
-- Si entre esas dos ciudades no hay transporte terrestre razonable, devuelve {"medios":[]}.
-- En español de España.`;
+  try {
+    const r = await consultarJSONConGoogle(
+      `Precio del billete de ${ciudadA} a ${ciudadB} en ${nombres.join(', ')}`,
+      prompt,
+      // Si Google no ha contestado, esta llamada no se hace: un precio de
+      // memoria etiquetado como «de la búsqueda» es peor que no tener precio.
+      { paso: `precios de ${ciudadA} a ${ciudadB}`, maxTokens: 1500, exigirContexto: true }
+    );
+    const salida = new Map();
+    for (const x of Array.isArray(r?.precios) ? r.precios : []) {
+      const nombre = texto(x?.nombre);
+      const precio = texto(x?.precio);
+      if (nombre && precio) salida.set(normalizarNombre(nombre), precio);
+    }
+    return salida;
+  } catch (err) {
+    // Sin precios se sigue: las opciones valen igual y el hueco se dice.
+    console.warn(`[movilidad] sin precios de ${ciudadA} a ${ciudadB}: ${err.message}`);
+    return new Map();
+  }
 }
 
 /** El prompt de moverse por una ciudad. */
@@ -517,12 +594,24 @@ export async function investigarTramo(ciudadA, ciudadB) {
     { paso: `buscar cómo ir de ${ciudadA} a ${ciudadB}`, maxTokens: 4000 }
   );
 
-  const medios = Array.isArray(datos?.medios) ? datos.medios : [];
-  const guardadas = medios
-    .filter((m) => texto(m?.nombre) || texto(m?.medio))
-    .map((m, i) => guardarFichaTramo(ciudadA, ciudadB, { ...m, orden: i + 1 }, 'ia'));
+  const medios = (Array.isArray(datos?.medios) ? datos.medios : []).filter(
+    (m) => texto(m?.nombre) || texto(m?.medio)
+  );
 
-  return guardadas;
+  // EL PRECIO, EN SU PROPIO PASO Y CON SU PROPIA BÚSQUEDA. Lo que venga del
+  // primer paso se ignora aunque venga: ahí no se pide precio, y si el modelo lo
+  // cuela igual es exactamente el dato inventado que se quiere evitar.
+  const precios = await preciosDeLasOpciones(ciudadA, ciudadB, medios);
+
+  return medios.map((m, i) => {
+    const precio = precios.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
+    return guardarFichaTramo(
+      ciudadA,
+      ciudadB,
+      { ...m, precio, precioOrigen: precio ? 'busqueda' : null, orden: i + 1 },
+      'ia'
+    );
+  });
 }
 
 /** Pregunta por una ciudad. Devuelve las fichas ya guardadas. */
