@@ -418,10 +418,11 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
 
     for (const h of hoteles) {
       const r = ejecutar(
+        // El total de la estancia para la ocupacion pedida: ya es de todos.
         `INSERT INTO candidatos
            (viaje_id, etapa_id, tipo, titulo, precio, moneda, duracion, valoracion, num_opiniones,
-            url, imagen_url, origen_datos, marcado, datos_extra)
-         VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?, 'booking', 0, ?)`,
+            url, imagen_url, origen_datos, marcado, datos_extra, precio_ambito)
+         VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?, 'booking', 0, ?, 'por_grupo')`,
         viajeId,
         etapa.id,
         h.nombre ?? '(sin nombre)',

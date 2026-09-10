@@ -20,7 +20,7 @@
  */
 
 import express from 'express';
-import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
+import { todas, una, ejecutar, nochesEntre, normalizarNombre } from '../db/index.js';
 import {
   obtenerActividades,
   obtenerVuelos,
@@ -160,7 +160,23 @@ import {
   comoTamano,
   TOPE as TOPE_ADJUNTO,
 } from '../services/adjuntos.js';
+import {
+  reservaDeCandidato,
+  reservasDelViaje,
+  guardarReserva,
+  refrescarAvisoDeReservas,
+} from '../services/reservas.js';
+import {
+  presupuestoDelViaje,
+  asegurarEstimacion,
+  guardarImporteAMano,
+} from '../services/presupuesto.js';
+import {
+  refrescarAvisosDeReserva,
+  revisarReservasAnticipadas,
+} from '../services/reservas-anticipadas.js';
 import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-pais.js';
+import { actualizarAhora, climaDelPais } from '../services/clima.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import { buscandoDatos } from '../services/datos-sitios.js';
 import {
@@ -1621,6 +1637,13 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
   // fechas cambiadas desde otra pantalla), la ruta se ve ya coherente.
   recalcularRuta(viajeId);
 
+  // Y con las fechas ya recalculadas, los avisos de reserva anticipada: son
+  // pura consulta —no llaman a nadie— y dependen de CUÁNTO FALTA para el viaje,
+  // así que tienen que rehacerse al abrir y no cuando se apuntó el sitio. Es lo
+  // que hace que un aviso aparezca solo al entrar en la ventana de los treinta
+  // días y desaparezca solo si se cambia la fecha o se desapunta el sitio.
+  refrescarAvisosDeReserva(viaje);
+
   // "Elegir más ciudades" solo tiene sentido si el destino del viaje es un país
   // o una región: ahí quedan ciudades por descubrir. En un viaje a Sevilla no
   // hay nada más que explorar, y el botón sería una puerta a ninguna parte.
@@ -1699,11 +1722,75 @@ router.post('/api/viaje/:viajeId/antes-de-viajar', async (req, res) => {
       codigoPais: String(req.body?.codigoPais ?? '').trim() || null,
       fechaInicio: viaje.fecha_inicio,
       fechaFin: viaje.fecha_fin,
+      // Hace falta para saber POR QUE CIUDADES pasa el viaje en ese pais: el
+      // clima tipico es de las paradas, no del pais entero.
+      viajeId: viaje.id,
     });
-    res.json({ ficha });
+
+    // El clima ya escrito, para que la pantalla lo pinte en la misma vuelta.
+    const clima = await climaDelPais(viaje.id, normalizarNombre(pais), {
+      fechaInicio: viaje.fecha_inicio,
+      fechaFin: viaje.fecha_fin,
+    });
+
+    res.json({ ficha, clima });
   } catch (err) {
     console.error(`[rutas] no pude generar la ficha de ${pais}:`, err);
     res.status(500).json({ error: err.message || 'No se pudo preparar la ficha.' });
+  }
+});
+
+/**
+ * ACTUALIZA SOLO EL BLOQUE DE "AHORA EN EL DESTINO".
+ *
+ * Es la razon de que sea una ruta aparte y no un parametro de la de arriba: al
+ * pulsar su boton no se toca NADA de la ficha. Los visados, las vacunas, la
+ * moneda y los festivos siguen siendo los de antes, con su misma fecha de
+ * generacion; lo unico que se rehace son las tablas del clima de ahora, que son
+ * las unicas que caducan en horas.
+ *
+ * Sin `pais` en el cuerpo se refrescan todas las paradas del viaje, que es lo
+ * que hace falta cuando la pantalla se abre por primera vez.
+ */
+router.post('/api/viaje/:viajeId/clima', async (req, res) => {
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', Number(req.params.viajeId));
+  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const pais = String(req.body?.pais ?? '').trim();
+
+  try {
+    const clima = await actualizarAhora(viaje.id, pais ? normalizarNombre(pais) : null, {
+      fechaInicio: viaje.fecha_inicio,
+      fechaFin: viaje.fecha_fin,
+    });
+    res.json({ clima });
+  } catch (err) {
+    console.error('[rutas] no pude actualizar el clima:', err);
+    res.status(502).json({ error: err.message || 'No se pudo consultar el tiempo.' });
+  }
+});
+
+/**
+ * REVISAR LAS RESERVAS ANTICIPADAS DE UNA PARADA.
+ *
+ * Es para los viajes de antes: sus fichas se generaron cuando este dato todavia
+ * no se pedia. Pregunta SOLO por las entradas y escribe SOLO las columnas de
+ * reserva; los horarios, los precios y los telefonos que ya estaban no se tocan.
+ */
+router.post('/api/etapas/:etapaId/reservas-anticipadas', async (req, res) => {
+  const etapaId = Number(req.params.etapaId);
+  const etapa = una('SELECT id FROM etapas WHERE id = ?', etapaId);
+  if (!etapa) return res.status(404).json({ error: 'Esa parada ya no existe.' });
+
+  try {
+    const r = await revisarReservasAnticipadas(etapaId, {
+      forzar: req.body?.forzar === true,
+    });
+    if (r.error) return res.status(502).json(r);
+    res.json(r);
+  } catch (err) {
+    console.error('[rutas] no pude revisar las reservas anticipadas:', err);
+    res.status(500).json({ error: err.message || 'No se pudo revisar.' });
   }
 });
 
@@ -1886,12 +1973,44 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
       queVer.excursiones.map((a) => a.id)
     ),
     dormir: conAdjuntosDelHotel(hotelesDeEtapa(contexto, { orden: req.query.orden || 'recomendados' })),
+    // LAS RESERVAS DE ESTA PARADA, por id de candidato.
+    //
+    // Va un mapa y no una consulta por tarjeta porque en una etapa hay un hotel,
+    // dos vuelos y hasta treinta excursiones: preguntar una por una serían
+    // treinta consultas para pintar una pantalla, que es el mismo motivo por el
+    // que los adjuntos ya se piden así.
+    reservas: reservasDeLaEtapa(contexto, queVer),
     tramos: tramosConVuelos,
     tiposTransporte: TIPOS_TRANSPORTE,
     preparando,
     orden: req.query.orden || 'recomendados',
   });
 });
+
+/**
+ * Las reservas de todo lo reservable que se ve en la pantalla de una parada.
+ *
+ * Un Map de id de candidato a su ficha de reserva. Lo consultan las tarjetas del
+ * hotel elegido, del vuelo elegido y de cada excursión apuntada.
+ */
+function reservasDeLaEtapa(contexto, queVer) {
+  const ids = new Set();
+
+  for (const c of todas(
+    `SELECT id FROM candidatos
+      WHERE viaje_id = ? AND marcado = 1 AND tipo IN ('vuelo', 'hotel', 'actividad', 'traslado')`,
+    contexto.viaje.id
+  )) {
+    ids.add(c.id);
+  }
+
+  // Las excursiones de esta parada, que llevan su candidato dentro.
+  for (const e of queVer?.excursiones ?? []) {
+    if (e.candidatoId) ids.add(e.candidatoId);
+  }
+
+  return new Map([...ids].map((id) => [id, reservaDeCandidato(id)]).filter(([, r]) => r));
+}
 
 /**
  * Sondeo de la etapa. Junta los dos trabajos que pueden estar en marcha aquí
@@ -2931,6 +3050,106 @@ function viajeDelElemento(tipo, elementoId) {
   return fila?.viaje_id ?? null;
 }
 
+// =============================================================================
+// LAS RESERVAS: lo que el usuario cierra por su cuenta
+// =============================================================================
+/**
+ * Guardar la reserva de algo elegido.
+ *
+ * Manda solo lo que cambia: la casilla, un campo o los dos. Lo que no venga se
+ * queda como estaba, que es lo que permite desmarcar sin perder el localizador.
+ */
+router.post('/api/candidatos/:id/reserva', (req, res) => {
+  const r = guardarReserva(Number(req.params.id), {
+    reservado: req.body?.reservado === undefined ? undefined : Boolean(req.body.reservado),
+    localizador: req.body?.localizador,
+    notas: req.body?.notas,
+    enlace: req.body?.enlace,
+  });
+  if (r.error) return res.status(400).json({ error: r.error });
+
+  // El aviso de «te falta por reservar» se recalcula aquí: es el único momento
+  // en que puede cambiar, y así la pantalla del viaje no tiene que adivinarlo.
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', r.reserva.viajeId);
+  if (viaje) refrescarAvisoDeReservas(viaje);
+
+  res.json({ reserva: r.reserva });
+});
+
+/** La reserva de un candidato, para repintar sin recargar. */
+router.get('/api/candidatos/:id/reserva', (req, res) => {
+  const r = reservaDeCandidato(Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'Eso ya no está en el viaje.' });
+  res.json({ reserva: r });
+});
+
+/**
+ * MIS RESERVAS: todo lo cerrado del viaje, por fecha, y lo que falta.
+ */
+router.get('/viaje/:viajeId/reservas', (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) {
+    return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
+  }
+
+  // Se refresca al entrar: es la pantalla desde la que uno va a ir reservando.
+  refrescarAvisoDeReservas(viaje);
+
+  res.render('reservas', { viaje, reservas: reservasDelViaje(viajeId) });
+});
+
+// =============================================================================
+// EL PRESUPUESTO — cuánto costaría el viaje tal y como está montado
+// =============================================================================
+/**
+ * La pantalla. No calcula nada por su cuenta: lee lo que ya hay guardado.
+ *
+ * Si nunca se ha estimado el gasto diario, la pantalla sale igual con el bloque
+ * de lo planificado y un botón para estimarlo. Abrir una pestaña no puede
+ * disparar una consulta a la IA sin que nadie la haya pedido.
+ */
+router.get('/viaje/:viajeId/presupuesto', (req, res) => {
+  const presupuesto = presupuestoDelViaje(Number(req.params.viajeId));
+  if (!presupuesto) {
+    return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
+  }
+  res.render('presupuesto', { viaje: presupuesto.viaje, presupuesto });
+});
+
+/** El importe diario que escribe el usuario. A partir de aquí es suyo. */
+router.post('/api/viaje/:viajeId/presupuesto/importe', (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const viaje = una('SELECT id FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const r = guardarImporteAMano(viajeId, req.body?.importe);
+  if (r.error) return res.status(400).json(r);
+
+  res.json({ estimacion: r.estimacion, presupuesto: presupuestoDelViaje(viajeId) });
+});
+
+/**
+ * Volver a estimar el gasto diario.
+ *
+ * Tarda lo que tarde una consulta, así que contesta cuando ya está: es una sola
+ * llamada y no abre navegador, igual que el dosier.
+ */
+router.post('/api/viaje/:viajeId/presupuesto/recalcular', async (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const r = await asegurarEstimacion(viaje, { forzar: true });
+  if (r.error && !r.estimacion) return res.status(502).json({ error: r.error });
+
+  res.json({
+    estimacion: r.estimacion,
+    motivo: r.motivo ?? null,
+    presupuesto: presupuestoDelViaje(viajeId),
+  });
+});
+
 /**
  * Subir un adjunto.
  *
@@ -3029,6 +3248,15 @@ router.post('/api/viaje/:viajeId/listo', (req, res) => {
 
   const listo = req.body?.listo === true || req.body?.listo === 'true' || req.body?.listo === '1';
   ejecutar('UPDATE viajes SET listo = ? WHERE id = ?', listo ? 1 : 0, viajeId);
+
+  // EL PRESUPUESTO SE ESTIMA AQUÍ EN LOS VIAJES HECHOS A MANO.
+  //
+  // El orquestador lo hace al terminar sus fases; un viaje montado a mano no
+  // tiene ese momento, y el más parecido es este: al darlo por listo ya están
+  // decididas las ciudades y los días, que es lo que hace falta para estimar.
+  // Va por la cola porque la consulta tarda y esta ruta contesta a un botón.
+  // `encolar` no duplica, y `asegurarEstimacion` no pisa lo escrito a mano.
+  if (listo) encolar(viajeId, 'presupuesto');
 
   const actualizado = una('SELECT * FROM viajes WHERE id = ?', viajeId);
   res.json({ listo, dosier: estadoDelDosier(actualizado) });

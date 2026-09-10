@@ -35,6 +35,7 @@ import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { lienzoDeViaje, FRANJAS } from './lienzo.js';
 import { fichaDeFila } from './catalogo.js';
 import { adjuntosDe, rutaDe, comoTamano, limpiarAdjuntosHuerfanos } from './adjuntos.js';
+import { reservasDelViaje } from './reservas.js';
 import { medioElegidoDeTramo } from './movilidad.js';
 import { trasladosDeEtapa, trasladosDeElementos } from './traslados.js';
 import { fichasDeComer } from './comer.js';
@@ -678,6 +679,38 @@ export function datosDelDosier(viajeId) {
       .filter((x) => x.hotel),
   };
 
+  // --- MIS RESERVAS: los localizadores, que es lo que se busca con prisa ----
+  //
+  // Van con sus adjuntos dentro del ZIP, como el resto: en el mostrador no hay
+  // cobertura y el billete tiene que abrirse igual.
+  const misReservas = reservasDelViaje(viaje.id).reservadas.map((r) => ({
+    tipo: r.nombreTipo,
+    titulo: r.titulo,
+    donde: r.donde,
+    fecha: enCorto(r.fecha),
+    fechaISO: r.fecha,
+    localizador: r.localizador,
+    notas: r.notas,
+    enlace: r.enlaceUrl,
+    adjuntos: adjuntosParaElDosier('reserva', r.candidatoId, `reserva-${r.tipo}-${r.titulo ?? ''}`),
+  }));
+
+  // Y por día, para la portada: el localizador a mano en el día que toca.
+  const localizadoresPorFecha = new Map();
+  for (const r of misReservas) {
+    if (!r.fechaISO || !r.localizador) continue;
+    if (!localizadoresPorFecha.has(r.fechaISO)) localizadoresPorFecha.set(r.fechaISO, []);
+    localizadoresPorFecha.get(r.fechaISO).push({
+      tipo: r.tipo,
+      titulo: r.titulo,
+      localizador: r.localizador,
+    });
+  }
+
+  for (const d of dias) {
+    d.localizadores = localizadoresPorFecha.get(d.fechaISO ?? d.fecha) ?? [];
+  }
+
   return {
     viaje: {
       id: viaje.id,
@@ -700,6 +733,7 @@ export function datosDelDosier(viajeId) {
     })),
     dias,
     reservas,
+    misReservas,
     chuletas,
     dondeComer,
     // ANTES DE VIAJAR, con su fecha de generación a la vista.
@@ -742,6 +776,9 @@ function adjuntosDelDosier(datos) {
   const lista = [];
   for (const t of datos.reservas.vuelos) lista.push(...(t.adjuntos ?? []));
   for (const h of datos.reservas.hoteles) lista.push(...(h.hotel?.adjuntos ?? []));
+  // Los billetes y bonos de las reservas del usuario, que son los papeles que de
+  // verdad hay que enseñar en un mostrador.
+  for (const r of datos.misReservas ?? []) lista.push(...(r.adjuntos ?? []));
   for (const d of datos.dias) {
     for (const f of d.franjas) for (const c of f.cosas) lista.push(...(c.adjuntos ?? []));
   }

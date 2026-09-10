@@ -88,6 +88,24 @@ const hayDetalle = Boolean(
       </p>
     <% } %>
 
+    <%# ============ RESERVA CON ANTELACIÓN ============
+        Va FUERA de la línea de datos duros y con su propio color a propósito.
+        El precio y el horario se consultan cuando ya estás decidiendo el día;
+        esto hay que verlo mucho antes, porque es lo único de la ficha que, si
+        se lee tarde, ya no tiene arreglo: la entrada estaba agotada y punto. %>
+    <% if (s.datos?.reservaAvisa) { %>
+      <p class="reserva-antelacion reserva-antelacion--<%= s.datos.reserva %>">
+        <i class="ti <%= s.datos.reserva === 'imprescindible' ? 'ti-alert-triangle' : 'ti-clock-exclamation' %>"
+           aria-hidden="true"></i>
+        <span>
+          <strong>Reserva con antelación<%= s.datos.reserva === 'imprescindible' ? '' : ' (recomendable)' %></strong>
+          <% if (s.datos.reservaDetalle) { %>
+            <span class="reserva-antelacion__detalle"><%= s.datos.reservaDetalle %></span>
+          <% } %>
+        </span>
+      </p>
+    <% } %>
+
     <div class="tarjeta-punto__acciones">
       <button class="apuntar <%= s.apuntado ? 'apuntar--si' : '' %>" type="button"
               data-apuntar="<%= s.origen %>" data-id="<%= s.id %>">

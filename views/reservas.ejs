@@ -1,0 +1,146 @@
+<%
+/**
+ * MIS RESERVAS: el viaje visto por lo que ya está cerrado.
+ *
+ * Todo lo reservado del viaje en una sola lista y por FECHA, que es el orden en
+ * que van a hacer falta: el vuelo de ida el día 1, el hotel esa misma tarde, la
+ * excursión el jueves. No por tipo, que es como se ordena un almacén y no un
+ * viaje.
+ *
+ * Y al final, lo elegido que sigue SIN reservar. Esa lista es la más útil de la
+ * pantalla —es lo que queda por hacer— y por eso no está escondida en otra
+ * pestaña: se llega a ella bajando.
+ *
+ * Espera: viaje, reservas ({ reservadas, pendientes, total }).
+ */
+const pieExtra = '<script src="/js/reservas.js" defer></script>';
+
+const DIA = { weekday: 'short', day: 'numeric', month: 'short' };
+const enFecha = (iso) => {
+  if (!iso) return null;
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('es-ES', DIA);
+};
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Mis reservas · ${viaje.nombre}`,
+      extraCabeza: '',
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido" data-viaje="<%= viaje.id %>">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta"><%= viaje.nombre %></a>
+      </p>
+      <div class="etapa-titular">
+        <h1 class="ruta-cabecera__titulo">Mis reservas</h1>
+        <span class="etapa-acciones">
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/ruta">
+            <i class="ti ti-route" aria-hidden="true"></i> Volver a la ruta
+          </a>
+        </span>
+      </div>
+    </header>
+
+    <% if (!reservas.total) { %>
+      <p class="reservas-vacio">
+        <i class="ti ti-bookmark" aria-hidden="true"></i>
+        Todavía no hay nada elegido que reservar. Cuando marques un vuelo, un hotel
+        o una excursión, aparecerán aquí para que les pongas su localizador.
+      </p>
+    <% } %>
+
+    <%# ------------------------------ LO RESERVADO ------------------------ %>
+    <% if (reservas.reservadas.length) { %>
+      <h2 class="seccion-titulo">
+        Reservado <span class="seccion-titulo__num"><%= reservas.reservadas.length %></span>
+      </h2>
+
+      <ol class="reservas">
+        <% reservas.reservadas.forEach(r => { %>
+          <li class="reserva-fila">
+            <div class="reserva-fila__fecha">
+              <%= enFecha(r.fecha) ?? 'sin fecha' %>
+            </div>
+
+            <div class="reserva-fila__cuerpo">
+              <p class="reserva-fila__cabecera">
+                <i class="ti <%= r.icono %>" aria-hidden="true"></i>
+                <span class="reserva-fila__tipo"><%= r.nombreTipo %></span>
+                <% if (r.donde) { %><span class="reserva-fila__donde"><%= r.donde %></span><% } %>
+              </p>
+
+              <p class="reserva-fila__titulo"><%= r.titulo %></p>
+
+              <p class="reserva-fila__datos">
+                <% if (r.localizador) { %>
+                  <span class="reserva__codigo-chip" data-copiar="<%= r.localizador %>"
+                        title="Pulsa para copiarlo"><%= r.localizador %></span>
+                <% } else { %>
+                  <span class="reserva-fila__sin-codigo">sin localizador</span>
+                <% } %>
+
+                <% if (r.enlaceUrl) { %>
+                  <a class="boton-discreto" href="<%= r.enlaceUrl %>" target="_blank" rel="noopener">
+                    <i class="ti ti-external-link" aria-hidden="true"></i> Gestionar
+                  </a>
+                <% } %>
+              </p>
+
+              <% if (r.notas) { %><p class="reserva-fila__notas"><%= r.notas %></p><% } %>
+
+              <% if (r.adjuntos.length) { %>
+                <ul class="reserva-fila__papeles">
+                  <% r.adjuntos.forEach(a => { %>
+                    <li>
+                      <a href="/adjunto/<%= a.id %>" target="_blank" rel="noopener">
+                        <i class="ti <%= a.mime === 'application/pdf' ? 'ti-file-type-pdf' : 'ti-photo' %>"
+                           aria-hidden="true"></i>
+                        <%= a.nombre_original %>
+                      </a>
+                    </li>
+                  <% }) %>
+                </ul>
+              <% } %>
+            </div>
+          </li>
+        <% }) %>
+      </ol>
+    <% } %>
+
+    <%# ------------------------------ LO QUE FALTA ------------------------ %>
+    <% if (reservas.pendientes.length) { %>
+      <h2 class="seccion-titulo">
+        Elegido y sin reservar
+        <span class="seccion-titulo__num"><%= reservas.pendientes.length %></span>
+      </h2>
+
+      <p class="reservas-recordatorio">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        Esto ya está decidido en el viaje, pero todavía no lo has reservado.
+      </p>
+
+      <ul class="reservas reservas--pendientes">
+        <% reservas.pendientes.forEach(r => { %>
+          <li class="reserva-fila reserva-fila--pendiente">
+            <div class="reserva-fila__fecha"><%= enFecha(r.fecha) ?? 'sin fecha' %></div>
+            <div class="reserva-fila__cuerpo">
+              <p class="reserva-fila__cabecera">
+                <i class="ti <%= r.icono %>" aria-hidden="true"></i>
+                <span class="reserva-fila__tipo"><%= r.nombreTipo %></span>
+                <% if (r.donde) { %><span class="reserva-fila__donde"><%= r.donde %></span><% } %>
+              </p>
+              <p class="reserva-fila__titulo"><%= r.titulo %></p>
+            </div>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

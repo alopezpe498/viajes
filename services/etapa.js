@@ -37,6 +37,7 @@ import { medioElegidoDeTramo } from './movilidad.js';
 import { direccionesDe, direccionDe, volcarDireccionDeHotel } from './direcciones.js';
 import { datosDeSitio, buscandoDatos } from './datos-sitios.js';
 import { busquedasDeEtapa } from './busquedas-sitios.js';
+import { ambitoDeCandidato, ambitoDeTramo } from './presupuesto.js';
 
 /** Los tipos de transporte que se pueden apuntar a mano. */
 export const TIPOS_TRANSPORTE = [
@@ -295,10 +296,19 @@ export function queVerDeEtapa(contexto) {
     return { apuntado: Boolean(c), candidatoId: c?.id ?? null };
   };
 
-  // Las excursiones se quedan como estaban: su lector y su escritor ya usaban el
-  // mismo campo (`url` del catálogo), así que ahí no había nada roto.
-  const conEstado = (lista, url, titulo) => {
-    const c = porClave.get(claveDe(url, titulo));
+  // LAS EXCURSIONES, POR LA MISMA PUERTA QUE LOS SITIOS.
+  //
+  // Aquí se decía que su lector y su escritor usaban el mismo campo y que no
+  // había nada roto. Era verdad para el botón «Me lo apunto», y falso para el
+  // orquestador: la fase de excursiones guardaba —cuando guardaba— con la
+  // identidad {de:'actividad', deId}, y esto solo miraba la url. Cruzar por
+  // identidad primero hace que las dos vías pinten igual.
+  //
+  // El respaldo por texto se queda, y solo para PINTAR: hay excursiones
+  // apuntadas hace meses sin `datos_extra` y merecen seguir viéndose marcadas.
+  // Decidir un borrado sigue siendo cosa de la identidad (`alternarApuntado`).
+  const estadoDeExcursion = (id, url, titulo) => {
+    const c = porIdentidad.get(`actividad:${Number(id)}`) ?? porClave.get(claveDe(url, titulo));
     return { apuntado: Boolean(c), candidatoId: c?.id ?? null };
   };
 
@@ -364,7 +374,7 @@ export function queVerDeEtapa(contexto) {
       const trabajando = Boolean(trabajoActivo(viaje.id, 'ficha_actividad', a.id));
       const ultima = ultimoTrabajo(viaje.id, 'ficha_actividad', a.id);
 
-      const estado = conEstado(excursiones, a.url, a.titulo);
+      const estado = estadoDeExcursion(a.id, a.url, a.titulo);
 
       return {
         ...a,
@@ -480,8 +490,8 @@ export function alternarApuntado(etapaId, que, id) {
   ejecutar(
     `INSERT INTO candidatos
        (viaje_id, etapa_id, tipo, titulo, precio, moneda, duracion, valoracion,
-        num_opiniones, url, imagen_url, origen_datos, marcado, datos_extra)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        num_opiniones, url, imagen_url, origen_datos, marcado, datos_extra, precio_ambito)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     etapa.viaje_id,
     etapaId,
     tipo,
@@ -494,7 +504,11 @@ export function alternarApuntado(etapaId, que, id) {
     url,
     origen.imagen_url ?? null,
     tipo === 'comer' ? (origen.origen ?? 'comer') : tipo === 'sitio' ? 'catalogo' : 'civitatis',
-    JSON.stringify({ de: que, deId: origen.id })
+    JSON.stringify({ de: que, deId: origen.id }),
+    // EL AMBITO, CON EL PRECIO. Una excursion de Civitatis es por persona; un
+    // sitio y un bar no llevan precio y se quedan sin ambito, que es lo que
+    // corresponde. La regla esta en services/presupuesto.js.
+    ambitoDeCandidato({ tipo, origen_datos: origen.origen_datos })
   );
 
   return { apuntado: true, viajeId: etapa.viaje_id };
@@ -893,11 +907,15 @@ export function guardarTransporteManual(tramoId, { tipo, notas, precio }) {
   const notasLimpias = String(notas ?? '').trim().slice(0, 500) || null;
   const precioLimpio = Number.isFinite(Number(precio)) && Number(precio) > 0 ? Number(precio) : null;
 
+  // EL AMBITO DEL PRECIO QUE SE ESCRIBE A MANO lo decide el medio: un billete
+  // de tren es de cada uno y un coche de alquiler es del grupo entero. Es la
+  // misma regla que se aplica a las opciones que trae la busqueda.
   ejecutar(
-    'UPDATE transportes SET tipo = ?, notas = ?, precio_estimado = ? WHERE id = ?',
+    'UPDATE transportes SET tipo = ?, notas = ?, precio_estimado = ?, precio_ambito = ? WHERE id = ?',
     tipoLimpio,
     notasLimpias,
     precioLimpio,
+    precioLimpio == null ? null : ambitoDeTramo({ medio: tipoLimpio, nombre: notasLimpias }),
     tramoId
   );
   return una('SELECT * FROM transportes WHERE id = ?', tramoId);
@@ -905,7 +923,10 @@ export function guardarTransporteManual(tramoId, { tipo, notas, precio }) {
 
 /** Deshace lo apuntado a mano y deja el tramo otra vez pendiente. */
 export function olvidarTransporteManual(tramoId) {
-  ejecutar('UPDATE transportes SET notas = NULL, precio_estimado = NULL WHERE id = ?', tramoId);
+  ejecutar(
+    'UPDATE transportes SET notas = NULL, precio_estimado = NULL, precio_ambito = NULL WHERE id = ?',
+    tramoId
+  );
   return una('SELECT * FROM transportes WHERE id = ?', tramoId);
 }
 

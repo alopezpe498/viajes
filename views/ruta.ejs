@@ -76,6 +76,21 @@ const { viaje } = ruta;
             </a>
           <% } %>
 
+          <%# MIS RESERVAS: lo que ya está cerrado y lo que falta por cerrar.
+              Va aquí y no dentro de una etapa porque una reserva es del viaje:
+              el vuelo no es de ninguna parada y el orden que importa es el de
+              las fechas, no el de las ciudades. %>
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/reservas">
+            <i class="ti ti-bookmark" aria-hidden="true"></i> Mis reservas
+          </a>
+
+          <%# PRESUPUESTO: lo que costaría el viaje tal y como está montado.
+              Va al lado de las reservas porque es la pregunta de justo antes:
+              primero se mira si sale a cuenta y después se reserva. %>
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/presupuesto">
+            <i class="ti ti-wallet" aria-hidden="true"></i> Presupuesto
+          </a>
+
           <%# Entrar al viaje ya no pasa por el configurador, así que las fechas y
               los viajeros se cambian desde aquí. %>
           <a class="boton-discreto" href="/viajes/<%= viaje.id %>/paso/1?volverA=/viaje/<%= viaje.id %>/ruta">

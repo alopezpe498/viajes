@@ -58,6 +58,7 @@ import { ejecutarFaseDormir } from '../services/orquestador-dormir.js';
 import { ejecutarFaseSitios } from '../services/orquestador-sitios.js';
 import { ejecutarFaseExcursiones } from '../services/orquestador-excursiones.js';
 import { ejecutarFaseLienzo } from '../services/orquestador-lienzo.js';
+import { asegurarEstimacion } from '../services/presupuesto.js';
 
 /**
  * Las fases que ya hacen algo de verdad. Las que no estan aqui siguen siendo
@@ -244,10 +245,14 @@ async function ejecutarActividades(trabajo) {
   const etapa = sincronizarEtapaUnica(viaje.id);
 
   const insertar = db.prepare(
+    // EL AMBITO VA CON EL PRECIO. El de Civitatis es "desde 45 EUR", o sea lo
+    // que paga CADA UNO; guardarlo aqui es lo que permite que el presupuesto
+    // multiplique por los viajeros sin tener que adivinarlo al sumar. La regla
+    // vive en services/presupuesto.js (ambitoDeCandidato).
     `INSERT INTO candidatos
        (viaje_id, etapa_id, tipo, titulo, precio, moneda, duracion, valoracion, num_opiniones,
-        url, imagen_url, origen_datos, marcado, datos_extra)
-     VALUES (?, ?, 'actividad', ?, ?, ?, ?, ?, ?, ?, ?, 'civitatis', 0, ?)`
+        url, imagen_url, origen_datos, marcado, datos_extra, precio_ambito)
+     VALUES (?, ?, 'actividad', ?, ?, ?, ?, ?, ?, ?, ?, 'civitatis', 0, ?, 'por_persona')`
   );
 
   db.exec('BEGIN');
@@ -395,10 +400,12 @@ async function ejecutarHoteles(trabajo) {
   const etapaDestino = etapa ?? sincronizarEtapaUnica(viaje.id);
 
   const insertar = db.prepare(
+    // Booking da el total de la ESTANCIA para la ocupacion pedida: ya es de
+    // todos y de todas las noches, asi que el presupuesto no lo multiplica.
     `INSERT INTO candidatos
        (viaje_id, etapa_id, tipo, titulo, precio, moneda, duracion, valoracion, num_opiniones,
-        url, imagen_url, origen_datos, marcado, datos_extra)
-     VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?, 'booking', 0, ?)`
+        url, imagen_url, origen_datos, marcado, datos_extra, precio_ambito)
+     VALUES (?, ?, 'hotel', ?, ?, ?, ?, ?, ?, ?, ?, 'booking', 0, ?, 'por_grupo')`
   );
 
   db.exec('BEGIN');
@@ -840,6 +847,7 @@ const TIPOS_CONOCIDOS = [
   'comer_buscar', 'comer_detalles',
   'datos_sitios', 'horario_cierre', 'busqueda_sitios',
   'orquestador',
+  'presupuesto',
 ];
 
 /**
@@ -1040,10 +1048,13 @@ async function ejecutarVuelos(trabajo) {
   const ida = tramo;
 
   const insertar = db.prepare(
+    // La receta de Kayak busca a proposito la linea "en total" y deja el
+    // por-persona en datos_extra: lo que se guarda en `precio` es el total de
+    // la reserva. De ahi 'por_grupo'.
     `INSERT INTO candidatos
        (viaje_id, transporte_id, tipo, titulo, precio, moneda, duracion, valoracion, num_opiniones,
-        url, imagen_url, origen_datos, marcado, datos_extra)
-     VALUES (?, ?, 'vuelo', ?, ?, ?, ?, NULL, NULL, NULL, NULL, 'kayak', 0, ?)`
+        url, imagen_url, origen_datos, marcado, datos_extra, precio_ambito)
+     VALUES (?, ?, 'vuelo', ?, ?, ?, ?, NULL, NULL, NULL, NULL, 'kayak', 0, ?, 'por_grupo')`
   );
 
   let guardados = 0;
@@ -1497,10 +1508,48 @@ async function ejecutarOrquestador(trabajo) {
     }
   }
 
+  // --- Y EL PRESUPUESTO, QUE NO ES UNA FASE -------------------------------
+  //
+  // El gasto diario en destino no lo decide ninguna de las seis: no se busca, no
+  // se reserva y no cambia nada del viaje. Pero es la mitad del presupuesto, y
+  // pedirlo aquí —una vez, con el viaje ya montado y las ciudades sabidas— es lo
+  // que hace que la pestaña esté llena la primera vez que se abre.
+  //
+  // Va FUERA del bucle y con su propio try/catch por la misma razón que las
+  // fases lo tienen: que esto falle no puede convertir un viaje montado entero
+  // en un viaje con error.
+  await ejecutarPresupuesto({ id: trabajo.id, viajeId });
+
   console.log(
     `[worker] Trabajo #${trabajo.id}: viaje «${viaje.nombre}» orquestado ` +
       `(${FASES.length} fases, ${conHuecos} con huecos, ${conError} con error).`
   );
+}
+
+/**
+ * EL GASTO DIARIO ESTIMADO DE UN VIAJE.
+ *
+ * Se llama al acabar de orquestar y también al marcar listo un viaje montado a
+ * mano: son los dos momentos en que el viaje ya tiene forma y las ciudades están
+ * decididas, que es lo que hace falta para estimar.
+ *
+ * No pisa nunca una cifra escrita por el usuario, y si no hay respuesta se queda
+ * sin estimación: la pestaña lo dice y ofrece el botón de recalcular.
+ */
+async function ejecutarPresupuesto({ id, viajeId }) {
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) return;
+
+  try {
+    const r = await asegurarEstimacion(viaje);
+    const cuanto = r.estimacion?.importe;
+    console.log(
+      `[worker] Trabajo #${id}: gasto diario ${cuanto != null ? `${cuanto} €/persona/día` : 'sin estimar'}` +
+        ` (${r.error ? `error: ${r.error}` : r.motivo}).`
+    );
+  } catch (err) {
+    console.warn(`[worker] Trabajo #${id}: no se pudo estimar el gasto diario (${err.message}).`);
+  }
 }
 
 /** Ejecuta un trabajo cualquiera según su tipo. */
@@ -1521,6 +1570,8 @@ async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'datos_sitios') return ejecutarDatosDeSitios(trabajo);
   if (trabajo.tipo === 'busqueda_sitios') return ejecutarBusquedaDeSitios(trabajo);
   if (trabajo.tipo === 'orquestador') return ejecutarOrquestador(trabajo);
+  if (trabajo.tipo === 'presupuesto')
+    return ejecutarPresupuesto({ id: trabajo.id, viajeId: trabajo.viaje_id });
   if (trabajo.tipo === 'horario_cierre') return interpretarHorario(trabajo.referencia_id);
   if (trabajo.tipo === 'geocodificar') return ejecutarGeocodificar(trabajo);
   if (trabajo.tipo === 'traslado') return ejecutarTraslado(trabajo);

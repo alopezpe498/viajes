@@ -32,6 +32,10 @@
   let paisAbierto = null;
   /** Países que se están generando ahora mismo, para no pedirlos dos veces. */
   const generando = new Set();
+  /** Lo mismo para el bloque del tiempo, que va por su cuenta. */
+  const pidiendoClima = new Set();
+  /** Y los que ya se han pedido solos en esta apertura: una vez y no más. */
+  const climaPedido = new Set();
 
   const esc = (t) => {
     const d = document.createElement('div');
@@ -161,6 +165,17 @@
     // se pinta en cuanto está.
     for (const p of datos.paises) {
       if (!p.ficha) generar(p, { silencioso: true });
+
+      // EL TIEMPO DE AHORA SE CARGA SOLO LA PRIMERA VEZ Y NUNCA MÁS.
+      //
+      // Un bloque vacío con un botón para llenarlo es un bloque que nadie
+      // pulsa. Pero tampoco puede refrescarse en cada apertura: son datos de
+      // hoy, no de este segundo, y la hora de actualización está a la vista
+      // precisamente para que uno decida si le vale o pulsa «Actualizar».
+      if (p.clima?.ahora?.vacio && !climaPedido.has(p.norm)) {
+        climaPedido.add(p.norm);
+        refrescarClima(p, { silencioso: true });
+      }
     }
   }
 
@@ -198,6 +213,13 @@
   });
 
   zonaCuerpo.addEventListener('click', (ev) => {
+    const clima = ev.target.closest('[data-clima]');
+    if (clima) {
+      const p = datos.paises.find((x) => x.norm === clima.dataset.clima);
+      if (p) refrescarClima(p);
+      return;
+    }
+
     const b = ev.target.closest('[data-actualizar]');
     if (!b) return;
     const p = datos.paises.find((x) => x.norm === b.dataset.actualizar);
@@ -229,9 +251,181 @@
       f.convieneActualizar ? bandaDeCaducidad(f) : '',
       bloquePapeles(f),
       bloqueDinero(f),
+      bloqueClimaTipico(p),
+      bloqueAhora(p),
       (f.problemas ?? []).length ? bloqueProblemas(f) : '',
       pieDeFicha(p, f),
     ].join('');
+  }
+
+  // ===========================================================================
+  // EL TIEMPO, EN DOS BLOQUES QUE NO SON LA MISMA PREGUNTA
+  // ---------------------------------------------------------------------------
+  // Arriba, qué SUELE hacer en tus fechas: es lo que decide la maleta y se
+  // calcula una vez, con la ficha. Abajo, qué está pasando AHORA mismo allí,
+  // que no tiene nada que ver con cuándo vayas y por eso lleva su propia hora y
+  // su propio botón. Separarlos no es estética: mezclados, una previsión de
+  // esta semana se lee como el tiempo que va a hacer en el viaje.
+  // ===========================================================================
+  function bloqueClimaTipico(p) {
+    const lineas = p.clima?.tipico ?? [];
+    if (!lineas.length) return '';
+
+    const filas = lineas
+      .map(
+        (c) =>
+          '<li class="clima-linea">' +
+          `<span class="clima-linea__ciudad">${esc(c.ciudad)}</span>` +
+          `<span class="clima-linea__cuando">${esc(c.epoca ?? '')}</span>` +
+          `<span class="clima-linea__grados">${esc(c.rango ?? `${c.minMedia}-${c.maxMedia}°`)}</span>` +
+          `<span class="clima-linea__lluvia">${esc(c.lluviaTexto)}</span>` +
+          '</li>'
+      )
+      .join('');
+
+    const contraste = p.clima?.contraste
+      ? `<p class="clima-contraste"><i class="ti ti-arrows-diff" aria-hidden="true"></i> ${esc(p.clima.contraste)}</p>`
+      : '';
+
+    const anos = lineas[0]?.anos;
+
+    return (
+      '<section class="antes-bloque">' +
+      '<h3 class="antes-bloque__titulo"><i class="ti ti-cloud-filled" aria-hidden="true"></i> ' +
+      'Clima en tus fechas</h3>' +
+      `<ul class="clima-lineas">${filas}</ul>` +
+      contraste +
+      '<p class="antes-dato__nota">Lo que hizo de verdad en esas mismas fechas ' +
+      (anos ? `en los últimos ${esc(String(anos))} años` : 'en años anteriores') +
+      ', medido por Open-Meteo. No es una predicción: es lo normal allí por esas fechas.</p>' +
+      '</section>'
+    );
+  }
+
+  function bloqueAhora(p) {
+    const a = p.clima?.ahora;
+    const pidiendo = pidiendoClima.has(p.norm);
+
+    const cabecera =
+      '<h3 class="antes-bloque__titulo"><i class="ti ti-sun" aria-hidden="true"></i> ' +
+      'Ahora en el destino ' +
+      '<span class="clima-sello">esta semana, no tu viaje</span></h3>';
+
+    const boton =
+      `<button class="antes-pie__actualizar" type="button" data-clima="${esc(p.norm)}"` +
+      (pidiendo ? ' disabled' : '') +
+      '><i class="ti ti-refresh" aria-hidden="true"></i> ' +
+      // «Actualizar» a secas, no: justo debajo está el de la ficha entera y los
+      // dos botones se leen igual. Este solo rehace el tiempo, y lo dice.
+      (pidiendo ? 'Consultando…' : 'Actualizar el tiempo') +
+      '</button>';
+
+    if (!a || a.vacio) {
+      return (
+        '<section class="antes-bloque">' + cabecera +
+        '<p class="antes-dato__nota">' +
+        (pidiendo
+          ? 'Preguntando a Open-Meteo qué tiempo hace allí…'
+          : 'Todavía no se ha consultado el tiempo de estos días.') +
+        '</p>' +
+        `<footer class="antes-pie"><span class="antes-pie__fecha"></span>${boton}</footer>` +
+        '</section>'
+      );
+    }
+
+    const avisos = (a.avisos ?? []).length
+      ? '<ul class="clima-avisos">' +
+        a.avisos
+          .map(
+            (x) =>
+              `<li class="clima-aviso clima-aviso--${esc(x.tipo)}">` +
+              `<i class="ti ${esc(x.icono)}" aria-hidden="true"></i> ${esc(x.texto)}</li>`
+          )
+          .join('') +
+        '</ul>'
+      : '';
+
+    const ciudades = (a.ciudades ?? [])
+      .map(
+        (c) =>
+          '<div class="clima-ciudad">' +
+          `<h4 class="clima-ciudad__nombre">${esc(c.ciudad)}</h4>` +
+          '<ol class="clima-dias">' +
+          (c.dias ?? []).map(diaDePrevision).join('') +
+          '</ol></div>'
+      )
+      .join('');
+
+    return (
+      '<section class="antes-bloque">' + cabecera +
+      '<p class="antes-dato__nota">Qué está pasando allí estos días, tengas el viaje ' +
+      'la semana que viene o dentro de cinco meses.</p>' +
+      avisos +
+      `<div class="clima-ciudades">${ciudades}</div>` +
+      '<footer class="antes-pie">' +
+      `<span class="antes-pie__fecha">Actualizado el ${esc(a.actualizadoTexto ?? '—')}</span>` +
+      boton +
+      '</footer></section>'
+    );
+  }
+
+  /** Un día de la tira: el día, el icono, los grados y la lluvia si la hay. */
+  function diaDePrevision(d) {
+    const lluvia =
+      d.probLluvia != null && d.probLluvia >= 20
+        ? `<span class="clima-dia__lluvia">${esc(String(Math.round(d.probLluvia)))}%</span>`
+        : '<span class="clima-dia__lluvia"></span>';
+
+    return (
+      `<li class="clima-dia" title="${esc(d.cielo)}">` +
+      `<span class="clima-dia__nombre">${esc(d.dia)} ${esc(String(d.numero))}</span>` +
+      `<i class="ti ${esc(d.icono)} clima-dia__icono" aria-hidden="true"></i>` +
+      '<span class="clima-dia__grados">' +
+      `<strong>${d.max == null ? '—' : esc(String(Math.round(d.max)))}°</strong>` +
+      `<span>${d.min == null ? '' : esc(String(Math.round(d.min))) + '°'}</span>` +
+      '</span>' +
+      lluvia +
+      '</li>'
+    );
+  }
+
+  // ===========================================================================
+  // ACTUALIZAR SOLO EL TIEMPO DE AHORA
+  // ---------------------------------------------------------------------------
+  // Su propia ruta y su propia petición: esto no vuelve a preguntar por visados
+  // ni por festivos. Lo que había en la ficha se queda intacto.
+  // ===========================================================================
+  async function refrescarClima(p, { silencioso = false } = {}) {
+    if (pidiendoClima.has(p.norm)) return;
+    pidiendoClima.add(p.norm);
+
+    // SIN PERDER EL SITIO. `pintar` rehace el cuerpo entero por innerHTML, y el
+    // bloque del tiempo está abajo del todo: sin esto, pulsar «Actualizar» te
+    // devolvía al principio de la ficha y había que volver a bajar para ver el
+    // resultado de lo que acababas de pulsar.
+    const dondeIba = zonaCuerpo.scrollTop;
+    const repintar = () => {
+      pintar();
+      zonaCuerpo.scrollTop = dondeIba;
+    };
+
+    if (!silencioso || p.norm === paisAbierto) repintar();
+
+    try {
+      const r = await fetch(`/api/viaje/${viajeId}/clima`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ pais: p.pais }),
+      });
+      const cuerpo = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(cuerpo.error || `Error ${r.status}`);
+      p.clima = cuerpo.clima;
+    } catch (err) {
+      console.error(`[antes] no se pudo consultar el tiempo de ${p.pais}:`, err);
+    } finally {
+      pidiendoClima.delete(p.norm);
+      repintar();
+    }
   }
 
   const bandaDeCaducidad = (f) =>
@@ -413,6 +607,8 @@
       const cuerpo = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(cuerpo.error || `Error ${r.status}`);
       p.ficha = cuerpo.ficha;
+      // La misma respuesta trae el clima típico recién calculado.
+      if (cuerpo.clima) p.clima = cuerpo.clima;
     } catch (err) {
       console.error(`[antes] no se pudo preparar ${p.pais}:`, err);
       p.error = err.message;

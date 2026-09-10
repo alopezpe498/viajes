@@ -132,6 +132,11 @@ const nAdjuntos = c.apuntado && c.candidatoId ? (c.adjuntos ?? []).length : 0;
               abierto: true,
             }) %>
       </div>
+
+      <%# Lo que uno reserva de verdad: el código del bono y sus papeles. %>
+      <% if (typeof reservas !== 'undefined' && reservas && reservas.get(c.candidatoId)) { %>
+        <%- include('reserva', { reserva: reservas.get(c.candidatoId) }) %>
+      <% } %>
     <% } %>
   </div>
 </div>

@@ -794,10 +794,13 @@ function guardarVueloElegido(viaje, lado, hallazgo) {
 
   const aerolineas = String(o.aerolinea ?? '').trim() || 'Vuelo';
   const r = ejecutar(
+    // El precio de Kayak es el TOTAL de la reserva —la receta busca la linea
+    // "en total"—, asi que el presupuesto no vuelve a multiplicarlo por los
+    // viajeros. La regla vive en services/presupuesto.js (ambitoDeCandidato).
     `INSERT INTO candidatos
        (viaje_id, transporte_id, tipo, titulo, precio, moneda, duracion,
-        origen_datos, marcado, datos_extra)
-     VALUES (?, NULL, 'vuelo', ?, ?, ?, ?, 'kayak', 1, ?)`,
+        origen_datos, marcado, datos_extra, precio_ambito)
+     VALUES (?, NULL, 'vuelo', ?, ?, ?, ?, 'kayak', 1, ?, 'por_grupo')`,
     viaje.id,
     `${aerolineas} · ${lado === 'ida' ? 'ida' : 'vuelta'} (${hallazgo.iata})`,
     o.precio ?? null,

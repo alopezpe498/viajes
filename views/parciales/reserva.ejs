@@ -1,0 +1,80 @@
+<%
+/**
+ * EL BLOQUE DE RESERVA de una cosa elegida.
+ *
+ * El mismo en los cuatro sitios donde hace falta —el vuelo, el hotel de una
+ * parada, una excursión, un traslado—, porque es la misma idea: esto ya está
+ * cerrado y aquí está el papel que lo demuestra.
+ *
+ * EL CHECK MANDA SOBRE EL RESTO. Sin marcar, solo se ve la casilla: una tarjeta
+ * llena de campos vacíos es ruido. Al marcarlo aparecen el localizador, la nota,
+ * el enlace y los adjuntos.
+ *
+ * Y DESMARCAR NO BORRA. Los datos siguen guardados y el bloque lo dice, porque
+ * si no cualquiera piensa que ha perdido el localizador y no vuelve a tocar la
+ * casilla nunca más.
+ *
+ * Espera: reserva (lo que devuelve reservaDeCandidato).
+ */
+const r = reserva;
+const abierto = r.reservado || r.hayDatos;
+%>
+<section class="reserva <%= r.reservado ? 'reserva--si' : '' %>" data-reserva="<%= r.candidatoId %>">
+
+  <label class="reserva__check">
+    <input type="checkbox" data-reservado <%= r.reservado ? 'checked' : '' %>>
+    <span class="reserva__etiqueta">
+      <i class="ti <%= r.reservado ? 'ti-circle-check' : 'ti-circle-dashed' %>" aria-hidden="true"></i>
+      <strong>Reservado</strong>
+      <% if (r.reservado && r.localizador) { %>
+        <span class="reserva__codigo-chip"><%= r.localizador %></span>
+      <% } %>
+    </span>
+  </label>
+
+  <div class="reserva__cuerpo" <%= abierto ? '' : 'hidden' %>>
+
+    <% if (!r.reservado && r.hayDatos) { %>
+      <p class="reserva__nota-guardada">
+        <i class="ti ti-info-circle" aria-hidden="true"></i>
+        Sigue guardado lo que pusiste; solo está sin marcar.
+      </p>
+    <% } %>
+
+    <div class="reserva__campos">
+      <label class="reserva__campo">
+        <span>Localizador o código</span>
+        <input type="text" data-campo="localizador" maxlength="80"
+               placeholder="ABC123" value="<%= r.localizador ?? '' %>">
+      </label>
+
+      <label class="reserva__campo reserva__campo--ancho">
+        <span>Enlace</span>
+        <input type="url" data-campo="enlace" maxlength="500"
+               placeholder="Dónde se gestiona esta reserva" value="<%= r.enlace ?? '' %>">
+      </label>
+    </div>
+
+    <label class="reserva__campo reserva__campo--ancho">
+      <span>Notas</span>
+      <textarea data-campo="notas" rows="2" maxlength="1000"
+                placeholder="Lo que convenga recordar: a nombre de quién, hora de recogida, qué llevar"><%= r.notas ?? '' %></textarea>
+    </label>
+
+    <div class="reserva__pie">
+      <span class="reserva__estado" data-estado aria-live="polite"></span>
+      <% if (r.enlaceUrl) { %>
+        <a class="boton-discreto" href="<%= r.enlaceUrl %>" target="_blank" rel="noopener">
+          <i class="ti ti-external-link" aria-hidden="true"></i> Abrir la reserva
+        </a>
+      <% } %>
+    </div>
+
+    <%- include('adjuntos', {
+          tipo: 'reserva', elementoId: r.candidatoId,
+          adjuntos: r.adjuntos ?? [],
+          etiqueta: 'Billetes, bonos y confirmaciones',
+          abierto: true,
+        }) %>
+  </div>
+</section>

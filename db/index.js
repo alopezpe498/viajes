@@ -364,9 +364,15 @@ export function migrarEsquema() {
   migracionVueltaDecente();
   migracionCorrectivoGrecia();
   migracionSlugsDeCivitatis();
+  migracionReservas();
+  migracionAdjuntosDeReserva();
+  migracionCorrectivoPeloponeso();
   migracionFase6Lienzo();
   migracionFase6Referencias();
   migracionRegistroDelOrquestador();
+  migracionPresupuesto();
+  migracionClima();
+  migracionReservaAnticipada();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -2071,6 +2077,166 @@ function migracionSlugsDeCivitatis() {
 }
 
 /**
+ * LAS RESERVAS: lo que el usuario cierra de verdad.
+ *
+ * La aplicacion monta el viaje —elige vuelo, hotel, excursiones— pero hasta
+ * ahora no guardaba nada de lo que pasa DESPUES: el localizador del vuelo, el
+ * codigo del bono, el numero de confirmacion del hotel. Eso acababa en un correo
+ * y en la calle no aparece.
+ *
+ * Una reserva cuelga de un CANDIDATO —el vuelo elegido, el hotel de esa parada,
+ * la excursion apuntada—, que es la cosa concreta que se ha reservado. Uno a
+ * uno: un candidato tiene como mucho una reserva, y por eso `candidato_id` es
+ * unico.
+ *
+ * `reservado` vive en el candidato y no aqui a proposito: es un estado de la
+ * cosa («esto ya esta cerrado»), y desmarcarlo no puede borrar el localizador
+ * que costo encontrar. Se apaga la luz, no se tira el papel.
+ *
+ * Los adjuntos —billetes, tarjetas de embarque, bonos— van a la tabla de
+ * siempre con tipo 'reserva' y el id del candidato, asi que heredan el subir,
+ * ver, borrar y el viaje dentro del ZIP del dosier sin tocar nada de eso.
+ */
+function migracionReservas() {
+  const CLAVE = '2026-09-reservas';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reservas (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      viaje_id      INTEGER NOT NULL REFERENCES viajes(id) ON DELETE CASCADE,
+      candidato_id  INTEGER NOT NULL UNIQUE REFERENCES candidatos(id) ON DELETE CASCADE,
+      localizador   TEXT,
+      notas         TEXT,
+      enlace        TEXT,
+      creado_en     TEXT NOT NULL DEFAULT (datetime('now')),
+      actualizado_en TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_reservas_viaje ON reservas(viaje_id);
+  `);
+
+  anadirColumnaSiFalta('candidatos', 'reservado', 'INTEGER NOT NULL DEFAULT 0');
+
+  const desde = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES ('dias_aviso_sin_reservar', '21', '21',
+             'Cuando faltan menos dias que estos para salir, avisa de lo que sigue sin reservar',
+             'dias', ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run(desde + 1);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: las reservas del viaje, con su localizador y sus adjuntos.');
+  return true;
+}
+
+/**
+ * LOS ADJUNTOS ACEPTAN UN CUARTO TIPO: 'reserva'.
+ *
+ * La tabla nacio con un CHECK que enumera los tres tipos que habia entonces, y
+ * SQLite no sabe modificar un CHECK: hay que rehacer la tabla. Se hace con el
+ * baile de siempre —crear la nueva, copiar TODO, cambiar los nombres— dentro de
+ * una transaccion, asi que o sale entero o no sale nada. No se pierde ni una
+ * fila: los adjuntos son papeles del viaje y no hay ninguno que sobre.
+ *
+ * El CHECK se queda, ojo, no se quita: es lo que impide que un dia entre un tipo
+ * inventado y los adjuntos se queden colgando de nada.
+ */
+function migracionAdjuntosDeReserva() {
+  const CLAVE = '2026-09-adjuntos-reserva';
+  if (yaAplicada(CLAVE)) return false;
+
+  const antes = db.prepare('SELECT COUNT(*) AS n FROM adjuntos').get().n;
+
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE adjuntos_nueva (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        viaje_id        INTEGER NOT NULL REFERENCES viajes(id) ON DELETE CASCADE,
+        tipo_elemento   TEXT    NOT NULL CHECK (tipo_elemento IN ('transporte','alojamiento','excursion','reserva')),
+        elemento_id     INTEGER NOT NULL,
+        nombre_archivo  TEXT    NOT NULL,
+        nombre_original TEXT    NOT NULL,
+        mime            TEXT    NOT NULL,
+        tamano          INTEGER NOT NULL,
+        subido_en       TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+
+      INSERT INTO adjuntos_nueva
+        (id, viaje_id, tipo_elemento, elemento_id, nombre_archivo, nombre_original, mime, tamano, subido_en)
+        SELECT id, viaje_id, tipo_elemento, elemento_id, nombre_archivo, nombre_original, mime, tamano, subido_en
+          FROM adjuntos;
+
+      DROP TABLE adjuntos;
+      ALTER TABLE adjuntos_nueva RENAME TO adjuntos;
+
+      CREATE INDEX IF NOT EXISTS idx_adjuntos_elemento ON adjuntos(tipo_elemento, elemento_id);
+      CREATE INDEX IF NOT EXISTS idx_adjuntos_viaje ON adjuntos(viaje_id);
+    `);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  const despues = db.prepare('SELECT COUNT(*) AS n FROM adjuntos').get().n;
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: los adjuntos aceptan el tipo 'reserva' (${despues} de ${antes} filas conservadas).`
+  );
+  return true;
+}
+
+/**
+ * LOS NUMEROS DEL CORRECTIVO DEL PELOPONESO.
+ *
+ * Cinco ajustes salidos de una ejecucion real, y cada uno trae su umbral. Van a
+ * parametros y no a constantes porque los cinco son cuestion de gusto: a que
+ * hora es un madrugon, cuanto dinero justifica una hora, cuanta antelacion pide
+ * un aeropuerto. La aplicacion pone un valor sensato y quien viaja lo ajusta.
+ */
+function migracionCorrectivoPeloponeso() {
+  const CLAVE = '2026-09-correctivo-peloponeso';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) => meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  // --- 1) La hora a la que empieza a ser un madrugon ----------------------
+  nuevo('hora_minima_tren', '09:00', 'Antes de esta hora, coger un tren es madrugar (con ritmo intenso, una hora menos)', 'hora');
+  nuevo('hora_minima_avion', '10:00', 'Lo mismo para un avion: a las 10:00 en el aire son las 08:00 en el hotel', 'hora');
+  nuevo('max_penalizacion_horario_min', '90', 'Cuanto tiempo de mas se acepta por cambiar a una opcion que respete esa hora', 'minutos');
+
+  // --- 2) Lo que ocupa de verdad un vuelo -------------------------------
+  nuevo('presentacion_vuelo_min', '150', 'Cuanto antes del despegue hay que estar ya en el aeropuerto', 'minutos');
+  nuevo('presentacion_tren_min', '30', 'Lo mismo para un tren o un autobus', 'minutos');
+  nuevo('acceso_por_defecto_min', '45', 'Cuanto se tarda en llegar al aeropuerto o la estacion cuando no se sabe', 'minutos');
+  nuevo('salida_del_aeropuerto_min', '40', 'Maletas y salir: cuanto pasa desde que aterriza hasta que empieza el dia', 'minutos');
+
+  // --- 3) El ahorro grande ----------------------------------------------
+  nuevo('factor_ahorro_traslado', '4', 'Cuantas veces mas barata tiene que ser una opcion para que el ahorro mande', 'veces');
+  nuevo('max_tiempo_extra_ahorro_min', '75', 'Cuanto tiempo de mas se acepta a cambio de ese ahorro', 'minutos');
+
+  // --- 4) La joya que se queda fuera -------------------------------------
+  nuevo('peso_minimo_aviso_candidata', '4', 'De este peso para arriba, si una candidata queda fuera del viaje se avisa', 'peso');
+
+  // --- 5) El final del dia -----------------------------------------------
+  nuevo('hora_maxima_inicio', '22:00', 'A partir de esta hora ya no se coloca nada en el lienzo', 'hora');
+  nuevo('margen_tras_llegada_min', '60', 'Lo que se deja libre despues de una llegada antes de colocar nada', 'minutos');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: los umbrales del correctivo del Peloponeso.');
+  return true;
+}
+
+/**
  * EL REGISTRO DEL ORQUESTADOR, QUE YA NO SE BORRA.
  *
  * Hasta ahora lo que iba diciendo cada fase vivia en `orquestador_fases.log`, y
@@ -3652,6 +3818,275 @@ function volcarActividadesAlCatalogo() {
 }
 
 /** Añade una columna solo si no estaba ya: SQLite no tiene IF NOT EXISTS aqui. */
+/**
+ * EL PRESUPUESTO DEL VIAJE: EL AMBITO DE CADA PRECIO Y EL GASTO DIARIO.
+ *
+ * Sumar precios de sitios distintos sale mal si no se sabe QUE cuenta cada uno.
+ * Los cuatro origenes que tiene la aplicacion no dicen lo mismo:
+ *
+ *   - Kayak     -> el TOTAL de la reserva. La receta busca la linea "en total"
+ *                  justamente para eso, y deja el por-persona en datos_extra.
+ *   - Booking   -> el TOTAL de la estancia para la ocupacion pedida.
+ *   - Civitatis -> "desde 45 EUR", que es POR PERSONA.
+ *   - Traslados -> depende: un billete de tren es de cada uno y un taxi es del
+ *                  coche entero. Y dentro del mismo medio "traslado" conviven
+ *                  BlaBlaCar (por plaza) y un privado (por vehiculo).
+ *
+ * Multiplicar por los viajeros lo que ya venia multiplicado dobla el viaje; no
+ * multiplicar lo que era de uno lo parte por la mitad. Asi que el ambito se
+ * guarda CON el dato, en el momento en que se captura, y la suma solo lo
+ * obedece. Ninguna pantalla vuelve a deducirlo.
+ *
+ * `presupuesto_diario` es la otra mitad: lo que se gasta en comer y en moverse
+ * por la ciudad, que no lo trae ninguna busqueda porque no se reserva. Eso lo
+ * estima la IA una vez por viaje y se ensena aparte, etiquetado como estimacion.
+ * Si el usuario lo toca, `tocado_a_mano` impide que nadie se lo vuelva a pisar.
+ */
+function migracionPresupuesto() {
+  const CLAVE = '2026-09-presupuesto-del-viaje';
+  if (yaAplicada(CLAVE)) return false;
+
+  // --- 1) El ambito, en las tres tablas que llevan precio --------------------
+  anadirColumnaSiFalta('candidatos', 'precio_ambito', 'TEXT');
+  anadirColumnaSiFalta('catalogo_transporte_tramo', 'precio_ambito', 'TEXT');
+  anadirColumnaSiFalta('transportes', 'precio_ambito', 'TEXT');
+
+  // Lo que ya estaba guardado tambien tiene ambito: se sabe por su origen, que
+  // es exactamente el mismo criterio que se aplica de ahora en adelante.
+  db.exec(`
+    UPDATE candidatos SET precio_ambito = 'por_grupo'
+      WHERE tipo IN ('vuelo', 'hotel') AND precio_ambito IS NULL;
+    UPDATE candidatos SET precio_ambito = 'por_persona'
+      WHERE tipo = 'actividad' AND precio_ambito IS NULL;
+  `);
+
+  db.exec(`
+    UPDATE catalogo_transporte_tramo SET precio_ambito = 'por_persona'
+      WHERE precio_ambito IS NULL AND medio IN ('tren', 'bus', 'ferry', 'avion', 'otro');
+    UPDATE catalogo_transporte_tramo SET precio_ambito = 'por_grupo'
+      WHERE precio_ambito IS NULL AND medio IN ('coche', 'traslado');
+  `);
+
+  // EL COCHE COMPARTIDO NO ES UN TAXI. BlaBlaCar viene guardado como "traslado"
+  // en unos tramos y como "coche" en otros, y en los dos se paga por plaza: es
+  // la unica excepcion a la regla del medio, y por eso va escrita aparte.
+  db.exec(`
+    UPDATE catalogo_transporte_tramo SET precio_ambito = 'por_persona'
+     WHERE LOWER(nombre) LIKE '%blablacar%'
+        OR LOWER(nombre) LIKE '%compartid%';
+  `);
+
+  // Los tramos ya resueltos heredan el ambito de la ficha que se eligio; los
+  // apuntados a mano, el de su tipo.
+  db.exec(`
+    UPDATE transportes
+       SET precio_ambito = (
+         SELECT f.precio_ambito FROM catalogo_transporte_tramo f
+          WHERE f.id = transportes.ficha_transporte_id)
+     WHERE ficha_transporte_id IS NOT NULL AND precio_ambito IS NULL;
+
+    UPDATE transportes SET precio_ambito = 'por_persona'
+     WHERE precio_ambito IS NULL AND precio_estimado IS NOT NULL
+       AND tipo IN ('vuelo', 'tren', 'bus', 'ferry');
+
+    UPDATE transportes SET precio_ambito = 'por_grupo'
+     WHERE precio_ambito IS NULL AND precio_estimado IS NOT NULL
+       AND tipo IN ('coche', 'traslado', 'taxi');
+  `);
+
+  // --- 2) El gasto diario estimado -----------------------------------------
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS presupuesto_diario (
+      viaje_id      INTEGER PRIMARY KEY REFERENCES viajes(id) ON DELETE CASCADE,
+      importe       REAL,                      -- euros por persona y dia
+      porque        TEXT,                      -- media linea, para poder juzgarlo
+      nivel         TEXT,                      -- el nivel de precio con que se calculo
+      tocado_a_mano INTEGER NOT NULL DEFAULT 0,
+      calculado_en  TEXT
+    );
+  `);
+
+  // --- 3) El prompt que lo estima, editable como los demas ------------------
+  const texto = promptDeGastoDiario();
+  db.prepare(
+    `INSERT INTO prompts_orquestador (fase, prompt_actual, prompt_fabrica)
+     VALUES ('gasto_diario', ?, ?)
+     ON CONFLICT (fase) DO UPDATE SET
+       prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN excluded.prompt_actual ELSE prompt_actual END,
+       prompt_fabrica = excluded.prompt_fabrica`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: presupuesto del viaje (ambito de los precios y gasto diario).');
+  return true;
+}
+
+/**
+ * EL PROMPT DEL GASTO DIARIO.
+ *
+ * Es lo unico del presupuesto que no se puede buscar: nadie publica lo que se
+ * gasta uno al dia. Por eso vive en su propio bloque de la pantalla, con la
+ * palabra "estimacion" delante, y por eso lo primero que se le pide al modelo es
+ * una cifra que alguien reconoceria como razonable, no una precision falsa.
+ *
+ * Se pide TAMBIEN el porque en media linea. Sin el, un numero suelto no se puede
+ * juzgar: con el, se ve en que se ha ido el dinero y si el nivel encaja.
+ */
+function promptDeGastoDiario() {
+  return `Estima cuanto se gasta AL DIA y POR PERSONA en {{DESTINO}}, pasando por {{CIUDADES}}, en COMIDA, BEBIDA y TRANSPORTE URBANO.
+
+Nada mas: ni excursiones, ni entradas, ni alojamiento, ni los viajes entre ciudades. Todo eso ya esta contado aparte con precios reales, y sumarlo aqui otra vez seria contarlo dos veces.
+
+NIVEL DEL VIAJE: {{NIVEL}}
+  - sencillo: desayuno de bar, comida de menu del dia o de mercado, cena normal, metro y autobus.
+  - normal: cafe por la manana, comida informal, cena en un sitio decente, algun taxi corto.
+  - con caprichos: sin mirar la carta por el precio, buena cena casi todos los dias, taxi cuando apetezca.
+
+VIAJEROS: {{VIAJEROS}}
+DIAS: {{DIAS}}
+
+REGLAS:
+1. UN solo numero, en euros, por persona y por dia. Si hay ninos, da la media del grupo.
+2. Es una ESTIMACION y se va a ensenar como tal, separada de los precios reales. No hace falta acertar al euro; hace falta una cifra que alguien que conozca ese pais reconoceria como razonable hoy.
+3. Ajustalo al pais y a las ciudades concretas: no cuesta lo mismo comer en Napoles que en Copenhague, ni en una capital que en un pueblo.
+4. El porque, en MEDIA LINEA: pais, nivel y en que se va el dinero.
+   Ejemplo: "Grecia, nivel normal: ~45 EUR/persona/dia en tabernas y transporte urbano".
+5. En espanol de Espana.
+
+Devuelve SOLO este JSON:
+{"importe": 45, "porque": "Grecia, nivel normal: ~45 EUR/persona/dia en tabernas y transporte urbano"}`;
+}
+
+/**
+ * LA CAPA METEOROLOGICA DE LA FICHA DE PAIS.
+ *
+ * DOS COSAS DISTINTAS QUE LA GENTE CONFUNDE, y por eso van en dos tablas:
+ *
+ *   clima_tipico · QUE SUELE HACER en esas fechas del ano. Sale del archivo
+ *                  historico de Open-Meteo —mediciones reales de los ultimos
+ *                  anos, no un modelo— y no caduca: lo que hizo en Atenas la
+ *                  ultima semana de septiembre de 2021 a 2025 ya no va a
+ *                  cambiar. Se guarda por CIUDAD y por las fechas de SU parada,
+ *                  que es lo que hace que un viaje largo ensene Atenas en
+ *                  septiembre y Tesalonica en octubre, cada una con lo suyo.
+ *
+ *   clima_ahora  · QUE ESTA PASANDO ALLI ESTA SEMANA. Prevision de los proximos
+ *                  dias. No depende de las fechas del viaje —sirve para mirar
+ *                  el destino aunque falten meses— y por eso la clave es solo la
+ *                  ciudad, con su hora de actualizacion bien guardada.
+ *
+ * NO VAN DENTRO DE `fichas_pais` A PROPOSITO. Esa tabla se comparte entre viajes
+ * con el mismo pais y las mismas fechas, y el clima es de las CIUDADES de cada
+ * ruta: metido ahi, un viaje a Grecia por Tesalonica acabaria ensenando el clima
+ * de Atenas de otro viaje. Es el mismo susto que ya dio el dosier con las fichas
+ * de pais. Asi que se guardan por ciudad y la pantalla arma las lineas con las
+ * paradas de SU viaje.
+ */
+function migracionClima() {
+  const CLAVE = '2026-09-clima-de-la-ficha';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS clima_tipico (
+      ciudad_norm  TEXT NOT NULL,
+      fecha_inicio TEXT,
+      fecha_fin    TEXT,
+      ciudad       TEXT NOT NULL,
+      lat          REAL,
+      lon          REAL,
+      datos        TEXT NOT NULL,           -- JSON con las medias y la frase
+      generado_en  TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (ciudad_norm, fecha_inicio, fecha_fin)
+    );
+
+    CREATE TABLE IF NOT EXISTS clima_ahora (
+      ciudad_norm    TEXT PRIMARY KEY,
+      ciudad         TEXT NOT NULL,
+      lat            REAL,
+      lon            REAL,
+      datos          TEXT NOT NULL,         -- JSON con los dias y los avisos
+      actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // --- Los umbrales de lo severo, editables como todo lo demas -------------
+  //
+  // Son un juicio, no una verdad. Setenta kilometros por hora de racha es
+  // incomodo en Atenas y normal en Punta Arenas, asi que el numero tiene que
+  // poder cambiarse sin tocar codigo. Van a la seccion General porque no son de
+  // ninguna fase del orquestador: valen igual mirando la ficha de un pais.
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) => meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('anos_historico_clima', '5', 'Cuantos anos atras se miran para saber que tiempo suele hacer en esas fechas', 'anos');
+  nuevo('dias_prevision', '7', 'Cuantos dias de prevision se piden para el bloque de "ahora en el destino"', 'dias');
+  nuevo('calor_extremo_c', '35', 'Maxima prevista a partir de la cual el bloque de ahora avisa de calor', 'grados');
+  nuevo('frio_extremo_c', '-5', 'Minima prevista por debajo de la cual el bloque de ahora avisa de frio', 'grados');
+  nuevo('lluvia_torrencial_mm', '30', 'Litros en un dia a partir de los cuales la lluvia deja de ser lluvia', 'mm');
+  nuevo('racha_viento_fuerte_kmh', '60', 'Racha maxima a partir de la cual se avisa de viento fuerte', 'km/h');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: capa meteorologica de la ficha de pais.');
+  return true;
+}
+
+/**
+ * LO QUE HAY QUE RESERVAR CON SEMANAS DE ANTELACION.
+ *
+ * Un horario de apertura te dice si HOY esta abierto. No te dice que las
+ * entradas de la Alhambra se agotan con un mes, ni que el Museo Ghibli las
+ * vende el dia 10 del mes anterior y punto. Ese dato no se descubre mirando la
+ * ficha: se descubre el dia que intentas entrar, y entonces ya no sirve.
+ *
+ * DOS CAMPOS Y NO UNO:
+ *
+ *   reserva_anticipada · 'no' | 'recomendada' | 'imprescindible'. Es lo que
+ *                        decide si se avisa y con cuanto tiempo. Tres valores y
+ *                        no un si/no, porque «conviene» y «o reservas o no
+ *                        entras» no son la misma frase ni piden la misma prisa.
+ *   reserva_detalle    · el texto tal y como lo diga la fuente: cuanta
+ *                        antelacion y donde se compra. Sin esto, el aviso seria
+ *                        «reserva con tiempo», que no le dice a nadie que hacer.
+ *
+ * NULL es distinto de 'no': null es «no se ha mirado» y 'no' es «se ha mirado y
+ * no hace falta». La diferencia importa para el boton de revisar los sitios que
+ * ya estaban apuntados antes de que esto existiera.
+ */
+function migracionReservaAnticipada() {
+  const CLAVE = '2026-09-reserva-anticipada-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('sitios_lugar', 'reserva_anticipada', 'TEXT');
+  anadirColumnaSiFalta('sitios_lugar', 'reserva_detalle', 'TEXT');
+  // Cuando se miro, para poder distinguir «sin revisar» de «revisado y no hace
+  // falta» aunque el resultado sea 'no'.
+  anadirColumnaSiFalta('sitios_lugar', 'reserva_en', 'TEXT');
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) => meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  // LOS DOS PLAZOS SON DISTINTOS A PROPOSITO. Lo imprescindible avisa pronto,
+  // porque a treinta dias todavia da tiempo a comprar la entrada o a cambiar el
+  // plan. Lo recomendable avisa tarde, en la ultima quincena, porque un aviso
+  // que sale con tres meses de margen se lee, se olvida y estorba a los demas.
+  nuevo('dias_aviso_reserva', '30', 'A cuantos dias del viaje se avisa de los sitios de reserva imprescindible', 'dias');
+  nuevo('dias_aviso_reserva_recomendada', '15', 'Lo mismo para los de reserva solo recomendable, que avisan mas tarde', 'dias');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: aviso de reserva anticipada en los sitios.');
+  return true;
+}
+
 function anadirColumnaSiFalta(tabla, columna, definicion) {
   const columnas = db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name);
   if (columnas.includes(columna)) return false;

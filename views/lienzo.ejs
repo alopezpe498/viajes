@@ -11,6 +11,27 @@
  */
 const pieExtra = '<script src="/js/lienzo.js"></script><script src="/js/dosier.js"></script>';
 const { viaje } = lienzo;
+
+/**
+ * ATRÁS VUELVE POR DONDE SE HA VENIDO.
+ *
+ * Al lienzo se llega por dos puertas: desde «Mi ruta», mirando el viaje entero,
+ * y desde una etapa, con `?etapa=` y filtrado a esa ciudad. La flecha llevaba
+ * siempre a la ruta, así que quien entraba desde Cracovia salía al mapa del
+ * viaje y tenía que volver a bajar a Cracovia: dos pasos para deshacer uno.
+ *
+ * `lienzo.etapaId` es la ciudad que se está mirando AHORA —los filtros de
+ * arriba son enlaces que recargan con otro `?etapa=`—, así que si cambias de
+ * ciudad dentro del lienzo, atrás te lleva a la ciudad que estás viendo, que es
+ * lo que uno espera.
+ */
+const etapaAbierta = lienzo.etapaId
+  ? lienzo.etapas.find((e) => e.id === lienzo.etapaId)
+  : null;
+
+const volver = etapaAbierta
+  ? { url: `/etapa/${etapaAbierta.id}`, texto: etapaAbierta.nombre }
+  : { url: `/viaje/${viaje.id}/ruta`, texto: 'Mi ruta' };
 %>
 <%- include('parciales/cabecera', {
       viaje: null, pasoActual: null, titulo: `Lienzo · ${viaje.nombre}`, extraCabeza: ''
@@ -20,8 +41,12 @@ const { viaje } = lienzo;
 
   <%# ======================= CABECERA ======================= %>
   <header class="lienzo-cabecera">
-    <a class="pill pill--volver" href="/viaje/<%= viaje.id %>/ruta" title="Volver a la ruta">
+    <%# Con el nombre a la vista, no solo la flecha: una flecha sola no dice a
+        dónde lleva, y con dos puertas de entrada eso importa. %>
+    <a class="pill pill--volver" href="<%= volver.url %>"
+       title="Volver a <%= volver.texto %>">
       <i class="ti ti-arrow-left" aria-hidden="true"></i>
+      <span class="pill--volver__texto"><%= volver.texto %></span>
     </a>
     <h1 class="lienzo-cabecera__titulo">Lienzo del viaje</h1>
 

@@ -49,7 +49,10 @@ const ACEPTADOS = new Map([
   ['image/heif', '.heic'],
 ]);
 
-const TIPOS = ['transporte', 'alojamiento', 'excursion'];
+// 'reserva' cuelga del CANDIDATO reservado: el billete del vuelo, el bono de la
+// excursión, la confirmación del hotel. Comparte todo lo demás con los otros
+// tres —subir, ver, borrar, viajar dentro del ZIP— porque es la misma idea.
+const TIPOS = ['transporte', 'alojamiento', 'excursion', 'reserva'];
 
 /** Qué se le dice a alguien que intenta subir un .docx. */
 export const LO_QUE_SE_ACEPTA = 'Solo PDF o imágenes (JPG, PNG, HEIC).';

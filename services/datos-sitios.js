@@ -76,6 +76,13 @@ export function datosDeSitio(sitio) {
     // aplicación. Se enseña el dominio, que se lee mejor, pero se enlaza esto.
     webUrl: enlaceWeb(sitio.web),
     telefono: sitio.telefono ?? null,
+    // LO QUE HAY QUE RESERVAR CON TIEMPO. Se saca aparte del resumen porque no
+    // es un dato más de la ficha: es lo único que, si se lee tarde, ya no tiene
+    // arreglo. La vista lo pinta como distintivo, no como una línea más.
+    reserva: sitio.reserva_anticipada ?? null,
+    reservaDetalle: sitio.reserva_detalle ?? null,
+    reservaAvisa: ['recomendada', 'imprescindible'].includes(sitio.reserva_anticipada),
+    reservaRevisada: Boolean(sitio.reserva_en),
     // Trazabilidad: de dónde salió y cuándo. Va a la vista para poder decirlo.
     obtenidoEn: sitio.datos_en ?? null,
     fuente: sitio.datos_fuente ?? null,
@@ -186,12 +193,50 @@ function prompt(ciudad, sitios, texto) {
     '   No lo deduzcas de lo que sepas tú: solo de lo que ponga el texto. Si',
     '   el texto habla de un sitio con ese nombre pero en otra ciudad, es',
     '   false, y eso no es un fallo: es justo lo que necesito saber.',
+    '8. "reservaAnticipada" es si hay que sacar la entrada CON DÍAS DE',
+    '   ANTELACIÓN, no si se puede comprar por internet. Casi ningún sitio lo',
+    '   necesita: null y "no" son las respuestas normales.',
+    '     · "imprescindible" solo si el texto dice que se agota, que hay cupo',
+    '       limitado o que sin reserva previa no se entra.',
+    '     · "recomendada"    si el texto aconseja comprar antes para evitar',
+    '       colas o asegurar sitio, pero se puede entrar sin ello.',
+    '     · "no"             si el texto dice expresamente que no hace falta.',
+    '     · null             si el texto no dice nada del asunto. Es lo más',
+    '                        frecuente con diferencia.',
+    '9. "reservaDetalle": SOLO la ANTELACIÓN y DÓNDE se compra, copiado del',
+    '   texto y en una frase corta. No repitas ahí el sí o el no: eso ya va en',
+    '   "reservaAnticipada" y se pinta al lado, así que un detalle que empieza',
+    '   por "Sí, imprescindible…" dice dos veces lo mismo.',
+    '   Bien: "las entradas se agotan con semanas; se compran en',
+    '         alhambra-patronato.es" o "salen a la venta el día 10 del mes',
+    '         anterior".',
+    '   Mal:  "Sí, hay que reservar con antelación".',
+    '   Si no hay antelación concreta en el texto, null: "reserva con tiempo" no',
+    '   le dice nada a nadie y es justo lo que hay que evitar.',
     '',
     'Devuelve SOLO este JSON:',
     '{"sitios":[{"nombre":"…","precio":null,"horarios":null,' +
       '"tiempoVisita":null,"web":null,"telefono":null,' +
-      '"direccion":null,"ciudad":null,"estaEnLaCiudad":null}]}',
+      '"direccion":null,"ciudad":null,"estaEnLaCiudad":null,' +
+      '"reservaAnticipada":null,"reservaDetalle":null}]}',
   ].join('\n');
+}
+
+/**
+ * LAS TRES PALABRAS QUE VALEN, Y NINGUNA MÁS.
+ *
+ * El modelo contesta a veces «sí», «muy recomendable» o una frase entera. Aquí
+ * eso no sirve: el nivel decide con cuánta antelación se avisa, así que o es
+ * una de las tres o no es nada. Lo que no encaje se queda en null —«no se
+ * sabe»—, que es distinto de 'no' —«se ha mirado y no hace falta»—.
+ */
+export function nivelDeReserva(v) {
+  const t = String(v ?? '').trim().toLowerCase();
+  if (!t || t === 'null') return null;
+  if (t.startsWith('imprescindible') || t.startsWith('obligator')) return 'imprescindible';
+  if (t.startsWith('recomend') || t.startsWith('aconsej')) return 'recomendada';
+  if (t === 'no' || t.startsWith('no ')) return 'no';
+  return null;
 }
 
 const texto = (v) => {
@@ -351,7 +396,8 @@ const TAMANO_TANDA = 12;
 export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
   const filtro = ids?.length ? ` AND id IN (${ids.map(() => '?').join(',')})` : '';
   const sitios = todas(
-    `SELECT id, nombre, horarios, precio, tiempo_visita, web, telefono, datos_en, datos_fuente
+    `SELECT id, nombre, horarios, precio, tiempo_visita, web, telefono, datos_en, datos_fuente,
+            reserva_anticipada, reserva_detalle, reserva_en
        FROM sitios_lugar
       WHERE punto_interes_id = ?${filtro} ORDER BY orden, id`,
     punto.id,
@@ -429,6 +475,11 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
       telefono: texto(d.telefono),
     };
 
+    // La reserva anticipada va aparte porque no es texto libre: es una de tres
+    // palabras, y cualquier otra cosa que conteste el modelo no vale.
+    const reserva = nivelDeReserva(d.reservaAnticipada);
+    const reservaDetalle = texto(d.reservaDetalle);
+
     // LO QUE NO VUELVE NO BORRA LO QUE HABÍA.
     //
     // Antes se escribían los cinco campos tal cual, nulls incluidos: si la
@@ -444,6 +495,8 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
       tiempo_visita: traido.tiempo_visita ?? s.tiempo_visita ?? null,
       web: traido.web ?? s.web ?? null,
       telefono: traido.telefono ?? s.telefono ?? null,
+      reserva_anticipada: reserva ?? s.reserva_anticipada ?? null,
+      reserva_detalle: reservaDetalle ?? s.reserva_detalle ?? null,
     };
 
     const cuantos = Object.values(fila).filter(Boolean).length;
@@ -461,6 +514,8 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
     ejecutar(
       `UPDATE sitios_lugar
           SET precio = ?, horarios = ?, tiempo_visita = ?, web = ?, telefono = ?,
+              reserva_anticipada = ?, reserva_detalle = ?,
+              reserva_en = CASE WHEN ? IS NULL THEN reserva_en ELSE ? END,
               datos_en = ?, datos_fuente = ?
               ${cambiaElHorario ? ', cierra_dias = NULL, cierra_en = NULL' : ''}
         WHERE id = ?`,
@@ -469,6 +524,13 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
       fila.tiempo_visita,
       fila.web,
       fila.telefono,
+      fila.reserva_anticipada,
+      fila.reserva_detalle,
+      // `reserva_en` solo se sella cuando esta pasada ha traído un veredicto.
+      // Si no vino nada, se conserva la marca vieja: decir «revisado hoy»
+      // cuando hoy no se ha averiguado nada convertiría un hueco en un «no».
+      reserva,
+      cuando,
       cuando,
       // Si esta pasada no trajo nada, la fuente sigue siendo la que trajo lo que
       // hay guardado: decir «google-modo-ia de hoy» sobre un dato de hace un mes
@@ -620,6 +682,10 @@ export async function interpretarHorario(sitioId) {
       '- Si abre todos los días, o si el texto no permite saberlo, devuelve una',
       '  lista vacía. No adivines por lo que sepas del sitio: solo cuenta lo que',
       '  diga ese texto.',
+      '- OJO CON LO QUE ABRE UN SOLO DÍA: "solo domingos" o "mercadillo',
+      '  dominical" significa que cierra los otros SEIS, así que la respuesta es',
+      '  [1,2,3,4,5,6]. Es el caso que más se falla y el que más molesta: quien',
+      '  lea el plan se planta allí un sábado y no hay nada.',
       '',
       'Devuelve SOLO: {"cierra":[1]}',
     ].join('\n'),

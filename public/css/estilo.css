@@ -5922,3 +5922,661 @@ body.con-antes { overflow: hidden; }
 }
 .etapa__dormir i { flex: none; font-size: 14px; }
 .etapa__dormir--ok { background: #E7F4EE; color: #245B43; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   LAS RESERVAS
+   ---------------------------------------------------------------------------
+   Dos piezas: el bloque que vive dentro de una ficha (el vuelo, el hotel) y la
+   lista de "Mis reservas". Comparten el chip del localizador, que es el dato
+   que se busca con prisa y por eso se pinta como una etiqueta y no como texto.
+   --------------------------------------------------------------------------- */
+.reserva {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+}
+
+.reserva--si { border-color: var(--verde-tx); background: var(--verde-bg); }
+
+.reserva__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.reserva__etiqueta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--texto);
+  font-size: 14px;
+}
+
+.reserva--si .reserva__etiqueta { color: var(--verde-tx); }
+
+.reserva__codigo-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.reserva-fila__datos [data-copiar] { cursor: pointer; }
+
+.reserva__cuerpo { margin-top: 10px; display: grid; gap: 10px; }
+
+.reserva__nota-guardada {
+  margin: 0;
+  color: var(--texto-2);
+  font-size: 12px;
+}
+
+.reserva__campos {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 2fr);
+  gap: 10px;
+}
+
+.reserva__campo { display: grid; gap: 4px; }
+.reserva__campo--ancho { grid-column: 1 / -1; }
+
+.reserva__campo > span { color: var(--texto-2); font-size: 12px; }
+
+.reserva__campo input,
+.reserva__campo textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: 10px;
+  background: var(--superficie);
+  color: var(--texto);
+  font: inherit;
+  font-size: 14px;
+}
+
+.reserva__campo input:focus,
+.reserva__campo textarea:focus { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+.reserva__pie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 20px;
+}
+
+.reserva__estado { color: var(--verde-tx); font-size: 12px; }
+.reserva__estado--malo { color: var(--alerta-tx); }
+
+/* --- La lista de "Mis reservas" ------------------------------------------ */
+.reservas { margin: 0 0 26px; padding: 0; list-style: none; display: grid; gap: 10px; }
+
+.reserva-fila {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-left: 3px solid var(--acento);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+}
+
+.reserva-fila--pendiente { border-left-color: var(--prec-tx); background: var(--fondo); }
+
+.reserva-fila__fecha {
+  color: var(--texto-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.reserva-fila__cabecera {
+  margin: 0 0 3px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--texto-2);
+  font-size: 12px;
+}
+
+.reserva-fila__tipo { font-weight: 600; }
+.reserva-fila__donde::before { content: '· '; }
+
+.reserva-fila__titulo { margin: 0 0 6px; color: var(--texto); font-weight: 600; }
+
+.reserva-fila__datos {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reserva-fila__sin-codigo { color: var(--texto-3); font-size: 12px; }
+
+.reserva-fila__notas {
+  margin: 8px 0 0;
+  color: var(--texto-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.reserva-fila__papeles { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+
+.reserva-fila__papeles a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--acento);
+  font-size: 13px;
+}
+
+.reservas-recordatorio,
+.reservas-vacio {
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--texto-2);
+  font-size: 14px;
+}
+
+@media (max-width: 620px) {
+  .reserva__campos { grid-template-columns: 1fr; }
+  .reserva-fila { grid-template-columns: 1fr; gap: 6px; }
+}
+
+/* =============================================================================
+   EL PRESUPUESTO
+   ---------------------------------------------------------------------------
+   Dos bloques que NO se pueden confundir a la vista, porque no son la misma
+   clase de dato: lo planificado son precios reales y va sobre blanco; lo
+   estimado va sobre el tinte del acento, con su sello, y con la cifra editable
+   dentro de la propia cuenta para que se vea que es un numero que uno cambia.
+   ========================================================================== */
+
+/* --- Las dos cifras grandes ---------------------------------------------- */
+.pre-total {
+  margin: 0 0 22px;
+  padding: 18px 16px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--superficie);
+}
+
+.pre-total__cifras {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.pre-total__caja { display: grid; gap: 2px; }
+
+.pre-total__etiqueta {
+  color: var(--texto-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.pre-total__numero {
+  color: var(--texto);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+}
+
+.pre-total__pie { color: var(--texto-3); font-size: 12px; }
+
+.pre-incompleto {
+  margin: 14px 0 0;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radio-sm);
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 13px;
+}
+
+.pre-comparacion { margin: 10px 0 0; color: var(--texto-2); font-size: 13px; }
+
+.pre-explica { margin: -4px 0 12px; color: var(--texto-2); font-size: 13px; }
+
+/* --- Un concepto desplegable --------------------------------------------- */
+.pre-concepto {
+  margin: 0 0 8px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+  overflow: hidden;
+}
+
+.pre-concepto__cabecera {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+/* La flechita de serie de <details>, fuera: ya hay una propia y girada. */
+.pre-concepto__cabecera::-webkit-details-marker { display: none; }
+
+.pre-concepto__icono { color: var(--acento); font-size: 18px; }
+.pre-concepto__nombre { font-weight: 600; }
+
+.pre-concepto__cuantas {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pre-concepto__total { margin-left: auto; font-weight: 700; }
+
+.pre-concepto__flecha { color: var(--texto-3); transition: transform .15s ease; }
+.pre-concepto[open] .pre-concepto__flecha { transform: rotate(180deg); }
+
+.pre-lineas {
+  margin: 0;
+  padding: 0 14px 6px;
+  list-style: none;
+  border-top: 1px solid var(--borde);
+}
+
+.pre-linea {
+  padding: 10px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.pre-linea:last-child { border-bottom: 0; }
+
+.pre-linea__texto { flex: 1; min-width: 0; }
+.pre-linea__titulo { margin: 0; font-size: 14px; }
+.pre-linea__detalle { margin: 2px 0 0; color: var(--texto-2); font-size: 12px; }
+
+.pre-linea__nota {
+  margin: 4px 0 0;
+  color: var(--prec-tx);
+  font-size: 12px;
+}
+
+.pre-linea__importe { text-align: right; white-space: nowrap; }
+.pre-linea__importe strong { display: block; font-size: 15px; }
+
+.pre-linea__ambito { color: var(--texto-3); font-size: 11px; }
+
+.pre-linea--sin-precio .pre-linea__titulo { color: var(--texto-2); }
+
+.pre-sin-precio {
+  padding: 2px 8px;
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: 999px;
+  color: var(--texto-3);
+  font-size: 12px;
+}
+
+/* El punto de "ya reservado": informa y no pesa. */
+.pre-punto {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--verde-tx);
+  vertical-align: middle;
+}
+
+.pre-concepto__hueco {
+  margin: 0;
+  padding: 8px 14px 12px;
+  color: var(--texto-2);
+  font-size: 12px;
+}
+
+/* --- Lo estimado ---------------------------------------------------------- */
+.pre-sello {
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  vertical-align: middle;
+}
+
+.pre-estimado {
+  margin: 0 0 22px;
+  padding: 16px;
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: var(--radio);
+  background: var(--tinte);
+}
+
+.pre-estimado__cuenta {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pre-estimado__campo { display: grid; gap: 4px; }
+
+.pre-estimado__etiqueta {
+  color: var(--tinte-texto);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pre-estimado__entrada {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+}
+
+.pre-estimado__entrada input {
+  width: 72px;
+  border: 0;
+  background: transparent;
+  color: var(--texto);
+  font-size: 20px;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.pre-estimado__entrada input:focus { outline: none; }
+.pre-estimado__moneda { color: var(--texto-2); font-weight: 600; }
+
+.pre-estimado__por { color: var(--texto-2); font-size: 18px; padding-bottom: 6px; }
+
+.pre-estimado__factor {
+  display: grid;
+  padding-bottom: 2px;
+  color: var(--tinte-texto);
+  line-height: 1.2;
+}
+
+.pre-estimado__factor strong { font-size: 20px; }
+.pre-estimado__factor span { color: var(--texto-2); font-size: 12px; }
+
+.pre-estimado__total {
+  margin-left: auto;
+  padding-bottom: 2px;
+  color: var(--tinte-texto);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.pre-estimado__porque {
+  margin: 12px 0 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--tinte-texto);
+  font-size: 13px;
+}
+
+.pre-estimado__acciones {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pre-estimado__estado { color: var(--texto-2); font-size: 12px; }
+.pre-estimado__estado--malo { color: var(--alerta-tx); }
+
+/* --- El total orientativo ------------------------------------------------- */
+.pre-orientativo {
+  margin: 0 0 26px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 2px solid var(--acento);
+  border-radius: var(--radio);
+  background: var(--superficie);
+}
+
+.pre-orientativo__etiqueta {
+  display: block;
+  color: var(--texto);
+  font-weight: 650;
+}
+
+.pre-orientativo__pie { display: block; color: var(--texto-2); font-size: 12px; }
+
+.pre-orientativo__numero {
+  margin-left: auto;
+  color: var(--acento);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .pre-total__cifras { grid-template-columns: 1fr; }
+  .pre-total__numero { font-size: 28px; }
+  .pre-estimado__total { margin-left: 0; width: 100%; }
+  .pre-orientativo { flex-direction: column; align-items: flex-start; }
+  .pre-orientativo__numero { margin-left: 0; }
+}
+
+/* =============================================================================
+   EL TIEMPO, EN LA FICHA DE PAIS
+   ---------------------------------------------------------------------------
+   Dos bloques con dos pesos distintos. El de "tus fechas" es una lista de
+   lineas: se lee de un vistazo y no pide nada. El de "ahora" es una tira de
+   dias por ciudad, y tiene que caber sin que la ficha se convierta en un portal
+   del tiempo, asi que cada dia es una columna estrecha y la tira scrollea sola
+   en movil en vez de romper la maqueta.
+   ========================================================================== */
+
+/* --- Clima en tus fechas -------------------------------------------------- */
+.clima-lineas { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 2px; }
+
+.clima-linea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--borde);
+  font-size: 14px;
+}
+
+.clima-linea:last-child { border-bottom: 0; }
+
+.clima-linea__ciudad { font-weight: 600; }
+
+.clima-linea__cuando {
+  grid-column: 1;
+  grid-row: 2;
+  color: var(--texto-3);
+  font-size: 12px;
+}
+
+.clima-linea__grados {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--tinte-texto);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.clima-linea__lluvia {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  color: var(--texto-2);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.clima-contraste {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: var(--radio-sm);
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 13px;
+}
+
+/* --- Ahora en el destino -------------------------------------------------- */
+.clima-sello {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  vertical-align: middle;
+}
+
+.clima-avisos { margin: 8px 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+
+.clima-aviso {
+  padding: 8px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: var(--radio-sm);
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 13px;
+}
+
+.clima-aviso--frio { background: var(--info-bg); color: var(--info-tx); }
+
+.clima-ciudades { display: grid; gap: 12px; margin: 10px 0 4px; }
+
+.clima-ciudad__nombre {
+  margin: 0 0 6px;
+  color: var(--texto-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.clima-dias {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(52px, 1fr);
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.clima-dia {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  background: var(--superficie);
+  text-align: center;
+}
+
+.clima-dia__nombre {
+  color: var(--texto-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.clima-dia__icono { color: var(--acento); font-size: 20px; }
+
+.clima-dia__grados { display: grid; line-height: 1.15; }
+.clima-dia__grados strong { font-size: 15px; }
+.clima-dia__grados span { color: var(--texto-3); font-size: 12px; }
+
+.clima-dia__lluvia {
+  min-height: 14px;
+  color: var(--acento);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* =============================================================================
+   RESERVA CON ANTELACION
+   ---------------------------------------------------------------------------
+   El distintivo de la ficha del sitio y el boton de repaso de la pestana.
+   No comparte color con los datos duros a proposito: el precio y el horario se
+   miran al decidir el dia, y esto hay que verlo semanas antes.
+   ========================================================================== */
+.reserva-antelacion {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: var(--radio-sm);
+  background: var(--prec-bg);
+  color: var(--prec-tx);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Lo recomendable informa; lo imprescindible avisa. */
+.reserva-antelacion--recomendada { background: var(--info-bg); color: var(--info-tx); }
+
+.reserva-antelacion i { flex: none; margin-top: 1px; font-size: 16px; }
+.reserva-antelacion strong { display: block; }
+
+.reserva-antelacion__detalle { display: block; opacity: .9; }
+
+.revisar-reservas {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.revisar-reservas__estado { color: var(--texto-2); font-size: 12px; }
+
+/* El nombre del sitio al que vuelve la flecha del lienzo. En movil se esconde
+   y queda solo la flecha: ahi el espacio de la cabecera es todo. */
+.pill--volver { gap: 7px; }
+.pill--volver__texto { font-weight: 600; }
+
+@media (max-width: 700px) {
+  .pill--volver__texto { display: none; }
+}

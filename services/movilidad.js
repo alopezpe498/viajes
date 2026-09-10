@@ -29,6 +29,7 @@ import { consultarJSONConGoogle } from '../lib/ia.js';
 import { promptDeFase } from './orquestador.js';
 import { trabajoActivo, ultimoTrabajo, encolar } from '../jobs/cola.js';
 import { direccionesDe } from './direcciones.js';
+import { ambitoDeTramo, POR_GRUPO, POR_PERSONA } from './presupuesto.js';
 
 // =============================================================================
 // LOS MEDIOS, Y SU CARA
@@ -102,6 +103,22 @@ export function fichasDeTramo(ciudadA, ciudadB) {
  * La misma pareja de ciudades, el mismo medio y el mismo nombre es la misma
  * cosa. Se devuelve la que ya había en vez de crear otra.
  */
+/**
+ * QUÉ CUENTA EL PRECIO DE UNA OPCIÓN: una plaza o el vehículo entero.
+ *
+ * Dos fuentes, por este orden. Primero lo que diga el texto de la búsqueda: si
+ * la web pone «150 € por vehículo», eso es un dato y gana. Y si no lo dice
+ * —que es lo normal—, la regla del medio, que es la misma de siempre: un
+ * billete de tren o de bus es de cada uno, un coche de alquiler o un traslado
+ * privado es del grupo, y BlaBlaCar, aunque el catálogo lo guarde como
+ * traslado, se paga por plaza.
+ */
+function ambitoDeFicha(ficha) {
+  if (ficha.precioPorGrupo === true) return POR_GRUPO;
+  if (ficha.precioPorGrupo === false) return POR_PERSONA;
+  return ambitoDeTramo({ medio: medioValido(ficha.medio), nombre: texto(ficha.nombre) });
+}
+
 export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
   const [a, b] = parOrdenado(ciudadA, ciudadB);
 
@@ -125,9 +142,10 @@ export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
     const nuevoPrecio = texto(ficha.precio);
     if (nuevoPrecio && ficha.precioOrigen && !yaEsta.precio_origen) {
       ejecutar(
-        'UPDATE catalogo_transporte_tramo SET precio = ?, precio_origen = ? WHERE id = ?',
+        'UPDATE catalogo_transporte_tramo SET precio = ?, precio_origen = ?, precio_ambito = ? WHERE id = ?',
         nuevoPrecio,
         texto(ficha.precioOrigen),
+        ambitoDeFicha(ficha),
         yaEsta.id
       );
       console.log(
@@ -143,8 +161,8 @@ export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
     `INSERT INTO catalogo_transporte_tramo
        (ciudad_a_norm, ciudad_b_norm, ciudad_a, ciudad_b, medio, nombre,
         duracion, frecuencia, precio, nota, nota_sentido, web, orden, origen,
-        precio_origen)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        precio_origen, precio_ambito)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     a.norm,
     b.norm,
     a.nombre,
@@ -161,16 +179,24 @@ export function guardarFichaTramo(ciudadA, ciudadB, ficha, origen = 'ia') {
     origen,
     // De dónde sale el precio. Sin esto, un precio guardado no se distingue de
     // uno inventado, que es como llegamos aquí.
-    texto(ficha.precioOrigen) ?? (origen === 'manual' && texto(ficha.precio) ? 'manual' : null)
+    texto(ficha.precioOrigen) ?? (origen === 'manual' && texto(ficha.precio) ? 'manual' : null),
+    // QUÉ CUENTA ESE PRECIO: una plaza o el vehículo entero. Si la búsqueda lo
+    // ha dicho, manda ella; si no, la regla del medio. Se guarda aquí y no se
+    // vuelve a deducir al sumar el presupuesto.
+    ambitoDeFicha(ficha)
   );
   return una('SELECT * FROM catalogo_transporte_tramo WHERE id = ?', Number(r.lastInsertRowid));
 }
 
 export function actualizarFichaTramo(id, ficha) {
+  // EL ÁMBITO SE RECALCULA AL EDITAR, porque puede cambiar el medio o el nombre:
+  // pasar la ficha de «tren» a «traslado privado» cambia lo que cuenta ese
+  // precio, y dejar el ámbito viejo haría que el presupuesto lo multiplicara
+  // por los viajeros cuando ya no toca.
   ejecutar(
     `UPDATE catalogo_transporte_tramo
         SET medio = ?, nombre = ?, duracion = ?, frecuencia = ?, precio = ?,
-            nota = ?, nota_sentido = ?, web = ?
+            nota = ?, nota_sentido = ?, web = ?, precio_ambito = ?
       WHERE id = ?`,
     medioValido(ficha.medio),
     texto(ficha.nombre) ?? 'Sin nombre',
@@ -180,6 +206,7 @@ export function actualizarFichaTramo(id, ficha) {
     texto(ficha.nota),
     texto(ficha.notaSentido),
     texto(ficha.web),
+    texto(ficha.precio) ? ambitoDeFicha(ficha) : null,
     Number(id)
   );
   return una('SELECT * FROM catalogo_transporte_tramo WHERE id = ?', Number(id));
@@ -528,9 +555,17 @@ async function preciosDeLasOpciones(ciudadA, ciudadB, medios) {
     '   moneda local, cópiala tal cual con su nombre: vale más un precio en',
     '   złotys que un euro convertido a ojo por ti.',
     '5. Devuelve el nombre EXACTAMENTE como te lo he escrito arriba.',
+    '6. `porGrupo` dice QUÉ cuenta ese precio, y decide si luego hay que',
+    '   multiplicarlo por los viajeros o no:',
+    '     true  -> el precio es del vehículo entero (un taxi, un traslado',
+    '              privado, un coche de alquiler): vayan dos o cuatro, es el mismo.',
+    '     false -> el precio es de UNA persona (un billete, una plaza).',
+    '     null  -> el texto no lo dice. Es una respuesta válida y frecuente:',
+    '              con null se aplica la regla del medio, que ya está escrita.',
+    '   NO lo deduzcas de lo que sepas del mundo: solo de lo que ponga el texto.',
     '',
     'Devuelve SOLO este JSON:',
-    '{"precios":[{"nombre":"…","precio":null}]}',
+    '{"precios":[{"nombre":"…","precio":null,"porGrupo":null}]}',
   ].join('\n');
 
   try {
@@ -545,7 +580,10 @@ async function preciosDeLasOpciones(ciudadA, ciudadB, medios) {
     for (const x of Array.isArray(r?.precios) ? r.precios : []) {
       const nombre = texto(x?.nombre);
       const precio = texto(x?.precio);
-      if (nombre && precio) salida.set(normalizarNombre(nombre), precio);
+      // `porGrupo` solo cuenta si viene como booleano: cualquier otra cosa
+      // —null, una cadena, nada— es «el texto no lo dice» y decide la regla.
+      const porGrupo = typeof x?.porGrupo === 'boolean' ? x.porGrupo : null;
+      if (nombre && precio) salida.set(normalizarNombre(nombre), { precio, porGrupo });
     }
     return salida;
   } catch (err) {
@@ -604,11 +642,19 @@ export async function investigarTramo(ciudadA, ciudadB) {
   const precios = await preciosDeLasOpciones(ciudadA, ciudadB, medios);
 
   return medios.map((m, i) => {
-    const precio = precios.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
+    const hallado = precios.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
+    const precio = hallado?.precio ?? null;
     return guardarFichaTramo(
       ciudadA,
       ciudadB,
-      { ...m, precio, precioOrigen: precio ? 'busqueda' : null, orden: i + 1 },
+      {
+        ...m,
+        precio,
+        precioOrigen: precio ? 'busqueda' : null,
+        // Sin precio no hay ámbito que guardar: se deja que lo ponga la regla.
+        precioPorGrupo: precio ? hallado?.porGrupo ?? null : null,
+        orden: i + 1,
+      },
       'ia'
     );
   });

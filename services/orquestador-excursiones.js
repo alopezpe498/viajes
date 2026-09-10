@@ -25,7 +25,7 @@
  * llenar. Eso NO es un hueco de la fase: es una decisión, y se cuenta como tal.
  * Hueco es que la búsqueda falle, que es otra cosa.
  */
-import { todas, una, ejecutar } from '../db/index.js';
+import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { traerExcursionesSiHacenFalta, actividadesDeCiudad } from '../services/catalogo.js';
 import { alternarApuntado } from '../services/etapa.js';
@@ -125,13 +125,27 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
 
     // Lo que ya estuviera apuntado a mano se respeta y cuenta para los topes.
     const yaApuntadas = todas(
-      "SELECT titulo, url FROM candidatos WHERE etapa_id = ? AND tipo = 'actividad'",
+      "SELECT titulo, url, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'actividad'",
       etapa.id
     );
     if (yaApuntadas.length) {
       di(`   ${ciudad}: ya tenías ${yaApuntadas.length} apuntada(s); las respeto y cuentan para el tope.`);
     }
-    const yaPuestas = new Set(yaApuntadas.map((c) => c.url ?? `titulo:${c.titulo}`));
+    // POR IDENTIDAD Y, DE PROPINA, POR TEXTO. La identidad es la buena: la
+    // pareja (tabla, id) que guarda el candidato. El texto se conserva para los
+    // candidatos viejos que se apuntaron antes de que existiera `datos_extra`.
+    const yaPuestas = new Set();
+    for (const c of yaApuntadas) {
+      yaPuestas.add(c.url ?? `titulo:${c.titulo}`);
+      try {
+        const extra = c.datos_extra ? JSON.parse(c.datos_extra) : null;
+        if (extra?.de === 'actividad' && extra.deId != null) {
+          yaPuestas.add(`actividad:${Number(extra.deId)}`);
+        }
+      } catch {
+        /* datos_extra roto: se queda con el respaldo por texto */
+      }
+    }
 
     // --- 2) Preseleccionar -----------------------------------------------
     const sitios = etapa.punto_interes_id
@@ -142,9 +156,24 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         )
       : [];
 
+    // LA ETIQUETA DEL PROMPT VA EN SU PROPIO CAMPO, NO ENCIMA DEL ID.
+    //
+    // Aquí estuvo el fallo que dejó la fase entera trabajando en vano. A la IA
+    // se le dan las excursiones numeradas «ex1, ex2…» para que pueda
+    // referirse a ellas, y eso se hacía escribiendo `id: 'ex7'` ENCIMA del id
+    // real de `catalogo_actividades`. Luego, al guardar, `alternarApuntado`
+    // buscaba la fila 'ex7' del catálogo, no la encontraba y devolvía null sin
+    // decir nada: el registro contaba las elegidas, la pantalla no pintaba
+    // ninguna y el lienzo nunca colocó una excursión en ningún viaje.
+    //
+    // La etiqueta ahora es `ref` y el id sigue siendo el id.
     const candidatas = disponibles
-      .filter((a) => !yaPuestas.has(a.url ?? `titulo:${a.titulo}`))
-      .map((a, i) => ({ ...a, id: `ex${i + 1}` }));
+      .filter(
+        (a) =>
+          !yaPuestas.has(`actividad:${Number(a.id)}`) &&
+          !yaPuestas.has(a.url ?? `titulo:${a.titulo}`)
+      )
+      .map((a, i) => ({ ...a, ref: `ex${i + 1}` }));
 
     if (!candidatas.length) {
       di(`   ${ciudad}: todas las excursiones ya estaban apuntadas.`);
@@ -174,7 +203,7 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
       EXCURSIONES: candidatas
         .map(
           (a) =>
-            `- ${a.id} · ${a.titulo}\n` +
+            `- ${a.ref} · ${a.titulo}\n` +
             `  duración: ${a.duracion ?? 'no la dice'}` +
             `${esLarga(a.duracion) ? ' (día completo)' : ''}` +
             ` · precio: ${a.precio != null ? `${a.precio} ${a.moneda ?? '€'}` : 'no lo dice'}` +
@@ -208,7 +237,8 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
     const pedidas = (Array.isArray(respuesta?.elegidas) ? respuesta.elegidas : [])
       .map((e) => ({
         ...e,
-        actividad: candidatas.find((c) => c.id === String(e?.id ?? '').trim()),
+        // La IA contesta con la etiqueta («ex7»), no con el id del catálogo.
+        actividad: candidatas.find((c) => c.ref === String(e?.id ?? '').trim()),
       }))
       .filter((e) => e.actividad);
 
@@ -232,17 +262,52 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
     }
 
     // --- 4) Guardar, con la misma función del botón «Me lo apunto» -------
+    //
+    // Y COMPROBANDO QUE SE HA GUARDADO. `alternarApuntado` devuelve null cuando
+    // no encuentra el origen, y ese null en silencio es exactamente lo que
+    // permitió que esta fase pareciera funcionar durante meses. Ahora, si una
+    // no entra, se dice en el registro y se apunta como hueco.
     const cubiertos = [];
-    for (const e of elegidas) {
-      alternarApuntado(etapa.id, 'actividad', e.actividad.id);
-
-      // El solapamiento, hecho dato: el sitio que cubre esta excursión queda
-      // marcado para que el lienzo no programe los dos.
-      const candidato = una(
+    const guardadas = [];
+    // El candidato de una excursión, por su IDENTIDAD: la misma pareja
+    // (tabla, id) con la que la pestaña decide qué pintar como apuntado. Si
+    // esto lo encuentra, la pantalla también.
+    const candidatoDe = (actividadId) =>
+      una(
         `SELECT id FROM candidatos
-          WHERE etapa_id = ? AND tipo = 'actividad' AND titulo = ? ORDER BY id DESC LIMIT 1`,
+          WHERE etapa_id = ? AND tipo = 'actividad'
+            AND datos_extra LIKE ? ORDER BY id DESC LIMIT 1`,
         etapa.id,
-        e.actividad.titulo
+        `%"deId":${Number(actividadId)}%`
+      );
+
+    for (const e of elegidas) {
+      // `alternarApuntado` ALTERNA: si la excursión ya estuviera apuntada, esa
+      // llamada la DESAPUNTARÍA y se llevaría por delante su sitio en el
+      // lienzo. Hoy no puede pasar —las ya apuntadas se filtran antes de
+      // ofrecérselas a la IA—, pero la fase no puede depender de ese detalle
+      // de otro sitio: si ya está, no se toca.
+      if (!candidatoDe(e.actividad.id)) {
+        alternarApuntado(etapa.id, 'actividad', e.actividad.id);
+      }
+
+      const candidato = candidatoDe(e.actividad.id);
+
+      if (!candidato) {
+        apuntarHueco(
+          viajeId,
+          FASE,
+          `${ciudad}: «${e.actividad.titulo}» se eligió pero no se pudo guardar como candidata.`
+        );
+        di(`   ✘ «${e.actividad.titulo}» NO se pudo guardar como candidata.`, ORIGENES.ninguno);
+        continue;
+      }
+
+      guardadas.push(e);
+      di(
+        `   Excursión «${e.actividad.titulo}» guardada como candidata de ${ciudad} ` +
+          `(candidato #${candidato.id}, catálogo #${e.actividad.id}).`,
+        ORIGENES.scraping
       );
       for (const nombre of Array.isArray(e.cubre_sitios) ? e.cubre_sitios : []) {
         const sitio = una(
@@ -258,7 +323,9 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
       }
     }
 
-    elegidasEnTotal += elegidas.length;
+    // Cuentan las GUARDADAS, no las elegidas: el tope del viaje tiene que
+    // hablar de lo que existe en la base, no de lo que se pensó.
+    elegidasEnTotal += guardadas.length;
 
     const descartadas = (Array.isArray(respuesta?.descartadas) ? respuesta.descartadas : [])
       .map((d) => ({ ...d, actividad: candidatas.find((c) => c.id === String(d?.id ?? '').trim()) }))
@@ -277,8 +344,78 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
     }
   }
 
+  // --- LA JOYA QUE SE HA QUEDADO FUERA -------------------------------------
+  //
+  // Se avisa aquí y no en la fase 1 porque hasta ahora no se sabía: una
+  // candidata puede caerse como parada y volver por la puerta de atrás como
+  // excursión, y entonces no hay nada que decir. Solo cuando las excursiones ya
+  // están elegidas se puede saber si de verdad ha desaparecido del viaje.
+  avisarDeLasQueSeCayeron(viaje, di);
+
   di(`${elegidasEnTotal} excursión(es) preseleccionada(s) en todo el viaje.`);
   return { etapas: etapas.length, elegidas: elegidasEnTotal };
+}
+
+/**
+ * AVISA DE LAS CANDIDATAS DE PESO QUE SE HAN QUEDADO FUERA DEL VIAJE.
+ *
+ * En Grecia, Meteora —peso 4, monasterios colgados de una roca— se cayó de la
+ * ruta por la regla de las dos noches, se evaluó como excursión de trece horas
+ * desde Tesalónica y se descartó con razón. Las dos decisiones eran defendibles;
+ * el problema es que, sumadas, dejaron fuera del viaje lo más espectacular del
+ * país sin que nadie lo dijera.
+ *
+ * Esto NO cambia ninguna decisión. Solo impide que el resultado sea invisible:
+ * si te interesa, ya sabes que existe y que hace falta una noche o cambiar la
+ * ruta para verlo.
+ */
+function avisarDeLasQueSeCayeron(viaje, di) {
+  const pesoMinimo = parametro('peso_minimo_aviso_candidata', 4);
+
+  let guardadas = null;
+  try {
+    guardadas = viaje.ciudades_candidatas ? JSON.parse(viaje.ciudades_candidatas) : null;
+  } catch {
+    return; // sin la lista no hay nada que comparar
+  }
+  const descartadas = (guardadas?.descartadas ?? []).filter((c) => (Number(c.peso) || 0) >= pesoMinimo);
+  if (!descartadas.length) return;
+
+  // Lo que sí está en el viaje: las paradas y lo que cubren las excursiones ya
+  // preseleccionadas. Si el nombre aparece en cualquiera de las dos, no se ha
+  // perdido nada.
+  const enLaRuta = todas(
+    "SELECT nombre_ciudad FROM etapas WHERE viaje_id = ? AND estado = 'confirmada'",
+    viaje.id
+  ).map((e) => normalizarNombre(e.nombre_ciudad));
+
+  const enExcursiones = todas(
+    "SELECT titulo FROM candidatos WHERE viaje_id = ? AND tipo = 'actividad' AND marcado = 1",
+    viaje.id
+  ).map((c) => normalizarNombre(c.titulo ?? ''));
+
+  ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'candidata'", viaje.id);
+
+  for (const c of descartadas) {
+    const suyo = normalizarNombre(c.nombre ?? '');
+    if (!suyo) continue;
+    if (enLaRuta.some((n) => n.includes(suyo) || suyo.includes(n))) continue;
+    if (enExcursiones.some((t) => t.includes(suyo))) continue;
+
+    ejecutar(
+      `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+       VALUES (?, 'candidata', 'info', ?, ?)`,
+      viaje.id,
+      `${c.nombre} (peso ${c.peso}) ha quedado fuera del viaje`,
+      'No da para parada porque no llega al mínimo de noches, y no hay ninguna excursión ' +
+        'viable desde tu ruta que lo cubra. Si te interesa, valora añadirle una noche a mano ' +
+        'o cambiar la ruta para pasar por allí.'
+    );
+
+    di(
+      `Aviso para el viaje: ${c.nombre} (peso ${c.peso}) se queda fuera —ni parada ni excursión—.`
+    );
+  }
 }
 
 export default { ejecutarFaseExcursiones, duracionEnMinutos, esLarga };

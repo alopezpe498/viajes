@@ -42,8 +42,16 @@ import {
   elegirMedio,
   guardarDatosDelTramo,
 } from '../services/movilidad.js';
-import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
+import {
+  anotar,
+  apuntarHueco,
+  parametro,
+  parametroTexto,
+  configAuto,
+  ORIGENES,
+} from '../services/orquestador.js';
 import { calcularDistanciasDeLaRuta } from '../services/distancias-ciudades.js';
+import { ambitoDeTramo, POR_GRUPO } from '../services/presupuesto.js';
 
 const FASE = 'traslados';
 
@@ -302,6 +310,23 @@ async function opcionesEnAvion({ viaje, ciudadA, ciudadB, mejorTierra, loDijoLaF
  * salir del hotel y hasta cuándo dura el lío. Es lo que va a leer la fase del
  * lienzo para no colocar nada encima.
  */
+/**
+ * QUÉ CUENTA EL PRECIO DE LA OPCIÓN ELEGIDA.
+ *
+ * Por tierra, lo que ya dijo la búsqueda cuando se guardó la ficha; si aquella
+ * no lo dijo, la regla del medio. En avión no se llega aquí con precio: el vuelo
+ * se guarda como candidato y su ámbito va con él.
+ */
+function ambitoDeLaOpcion(opcion) {
+  if (opcion.clase !== 'tierra') return POR_GRUPO; // Kayak da el total de la reserva
+
+  const ficha = opcion.fichaId
+    ? una('SELECT medio, nombre, precio_ambito FROM catalogo_transporte_tramo WHERE id = ?', opcion.fichaId)
+    : null;
+
+  return ficha?.precio_ambito ?? ambitoDeTramo({ medio: opcion.modo, nombre: opcion.nombre });
+}
+
 function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
   const previo = (() => {
     try {
@@ -330,9 +355,10 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
     const v = opcion.vuelo;
     const t = (v.tramos ?? [])[0] ?? {};
     const r = ejecutar(
+      // El precio de Kayak es el total de la reserva, no el de cada billete.
       `INSERT INTO candidatos
-         (viaje_id, transporte_id, tipo, titulo, precio, moneda, origen_datos, marcado, datos_extra)
-       VALUES (?, ?, 'vuelo', ?, ?, ?, 'kayak', 1, ?)`,
+         (viaje_id, transporte_id, tipo, titulo, precio, moneda, origen_datos, marcado, datos_extra, precio_ambito)
+       VALUES (?, ?, 'vuelo', ?, ?, ?, 'kayak', 1, ?, 'por_grupo')`,
       tramo.viaje_id,
       tramo.id,
       opcion.nombre,
@@ -355,13 +381,135 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
 
   // El bloque, y las notas, que son lo que enseña la ruta y el lienzo de un
   // vistazo. `notas` la lee `resumenDeSalto` para el chip del día.
+  // EL ÁMBITO VIAJA CON EL PRECIO. Un billete de tren es de cada uno y un
+  // traslado privado es del coche entero: si el presupuesto tuviera que
+  // deducirlo después, un taxi de 90 € se convertiría en 180 € para dos. Se
+  // guarda aquí, en el momento de elegir, con lo que dijo la búsqueda de esa
+  // opción (services/presupuesto.js tiene la regla).
   ejecutar(
-    'UPDATE transportes SET datos_extra = ?, notas = ?, duracion_min = ?, precio_estimado = ? WHERE id = ?',
+    `UPDATE transportes
+        SET datos_extra = ?, notas = ?, duracion_min = ?, precio_estimado = ?, precio_ambito = ?
+      WHERE id = ?`,
     JSON.stringify({ ...previo, bloque, elegidoPor: 'orquestador', porQue }),
     `${opcion.nombre}${horaSalida ? ` · sale ${horaSalida}` : ''}`,
     bloque.total,
     opcion.precio ?? null,
+    opcion.precio == null ? null : ambitoDeLaOpcion(opcion),
     tramo.id
+  );
+}
+
+/**
+ * DEJA DICHO EN EL VIAJE QUE ESE TRASLADO ES UN MADRUGÓN.
+ *
+ * No cambia la decisión: cuando no hay alternativa razonable, el vuelo de las
+ * siete es el que hay. Lo que no puede pasar es que aparezca en el itinerario
+ * como si fuera una hora normal y uno se entere la víspera.
+ *
+ * Va a los avisos del viaje, en su propia categoría, para que el trabajo que los
+ * rehace no se lo lleve por delante.
+ */
+function avisarDeMadrugon(viaje, desde, hasta, eleccion, limite, di) {
+  ejecutar(
+    "DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'traslado' AND titulo LIKE ?",
+    viaje.id,
+    `%${desde} → ${hasta}%`
+  );
+
+  ejecutar(
+    `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+     VALUES (?, 'traslado', 'aviso', ?, ?)`,
+    viaje.id,
+    `El traslado ${desde} → ${hasta} sale a las ${eleccion.hora}`,
+    `Es antes del límite de tu ritmo (${limite}): madrugón a la vista. Miré las otras ` +
+      'opciones del día y ninguna respeta la hora sin costar bastante más tiempo, así que ' +
+      'se queda esta. Si prefieres dormir, hay que cambiarlo a mano.'
+  );
+
+  di(
+    `   Aviso para el viaje: ${desde} → ${hasta} sale a las ${eleccion.hora}, ` +
+      'antes del límite de tu ritmo; no hay alternativa que lo respete.',
+    ORIGENES.scraping
+  );
+}
+
+/**
+ * LA HORA A PARTIR DE LA CUAL UN TRASLADO NO ES UN MADRUGÓN.
+ *
+ * Depende de dos cosas: de en qué se viaja —un avión pide dos horas de
+ * antelación y un tren media— y del ritmo del viaje. Con ritmo intenso se
+ * adelanta una hora, que es lo que significa apretar.
+ */
+export function horaMinimaDeSalida(modo, ritmo) {
+  const esVuelo = modo === 'vuelo' || modo === 'avion';
+  const base = parametroTexto(esVuelo ? 'hora_minima_avion' : 'hora_minima_tren', esVuelo ? '10:00' : '09:00');
+
+  const minutos = enMinutosDelDia(base);
+  if (minutos == null) return null;
+
+  // Con ritmo intenso se puede madrugar una hora más. Con el resto, no.
+  return ritmo === 'intenso' ? Math.max(0, minutos - 60) : minutos;
+}
+
+/** "07:00" -> 420. Los minutos desde medianoche. */
+export function enMinutosDelDia(hora) {
+  const m = String(hora ?? '').match(/(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/** 545 -> "09:05". */
+export function comoHoraDelDia(minutos) {
+  const m = Math.max(0, Math.min(Math.round(minutos), 24 * 60 - 1));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/**
+ * ¿LA HORA ELEGIDA RESPETA EL RITMO DEL VIAJE?
+ *
+ * El prompt lo dice desde el principio —«nada de coger avión antes de las 10:00
+ * con ritmo tranquilo o normal»— y la IA lo entendió tan bien que lo escribió en
+ * su justificación: «exige salir del hotel a las 6:15, lo cual es apretado». Y
+ * eligió ese vuelo igual, porque las alternativas eran peores.
+ *
+ * Una regla que se enuncia y no se comprueba no es una regla. Aquí se comprueba.
+ */
+export function respetaElRitmo(opcion, hora, ritmo) {
+  const limite = horaMinimaDeSalida(opcion?.modo, ritmo);
+  const sale = enMinutosDelDia(hora);
+  if (limite == null || sale == null) return true; // sin hora no hay nada que juzgar
+  return sale >= limite;
+}
+
+/**
+ * EL AHORRO GRANDE: el segundo escalón de la regla del precio.
+ *
+ * El empate de siempre mira diferencias pequeñas de tiempo. Pero en Nafplio →
+ * Atenas el traslado privado costaba 160 € contra 15,70 € del autobús y ganaba
+ * por exactamente una hora: la diferencia de tiempo se quedaba justo fuera del
+ * umbral del empate, así que nadie evaluó que la hora costaba 144 € para dos.
+ *
+ * Cuando algo es mucho más barato y pierde poco tiempo, la cuenta se le da hecha
+ * a la IA. La decisión sigue siendo suya —con niños y maletas, una hora puede
+ * valer 144 €—, pero ya no la toma sin mirar el dinero.
+ */
+export function reglaDelAhorroGrande(medidas, params) {
+  const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
+  if (conPrecio.length < 2) return null;
+
+  const rapida = medidas[0];
+  const barata = [...conPrecio].sort((a, b) => a.precio - b.precio)[0];
+  if (barata.id === rapida.id || rapida.precio == null) return null;
+
+  const veces = rapida.precio / barata.precio;
+  const pierde = barata.bloque.total - rapida.bloque.total;
+
+  if (veces < params.factorAhorro || pierde > params.maxExtraAhorro) return null;
+
+  return (
+    `Se cumple la regla del ahorro grande: «${barata.nombre}» cuesta ${barata.precio} € ` +
+    `frente a ${rapida.precio} € (${veces.toFixed(1)} veces menos) y solo pierde ` +
+    `${comoTexto(Math.max(0, pierde))}. Elígela salvo que haya un motivo de peso ` +
+    '(niños, equipaje, horario).'
   );
 }
 
@@ -392,6 +540,9 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     margenCompartido: parametro('margen_viaje_compartido_min', 45),
     umbral: parametro('umbral_empate_traslado_min', 30),
     factorPrecio: parametro('factor_precio_traslado', 3),
+    factorAhorro: parametro('factor_ahorro_traslado', 4),
+    maxExtraAhorro: parametro('max_tiempo_extra_ahorro_min', 75),
+    maxPenalizacionHorario: parametro('max_penalizacion_horario_min', 90),
   };
   const auto = configAuto(viaje);
 
@@ -572,6 +723,10 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       }
     }
 
+    // --- Y el ahorro grande, que es el otro escalón de la misma idea ------
+    const reglaDelAhorro = reglaDelAhorroGrande(medidas, params);
+    if (reglaDelAhorro) di(`   ${reglaDelAhorro}`, ORIGENES.busqueda);
+
     // --- La elección ------------------------------------------------------
     const datos = {
       DESDE: desde.nombre_ciudad,
@@ -593,7 +748,9 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
             `${o.nota ? `\n  nota: ${o.nota}` : ''}`
         )
         .join('\n'),
-      REGLA_DEL_EMPATE: reglaDelEmpate ?? 'No se cumple: gana la más rápida puerta a puerta.',
+      REGLA_DEL_EMPATE:
+        [reglaDelEmpate, reglaDelAhorro].filter(Boolean).join('\n') ||
+        'No se cumple: gana la más rápida puerta a puerta.',
     };
 
     let eleccion = null;
@@ -628,6 +785,55 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
           : 'la más rápida puerta a puerta, aplicada sin la IA',
       };
       di('   Elijo yo con la regla base.');
+    }
+
+    // --- LA REGLA DEL RITMO SE COMPRUEBA, NO SE PIDE Y YA ------------------
+    //
+    // El prompt lleva desde el principio diciendo «nada de coger avión antes de
+    // las 10:00 con ritmo tranquilo o normal». En Grecia la IA eligió un vuelo
+    // de las 07:00 y lo explicó ella misma: «exige salir del hotel a las 6:15,
+    // lo cual es apretado». Lo sabía y lo eligió igual, porque el resto era peor.
+    //
+    // Así que se comprueba aquí. Si hay otra opción que respete la hora y no
+    // cueste demasiado tiempo de más, se vuelve a elegir sin las que incumplen.
+    // Y si no la hay, se respeta la decisión —a veces el madrugón es lo único
+    // que existe— pero se avisa al viaje: quien lo sufre tiene que saberlo.
+    const ritmo = viaje.ritmo || 'normal';
+    if (eleccion.hora && !respetaElRitmo(eleccion.opcion, eleccion.hora, ritmo)) {
+      const limite = comoHoraDelDia(horaMinimaDeSalida(eleccion.opcion.modo, ritmo));
+      di(
+        `   La elegida sale a las ${eleccion.hora}, antes del límite de tu ritmo (${limite}).`,
+        ORIGENES.ninguno
+      );
+
+      // Las que sí cumplirían, si saliesen a su hora más temprana permitida, y
+      // que no pierdan más de lo que se está dispuesto a perder.
+      const alcanzables = medidas.filter(
+        (o) =>
+          o.id !== eleccion.opcion.id &&
+          o.bloque.total - eleccion.opcion.bloque.total <= params.maxPenalizacionHorario
+      );
+
+      if (alcanzables.length) {
+        const sustituta = alcanzables[0];
+        const cuesta = sustituta.bloque.total - eleccion.opcion.bloque.total;
+        const nuevaHora = comoHoraDelDia(horaMinimaDeSalida(sustituta.modo, ritmo));
+
+        di(
+          `   Cambio a «${sustituta.nombre}» saliendo a las ${nuevaHora}: respeta tu ritmo y ` +
+            `cuesta ${comoTexto(Math.max(0, cuesta))} más puerta a puerta.`,
+          ORIGENES.busqueda
+        );
+        eleccion = {
+          opcion: sustituta,
+          hora: nuevaHora,
+          porQue:
+            `${eleccion.porQue ? `${eleccion.porQue} ` : ''}Cambiada por horario: la anterior salía ` +
+            `a las ${eleccion.hora}, antes del límite de tu ritmo.`,
+        };
+      } else {
+        avisarDeMadrugon(viaje, desde.nombre_ciudad, hasta.nombre_ciudad, eleccion, limite, di);
+      }
     }
 
     guardarEleccion(tramo, eleccion.opcion, eleccion.hora, eleccion.opcion.bloque, eleccion.porQue);

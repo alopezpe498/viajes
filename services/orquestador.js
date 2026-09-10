@@ -292,6 +292,11 @@ export const FASE_DE_PARAMETRO = {
   max_ciudades_candidatas: 'ciudades_y_noches',
 
   factor_precio_traslado: 'traslados',
+  hora_minima_tren: 'traslados',
+  hora_minima_avion: 'traslados',
+  max_penalizacion_horario_min: 'traslados',
+  factor_ahorro_traslado: 'traslados',
+  max_tiempo_extra_ahorro_min: 'traslados',
   acceso_aeropuerto_min: 'traslados',
   acceso_estacion_min: 'traslados',
   margen_coche_min: 'traslados',
@@ -310,8 +315,15 @@ export const FASE_DE_PARAMETRO = {
   visita_compras_min: 'lienzo',
   visita_por_defecto_min: 'lienzo',
   max_revisiones_lienzo: 'lienzo',
+  presentacion_vuelo_min: 'lienzo',
+  presentacion_tren_min: 'lienzo',
+  acceso_por_defecto_min: 'lienzo',
+  salida_del_aeropuerto_min: 'lienzo',
+  hora_maxima_inicio: 'lienzo',
+  margen_tras_llegada_min: 'lienzo',
 
   hora_minima_salida_vuelta: 'ciudades_y_noches',
+  peso_minimo_aviso_candidata: 'ciudades_y_noches',
   max_horas_extra_por_escala: 'ciudades_y_noches',
 
   max_excursiones_largas_por_dia: 'excursiones',
@@ -366,6 +378,15 @@ export const PROMPTS_SUELTOS = [
     explica:
       'Lo que se le pregunta a la IA para saber qué transporte existe entre dos ciudades. ' +
       'Los precios NO se piden aquí: se buscan aparte, porque de memoria salían inventados.',
+  },
+  {
+    clave: 'gasto_diario',
+    etiqueta: 'Presupuesto · gasto diario en destino',
+    icono: 'ti-wallet',
+    explica:
+      'Lo que se gasta al día en comer y en moverse por la ciudad. Es lo único del presupuesto ' +
+      'que no se puede buscar —nadie lo publica—, así que se estima y se enseña como estimación, ' +
+      'aparte de los precios reales. Se calcula una vez por viaje.',
   },
 ];
 

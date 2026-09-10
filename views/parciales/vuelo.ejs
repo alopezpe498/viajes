@@ -76,4 +76,12 @@
       <svg viewBox="0 0 20 20"><polyline points="4,10 8,14 16,6"></polyline></svg>
     </button>
   </div>
+
+  <%# LA RESERVA, SOLO EN EL VUELO ELEGIDO.
+      En una lista de ocho opciones, ocho bloques de reserva serían ocho
+      invitaciones a guardar el localizador en el vuelo equivocado. Aparece
+      cuando ya se ha decidido, que es cuando hay algo que reservar. %>
+  <% if (v.marcado && typeof reservas !== 'undefined' && reservas && reservas.get(v.id)) { %>
+    <%- include('reserva', { reserva: reservas.get(v.id) }) %>
+  <% } %>
 </article>

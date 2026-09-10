@@ -658,6 +658,9 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   di(`${etapas.length} parada(s) que repartir. Comida de ${duracionComida} min cada día.`);
 
   let colocadosEnTotal = 0;
+  // Por qué se quedó fuera cada cosa, según lo dijo la propia IA o el cotejo.
+  // Se guarda por candidato para poder explicarlo al final por su nombre.
+  const motivosDeFuera = new Map();
   let sinColocarEnTotal = 0;
 
   for (const etapa of etapas) {
@@ -908,6 +911,9 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
       if (pieza) {
         sinColocarEnTotal += 1;
         di(`   Fuera: ${pieza.nombre}${f.por_que ? ` (${f.por_que})` : ''}`);
+        if (pieza.clase === 'excursion' && pieza.candidatoId) {
+          motivosDeFuera.set(pieza.candidatoId, f.por_que || 'no cupo en ningún día');
+        }
       }
     }
 
@@ -918,6 +924,10 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
     // EL COTEJO: lo declarado contra lo que hay.
     for (const x of perdidos) {
       di(`   Declaró colocar ${x.ref} en el día ${x.dia} y no se ha podido: ${x.motivo}.`);
+      const pieza = porRef.get(x.ref);
+      if (pieza?.clase === 'excursion' && pieza.candidatoId) {
+        motivosDeFuera.set(pieza.candidatoId, `se intentó en el día ${x.dia}, pero ${x.motivo}`);
+      }
     }
     if (declarados.length && entradas + perdidos.length !== declarados.length) {
       di(
@@ -965,6 +975,14 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
 
   sinColocarEnTotal += sacados.length;
 
+  // UNA EXCURSIÓN QUE NO CABE NO PUEDE DESAPARECER EN SILENCIO.
+  //
+  // La fase 5 la eligió con criterio, la guardó como candidata y la pestaña la
+  // enseña marcada. Si al repartir los días no entra en ninguno, quien mire el
+  // viaje verá una excursión apuntada que no está en el lienzo y no sabrá si es
+  // que no cupo o que se perdió por el camino. Va a los avisos del viaje.
+  avisarDeExcursionesSinColocar(viaje, motivosDeFuera, di);
+
   if (final.avisos.length) {
     di(
       `Queda${final.avisos.length === 1 ? '' : 'n'} ${final.avisos.length} aviso(s) ` +
@@ -984,4 +1002,54 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   return { etapas: etapas.length, colocados: colocadosEnTotal, sinColocar: sinColocarEnTotal };
 }
 
-export default { ejecutarFaseLienzo, diasDeLaEtapa, colocablesDeEtapa };
+
+/**
+ * AVISA DE LAS EXCURSIONES PRESELECCIONADAS QUE NO ENTRARON EN NINGÚN DÍA.
+ *
+ * La fase 5 las eligió con criterio y las guardó como candidatas; la pestaña de
+ * la ciudad las enseña marcadas. Si el reparto de los días no las coloca, en la
+ * pantalla queda una excursión apuntada que no está en ningún día, y desde
+ * fuera no se distingue «no cabía» de «se perdió». Esto lo dice.
+ *
+ * Se rehace entero en cada pasada, y en su propia categoría, para que relanzar
+ * la fase no acumule avisos viejos ni pise los de las otras.
+ */
+export function avisarDeExcursionesSinColocar(viaje, motivos, di) {
+  ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'excursion'", viaje.id);
+
+  const sueltas = todas(
+    `SELECT c.id, c.titulo, e.nombre_ciudad
+       FROM candidatos c
+       LEFT JOIN etapas e ON e.id = c.etapa_id
+      WHERE c.viaje_id = ? AND c.tipo = 'actividad' AND c.marcado = 1
+        AND NOT EXISTS (SELECT 1 FROM itinerario i WHERE i.candidato_id = c.id)
+      ORDER BY c.id`,
+    viaje.id
+  );
+
+  for (const x of sueltas) {
+    const motivo = motivos.get(x.id) ?? 'no cupo en ningún día de esa parada';
+    ejecutar(
+      `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+       VALUES (?, 'excursion', 'info', ?, ?)`,
+      viaje.id,
+      `«${x.titulo}» se quedó sin sitio en el lienzo`,
+      `Está elegida y apuntada en ${x.nombre_ciudad ?? 'su parada'}, pero ${motivo}. ` +
+        'Sigue en la pestaña de excursiones: puedes colocarla a mano o dejarla fuera.'
+    );
+    di(`   Aviso para el viaje: «${x.titulo}» quedó apuntada pero sin sitio (${motivo}).`);
+  }
+
+  if (sueltas.length) {
+    di(`${sueltas.length} excursión(es) apuntada(s) se han quedado fuera del lienzo.`);
+  }
+
+  return sueltas.length;
+}
+
+export default {
+  ejecutarFaseLienzo,
+  diasDeLaEtapa,
+  colocablesDeEtapa,
+  avisarDeExcursionesSinColocar,
+};

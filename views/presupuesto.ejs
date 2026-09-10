@@ -1,0 +1,249 @@
+<%
+/**
+ * PRESUPUESTO: cuánto costaría el viaje tal y como está montado.
+ *
+ * No es un control de gastos —eso se lleva fuera y después—: es la foto del
+ * coste del plan, para decidir si es viable antes de reservar nada.
+ *
+ * DOS BLOQUES QUE NO SE MEZCLAN, y se nota a la vista:
+ *
+ *   · Lo PLANIFICADO son precios reales, de scraping o de búsqueda. Cada
+ *     importe lleva su ámbito («del grupo» / «por persona × 2») porque sin él
+ *     la suma es una casualidad, y lo que no tiene precio se dice al pie en vez
+ *     de desaparecer: un total al que le faltan tres conceptos no es un total.
+ *
+ *   · Lo ESTIMADO es comer y moverse por la ciudad. Va en su propia caja, con
+ *     la palabra «estimación» delante y otro fondo, para que nadie lo lea como
+ *     un precio consultado.
+ *
+ * Y al final, el total orientativo: la cifra que uno quiere ver, marcada como
+ * orientativa porque suma dos calidades de dato distintas.
+ *
+ * Espera: viaje, presupuesto (services/presupuesto.js -> presupuestoDelViaje).
+ */
+const pieExtra = '<script src="/js/presupuesto.js" defer></script>';
+
+const P = presupuesto;
+
+/** Euros a la española y sin decimales de más: 1.234 € y 12,50 €. */
+const euros = (n, { decimales = false } = {}) => {
+  if (n == null) return null;
+  return n.toLocaleString('es-ES', {
+    minimumFractionDigits: decimales ? 2 : 0,
+    maximumFractionDigits: decimales ? 2 : 0,
+  }) + ' €';
+};
+
+/** El sufijo del ámbito, solo cuando aporta algo. */
+const ambitoDe = (l) => (l.multiplica ? `por persona × ${l.multiplica}` : l.ambitoTexto);
+
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Presupuesto · ${viaje.nombre}`,
+      extraCabeza: '',
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido" data-viaje="<%= viaje.id %>">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta"><%= viaje.nombre %></a>
+      </p>
+      <div class="etapa-titular">
+        <h1 class="ruta-cabecera__titulo">Presupuesto</h1>
+        <span class="etapa-acciones">
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/ruta">
+            <i class="ti ti-route" aria-hidden="true"></i> Volver a la ruta
+          </a>
+        </span>
+      </div>
+    </header>
+
+    <%# ==================== LAS DOS CIFRAS GRANDES ======================= %>
+    <section class="pre-total">
+      <div class="pre-total__cifras">
+        <div class="pre-total__caja">
+          <span class="pre-total__etiqueta">Total del viaje</span>
+          <strong class="pre-total__numero"><%= euros(P.planificado.total) %></strong>
+          <span class="pre-total__pie">precios reales de lo planificado</span>
+        </div>
+        <div class="pre-total__caja">
+          <span class="pre-total__etiqueta">Coste por persona</span>
+          <strong class="pre-total__numero"><%= euros(P.planificado.porPersona) %></strong>
+          <span class="pre-total__pie">
+            <%= plural(P.viajeros.adultos, 'adulto', 'adultos') %><%
+              if (P.viajeros.ninos) { %> y <%= plural(P.viajeros.ninos, 'niño', 'niños') %><% } %>
+          </span>
+        </div>
+      </div>
+
+      <%# EL HUECO SE DICE, no se esconde. Un total al que le faltan conceptos
+          no es el coste del viaje, y quien lo mira tiene que saberlo antes de
+          decidir nada. %>
+      <% if (P.planificado.sinPrecio) { %>
+        <p class="pre-incompleto">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          <%= plural(P.planificado.sinPrecio, 'concepto sin precio', 'conceptos sin precio') %>:
+          el total está incompleto.
+        </p>
+      <% } %>
+
+      <%# El presupuesto que uno se puso al empezar, si se puso alguno. %>
+      <% if (viaje.presupuesto) { %>
+        <p class="pre-comparacion">
+          Tu presupuesto orientativo era <strong><%= euros(Number(viaje.presupuesto)) %></strong>.
+        </p>
+      <% } %>
+    </section>
+
+    <%# ==================== BLOQUE 1 — LO PLANIFICADO ==================== %>
+    <h2 class="seccion-titulo">Lo planificado</h2>
+    <p class="pre-explica">
+      Precios reales, tal y como los trajo cada búsqueda. Despliega un concepto
+      para ver de dónde sale su total.
+    </p>
+
+    <% if (!P.planificado.conceptos.length) { %>
+      <p class="reservas-vacio">
+        <i class="ti ti-wallet" aria-hidden="true"></i>
+        Todavía no hay nada elegido. Cuando marques un vuelo, un hotel o una
+        excursión, su precio aparecerá aquí.
+      </p>
+    <% } %>
+
+    <% P.planificado.conceptos.forEach(c => { %>
+      <details class="pre-concepto">
+        <summary class="pre-concepto__cabecera">
+          <i class="ti <%= c.icono %> pre-concepto__icono" aria-hidden="true"></i>
+          <span class="pre-concepto__nombre"><%= c.etiqueta %></span>
+          <span class="pre-concepto__cuantas"><%= c.cuantas %></span>
+          <span class="pre-concepto__total"><%= euros(c.total) %></span>
+          <i class="ti ti-chevron-down pre-concepto__flecha" aria-hidden="true"></i>
+        </summary>
+
+        <ul class="pre-lineas">
+          <% c.lineas.forEach(l => { %>
+            <li class="pre-linea <%= l.total == null ? 'pre-linea--sin-precio' : '' %>">
+              <div class="pre-linea__texto">
+                <p class="pre-linea__titulo">
+                  <%# El punto de reservado: informa, no cambia ningún importe. %>
+                  <% if (l.reservado) { %>
+                    <span class="pre-punto" title="Ya reservado" aria-label="Ya reservado"></span>
+                  <% } %>
+                  <% if (l.url) { %>
+                    <a href="<%= l.url %>" target="_blank" rel="noopener"><%= l.titulo %></a>
+                  <% } else { %>
+                    <%= l.titulo %>
+                  <% } %>
+                </p>
+                <% if (l.detalle) { %>
+                  <p class="pre-linea__detalle"><%= l.detalle %></p>
+                <% } %>
+                <% if (l.nota) { %>
+                  <p class="pre-linea__nota"><%= l.nota %></p>
+                <% } %>
+              </div>
+
+              <div class="pre-linea__importe">
+                <% if (l.total == null) { %>
+                  <span class="pre-sin-precio">sin precio</span>
+                <% } else { %>
+                  <strong><%= euros(l.total, { decimales: l.total % 1 !== 0 }) %></strong>
+                  <span class="pre-linea__ambito"><%= ambitoDe(l) %></span>
+                <% } %>
+              </div>
+            </li>
+          <% }) %>
+        </ul>
+
+        <% if (c.sinPrecio) { %>
+          <p class="pre-concepto__hueco">
+            <%= plural(c.sinPrecio, 'no tiene precio y no suma', 'no tienen precio y no suman') %>.
+          </p>
+        <% } %>
+      </details>
+    <% }) %>
+
+    <%# ==================== BLOQUE 2 — LO ESTIMADO ======================= %>
+    <h2 class="seccion-titulo">
+      Lo estimado <span class="pre-sello">estimación</span>
+    </h2>
+    <p class="pre-explica">
+      Comer, beber y moverse por la ciudad. No lo trae ninguna búsqueda porque no
+      se reserva: es una estimación por persona y día, y no se mezcla con las
+      cifras de arriba.
+    </p>
+
+    <section class="pre-estimado" id="pre-estimado"
+             data-tocado="<%= P.estimado.tocadoAMano ? '1' : '' %>">
+      <div class="pre-estimado__cuenta">
+        <label class="pre-estimado__campo">
+          <span class="pre-estimado__etiqueta">Por persona y día</span>
+          <span class="pre-estimado__entrada">
+            <input type="number" id="pre-importe" min="0" step="1" inputmode="decimal"
+                   value="<%= P.estimado.importe ?? '' %>" placeholder="—">
+            <span class="pre-estimado__moneda">€</span>
+          </span>
+        </label>
+
+        <span class="pre-estimado__por">×</span>
+        <span class="pre-estimado__factor">
+          <strong><%= P.dias %></strong>
+          <span><%= P.dias === 1 ? 'día' : 'días' %></span>
+        </span>
+
+        <span class="pre-estimado__por">×</span>
+        <span class="pre-estimado__factor">
+          <strong><%= P.viajeros.total %></strong>
+          <span><%= P.viajeros.total === 1 ? 'viajero' : 'viajeros' %></span>
+        </span>
+
+        <span class="pre-estimado__por">=</span>
+        <strong class="pre-estimado__total" id="pre-estimado-total">
+          <%= P.estimado.total != null ? euros(P.estimado.total) : '—' %>
+        </strong>
+      </div>
+
+      <p class="pre-estimado__porque" id="pre-porque">
+        <% if (P.estimado.tocadoAMano) { %>
+          <i class="ti ti-pencil" aria-hidden="true"></i> Lo has puesto tú: no se
+          recalcula solo.
+        <% } else if (P.estimado.porque) { %>
+          <i class="ti ti-sparkles" aria-hidden="true"></i> <%= P.estimado.porque %>
+        <% } else { %>
+          <i class="ti ti-help-circle" aria-hidden="true"></i> Todavía sin estimar.
+        <% } %>
+      </p>
+
+      <div class="pre-estimado__acciones">
+        <button class="boton-discreto" type="button" id="pre-recalcular"
+                <%= P.estimado.tocadoAMano ? 'disabled' : '' %>>
+          <i class="ti ti-refresh" aria-hidden="true"></i>
+          <%= P.estimado.importe == null ? 'Estimar' : 'Recalcular' %>
+        </button>
+        <span class="pre-estimado__estado" data-estado></span>
+      </div>
+    </section>
+
+    <%# ==================== EL TOTAL ORIENTATIVO ========================= %>
+    <section class="pre-orientativo" id="pre-orientativo">
+      <div>
+        <span class="pre-orientativo__etiqueta">Total orientativo del viaje</span>
+        <span class="pre-orientativo__pie">
+          lo planificado más lo estimado<% if (P.planificado.sinPrecio) { %>,
+          y aún <%= P.planificado.sinPrecio === 1 ? 'falta 1 precio' : `faltan ${P.planificado.sinPrecio} precios` %><% } %>
+        </span>
+      </div>
+      <strong class="pre-orientativo__numero" id="pre-orientativo-total">
+        <%= euros(P.orientativo.total) %>
+      </strong>
+    </section>
+
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

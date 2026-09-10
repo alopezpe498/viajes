@@ -25,6 +25,10 @@ const pieExtra =
   '<script src="/js/mapa-teselas.js"></script>' +
   '<script src="/js/etapa.js"></script>' +
   '<script src="/js/adjuntos.js"></script>' +
+  // El bloque de reserva vive dentro de las fichas de esta pantalla —el hotel,
+  // el vuelo elegido, cada excursión apuntada—, así que su JS tiene que estar
+  // aquí: sin él la casilla se marca y no se guarda nada.
+  '<script src="/js/reservas.js"></script>' +
   '<script src="/js/mapa-etapa.js"></script>';
 
 const MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -247,6 +251,20 @@ const ICONO_TIPO = {
                    : []),
              { clave: 'busqueda',        etiqueta: 'Mis búsquedas', icono: 'ti-search' },
            ]; %>
+
+        <%# REVISAR LAS RESERVAS ANTICIPADAS.
+            Discreto y a un lado a propósito: los sitios que se apunten a partir
+            de ahora ya traen el dato de su propia búsqueda, así que esto solo
+            hace falta una vez y solo en los viajes de antes. Pregunta únicamente
+            por las entradas: no rehace las fichas ni toca horarios ni precios. %>
+        <p class="revisar-reservas">
+          <button class="boton-discreto" type="button" id="revisar-reservas"
+                  data-etapa="<%= etapa.id %>">
+            <i class="ti ti-calendar-check" aria-hidden="true"></i>
+            Revisar reservas anticipadas
+          </button>
+          <span class="revisar-reservas__estado" id="revisar-reservas-estado"></span>
+        </p>
 
         <div class="bloque-pestanas" role="tablist" aria-label="Tipos de sitio">
           <% BLOQUES_VISTA.forEach((b, i) => { %>
@@ -636,6 +654,11 @@ const ICONO_TIPO = {
                     adjuntos: dormir.elegido.adjuntos ?? [],
                     etiqueta: 'Reserva e instrucciones',
                   }) %>
+
+              <%# Y la reserva de verdad: el localizador y sus papeles. %>
+              <% if (reservas && reservas.get(dormir.elegido.id)) { %>
+                <%- include('parciales/reserva', { reserva: reservas.get(dormir.elegido.id) }) %>
+              <% } %>
             <% } %>
           </div>
 

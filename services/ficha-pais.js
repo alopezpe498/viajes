@@ -12,6 +12,12 @@
  *   · Festivos              Nager.Date, vía services/avisos.js
  *   · Avisos de Exteriores  exteriores.gob.es, vía services/avisos.js
  *   · Papeles, salud, dinero  la IA configurada
+ *   · Clima                 Open-Meteo, vía services/clima.js. En dos capas:
+ *                           qué SUELE hacer en tus fechas (histórico, se
+ *                           calcula con la ficha) y qué está pasando AHORA
+ *                           (previsión, a botón). No vive en esta tabla: va por
+ *                           ciudad en las suyas, porque la ficha se comparte
+ *                           entre viajes y el clima es el de TUS paradas.
  *
  * Lo de la IA se genera UNA vez por país + fechas y se guarda. Cada llamada
  * cuesta, y la respuesta no cambia de un día para otro: lo que cambia es al
@@ -24,6 +30,7 @@
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { situarDestino, textoDeExteriores, festivosEntre } from './avisos.js';
+import { asegurarClimaTipico, climaDelPais } from './clima.js';
 
 /** Desde dónde se viaja. Todo lo de papeles se responde para este pasaporte. */
 const PASAPORTE = 'España';
@@ -274,9 +281,15 @@ async function preguntarALaIA(pais, fechaInicio, fechaFin) {
  * su nota de que esa parte no se pudo consultar. Callar que falta algo sería
  * peor que decirlo.
  */
-export async function generarFicha({ pais, codigoPais, fechaInicio = null, fechaFin = null }) {
+export async function generarFicha({
+  pais,
+  codigoPais,
+  fechaInicio = null,
+  fechaFin = null,
+  viajeId = null,
+}) {
   const norm = normalizarNombre(pais);
-  const fuentes = { ia: false, festivos: false, exteriores: false };
+  const fuentes = { ia: false, festivos: false, exteriores: false, clima: false };
   const problemas = [];
 
   // LAS TRES FUENTES A LA VEZ, no una detrás de otra.
@@ -288,10 +301,19 @@ export async function generarFicha({ pais, codigoPais, fechaInicio = null, fecha
   //
   // `allSettled` y no `all`: aquí el objetivo es justo el contrario de "si una
   // falla, aborta". Si una falla, las otras dos tienen que llegar igual.
-  const [resIA, resFestivos, resExteriores] = await Promise.allSettled([
+  //
+  // El clima típico entra aquí como una cuarta fuente. No devuelve nada que se
+  // guarde en esta fila: deja escritas las líneas de cada ciudad en su propia
+  // tabla, y la pantalla las junta con las paradas de SU viaje. Se hace al
+  // generar la ficha porque es cuando toca —una vez, con las fechas ya puestas—
+  // y porque el histórico de unas fechas pasadas ya no va a cambiar.
+  const [resIA, resFestivos, resExteriores, resClima] = await Promise.allSettled([
     preguntarALaIA(pais, fechaInicio, fechaFin),
     festivosEntre(codigoPais, fechaInicio, fechaFin),
     textoDeExteriores({ pais, codigoPais }),
+    viajeId
+      ? asegurarClimaTipico(viajeId, norm, { fechaInicio, fechaFin })
+      : Promise.resolve([]),
   ]);
 
   let deLaIA = { papeles: null, salud: null, dinero: null };
@@ -310,6 +332,16 @@ export async function generarFicha({ pais, codigoPais, fechaInicio = null, fecha
   } else {
     console.warn(`[ficha] sin festivos de ${pais}: ${resFestivos.reason?.message}`);
     problemas.push('No se pudieron consultar los festivos.');
+  }
+
+  if (resClima.status === 'fulfilled') {
+    fuentes.clima = resClima.value.length > 0;
+    if (viajeId && !resClima.value.length) {
+      problemas.push('No se pudo consultar el clima de las paradas.');
+    }
+  } else {
+    console.warn(`[ficha] sin clima de ${pais}: ${resClima.reason?.message}`);
+    problemas.push('No se pudo consultar el clima de las paradas.');
   }
 
   let exteriores = null;
@@ -360,7 +392,8 @@ export async function generarFicha({ pais, codigoPais, fechaInicio = null, fecha
     `[ficha] ${pais}: generada` +
       ` · IA ${fuentes.ia ? 'sí' : 'no'}` +
       ` · ${festivos.length} festivos` +
-      ` · Exteriores ${fuentes.exteriores ? 'sí' : 'no'}`
+      ` · Exteriores ${fuentes.exteriores ? 'sí' : 'no'}` +
+      ` · clima ${fuentes.clima ? 'sí' : 'no'}`
   );
 
   return comoFicha(filaGuardada(norm, fechaInicio, fechaFin), fechaInicio);
@@ -383,15 +416,20 @@ export async function fichasDelViaje(viajeId) {
   const paises = await paisesDelViaje(viajeId);
   const { fecha_inicio: inicio, fecha_fin: fin } = viaje;
 
-  const fichas = paises.map((p) => {
+  // EL CLIMA SE LEE, NO SE PIDE. `climaDelPais` solo mira lo que hay guardado,
+  // así que el panel sigue abriendo al instante; lo que falte lo pedirá la
+  // pantalla por su cuenta, igual que hace con la ficha.
+  const fichas = [];
+  for (const p of paises) {
     const fila = filaGuardada(p.norm, inicio, fin);
-    return {
+    fichas.push({
       pais: p.pais,
       norm: p.norm,
       codigoPais: p.codigoPais,
       ficha: fila ? comoFicha(fila, inicio) : null,
-    };
-  });
+      clima: await climaDelPais(viajeId, p.norm, { fechaInicio: inicio, fechaFin: fin }),
+    });
+  }
 
   return {
     viajeId,

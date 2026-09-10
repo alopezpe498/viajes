@@ -20,7 +20,7 @@ import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
 import { pedirInterpretarHorario } from './datos-sitios.js';
 import { ciudadDeCasa } from './proveedores.js';
-import { parametro } from './orquestador.js';
+import { parametro, parametroTexto } from './orquestador.js';
 
 /** Las cuatro franjas, con sus horas orientativas. */
 export const FRANJAS = [
@@ -299,9 +299,11 @@ function horaSuelta(texto) {
 function sumarMinutos(hora, minutos) {
   const base = horaSuelta(hora);
   const m = Number(minutos);
-  if (!base || !Number.isFinite(m) || m <= 0) return null;
+  // Acepta minutos negativos: se usa para ir HACIA ATRÁS desde la hora de un
+  // vuelo hasta la hora a la que hay que salir de casa.
+  if (!base || !Number.isFinite(m) || m === 0) return null;
   const [h, mm] = base.split(':').map(Number);
-  const total = Math.min(h * 60 + mm + Math.round(m), 23 * 60 + 59);
+  const total = Math.max(0, Math.min(h * 60 + mm + Math.round(m), 23 * 60 + 59));
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
@@ -317,6 +319,34 @@ function sumarMinutos(hora, minutos) {
  * y la IA de la fase 6 concluía «llegada por la mañana» y llenaba la tarde de
  * una ciudad por la que todavía se iba en tren.
  */
+/**
+ * LO QUE OCUPA UN VUELO O UN TRASLADO, ANTELACIÓN INCLUIDA.
+ *
+ * Un vuelo de las 19:30 no empieza a las 19:30: empieza cuando hay que salir
+ * hacia el aeropuerto. En Grecia se colocó Plaka de 16:00 a 19:00 con vuelo a
+ * las 19:30 y el validador no dijo nada, porque el bloque empezaba al despegar y
+ * no se solapaba. A las 19:30 hay que llevar dos horas facturado.
+ *
+ * Así que el bloque se estira hacia atrás: hora de salida menos la presentación
+ * —150 minutos en un aeropuerto, 30 en una estación— menos lo que se tarda en
+ * llegar hasta allí. Y hacia delante en la llegada: el día no empieza al
+ * aterrizar, empieza al salir con las maletas.
+ */
+function margenesDelBloque() {
+  return {
+    presentacionVuelo: parametro('presentacion_vuelo_min', 150),
+    presentacionTren: parametro('presentacion_tren_min', 30),
+    acceso: parametro('acceso_por_defecto_min', 45),
+    salidaAeropuerto: parametro('salida_del_aeropuerto_min', 40),
+  };
+}
+
+/** Cuánto antes hay que salir de casa para coger eso. */
+function antelacionDe(tipo, m) {
+  const esVuelo = tipo === 'vuelo' || tipo === 'avion';
+  return (esVuelo ? m.presentacionVuelo : m.presentacionTren) + m.acceso;
+}
+
 function ocupacionDelSalto(t) {
   const datos = t.ficha_transporte_id
     ? una(
@@ -338,7 +368,17 @@ function ocupacionDelSalto(t) {
     /* datos_extra corrupto: el bloque se queda sin duración */
   }
 
-  return { hora, minutos, fin: sumarMinutos(hora, minutos) };
+  // El desglose puerta a puerta ya trae el acceso y la antelación: el bloque
+  // empieza ahí, no a la hora del billete.
+  const m = margenesDelBloque();
+  const desdeCasa = hora ? sumarMinutos(hora, -antelacionDe(t.tipo, m)) : null;
+
+  return {
+    hora: desdeCasa ?? hora,
+    salidaReal: hora,
+    minutos,
+    fin: sumarMinutos(hora, minutos),
+  };
 }
 
 function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
@@ -356,6 +396,7 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
   const porEtapa = new Map(etapas.map((e) => [e.id, e]));
   const ultimoDia = dias.at(-1).n;
   const bloques = [];
+  const margenes = margenesDelBloque();
 
   /**
    * El dia que le toca a una fecha.
@@ -394,22 +435,40 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     // en que se llega o se sale, que es como se lee.
     let duracionMin = null;
     let horaFin = null;
+    // La hora del billete, que es distinta de cuándo empieza a ocupar el día.
+    let salidaReal = null;
 
     if (donde === 'ida') {
       // Se llega el dia en que empieza la primera parada.
       dia = diaDeLaFecha(destino.fecha_inicio) ?? 1;
       hora = horas.llegada;
+      // EL DÍA NO EMPIEZA AL ATERRIZAR: empieza al salir con las maletas.
+      horaFin = sumarMinutos(hora, margenes.salidaAeropuerto);
       franjaPorDefecto = 'manana';
       icono = 'ti-plane-arrival';
-      texto = `Llegada a ${destino.nombre_ciudad}` + (hora ? ` ${hora}` : '');
+      texto =
+        `Llegada a ${destino.nombre_ciudad}` +
+        (hora ? ` ${hora}` : '') +
+        (horaFin ? ` · fuera del aeropuerto ${horaFin}` : '');
     } else if (donde === 'vuelta') {
       // Se vuelve el dia en que acaba la ultima parada, que es la fecha de
       // vuelta del viaje.
       dia = diaDeLaFecha(origen.fecha_fin) ?? ultimoDia;
-      hora = horas.salida;
+
+      // EL BLOQUE EMPIEZA CUANDO HAY QUE SALIR HACIA EL AEROPUERTO. Con el
+      // despegue como inicio, una visita que acababa a las 19:00 no chocaba con
+      // un vuelo de las 19:30, y sí choca: a esa hora ya hay que estar dentro.
+      const despegue = horas.salida;
+      const enElAeropuerto = sumarMinutos(despegue, -margenes.presentacionVuelo);
+      hora = sumarMinutos(despegue, -antelacionDe('vuelo', margenes)) ?? despegue;
+      horaFin = null; // desde que se sale, el día ya no es de esta ciudad
       franjaPorDefecto = 'tarde';
       icono = 'ti-plane-departure';
-      texto = `Vuelo ${origen.nombre_ciudad} → ${casa}` + (hora ? ` ${hora}` : '');
+      salidaReal = despegue;
+      texto =
+        `Vuelo ${origen.nombre_ciudad} → ${casa}` +
+        (despegue ? ` ${despegue}` : '') +
+        (enElAeropuerto ? ` · en el aeropuerto ${enElAeropuerto}` : '');
     } else {
       // Un salto se hace el dia en que empieza la etapa a la que se llega.
       dia = diaDeLaFecha(destino.fecha_inicio) ?? (diasDeEtapa.get(destino.id) ?? [])[0] ?? null;
@@ -417,11 +476,17 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       hora = ocupa.hora;
       duracionMin = ocupa.minutos;
       horaFin = ocupa.fin;
+      salidaReal = ocupa.salidaReal;
       franjaPorDefecto = 'manana';
       icono = ICONO_TIPO[t.tipo] ?? 'ti-arrow-right';
+      // Se enseña la hora del billete —que es la que hay que coger— y entre
+      // paréntesis desde cuándo ocupa el día, que es lo que manda para colocar.
       texto =
         resumenDeSalto(t, origen, destino) +
-        (ocupa.hora && ocupa.fin ? ` · ${ocupa.hora} → ${ocupa.fin}` : '');
+        (ocupa.salidaReal && ocupa.fin ? ` · ${ocupa.salidaReal} → ${ocupa.fin}` : '') +
+        (ocupa.hora && ocupa.salidaReal && ocupa.hora !== ocupa.salidaReal
+          ? ` (sales a las ${ocupa.hora})`
+          : '');
     }
 
     if (!dia) continue;
@@ -431,6 +496,9 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       dia,
       franja: franjaNatural(hora) ?? franjaPorDefecto,
       hora,
+      // La del billete. La de arriba es cuándo hay que salir de casa, que es lo
+      // que ocupa el día; esta es la que se dice en voz alta.
+      salidaReal: salidaReal ?? hora,
       // Hasta cuándo dura y cuándo queda el día libre. Lo usan los avisos —para
       // ver qué se ha puesto encima del viaje— y la fase 6, que necesita saber a
       // qué hora empieza de verdad el día.
@@ -715,6 +783,10 @@ function avisosDeCierre(dias, colocados, viajeId) {
         porInterpretar.add(sitioId);             // hay horario pero sin traducir
         continue;
       }
+
+      // EL DÍA SALE DE LA FECHA, no de cómo lo llame nadie. En el registro de
+      // Grecia se habló de un «mercadillo dominical» colocado el sábado 26:
+      // `queDia` lo calcula `diaDeLaSemana(d.fecha)` y esa es la única fuente.
       if (!info.dias.includes(queDia)) continue; // abierto: todo bien
 
       avisos.push({
@@ -835,8 +907,11 @@ function avisosContraFijos(dias, colocados, fijos) {
           idsAfectados: pisan.map((c) => c.id),
           libreHasta: salida.hora,
           texto:
-            `El viaje de vuelta sale a las ${salida.hora} y ` +
-            `${pisan.length === 1 ? 'hay algo que sigue' : `hay ${pisan.length} cosas que siguen`} ` +
+            `El viaje de vuelta sale a las ${salida.salidaReal ?? salida.hora}` +
+            (salida.salidaReal && salida.salidaReal !== salida.hora
+              ? ` y hay que salir a las ${salida.hora}`
+              : '') +
+            `: ${pisan.length === 1 ? 'hay algo que sigue' : `hay ${pisan.length} cosas que siguen`} ` +
             'a esa hora',
         });
       }
@@ -1366,7 +1441,25 @@ export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = nu
   // La mañana empieza a las 0:00 en la definición de la franja, pero nadie
   // empieza una visita a medianoche: el día real arranca a las 9.
   const INICIO_DEL_DIA = 9 * 60;
-  const minimo = Math.max(bordes.desde, INICIO_DEL_DIA, enMinutos(noAntesDe) ?? 0);
+
+  // Y NADA DESPUÉS DE LA HORA TOPE, ni recién bajado del avión.
+  //
+  // En Grecia se colocó una cafetería de desayunos a las 23:00 el día que se
+  // aterrizaba a las 22:25. Dos errores en la misma tarjeta: a esa hora ya no se
+  // empieza nada, y menos aún media hora después de recoger las maletas.
+  const topeDelDia = enMinutos(parametroTexto('hora_maxima_inicio', '22:00')) ?? 22 * 60;
+  const trasLlegar = (() => {
+    const llegada = lienzo.fijos.find((f) => f.dia === dia && f.donde === 'ida');
+    if (!llegada) return 0;
+    const fin = enMinutos(llegada.horaFin) ?? enMinutos(llegada.hora);
+    return fin == null ? 0 : fin + parametro('margen_tras_llegada_min', 60);
+  })();
+
+  const minimo = Math.max(bordes.desde, INICIO_DEL_DIA, trasLlegar, enMinutos(noAntesDe) ?? 0);
+
+  // El tope de cierre acota cuándo tiene que haber TERMINADO; el del día, cuándo
+  // puede EMPEZAR. Son dos cosas distintas: una cena que empieza a las 21:30 y
+  // acaba a las 23:00 está bien; una visita que empieza a las 22:30, no.
   const tope = Math.min(bordes.hasta, cierraA ?? 24 * 60);
 
   let candidata = minimo;
@@ -1377,6 +1470,7 @@ export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = nu
 
   if (candidata + duracion > tope) return null;
   if (candidata >= bordes.hasta) return null;    // ya no es esta franja
+  if (candidata >= topeDelDia) return null;      // a esa hora ya no se empieza nada
   return comoHora(candidata);
 }
 

@@ -2141,5 +2141,45 @@
     setTimeout(comprobar, 5000);
   }
 
+
+  // ===========================================================================
+  // REVISAR LAS RESERVAS ANTICIPADAS
+  // ---------------------------------------------------------------------------
+  // Para los viajes de antes. Los sitios que se apunten a partir de ahora traen
+  // el dato de su propia búsqueda; esto es para los que ya estaban cuando el
+  // dato no se pedía. Pregunta SOLO por las entradas, así que no rehace las
+  // fichas: los horarios y los precios que ya había siguen donde estaban.
+  //
+  // Se recarga al terminar cuando aparece algo, porque el distintivo va dentro
+  // de cada tarjeta y repintarlas una a una desde aquí sería duplicar la
+  // plantilla en JavaScript para un botón que se pulsa una vez en la vida.
+  // ===========================================================================
+  const botonReservas = document.getElementById('revisar-reservas');
+  const estadoReservas = document.getElementById('revisar-reservas-estado');
+
+  botonReservas?.addEventListener('click', async () => {
+    const etapaId = botonReservas.dataset.etapa;
+    botonReservas.disabled = true;
+    if (estadoReservas) estadoReservas.textContent = 'Consultando las entradas…';
+
+    try {
+      const r = await fetch(`/api/etapas/${etapaId}/reservas-anticipadas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const datos = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datos.error || `El servidor respondió ${r.status}`);
+
+      if (estadoReservas) estadoReservas.textContent = datos.mensaje ?? 'Listo.';
+      if (datos.conReserva > 0) setTimeout(() => location.reload(), 1200);
+    } catch (err) {
+      console.error('[etapa] no se pudieron revisar las reservas:', err);
+      if (estadoReservas) estadoReservas.textContent = `No se pudo revisar: ${err.message}`;
+    } finally {
+      botonReservas.disabled = false;
+    }
+  });
+
   setTimeout(comprobar, 5000);
 })();

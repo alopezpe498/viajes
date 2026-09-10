@@ -212,6 +212,22 @@ body{
 /* ---------- Adjuntos ----------
    Los papeles del viaje. Van como archivos dentro del ZIP y se enlazan en
    relativo, así que descomprimido funcionan sin conexión. */
+/* El codigo de una reserva: se lee de un vistazo y no se confunde con el texto. */
+.localizador{
+  display:inline-block;margin-top:6px;padding:3px 10px;border-radius:999px;
+  background:var(--tinte);color:var(--tinte-tx);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+  font-weight:700;letter-spacing:.06em
+}
+.localizadores-dia{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}
+.localizador-chip{
+  display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+  background:var(--tinte);color:var(--tinte-tx);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700
+}
+.localizador-chip__que{font-family:inherit;font-weight:600;opacity:.75;font-size:11px}
+.tarjeta__nota{margin:6px 0 0;color:var(--texto-2);font-size:13px;white-space:pre-wrap}
+.tarjeta__enlace{display:inline-block;margin-top:6px;color:var(--acento);font-size:13px}
 .adjuntos-dosier{margin-top:10px;padding-top:10px;border-top:1px dashed var(--borde-f)}
 .adjuntos-dosier__titulo{
   font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
@@ -606,6 +622,21 @@ body{
     var h = '<h2 class="dia__cabecera">Día ' + d.n + ' · ' + esc(d.fechaLarga) + '</h2>';
     h += '<span class="dia__ciudad">' + esc(d.ciudad) + '</span>';
 
+    /* LOS LOCALIZADORES DE ESTE DIA, arriba del todo.
+       Si hoy hay un vuelo, un traslado o una excursion con reserva, el codigo se
+       enseña aqui y no hay que ir a buscarlo a la seccion de reservas: en la
+       puerta de embarque no se navega, se mira la pantalla que ya se tiene
+       delante. */
+    if (d.localizadores && d.localizadores.length) {
+      h += '<div class="localizadores-dia">';
+      d.localizadores.forEach(function (l) {
+        h += '<span class="localizador-chip" title="' + esc(l.titulo || '') + '">' +
+          '<span class="localizador-chip__que">' + esc(l.tipo) + '</span>' +
+          esc(l.localizador) + '</span>';
+      });
+      h += '</div>';
+    }
+
     if (d.vacio) {
       h += '<p class="vacio">Este día no tiene nada apuntado.</p>';
     } else {
@@ -712,6 +743,33 @@ body{
   function pintarReservas() {
     var r = DATOS.reservas;
     var h = '';
+
+    /* LO QUE EL USUARIO TIENE RESERVADO DE VERDAD, primero de todo.
+       Es lo que se busca con prisa en un mostrador: el codigo. Va antes que el
+       resto porque el resto es informacion del viaje y esto es el papel. */
+    var mias = DATOS.misReservas || [];
+    if (mias.length) {
+      h += '<div class="bloque"><h3 class="bloque__titulo">Mis reservas</h3>';
+      mias.forEach(function (m) {
+        h += '<div class="tarjeta">';
+        h += '<div class="tarjeta__cabecera"><strong>' + esc(m.titulo || m.tipo) + '</strong>';
+        if (m.fecha) h += '<span class="tarjeta__meta">' + esc(m.fecha) + '</span>';
+        h += '</div>';
+        h += '<div class="tarjeta__meta">' + esc(m.tipo) +
+          (m.donde ? ' &middot; ' + esc(m.donde) : '') + '</div>';
+        if (m.localizador) {
+          h += '<div class="localizador">' + esc(m.localizador) + '</div>';
+        }
+        if (m.notas) h += '<p class="tarjeta__nota">' + esc(m.notas) + '</p>';
+        if (m.enlace) {
+          h += '<a class="tarjeta__enlace" href="' + esc(m.enlace) +
+            '" target="_blank" rel="noopener noreferrer">Gestionar la reserva</a>';
+        }
+        h += pintarAdjuntos(m.adjuntos, 'Billetes y bonos');
+        h += '</div>';
+      });
+      h += '</div>';
+    }
 
     if (r.vuelos.length) {
       h += '<div class="bloque"><h3 class="bloque__titulo">Transporte</h3>';
