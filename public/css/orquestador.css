@@ -95,6 +95,76 @@
   overflow-wrap: anywhere;
 }
 
+/* ---------------------------------------------------------------------------
+   EL REGISTRO, LÍNEA A LÍNEA
+   ---------------------------------------------------------------------------
+   Era un <pre> de una pieza. Ahora cada línea es un elemento propio porque cada
+   una puede llevar su etiqueta de origen al final, y para eso hace falta que la
+   etiqueta pertenezca a la línea y no flote en un bloque de texto.
+   --------------------------------------------------------------------------- */
+.orq-log {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  border-radius: 10px;
+  background: var(--fondo);
+  color: var(--texto-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.orq-log__linea {
+  overflow-wrap: anywhere;
+  padding: 1px 0;
+}
+
+.orq-log__linea + .orq-log__linea {
+  border-top: 1px solid color-mix(in srgb, var(--borde) 55%, transparent);
+}
+
+/* LA ETIQUETA DE ORIGEN. Pequeña y al final: se lee cuando se busca, y no
+   estorba cuando se está leyendo el relato. El color solo grita en una: [IA]
+   sobre una línea con un precio o una hora significa dato sin fuente. */
+.orq-origen {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.orq-origen--scraping { background: var(--verde-bg); color: var(--verde-tx); }
+.orq-origen--busqueda { background: var(--info-bg);  color: var(--info-tx); }
+.orq-origen--ia       { background: var(--prec-bg);  color: var(--prec-tx); }
+
+/* LAS PASADAS ANTERIORES, plegadas. */
+.orq-pasada {
+  margin-top: 8px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--superficie);
+}
+
+.orq-pasada > summary {
+  padding: 7px 12px;
+  color: var(--texto-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.orq-pasada > summary:hover { color: var(--texto); }
+
+.orq-pasada .orq-log--vieja {
+  margin: 0;
+  border-radius: 0 0 10px 10px;
+  opacity: 0.85;
+}
+
 .orq-fase__huecos { margin: 10px 0 0; padding: 0; list-style: none; }
 .orq-fase__huecos li {
   display: flex;

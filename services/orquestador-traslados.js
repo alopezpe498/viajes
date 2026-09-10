@@ -42,7 +42,7 @@ import {
   elegirMedio,
   guardarDatosDelTramo,
 } from '../services/movilidad.js';
-import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 import { calcularDistanciasDeLaRuta } from '../services/distancias-ciudades.js';
 
 const FASE = 'traslados';
@@ -332,7 +332,7 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
 // =============================================================================
 export async function ejecutarFaseTraslados(viaje, prompt) {
   const viajeId = viaje.id;
-  const di = (t) => anotar(viajeId, FASE, t);
+  const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
@@ -436,11 +436,15 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     });
     medidas.sort((a, b) => a.bloque.total - b.bloque.total);
 
+    // Duraciones y precios salen del catálogo de tramos, que se llenó con el
+    // Modo IA de Google. Lo que pone el código encima son los márgenes de
+    // acceso, que son constantes nuestras, no un dato del mundo.
     di(
       `   ${medidas.length} opción(es): ` +
         medidas
           .map((o) => `${o.nombre} [${comoTexto(o.bloque.total)} puerta a puerta${o.precio != null ? `, ${o.precio} €` : ''}]`)
-          .join(' · ')
+          .join(' · '),
+      ORIGENES.busqueda
     );
 
     // --- El empate que no es empate --------------------------------------

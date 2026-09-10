@@ -1357,6 +1357,15 @@ async function ejecutarDatosDeSitios(trabajo) {
   );
   const r = await buscarDatosDeSitios(punto);
   console.log(`[worker] Trabajo #${trabajo.id}: ${r.mensaje}`);
+
+  // El filtro de existencia va dentro de la propia búsqueda; aquí solo se deja
+  // dicho qué ha tirado, uno por uno y con su motivo. Sin esto, una lista que
+  // adelgaza sola no se explica desde ninguna pantalla.
+  for (const x of r.descartados ?? []) {
+    console.log(
+      `[worker] Trabajo #${trabajo.id}: descartado por no verificado: ${x.nombre} (${x.motivo})`
+    );
+  }
 }
 
 

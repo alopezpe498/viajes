@@ -63,16 +63,28 @@
         const estado = li.querySelector('.orq-fase__estado');
         if (estado) estado.textContent = f.nombreEstado;
 
-        // El log crece línea a línea; se repinta entero porque son cuatro
-        // frases y comparar cuál es nueva costaría más que rehacerlo.
-        let log = li.querySelector('.orq-fase__log');
-        if (f.log) {
+        // El registro crece línea a línea; se repinta entero porque son unas
+        // pocas frases y comparar cuál es nueva costaría más que rehacerlo.
+        //
+        // Cada línea puede traer su etiqueta de origen, así que esto ya no es un
+        // <pre> con texto: es una lista, y la etiqueta va dentro de su línea.
+        let log = li.querySelector('.orq-log');
+        if (f.lineas && f.lineas.length) {
           if (!log) {
-            log = document.createElement('pre');
-            log.className = 'orq-fase__log';
+            log = document.createElement('ol');
+            log.className = 'orq-log';
             li.querySelector('.orq-fase__explica').after(log);
           }
-          log.textContent = f.log;
+          log.innerHTML = f.lineas
+            .map(
+              (l) =>
+                `<li class="orq-log__linea">${esc(l.texto)}` +
+                (l.origen
+                  ? `<span class="orq-origen orq-origen--${esc(l.origen)}">${esc(l.nombreOrigen)}</span>`
+                  : '') +
+                '</li>'
+            )
+            .join('');
         } else if (log) {
           log.remove();
         }

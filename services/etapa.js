@@ -109,6 +109,26 @@ function coordenadasDeCasa() {
   return { lat: 41.3874, lon: 2.1686 };
 }
 
+/**
+ * A QUÉ FICHA CORRESPONDE UN CANDIDATO: "sitio:148", "punto:167".
+ *
+ * Es lo que el candidato guardó al apuntarse, en `datos_extra`: de qué tabla
+ * salió y con qué id. Devuelve null si es un candidato antiguo que no lo lleva.
+ *
+ * Se usa en los dos lados —al pintar la pestaña y al darle al interruptor—
+ * porque el fallo que esto arregla era justamente que cada lado usaba una clave
+ * distinta.
+ */
+function identidadDeCandidato(c) {
+  try {
+    const e = c?.datos_extra ? JSON.parse(c.datos_extra) : null;
+    if (!e?.de || e.deId == null) return null;
+    return `${e.de}:${Number(e.deId)}`;
+  } catch {
+    return null; // datos_extra corrupto: se trata como candidato sin identidad
+  }
+}
+
 // =============================================================================
 // 1) QUÉ VER
 // =============================================================================
@@ -238,8 +258,24 @@ export function queVerDeEtapa(contexto) {
   // catálogo: no necesitan el enlace.
   const excursiones = actividadesDeCiudad(etapa.nombre_ciudad);
 
-  // Qué hay apuntado ya. La clave es la url cuando la hay y el título si no,
-  // que es el mismo criterio con el que el worker evita duplicados.
+  // QUÉ HAY APUNTADO YA, CRUZADO POR IDENTIDAD.
+  //
+  // Antes esto se cruzaba por texto: la url del candidato contra el
+  // `wikipedia_url` de la ficha. Y se rompió en cuanto los sitios empezaron a
+  // tener web, porque al guardar el candidato la url se saca de
+  // `url ?? web ?? wikipedia_url` y la web gana: se guardaba
+  // «muzeumgdansk.pl» y se buscaba «es.wikipedia.org/wiki/Gdansk». Doce fichas
+  // apuntadas y ninguna pintada como tal.
+  //
+  // Ahora se cruza por lo que de verdad identifica a la ficha: la pareja
+  // (tabla de origen, id) que el candidato guarda en `datos_extra`. Es el mismo
+  // criterio que ya usaba la pestaña de Comer. La pareja y no solo el id porque
+  // `sitios_lugar` y `puntos_interes` tienen ids que se solapan.
+  //
+  // EL CRUCE POR TEXTO SE QUEDA, PERO SOLO PARA PINTAR. Hay candidatos viejos
+  // sin `datos_extra` y merecen seguir viéndose apuntados. Lo que ese respaldo
+  // NO puede hacer es decidir un borrado: eso solo lo decide la identidad
+  // (ver `alternarApuntado`).
   const apuntados = todas(
     "SELECT * FROM candidatos WHERE etapa_id = ? AND tipo IN ('sitio', 'actividad')",
     etapa.id
@@ -247,6 +283,20 @@ export function queVerDeEtapa(contexto) {
   const claveDe = (url, titulo) => url || `titulo:${titulo}`;
   const porClave = new Map(apuntados.map((c) => [claveDe(c.url, c.titulo), c]));
 
+  const porIdentidad = new Map();
+  for (const c of apuntados) {
+    const quien = identidadDeCandidato(c);
+    if (quien) porIdentidad.set(quien, c);
+  }
+
+  /** El estado de una ficha de sitio: primero por identidad, y si no, por texto. */
+  const estadoDeFicha = (origen, id, url, titulo) => {
+    const c = porIdentidad.get(`${origen}:${Number(id)}`) ?? porClave.get(claveDe(url, titulo));
+    return { apuntado: Boolean(c), candidatoId: c?.id ?? null };
+  };
+
+  // Las excursiones se quedan como estaban: su lector y su escritor ya usaban el
+  // mismo campo (`url` del catálogo), así que ahí no había nada roto.
   const conEstado = (lista, url, titulo) => {
     const c = porClave.get(claveDe(url, titulo));
     return { apuntado: Boolean(c), candidatoId: c?.id ?? null };
@@ -269,7 +319,10 @@ export function queVerDeEtapa(contexto) {
   const fichas = sitios.map((s) => ({
     ...s,
     direccion: (s.origen === 'punto' ? dirPuntos : dirSitios).get(s.id) ?? null,
-    ...conEstado(sitios, s.wikipedia_url, s.nombre),
+    // `s.origen` es 'punto' o 'sitio', que es justo lo que guarda el candidato
+    // en `datos_extra.de`. La url y el nombre solo se usan si esa ficha viene de
+    // un candidato viejo que no lo guardaba.
+    ...estadoDeFicha(s.origen, s.id, s.wikipedia_url, s.nombre),
   }));
 
   const hayNinos = Number(viaje.ninos) > 0;
@@ -378,26 +431,41 @@ export function alternarApuntado(etapaId, que, id) {
   const url = origen.url ?? origen.web ?? origen.wikipedia_url ?? null;
   const titulo = origen.nombre ?? origen.titulo;
 
-  // CON URL SE BUSCA POR URL; SIN ELLA, POR TÍTULO. Y no las dos cosas a la vez.
+  // A QUIÉN SE ESTÁ TOCANDO: SOLO LA IDENTIDAD PUEDE DECIDIR UN BORRADO.
   //
-  // Antes esto era un solo SELECT con `url IS ? OR (url IS NULL AND titulo = ?)`,
-  // y con la url a NULL la primera mitad se convierte en `url IS NULL`, que casa
-  // con CUALQUIER fila sin url de esa parada. Con sitios y excursiones no se
-  // notaba —casi todas traen enlace—, pero los restaurantes que encuentra la IA
-  // no tienen ninguno: apuntar el segundo desapuntaba el primero.
-  const yaEsta = url
-    ? una(
-        'SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ? AND url = ?',
-        etapaId,
-        tipo,
-        url
-      )
-    : una(
-        'SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ? AND url IS NULL AND titulo = ?',
-        etapaId,
-        tipo,
-        titulo
-      );
+  // Para los sitios (y los puntos, que son la otra mitad de la misma pestaña) la
+  // fila se busca por la pareja (tabla, id) que se guardó en `datos_extra`, que
+  // es lo mismo que mira la pestaña al pintar. Si no aparece nada por ahí, se
+  // trata como NO apuntado y se crea uno nuevo.
+  //
+  // Y no se busca por texto para esto, a propósito. El cruce por texto puede
+  // acertar de casualidad con otra ficha —la url que se guarda es la web del
+  // sitio, no su enlace de Wikipedia—, y borrar aquí no es solo desapuntar:
+  // `itinerario` cuelga del candidato con ON DELETE CASCADE, así que se llevaría
+  // por delante su colocación en el lienzo. Un duplicado ocasional en un viaje
+  // viejo se arregla desapuntándolo; una colocación borrada en silencio, no.
+  //
+  // Comer y las excursiones siguen con la búsqueda de siempre: ahí lector y
+  // escritor ya usaban el mismo campo y no hay nada que arreglar.
+  const deLaPestanaDeSitios = que === 'sitio' || que === 'punto';
+
+  const yaEsta = deLaPestanaDeSitios
+    ? todas('SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ?', etapaId, tipo).find(
+        (c) => identidadDeCandidato(c) === `${que}:${Number(origen.id)}`
+      ) ?? null
+    : url
+      ? una(
+          'SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ? AND url = ?',
+          etapaId,
+          tipo,
+          url
+        )
+      : una(
+          'SELECT * FROM candidatos WHERE etapa_id = ? AND tipo = ? AND url IS NULL AND titulo = ?',
+          etapaId,
+          tipo,
+          titulo
+        );
 
   if (yaEsta) {
     // Desapuntar borra el candidato, así que sus adjuntos se quedarían sueltos:

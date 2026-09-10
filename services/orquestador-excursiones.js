@@ -30,7 +30,7 @@ import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { traerExcursionesSiHacenFalta, actividadesDeCiudad } from '../services/catalogo.js';
 import { alternarApuntado } from '../services/etapa.js';
 import { ocupacionDe } from '../services/proveedores.js';
-import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 
 const FASE = 'excursiones';
 
@@ -61,7 +61,7 @@ export const esLarga = (duracion) => (duracionEnMinutos(duracion) ?? 0) >= LARGA
 // =============================================================================
 export async function ejecutarFaseExcursiones(viaje, prompt) {
   const viajeId = viaje.id;
-  const di = (t) => anotar(viajeId, FASE, t);
+  const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 

@@ -34,7 +34,7 @@ import { buscarVuelosKayak } from '../providers/kayak.js';
 import { ocupacionDe, ciudadDeCasa } from '../services/proveedores.js';
 import { asegurarDestino, destinoPorNombre } from '../services/catalogo.js';
 import { recalcularRuta } from '../services/ruta.js';
-import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 import { fichasDeTramo } from '../services/movilidad.js';
 import { distanciaEntre, distanciaGuardada } from '../services/distancias-ciudades.js';
 
@@ -380,11 +380,13 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     if (!h) return 'nada';
     return `${comoTexto(h.minutos)}${h.aflojado ? ` (${h.aflojado})` : ' con tus filtros'}`;
   };
+  // Estos minutos salen de Kayak, tal cual: por eso van marcados como scraping.
   for (const p of puertas) {
     anotar(
       viajeId,
       'ciudades_y_noches',
-      `   ${p.nombre}: mejor ida ${loQueLogro(idas, p.nombre)} · mejor vuelta ${loQueLogro(vueltas, p.nombre)}.`
+      `   ${p.nombre}: mejor ida ${loQueLogro(idas, p.nombre)} · mejor vuelta ${loQueLogro(vueltas, p.nombre)}.`,
+      ORIGENES.scraping
     );
   }
   anotar(
@@ -393,7 +395,8 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     `Combinaciones posibles, de menos a más tiempo de vuelo: ` +
       combinaciones
         .map((c) => `${c.entrada.ciudad}→${c.salida.ciudad} ${comoTexto(c.total)}`)
-        .join(' · ')
+        .join(' · '),
+    ORIGENES.scraping
   );
 
   /**
@@ -915,7 +918,7 @@ function crearEtapas(viaje, ruta) {
 export async function ejecutarFaseCiudades(viaje, promptEntero) {
   const viajeId = viaje.id;
   const FASE = 'ciudades_y_noches';
-  const di = (t) => anotar(viajeId, FASE, t);
+  const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
   if (!viaje.fecha_inicio || !viaje.fecha_fin) {
@@ -1051,7 +1054,8 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     horariosReales =
       `Llegada a ${entrada} el ${viaje.fecha_inicio} a las ${tIda.horaLlegada ?? '?'}. ` +
       `Salida desde ${salida} el ${viaje.fecha_fin} a las ${tVta.horaSalida ?? '?'}.`;
-    di(horariosReales);
+    // Las horas son las del billete que devolvió Kayak, no una estimación.
+    di(horariosReales, ORIGENES.scraping);
   }
 
   // --- PASO 3 -------------------------------------------------------------

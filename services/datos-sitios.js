@@ -162,15 +162,35 @@ function prompt(ciudad, sitios, texto) {
     '   esperada muchas veces; no es un fallo.',
     '3. Devuelve el nombre EXACTAMENTE como te lo he escrito en la lista, sin',
     '   corregirlo ni traducirlo: es la clave para casar cada fila.',
+    '   Y NO MEZCLES FILAS: si en el texto no hay datos para ese nombre, sus',
+    '   campos van a null aunque haya otro sitio parecido del que sí los haya.',
+    '   Prestarle a un sitio el teléfono del vecino convierte algo que no existe',
+    '   en algo que parece real, que es justo lo que hay que evitar.',
     '4. "Gratis", "entrada libre" o "acceso gratuito" SÍ son un precio: ponlo',
     '   como "Gratis". No lo conviertas en null.',
     '5. Copia los textos casi tal cual, sin resumirlos ni redondearlos. Los',
     '   tramos de precio van juntos en el mismo campo: "12 € adultos, 5 €',
     '   niños, gratis menores de 12".',
+    '6. "direccion" y "ciudad" son la dirección postal y la localidad TAL Y',
+    '   COMO aparezcan en el texto. Si no aparecen, null.',
+    `7. "estaEnLaCiudad" es lo que más me importa: según ESE TEXTO, ¿el sitio`,
+    `   está en ${ciudad}?`,
+    '     · true  si el texto lo sitúa ahí, aunque escriba el nombre de la',
+    '             ciudad en otro idioma (Kraków es Cracovia, Warszawa es',
+    '             Varsovia).',
+    '     · false si el texto lo sitúa en OTRA ciudad o en otro país. Muchas',
+    '             veces lo dice en una frase suelta antes de la tabla («el Museo',
+    '             de la Acrópolis está en Atenas»): esa frase manda sobre',
+    '             cualquier fila, y entonces sus datos tampoco son de aquí.',
+    '     · null  si el texto no dice dónde está.',
+    '   No lo deduzcas de lo que sepas tú: solo de lo que ponga el texto. Si',
+    '   el texto habla de un sitio con ese nombre pero en otra ciudad, es',
+    '   false, y eso no es un fallo: es justo lo que necesito saber.',
     '',
     'Devuelve SOLO este JSON:',
     '{"sitios":[{"nombre":"…","precio":null,"horarios":null,' +
-      '"tiempoVisita":null,"web":null,"telefono":null}]}',
+      '"tiempoVisita":null,"web":null,"telefono":null,' +
+      '"direccion":null,"ciudad":null,"estaEnLaCiudad":null}]}',
   ].join('\n');
 }
 
@@ -223,12 +243,76 @@ async function unaTanda(ciudad, nombres) {
   return { porNombre, fuente: resultado.fuente };
 }
 
+/**
+ * ¿La búsqueda ha encontrado ALGO de este sitio?
+ *
+ * Cualquier campo vale: un teléfono, una web, una dirección. No hace falta la
+ * ficha entera; hace falta una señal de que el sitio existe y de que alguien ha
+ * escrito sobre él.
+ */
+function traeAlgo(d) {
+  return Boolean(
+    d && (d.precio || d.horarios || d.tiempoVisita || d.web || d.telefono || d.direccion)
+  );
+}
+
 /** Cuántos de los pedidos han vuelto con algo. Es la vara de medir del plan B. */
 function cuantosTraenAlgo(nombres, porNombre) {
-  return nombres.filter((n) => {
-    const d = porNombre.get(normalizarNombre(n));
-    return d && (d.precio || d.horarios || d.tiempoVisita || d.web || d.telefono);
-  }).length;
+  return nombres.filter((n) => traeAlgo(porNombre.get(normalizarNombre(n)))).length;
+}
+
+/**
+ * ¿HAY QUE CREER QUE ESTE SITIO EXISTE?
+ *
+ * La IA propone los sitios y de vez en cuando se inventa uno. En una ejecución
+ * real salieron un «Museo de la Acrópolis de Varsovia» y un «Palacio Pitti» en
+ * Cracovia —el Pitti está en Florencia—. Pedirle que no invente ya se le pide;
+ * lo que faltaba era comprobarlo contra algo de fuera.
+ *
+ * Y ese algo ya se hacía: esta misma búsqueda. Si Google no sabe NADA de un
+ * sitio —ni precio, ni horario, ni web, ni teléfono, ni dirección— o lo sitúa en
+ * otra ciudad, el sitio no entra en la lista. No se busca nada más: se usa lo
+ * que ya se había traído.
+ *
+ * DOS CAUTELAS, porque un falso negativo aquí borra un sitio bueno:
+ *
+ *  · Que falte un campo NO es motivo de nada, ni la foto tampoco. El motivo es
+ *    que no haya NINGUNO.
+ *  · Lo que ya tenía guardado cuenta como señal: un sitio verificado hace tres
+ *    semanas no desaparece porque hoy Google conteste raro.
+ *
+ * LO QUE NO CUENTA COMO SEÑAL: la dirección que puso Places al situar el sitio.
+ * Parece la prueba más obvia y es la más engañosa, porque Places contesta con lo
+ * más parecido que encuentre: se le pide un «Museo del Vidrio Flotante de
+ * Cracovia» que no existe y devuelve tan contento la dirección de otro museo de
+ * Cracovia. Si eso valiera, todas las fichas tendrían su prueba de existencia y
+ * el filtro no filtraría nada. La dirección que sí cuenta es la que aparece en
+ * el texto de la búsqueda, y esa llega en `datos.direccion`.
+ *
+ * Devuelve null si el sitio vale, o el motivo del descarte tal y como se
+ * escribirá en el registro.
+ */
+function porQueNoSeVerifica(fila, datos) {
+  // 1) EN OTRA CIUDAD. Este es el descarte que de verdad importa: el sitio
+  //    existe, pero no aquí. Lo dice la búsqueda, no nosotros.
+  //
+  //    Y SE EXIGE LA PRUEBA: una dirección o una ciudad escritas. Un «false»
+  //    pelado, sin nada detrás, no es una dirección en otra ciudad; es no haber
+  //    encontrado el sitio, y eso ya lo dice la regla de abajo con su nombre. Si
+  //    no se distinguen, el registro acaba diciendo «la dirección apunta a otra
+  //    ciudad: sin dirección concreta», que es una frase que se contradice sola.
+  const donde = texto(datos?.direccion) ?? texto(datos?.ciudad);
+  if (datos?.estaEnLaCiudad === false && donde) {
+    return `la dirección apunta a otra ciudad: ${donde}`;
+  }
+
+  // 2) NADIE SABE NADA DE ÉL, ni ahora ni antes.
+  const yaTenia = Boolean(
+    fila.precio || fila.horarios || fila.tiempo_visita || fila.web || fila.telefono
+  );
+  if (traeAlgo(datos) || yaTenia) return null;
+
+  return 'sin resultados en la búsqueda';
 }
 
 /**
@@ -267,7 +351,8 @@ const TAMANO_TANDA = 12;
 export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
   const filtro = ids?.length ? ` AND id IN (${ids.map(() => '?').join(',')})` : '';
   const sitios = todas(
-    `SELECT id, nombre, horarios FROM sitios_lugar
+    `SELECT id, nombre, horarios, precio, tiempo_visita, web, telefono, datos_en, datos_fuente
+       FROM sitios_lugar
       WHERE punto_interes_id = ?${filtro} ORDER BY orden, id`,
     punto.id,
     ...(ids?.length ? ids : [])
@@ -326,20 +411,44 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
   const cuando = new Date().toISOString().slice(0, 19).replace('T', ' ');
   let rellenados = 0;
   let campos = 0;
+  const sospechosos = [];
 
   for (const s of sitios) {
     const d = porNombre.get(normalizarNombre(s.nombre)) ?? {};
 
-    const fila = {
+    // El veredicto se anota ahora, con el dato recién llegado delante, pero no
+    // se ejecuta hasta el final: hay que ver el conjunto antes de borrar nada.
+    const motivo = porQueNoSeVerifica(s, d);
+    if (motivo) sospechosos.push({ id: s.id, nombre: s.nombre, motivo });
+
+    const traido = {
       precio: texto(d.precio),
       horarios: texto(d.horarios),
       tiempo_visita: texto(d.tiempoVisita),
       web: texto(d.web),
       telefono: texto(d.telefono),
     };
+
+    // LO QUE NO VUELVE NO BORRA LO QUE HABÍA.
+    //
+    // Antes se escribían los cinco campos tal cual, nulls incluidos: si la
+    // búsqueda de hoy no traía el teléfono que trajo la de la semana pasada, el
+    // teléfono se perdía. El Modo IA no contesta igual dos veces, así que una
+    // ficha completa podía quedarse vacía en una pasada floja, y con el filtro
+    // de existencia detrás eso ya no es solo perder un dato: es que a la
+    // siguiente el sitio parece inventado y se borra. Un dato viejo se avisa por
+    // su fecha; un dato borrado no se recupera.
+    const fila = {
+      precio: traido.precio ?? s.precio ?? null,
+      horarios: traido.horarios ?? s.horarios ?? null,
+      tiempo_visita: traido.tiempo_visita ?? s.tiempo_visita ?? null,
+      web: traido.web ?? s.web ?? null,
+      telefono: traido.telefono ?? s.telefono ?? null,
+    };
+
     const cuantos = Object.values(fila).filter(Boolean).length;
     if (cuantos) rellenados += 1;
-    campos += cuantos;
+    campos += Object.values(traido).filter(Boolean).length;
 
     // `datos_en` se marca SIEMPRE, se haya encontrado algo o no: es lo que
     // distingue "buscado y no había" de "todavía sin buscar", y sin esa marca
@@ -361,17 +470,110 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
       fila.web,
       fila.telefono,
       cuando,
-      fuente,
+      // Si esta pasada no trajo nada, la fuente sigue siendo la que trajo lo que
+      // hay guardado: decir «google-modo-ia de hoy» sobre un dato de hace un mes
+      // sería falsear la trazabilidad.
+      Object.values(traido).some(Boolean) ? fuente : (s.datos_fuente ?? fuente),
       s.id
     );
   }
 
+  // --- 4) EL FILTRO DE EXISTENCIA -----------------------------------------
+  //
+  // Lo que la búsqueda no ha podido confirmar, fuera. Se hace aquí y no antes
+  // porque hasta ahora no había con qué comparar, y se hace con el conjunto
+  // delante por lo que viene justo abajo.
+  const descartados = filtrarNoVerificados(ciudad, punto, sitios, sospechosos);
+
   const resumen =
     `${rellenados} de ${sitios.length} sitios con algún dato (${campos} campos) ` +
-    `· fuente: ${fuente}`;
+    `· fuente: ${fuente}` +
+    (descartados.length ? ` · ${descartados.length} descartado(s) por no verificados` : '');
   console.log(`[datos-sitios] ${ciudad}: ${resumen}`);
 
-  return { sitios: sitios.length, rellenados, campos, fuente: fuente, mensaje: resumen };
+  return {
+    sitios: sitios.length,
+    rellenados,
+    campos,
+    fuente: fuente,
+    descartados,
+    mensaje: resumen,
+  };
+}
+
+/**
+ * Borra los sitios que la búsqueda no ha podido confirmar.
+ *
+ * LA CAUTELA GRANDE ESTÁ AQUÍ: en una tanda GRANDE, si la búsqueda no ha traído
+ * nada de NADIE, no se borra a nadie. Veinte sitios sin confirmar no son veinte
+ * sitios inventados, son una búsqueda que ha salido mal —un captcha, una tabla
+ * vacía, Google de mal día—, y borrar la lista entera de una ciudad por eso
+ * sería mucho peor que el problema que esto viene a resolver. Con un solo sitio
+ * confirmado ya sabemos que la búsqueda funcionó, y entonces sí: el que no
+ * aparece, no está.
+ *
+ * La cautela NO aplica a las tandas cortas —«Mis búsquedas» pide una o dos
+ * fichas—, porque ahí «no ha vuelto nada» no tiene un conjunto con el que
+ * compararse: es la respuesta, y hay que darla. Si la búsqueda hubiera fallado
+ * de verdad habría saltado antes con su excepción, sin llegar aquí.
+ *
+ * Los descartes por ciudad equivocada se aplican siempre, haya vuelto algo o
+ * no: ahí no hay duda de que la búsqueda encontró el sitio, y lo que encontró
+ * está en otra parte.
+ */
+const TANDA_PARA_DUDAR = 5;
+
+function filtrarNoVerificados(ciudad, punto, sitios, sospechosos) {
+  if (!sospechosos.length) return [];
+
+  const deOtraCiudad = sospechosos.filter((x) => x.motivo.startsWith('la dirección'));
+  const confirmados = sitios.length - sospechosos.length;
+
+  if (!confirmados && sitios.length >= TANDA_PARA_DUDAR && deOtraCiudad.length !== sospechosos.length) {
+    console.warn(
+      `[datos-sitios] ${ciudad}: la búsqueda no encontró nada de ninguno de los ` +
+        `${sitios.length} sitios. No descarto ninguno: esto es una búsqueda fallida, ` +
+        'no una lista inventada.'
+    );
+    return deOtraCiudad.length ? borrarSitios(ciudad, punto, deOtraCiudad) : [];
+  }
+
+  return borrarSitios(ciudad, punto, sospechosos);
+}
+
+/**
+ * Borra las fichas y todo lo que colgaba de ellas, y deja escrito el motivo.
+ *
+ * Se lleva por delante tres cosas, y las tres hacen falta:
+ *
+ *  · La ficha.
+ *  · Su dirección, que vive en otra tabla y sin clave ajena: se quedaría
+ *    colgada apuntando a una ficha que ya no existe.
+ *  · Y el APUNTADO, si alguien ya lo había metido en el viaje. Esto salió en la
+ *    prueba: se descartó «Puente del Dragón (Most Smoka)» —un puente que no
+ *    existe en Cracovia— y la tarjeta seguía en el día, porque apuntar copia el
+ *    título a `candidatos`. Un sitio que acabamos de declarar inexistente no
+ *    puede quedarse en el plan del viaje.
+ */
+function borrarSitios(ciudad, punto, lista) {
+  for (const x of lista) {
+    ejecutar(
+      "DELETE FROM direcciones WHERE tipo_elemento = 'sitio' AND elemento_id = ?",
+      x.id
+    );
+    ejecutar(
+      `DELETE FROM candidatos
+        WHERE tipo = 'sitio' AND titulo = ?
+          AND etapa_id IN (SELECT id FROM etapas WHERE punto_interes_id = ?)`,
+      x.nombre,
+      punto.id
+    );
+    ejecutar('DELETE FROM sitios_lugar WHERE id = ?', x.id);
+    console.log(
+      `[datos-sitios] ${ciudad}: descartado por no verificado: ${x.nombre} (${x.motivo})`
+    );
+  }
+  return lista;
 }
 
 // =============================================================================

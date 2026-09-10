@@ -60,6 +60,22 @@ const { viaje } = ruta;
             </a>
           <% } %>
 
+          <%# CÓMO SE MONTÓ ESTE VIAJE.
+              Solo en los viajes que montó el orquestador y solo si dejó algo
+              escrito. El registro de las seis fases —qué eligió, con qué datos y
+              de dónde salieron— es lo que permite revisar un viaje automático,
+              y hasta ahora solo se veía mientras se estaba montando. Un viaje
+              hecho a mano no tiene nada que contar aquí. %>
+          <%# `hayRegistro` ya viene en falso para los viajes hechos a mano: lo
+              decide la ruta, que es quien sabe si el viaje es automático. Aquí
+              no se vuelve a preguntar, porque el `viaje` de esta plantilla es el
+              resumen que pinta la lista y no trae ese campo. %>
+          <% if (typeof hayRegistro !== 'undefined' && hayRegistro) { %>
+            <a class="boton-discreto" href="/viajes/<%= viaje.id %>/orquestador">
+              <i class="ti ti-notebook" aria-hidden="true"></i> Cómo se montó este viaje
+            </a>
+          <% } %>
+
           <%# Entrar al viaje ya no pasa por el configurador, así que las fechas y
               los viajeros se cambian desde aquí. %>
           <a class="boton-discreto" href="/viajes/<%= viaje.id %>/paso/1?volverA=/viaje/<%= viaje.id %>/ruta">

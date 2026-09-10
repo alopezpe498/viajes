@@ -170,16 +170,9 @@ export async function ejecutarFaseSitios(viaje, prompt) {
     }
 
     // --- 2) Wikipedia: foto y enlace --------------------------------------
-    const conFoto = await ponerFotosDeWikipedia(ficha.sitios);
+    await ponerFotosDeWikipedia(ficha.sitios);
     guardarFichaProfunda(punto, ficha);
     ejecutar("UPDATE puntos_interes SET investigado_en = datetime('now') WHERE id = ?", punto.id);
-
-    const porBloque = ficha.sitios.reduce((m, s) => {
-      m[s.bloque] = (m[s.bloque] ?? 0) + 1;
-      return m;
-    }, {});
-    const generales = (porBloque.imprescindibles ?? 0) + (porBloque.otros ?? 0);
-    const infantiles = porBloque.ninos ?? 0;
 
     // --- 3) Dirección y coordenada, como en el flujo manual ---------------
     try {
@@ -207,11 +200,35 @@ export async function ejecutarFaseSitios(viaje, prompt) {
       );
     }
 
+    // LO QUE LA BÚSQUEDA NO HA PODIDO CONFIRMAR, FUERA Y DICHO.
+    //
+    // El filtro lo aplica la propia búsqueda de datos duros (no hay una segunda
+    // búsqueda para esto); aquí solo se cuenta lo que ha tirado y por qué, que
+    // es lo que permite ver si se está pasando de estricto.
+    for (const x of datos?.descartados ?? []) {
+      di(`   Descartado por no verificado: ${x.nombre} (${x.motivo})`);
+    }
+
     const sinDatos = datos ? datos.sitios - datos.rellenados : null;
+    // Se cuenta de la BASE y no de lo que propuso la IA: entre medias el filtro
+    // de existencia puede haber tirado alguno, y el registro tiene que decir lo
+    // que ha quedado, no lo que se pidió.
+    const porBloque = todas(
+      `SELECT bloque, COUNT(*) AS n FROM sitios_lugar
+        WHERE punto_interes_id = ? GROUP BY bloque`,
+      punto.id
+    ).reduce((m, r) => ({ ...m, [r.bloque ?? 'imprescindibles']: r.n }), {});
+    const generales = (porBloque.imprescindibles ?? 0) + (porBloque.otros ?? 0);
+    const infantiles = porBloque.ninos ?? 0;
+    const conFotoAhora = una(
+      'SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ? AND imagen_url IS NOT NULL',
+      punto.id
+    ).n;
+
     di(
       `${ciudad}: ${generales} sitios` +
         (infantiles ? ` (+${infantiles} para niños)` : '') +
-        `, ${conFoto} con foto, ` +
+        `, ${conFotoAhora} con foto, ` +
         (datos === null
           ? 'datos de Google pendientes.'
           : sinDatos === 0

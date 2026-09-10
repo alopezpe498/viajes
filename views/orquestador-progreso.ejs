@@ -22,6 +22,18 @@ const ICONO_ESTADO = {
   con_huecos: 'ti-alert-circle',
   error: 'ti-circle-x',
 };
+
+/**
+ * Cuándo se escribió una pasada, en corto. Las horas vienen de SQLite en UTC.
+ */
+const cuandoCorto = (iso) => {
+  if (!iso) return '';
+  const d = new Date(String(iso).replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('es-ES', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+};
 %>
 <%- include('parciales/cabecera', {
       viaje: null,
@@ -49,7 +61,8 @@ const ICONO_ESTADO = {
           Voy por la fase <%= Math.min(progreso.resueltas + 1, progreso.total) %> de <%= progreso.total %>.
           Puedes cerrar esta pantalla: sigue en segundo plano.
         <% } else if (progreso.terminado) { %>
-          Ya está. Repasa lo que ha quedado y ajusta lo que quieras.
+          Ya está. Aquí queda todo lo que decidió y por qué; puedes volver cuando
+          quieras desde «Cómo se montó este viaje».
         <% } else { %>
           Todavía no ha empezado.
         <% } %>
@@ -80,9 +93,39 @@ const ICONO_ESTADO = {
 
             <p class="orq-fase__explica"><%= f.explica %></p>
 
-            <% if (f.log) { %>
-              <pre class="orq-fase__log"><%= f.log %></pre>
+            <%# EL REGISTRO DE LA ÚLTIMA PASADA.
+                Cada línea con un dato concreto lleva su etiqueta de origen al
+                final. Un [IA] en una línea con un precio o un horario es una
+                alarma: ese número no lo ha traído nadie de fuera. %>
+            <% if (f.lineas.length) { %>
+              <ol class="orq-log">
+                <% f.lineas.forEach(l => { %>
+                  <li class="orq-log__linea"><%= l.texto %><%
+                    if (l.origen) { %><span class="orq-origen orq-origen--<%= l.origen %>"
+                      title="De dónde sale el dato de esta línea"><%= l.nombreOrigen %></span><% }
+                  %></li>
+                <% }) %>
+              </ol>
             <% } %>
+
+            <%# LAS VECES ANTERIORES. Relanzar una fase ya no borra lo que dijo
+                la vez pasada: se pliega aquí, con su fecha, para poder comparar. %>
+            <% f.anteriores.forEach(v => { %>
+              <details class="orq-pasada">
+                <summary>
+                  <i class="ti ti-history" aria-hidden="true"></i>
+                  Pasada <%= v.pasada %><%= v.cuando ? ` · ${cuandoCorto(v.cuando)}` : '' %>
+                  (<%= v.lineas.length %> línea<%= v.lineas.length === 1 ? '' : 's' %>)
+                </summary>
+                <ol class="orq-log orq-log--vieja">
+                  <% v.lineas.forEach(l => { %>
+                    <li class="orq-log__linea"><%= l.texto %><%
+                      if (l.origen) { %><span class="orq-origen orq-origen--<%= l.origen %>"><%= l.nombreOrigen %></span><% }
+                    %></li>
+                  <% }) %>
+                </ol>
+              </details>
+            <% }) %>
 
             <% if (f.huecos.length) { %>
               <ul class="orq-fase__huecos">

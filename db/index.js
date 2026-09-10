@@ -358,6 +358,7 @@ export function migrarEsquema() {
   migracionFase1NochesPorPeso();
   migracionFase6Lienzo();
   migracionFase6Referencias();
+  migracionRegistroDelOrquestador();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -681,7 +682,9 @@ function migracionOrquestador() {
       orden        INTEGER NOT NULL,
       -- pendiente | en_curso | hecho | con_huecos | error
       estado       TEXT    NOT NULL DEFAULT 'pendiente',
-      -- Lo que ha ido haciendo, en español y para leerlo en pantalla.
+      -- Lo que iba haciendo, en español. YA NO SE ESCRIBE: las líneas viven en
+      -- la tabla orquestador_registro, que no se borra al relanzar una fase. La
+      -- columna se queda con lo que hubiera: los viajes viejos no pierden nada.
       log          TEXT,
       -- Lo que no consiguió. Una fase con huecos NO detiene el proceso.
       huecos       TEXT,
@@ -1613,6 +1616,69 @@ function migracionFase1NochesPorPeso() {
       (loEdito
         ? ' OJO: tu prompt de esta fase esta editado y NO se ha tocado; para coger el criterio nuevo, pulsa «Restaurar de fabrica» en la pantalla del Orquestador.'
         : '')
+  );
+  return true;
+}
+
+/**
+ * EL REGISTRO DEL ORQUESTADOR, QUE YA NO SE BORRA.
+ *
+ * Hasta ahora lo que iba diciendo cada fase vivia en `orquestador_fases.log`, y
+ * al relanzar una fase ese log se ponia a NULL: se perdia el rastro de lo que
+ * habia decidido la vez anterior. Y ese rastro es justo lo que hace falta para
+ * revisar un viaje montado solo —por que Gdansk y no Wroclaw, de donde salio ese
+ * precio— y para comprobar si una fase mejora o empeora entre ejecuciones.
+ *
+ * Asi que las lineas se guardan aparte, una por fila, para siempre:
+ *
+ *   · `pasada` numera las ejecuciones de esa fase. Relanzar no pisa: suma una.
+ *   · `origen` dice de donde sale el dato de esa linea —scraping, busqueda o
+ *     IA—, que es la etiqueta que se pinta en la pantalla.
+ *   · `creado_en` es la hora exacta, que es lo que ordena el historico.
+ *
+ * Lo que ya estuviera escrito en `log` se traspasa como pasada 1: nadie pierde
+ * el registro del viaje que montara ayer.
+ */
+function migracionRegistroDelOrquestador() {
+  const CLAVE = '2026-09-registro-orquestador';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS orquestador_registro (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      viaje_id  INTEGER NOT NULL REFERENCES viajes(id) ON DELETE CASCADE,
+      fase      TEXT    NOT NULL,
+      -- Que ejecucion de esa fase. La primera es 1; relanzarla escribe la 2.
+      pasada    INTEGER NOT NULL DEFAULT 1,
+      linea     TEXT    NOT NULL,
+      -- scraping | busqueda | ia | NULL (la linea no lleva ningun dato)
+      origen    TEXT,
+      creado_en TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_orq_registro
+      ON orquestador_registro(viaje_id, fase, pasada, id);
+  `);
+
+  anadirColumnaSiFalta('orquestador_fases', 'pasada', 'INTEGER NOT NULL DEFAULT 1');
+
+  // El traspaso de lo que ya habia. Sin origen: son lineas de antes de que
+  // existiera la etiqueta, y ponerles una ahora seria inventarsela.
+  const meter = db.prepare(
+    `INSERT INTO orquestador_registro (viaje_id, fase, pasada, linea, origen, creado_en)
+     VALUES (?, ?, 1, ?, NULL, ?)`
+  );
+  let lineas = 0;
+  for (const f of db.prepare('SELECT * FROM orquestador_fases WHERE log IS NOT NULL').all()) {
+    for (const linea of String(f.log).split('\n').filter((t) => t.trim())) {
+      meter.run(f.viaje_id, f.fase, linea, f.terminado_en ?? f.empezado_en ?? null);
+      lineas += 1;
+    }
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: el registro del orquestador ya no se borra` +
+      (lineas ? ` (${lineas} lineas traspasadas del log anterior).` : '.')
   );
   return true;
 }

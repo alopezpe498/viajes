@@ -1641,7 +1641,13 @@ router.get('/viaje/:viajeId/ruta', (req, res) => {
     encolar(viajeId, 'distancias_ruta');
   }
 
+  // ¿Tiene registro del orquestador? Es lo que decide si sale el acceso «Cómo
+  // se montó este viaje». Se pregunta aquí y no en la plantilla porque la
+  // plantilla no debe saber de tablas.
+  const hayRegistro = viaje.automatico ? progresoDeViaje(viajeId).hayRegistro : false;
+
   res.render('ruta', {
+    hayRegistro,
     ruta: rutaDeViaje(viajeId),
     // Si ya se revisó "Antes de viajar", el botón deja de ser un aviso.
     antesRevisado: Boolean(viaje.antes_revisado_en),

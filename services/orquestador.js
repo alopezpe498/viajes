@@ -475,20 +475,74 @@ export function restaurarPrompt(fase) {
  * empezado en «pendiente». Una lista que crece sola mientras miras no deja ver
  * lo que falta.
  */
+/** Una línea del registro, lista para pintar. */
+function comoLinea(r) {
+  return {
+    texto: r.linea,
+    origen: r.origen ?? null,
+    nombreOrigen: r.origen ? (NOMBRE_DE_ORIGEN[r.origen] ?? r.origen) : null,
+    cuando: r.creado_en ?? null,
+  };
+}
+
+/**
+ * El registro de una fase, separado por pasadas.
+ *
+ * La última es la que se enseña abierta —es lo que acaba de pasar— y las
+ * anteriores quedan detrás, cada una con su fecha. Que una fase se haya
+ * ejecutado dos veces es información: se ve qué dijo cada vez y si la segunda
+ * arregló lo de la primera.
+ */
+function registroPorPasadas(lineas) {
+  const porPasada = new Map();
+  for (const r of lineas) {
+    const n = Number(r.pasada) || 1;
+    if (!porPasada.has(n)) porPasada.set(n, []);
+    porPasada.get(n).push(comoLinea(r));
+  }
+
+  return [...porPasada.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([pasada, suyas]) => ({
+      pasada,
+      lineas: suyas,
+      cuando: suyas.find((l) => l.cuando)?.cuando ?? null,
+    }));
+}
+
 export function progresoDeViaje(viajeId) {
   const filas = new Map(
     todas('SELECT * FROM orquestador_fases WHERE viaje_id = ?', viajeId).map((f) => [f.fase, f])
   );
 
+  // EL REGISTRO ENTERO, DE UNA VEZ. Son unas decenas de filas por viaje y se
+  // agrupan aquí: una consulta por fase serían seis para pintar una pantalla.
+  const porFase = new Map();
+  for (const r of todas(
+    `SELECT fase, pasada, linea, origen, creado_en FROM orquestador_registro
+      WHERE viaje_id = ? ORDER BY id`,
+    viajeId
+  )) {
+    if (!porFase.has(r.fase)) porFase.set(r.fase, []);
+    porFase.get(r.fase).push(r);
+  }
+
   const fases = FASES.map((f, i) => {
     const fila = filas.get(f.clave);
     const estado = fila?.estado ?? 'pendiente';
+    const pasadas = registroPorPasadas(porFase.get(f.clave) ?? []);
+    const ultima = pasadas[pasadas.length - 1] ?? null;
+
     return {
       ...f,
       orden: i + 1,
       estado,
       nombreEstado: NOMBRE_DE_ESTADO[estado] ?? estado,
-      log: fila?.log ?? null,
+      // Lo que dijo la última vez que corrió, que es lo que se lee de un vistazo.
+      lineas: ultima?.lineas ?? [],
+      // Y lo que dijo las veces anteriores, plegado y con su fecha.
+      anteriores: pasadas.slice(0, -1).reverse(),
+      pasadas: pasadas.length,
       huecos: fila?.huecos ? fila.huecos.split('\n').filter(Boolean) : [],
       empezadoEn: fila?.empezado_en ?? null,
       terminadoEn: fila?.terminado_en ?? null,
@@ -517,6 +571,9 @@ export function progresoDeViaje(viajeId) {
     // quedado a medias en este viaje".
     huecos: fases.flatMap((f) => f.huecos.map((h) => ({ fase: f.etiqueta, texto: h }))),
     mensajeError: !activo && ultimo?.estado === 'error' ? ultimo.mensaje_error : null,
+    // ¿Hay algo escrito? Es lo que decide si el acceso «Cómo se montó este
+    // viaje» tiene algo que enseñar o llevaría a una pantalla vacía.
+    hayRegistro: fases.some((f) => f.lineas.length || f.anteriores.length),
   };
 }
 
@@ -554,38 +611,137 @@ export function lanzarOrquestador(viajeId) {
 // =============================================================================
 // ESCRIBIR EL PROGRESO. Lo usa el worker.
 // =============================================================================
-/** Marca una fase como empezada y limpia lo que hubiera de una vuelta anterior. */
+/**
+ * Marca una fase como empezada.
+ *
+ * NO BORRA EL REGISTRO: le suma una pasada. Lo que dijo la vuelta anterior se
+ * queda donde estaba, con su hora, y en la pantalla se puede desplegar. Antes se
+ * ponía el log a NULL y relanzar una fase borraba la única explicación de por
+ * qué el viaje había quedado como estaba.
+ *
+ * Los HUECOS sí se reinician, y es distinto: un hueco es algo que falta AHORA.
+ * Arrastrar los de la vuelta anterior sería pedir que se repase a mano algo que
+ * a lo mejor esta vuelta ya ha resuelto.
+ */
 export function empezarFase(viajeId, fase) {
+  // LA PASADA SE CUENTA DESDE EL REGISTRO, no desde esta fila.
+  //
+  // «Volver a montar» borra y recrea las filas de `orquestador_fases`, así que
+  // un contador guardado aquí volvería a empezar en 1 y la pasada nueva se
+  // mezclaría con la vieja. El registro, que no se borra nunca, sí sabe cuántas
+  // veces ha hablado esta fase.
+  const previa = una(
+    `SELECT COALESCE(MAX(pasada), 0) AS n FROM orquestador_registro
+      WHERE viaje_id = ? AND fase = ?`,
+    viajeId,
+    fase
+  ).n;
+
   ejecutar(
     `UPDATE orquestador_fases
-        SET estado = 'en_curso', log = NULL, huecos = NULL,
+        SET estado = 'en_curso', huecos = NULL, pasada = ?,
             empezado_en = datetime('now'), terminado_en = NULL
       WHERE viaje_id = ? AND fase = ?`,
+    previa + 1,
     viajeId,
     fase
   );
 }
 
+/** En qué ejecución de esta fase estamos. La primera es la 1. */
+function pasadaDe(viajeId, fase) {
+  const f = una('SELECT pasada FROM orquestador_fases WHERE viaje_id = ? AND fase = ?', viajeId, fase);
+  return Math.max(1, Number(f?.pasada) || 1);
+}
+
 /**
- * Añade una línea al log de una fase.
+ * DE DÓNDE SALE UN DATO. La premisa de la casa es que no se inventa ninguno.
  *
- * Se acumula en vez de sustituir: el log es lo que se lee después para entender
- * por qué el viaje quedó como quedó, y para eso hace falta el rastro entero, no
- * la última frase.
+ *   scraping · lo ha leído una receta de un sitio real: Kayak, Booking,
+ *              Civitatis. Es lo más fiable que hay aquí.
+ *   busqueda · viene del Modo IA de Google o de una búsqueda web. También es de
+ *              fuera, pero pasa por un intermediario que resume.
+ *   ia       · lo ha escrito el modelo sin fuente. Para un precio o un horario,
+ *              esto es una ALARMA: significa que alguien se lo ha inventado.
  */
-export function anotar(viajeId, fase, linea) {
+export const ORIGENES = {
+  scraping: 'scraping',
+  busqueda: 'busqueda',
+  ia: 'ia',
+  // Y una cuarta que no es un origen: «aquí no hay ningún dato del mundo». Se
+  // usa cuando la línea lleva números que son NUESTROS —el radio al que hemos
+  // ampliado la búsqueda, un tope de la configuración— y que el detector
+  // confundiría con un dato traído de fuera. Una etiqueta de más en algo que no
+  // es un dato hace ruido, y el ruido es lo que consigue que nadie las mire.
+  ninguno: 'ninguno',
+};
+
+/** Cómo se lee cada origen en la pantalla. */
+export const NOMBRE_DE_ORIGEN = {
+  scraping: 'scraping',
+  busqueda: 'búsqueda',
+  ia: 'IA',
+};
+
+/**
+ * ¿ESTA LÍNEA LLEVA UN DATO CONCRETO?
+ *
+ * Solo se etiqueta lo que se puede comprobar contra el mundo: un precio, una
+ * duración, un horario o una distancia. «Elijo Gdansk porque el vuelo encaja
+ * mejor» es una decisión y no lleva etiqueta; «PKP Intercity de 09:00, 4h 34min,
+ * 45 €» sí, y entonces hay que poder ver de dónde salió cada número.
+ *
+ * Se prefiere quedarse corto: una etiqueta de más en una frase sin datos hace
+ * ruido y acaba en que nadie las mira.
+ */
+const CON_DATO = [
+  /[\d.,]+\s*(?:€|eur\b|\$|usd\b|pln\b|zl\b)/i, // precio
+  /€\s*\/\s*noche|\/noche/i,
+  /\b\d{1,2}:\d{2}\b/, // una hora
+  /\b\d+\s*h(?:\s*\d+)?\s*(?:min|m\b)?/i, // 3 h, 4h 34min
+  /\b\d+\s*min\b/i,
+  /[\d.,]+\s*km\b/i, // distancia
+  /\b\d+\s*m\s+del\s+centro/i,
+];
+
+export function llevaDato(texto) {
+  return CON_DATO.some((r) => r.test(texto));
+}
+
+/**
+ * Añade una línea al registro de una fase.
+ *
+ * Se acumula y NO SE BORRA NUNCA: el registro es lo que se lee después para
+ * entender por qué el viaje quedó como quedó, y para eso hace falta el rastro
+ * entero, no la última frase. Cada línea guarda su pasada y su hora.
+ *
+ * EL ORIGEN, CUANDO LA LÍNEA LLEVA UN DATO. Quien escribe la línea sabe de dónde
+ * ha sacado el número y lo dice pasando `origen`. Si no lo dice y la línea lleva
+ * un dato, se etiqueta como `ia`, que es lo prudente: un número sin fuente
+ * declarada es exactamente lo que hay que mirar con lupa. Y si la línea no lleva
+ * ningún dato, no se etiqueta nada.
+ */
+export function anotar(viajeId, fase, linea, origen = null) {
   const texto = String(linea ?? '').trim();
   if (!texto) return;
+
+  const marca =
+    origen === ORIGENES.ninguno
+      ? null
+      : (ORIGENES[origen] ?? (llevaDato(texto) ? ORIGENES.ia : null));
+
   ejecutar(
-    `UPDATE orquestador_fases
-        SET log = CASE WHEN log IS NULL OR log = '' THEN ? ELSE log || char(10) || ? END
-      WHERE viaje_id = ? AND fase = ?`,
-    texto,
-    texto,
+    `INSERT INTO orquestador_registro (viaje_id, fase, pasada, linea, origen)
+     VALUES (?, ?, ?, ?, ?)`,
     viajeId,
-    fase
+    fase,
+    pasadaDe(viajeId, fase),
+    texto,
+    marca
   );
-  console.log(`[orquestador] viaje ${viajeId} · ${fase}: ${texto}`);
+  console.log(
+    `[orquestador] viaje ${viajeId} · ${fase}: ${texto}${marca ? ` [${NOMBRE_DE_ORIGEN[marca]}]` : ''}`
+  );
 }
 
 /**

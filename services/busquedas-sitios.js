@@ -467,40 +467,80 @@ export async function ejecutarBusqueda(busquedaId, { alGenerar = null } = {}) {
   // No se puede colgar de la búsqueda grande de la etapa: esa ya se hizo, y
   // rehacerla entera por dos fichas nuevas sería abrir el navegador para
   // treinta sitios que ya tienen sus datos.
+  //
+  // Y ESA MISMA BÚSQUEDA DECIDE SI LA FICHA SE QUEDA.
+  //
+  // Si no encuentra nada del sitio, o lo que encuentra está en otra ciudad, la
+  // ficha se borra ahí dentro y vuelve en `descartados`. Aquí solo hay que
+  // contarlo y decírselo a quien buscó: es peor darle por buena una ficha de un
+  // sitio que no existe que decirle que no se ha encontrado.
+  let descartados = [];
   if (nuevos.length && alGenerar) {
     try {
-      await alGenerar(punto, nuevos.map((n) => n.id));
+      const r = await alGenerar(punto, nuevos.map((n) => n.id));
+      descartados = r?.descartados ?? [];
     } catch (err) {
       // Las fichas ya están. Que Google no conteste no las borra.
       console.warn(`[busquedas] sin datos duros para «${fila.texto}» (${err.message}).`);
     }
   }
 
+  const tirados = new Set(descartados.map((x) => x.id));
+  const quedan = nuevos.filter((n) => !tirados.has(n.id));
+
   // El aviso de lo que ya estaba. No es un error —no ha fallado nada— pero sin
   // decirlo la pantalla se queda en "0 fichas" y parece que se ha roto algo.
-  const nota = repetidos.length
-    ? (repetidos.length === 1
+  const avisos = [];
+
+  if (repetidos.length) {
+    avisos.push(
+      repetidos.length === 1
         ? `«${repetidos[0].nombre}» ya lo tenías en ${NOMBRE_DE_BLOQUE[repetidos[0].bloque] ?? 'otra pestaña'}, así que no lo he repetido.`
-        : `Estos ya los tenías y no los he repetido: ${repetidos.map((r) => r.nombre).join(', ')}.`)
-    : null;
+        : `Estos ya los tenías y no los he repetido: ${repetidos.map((r) => r.nombre).join(', ')}.`
+    );
+  }
+
+  // El descarte se cuenta con sus palabras, no con un «0 fichas» a secas: quien
+  // ha buscado tiene derecho a saber si el sitio no existe o si existe pero está
+  // en otra ciudad.
+  for (const x of descartados) {
+    avisos.push(
+      x.motivo.startsWith('la dirección')
+        ? `No he creado la ficha de «${x.nombre}»: lo que hay con ese nombre no está en ${ciudad} (${x.motivo}).`
+        : `No he encontrado «${x.nombre}» en ${ciudad}: la búsqueda no ha dado ningún dato de ese sitio, así que no creo la ficha.`
+    );
+    console.log(`[busquedas] ${ciudad}: descartado por no verificado: ${x.nombre} (${x.motivo})`);
+  }
+
+  const nota = avisos.length ? avisos.join(' ') : null;
 
   ejecutar(
     `UPDATE busquedas_sitios
         SET estado = 'hecha', fichas = fichas + ?, nota = ?, terminado_en = datetime('now')
       WHERE id = ?`,
-    nuevos.length,
+    quedan.length,
     nota,
     busquedaId
   );
 
   const mensaje =
-    `${nuevos.length} ficha${nuevos.length === 1 ? '' : 's'} de «${fila.texto}»` +
+    `${quedan.length} ficha${quedan.length === 1 ? '' : 's'} de «${fila.texto}»` +
     (repetidos.length
       ? ` · ${repetidos.length} ya estaban: ${repetidos.map((r) => r.nombre).join(', ')}`
+      : '') +
+    (descartados.length
+      ? ` · ${descartados.length} sin verificar: ${descartados.map((d) => d.nombre).join(', ')}`
       : '');
   console.log(`[busquedas] ${ciudad}: ${mensaje}`);
 
-  return { tipo: fila.tipo, propuestas: 0, fichas: nuevos.length, repetidos, mensaje };
+  return {
+    tipo: fila.tipo,
+    propuestas: 0,
+    fichas: quedan.length,
+    repetidos,
+    descartados,
+    mensaje,
+  };
 }
 
 export default {

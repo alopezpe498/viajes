@@ -34,7 +34,7 @@ import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { buscarHoteles } from '../providers/booking.js';
 import { ocupacionDe, aplicarFiltrosLocales } from '../services/proveedores.js';
 import { elegirHotel } from '../services/etapa.js';
-import { anotar, apuntarHueco, parametro, configAuto } from '../services/orquestador.js';
+import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 
 const FASE = 'dormir';
 
@@ -196,7 +196,7 @@ function horaDeLlegada(viajeId) {
 // =============================================================================
 export async function ejecutarFaseDormir(viaje, promptEntero) {
   const viajeId = viaje.id;
-  const di = (t) => anotar(viajeId, FASE, t);
+  const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
@@ -245,7 +245,10 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
       continue;
     }
     if (fechas.adelantada) {
-      di(`${ciudad}: el vuelo llega a las ${llegada}, así que la reserva empieza la noche anterior (${fechas.entrada}).`);
+      di(
+        `${ciudad}: el vuelo llega a las ${llegada}, así que la reserva empieza la noche anterior (${fechas.entrada}).`,
+        ORIGENES.scraping
+      );
     }
 
     di(`Buscando dónde dormir en ${ciudad} (${etapa.noches} noche(s), del ${fechas.entrada} al ${fechas.salida})…`);
@@ -335,7 +338,11 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
     let filtrosUsados = null;
     for (const escalon of escalones) {
       const filtros = filtrosDesdeAuto(auto, escalon.rango, escalon.aflojado);
-      if (escalon.comoSeLlama) di(`   Sin resultados. Lo intento ${escalon.comoSeLlama}.`);
+      // Los números de esta línea son los de nuestra propia escalera (el radio al
+      // que ampliamos, el porcentaje que ensanchamos), no datos de fuera.
+      if (escalon.comoSeLlama) {
+        di(`   Sin resultados. Lo intento ${escalon.comoSeLlama}.`, ORIGENES.ninguno);
+      }
 
       try {
         hoteles = await buscarHoteles({
@@ -373,7 +380,10 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
 
       if (hoteles.length) {
         filtrosUsados = filtros;
-        di(`   ${hoteles.length} alojamiento(s) con: ${resumenDeFiltros(filtros)}.`);
+        // Cuántos ha devuelto Booking; los filtros que se leen ahí dentro llevan
+      // el rango de precio que se inventó la IA, y por eso la línea no se marca
+      // como scraping: el número de resultados es real, la horquilla no.
+      di(`   ${hoteles.length} alojamiento(s) con: ${resumenDeFiltros(filtros)}.`);
         break;
       }
     }
@@ -503,11 +513,13 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
     resueltas += 1;
 
     const h = elegido.hotel;
+    // Nombre, nota, precio y distancia son los de la tarjeta de Booking.
     di(
       `${ciudad}: ${h.nombre}` +
         `${h.valoracion ? `, ${h.valoracion}` : ''}` +
         `${porNoche(h) != null ? `, ${porNoche(h)} €/noche` : ''}` +
-        `${h.distanciaCentro ? `, ${h.distanciaCentro}` : ''}.`
+        `${h.distanciaCentro ? `, ${h.distanciaCentro}` : ''}.`,
+      ORIGENES.scraping
     );
     if (elegido.porQue) di(`   Por qué: ${elegido.porQue}`);
   }
