@@ -18,6 +18,7 @@
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
 import { direccionDe, guardarDireccion, pedirGeocodificar } from './direcciones.js';
 import { buscarActividades, descubrirSlug } from '../providers/civitatis.js';
+import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 
 export { normalizarNombre };
 
@@ -329,6 +330,33 @@ export function esActividadDeVerdad(titulo) {
   return !PALABRAS_EXCLUIDAS.some((palabra) => t.includes(palabra));
 }
 
+/**
+ * CÓMO SE LLAMA ESTA CIUDAD EN OTROS SITIOS.
+ *
+ * Una llamada al modelo rápido: es traducción, no criterio. Y si no hay clave o
+ * falla, se sigue sin variantes — quedarse sin excursiones por no poder
+ * preguntar sería peor que el problema.
+ */
+async function nombresAlternativos(ciudad, pais) {
+  if (!hayClaveIA()) return [];
+  try {
+    const r = await consultarJSON(
+      `¿Cómo se llama la ciudad de «${ciudad}»${pais ? ` (${pais})` : ''} en su idioma local y ` +
+        'en su forma internacional? Por ejemplo: "Heraclión" → "Heraklion"; "Breslavia" → ' +
+        '"Wrocław". Si el nombre que te doy ya es el local, repítelo. ' +
+        'Devuelve SOLO: {"nombres":["...","..."]}',
+      { maxTokens: 200, paso: `nombre nativo de ${ciudad}`, modelo: 'rapido' }
+    );
+    return (Array.isArray(r?.nombres) ? r.nombres : [])
+      .map((x) => String(x ?? '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  } catch (err) {
+    console.warn(`[catalogo] no pude pedir los alias de «${ciudad}» (${err.message}).`);
+    return [];
+  }
+}
+
 /** Cuántas se le piden a Civitatis por ciudad. */
 const MAX_ACTIVIDADES = 30;
 
@@ -355,15 +383,26 @@ export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudad
   // excursión. El descubrimiento mira el índice del país y, si el nombre
   // principal falla, prueba con la ciudad base de la parada. Se guarda, así que
   // esto se paga una vez por ciudad y no en cada viaje.
-  const slug = await descubrirSlug(ciudad, {
-    pais,
-    tambien: [ciudadBase].filter((x) => x && x !== ciudad),
-  });
+  // Y CON EL NOMBRE NATIVO, QUE ES COMO LO ESCRIBE CIVITATIS.
+  //
+  // «Heraclión» no aparece; «Heraklion» sí. Pasó antes con Wrocław, que en
+  // español es Breslavia. Civitatis usa el nombre internacional o el local, casi
+  // nunca la forma española, así que darlo por inexistente sin probar esas dos
+  // variantes es dejar una ciudad entera sin excursiones por una tilde.
+  const variantes = [
+    ciudadBase,
+    ...(await nombresAlternativos(ciudad, pais)),
+    // Sin diacríticos: «Wrocław» → «Wroclaw», que es como va en las URLs.
+    ciudad.normalize('NFD').replace(/[̀-ͯł]/g, (c) => (c === 'ł' ? 'l' : '')),
+  ].filter((x, i, xs) => x && x !== ciudad && xs.indexOf(x) === i);
+
+  const slug = await descubrirSlug(ciudad, { pais, tambien: variantes });
 
   if (!slug) {
     throw new Error(
-      `«${ciudad}» no tiene destino en Civitatis (lo he buscado también en el índice` +
-        `${pais ? ` de ${pais}` : ''}${ciudadBase ? ` y como «${ciudadBase}»` : ''}).`
+      `«${ciudad}» no tiene destino en Civitatis. Probé también` +
+        `${pais ? ` el índice de ${pais}` : ''}` +
+        `${variantes.length ? ` y estas variantes: ${variantes.join(', ')}` : ''}.`
     );
   }
 

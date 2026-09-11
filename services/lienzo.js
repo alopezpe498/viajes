@@ -19,7 +19,7 @@
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
 import { pedirInterpretarHorario } from './datos-sitios.js';
-import { abreEl, horarioPorDias } from './horarios.js';
+import { abreEl, abiertoA, horarioPorDias } from './horarios.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { parametro, parametroTexto } from './orquestador.js';
 
@@ -921,7 +921,35 @@ function avisosDeCierre(dias, colocados, viajeId) {
       // `queDia` lo calcula `diaDeLaSemana(d.fecha)` y esa es la única fuente.
       const abre = abreEl(info.horarios, queDia);
 
-      if (abre === true) continue;               // abierto: todo bien
+      if (abre === true) {
+        // ABRE ESE DÍA, ¿PERO A ESA HORA?
+        //
+        // El Museo Etnográfico de Cracovia acabó colocado de 19:00 a 20:30 con
+        // un horario que cierra a las 18:00. El día era correcto; la hora, no.
+        // Se comprobaba lo primero y se daba por bueno lo segundo.
+        //
+        // Se miran las DOS puntas: a la que empieza y a la que acaba. Una visita
+        // que entra diez minutos antes de cerrar tampoco existe.
+        const empieza = enMinutos(c.hora);
+        const dura = Number(c.duracionMin) || 0;
+        const dentro = empieza == null ? null : abiertoA(info.horarios, queDia, empieza);
+        const acabaDentro =
+          empieza == null || !dura ? null : abiertoA(info.horarios, queDia, empieza + dura - 1);
+
+        if (dentro === false || acabaDentro === false) {
+          avisos.push({
+            dia: d.n,
+            tipo: 'fuera-de-horario',
+            idsAfectados: [c.id],
+            libreDesde: null,
+            texto:
+              `${c.nombre} está puesto a las ${c.hora}` +
+              (dura ? ` y dura ${dura} min` : '') +
+              `, y a esa hora está cerrado. Su horario dice: «${info.horarios}»`,
+          });
+        }
+        continue;                                // abierto ese día: lo demás, arriba
+      }
 
       if (abre === null) {
         // NI ABIERTO NI CERRADO: EL HORARIO NO LO DICE.

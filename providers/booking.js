@@ -599,10 +599,14 @@ export async function buscarHoteles({
           t.includes('sin resultados') ||
           t.includes('no properties found') ||
           t.includes('no results') ||
-          // La pagina de resultados existe y tiene su buscador, pero la lista
-          // esta vacia: busqueda valida sin nada que ofrecer.
-          Boolean(document.querySelector('[data-testid="searchbox-layout-wide"], #search_results_table'))
+          // «Gdansk: 0 alojamientos encontrados», que es como lo escribe la
+          // cabecera de resultados.
+          /\b0\s+(?:alojamientos|properties)\b/.test(t)
         );
+        // NO VALE mirar si existe el buscador: existe en TODAS las paginas de
+        // resultados, asi que daba «sin resultados» siempre y la rama de «el
+        // selector ha cambiado» se volvia inalcanzable. Un detector que nunca
+        // dice que no, no detecta nada.
       });
 
       if (vacio) {

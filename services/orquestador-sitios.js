@@ -47,6 +47,7 @@ import { hayQueParar } from '../services/orquestador-parada.js';
 import { porParada } from '../services/paralelo.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
+import { fundirSitiosContenidos } from '../services/contenidos.js';
 
 const FASE = 'sitios';
 
@@ -256,6 +257,17 @@ export async function ejecutarFaseSitios(viaje, prompt) {
         'SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ? AND imagen_url IS NOT NULL',
         punto.id
       ).n;
+
+      // LO QUE ESTÁ DENTRO DE OTRO NO ES OTRA VISITA.
+      //
+      // Se hace con los sitios ya guardados y antes de contar, para que el
+      // recuento diga lo que de verdad se va a visitar.
+      try {
+        const fundidos = await fundirSitiosContenidos(punto, ciudad, di);
+        if (fundidos) di(`   ${ciudad}: ${fundidos} sitio(s) se visitan dentro de otro.`);
+      } catch (err) {
+        di(`   ${ciudad}: no pude fundir los sitios contenidos (${err.message}).`);
+      }
 
       di(
         `${ciudad}: ${generales} sitios` +

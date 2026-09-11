@@ -571,6 +571,8 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         di('   Elijo yo por relación valoración/precio.');
       }
 
+      elegido = delTipoPedido(elegido, ids, auto, ciudad, di);
+
       elegirHotel(etapa.id, elegido.id);
 
       const h = elegido.hotel;
@@ -625,7 +627,7 @@ function justificacionQueCuadre(texto, candidatos, noches, di) {
   if (!t) return null;
 
   // Los números en euros que cita el texto.
-  const citadas = [...t.matchAll(/(\d[\d.,]*)\s*(?:€|eur|euros)/gi)]
+  const citadas = [...t.matchAll(/(\d[\d.,]*)\s*(?:€|eur\b|euros\b)/gi)]
     .map((m) => Math.round(Number(m[1].replace(/\./g, '').replace(',', '.'))))
     .filter((x) => Number.isFinite(x) && x > 0);
 
@@ -653,8 +655,56 @@ function justificacionQueCuadre(texto, candidatos, noches, di) {
   );
 
   // Se quitan las cifras y se deja lo que decía por lo demás, que suele valer.
-  const limpio = t.replace(/\(?\s*\d[\d.,]*\s*(?:€|eur|euros)\s*\)?/gi, '').replace(/\s{2,}/g, ' ').trim();
+  const limpio = t.replace(/\(?\s*\d[\d.,]*\s*(?:€|eur\b|euros\b)\s*\)?/gi, '').replace(/\s{2,}/g, ' ').trim();
   return limpio.length > 15 ? limpio : 'elegido por relación calidad/precio y ubicación';
+}
+
+/**
+ * ¿ES DEL TIPO QUE SE PIDIÓ?
+ *
+ * Con el filtro en «hotel» salieron el Pella Inn Hostel en Grecia y, antes, un
+ * centro de formación en Gdansk. El filtro va en la URL de Booking, pero Booking
+ * lo respeta cuando quiere, y nadie lo comprobaba de vuelta.
+ *
+ * Se mira el NOMBRE, que es el dato que sí llega en la tarjeta. No es una
+ * clasificación perfecta —un «Hotel Hostal Pepe» la despistaría— pero caza los
+ * casos reales, que llevan la palabra delante: hostel, albergue, apartamentos,
+ * camping, residencia, centro.
+ *
+ * Y si NINGUNO de los candidatos es del tipo pedido, no se miente: se deja el
+ * que eligió la IA y se dice que en esa ciudad no había de lo que se buscaba.
+ */
+function delTipoPedido(elegido, candidatos, auto, ciudad, di) {
+  if (auto?.tipoAlojamiento !== 'hotel') return elegido;
+
+  const NO_ES_HOTEL =
+    /\b(hostels?|hostal|albergue|apartament\w*|aparthotel\w*|camping|bungalow|residencia|centro|guest\s?house|casa\s?rural|b&b|bed\s*&\s*breakfast)/i;
+
+  const esHotel = (c) => !NO_ES_HOTEL.test(String(c.hotel?.nombre ?? ''));
+  if (esHotel(elegido)) return elegido;
+
+  const otro = candidatos.find((c) => esHotel(c) && c.id !== elegido.id);
+  if (otro) {
+    di(
+      `   «${elegido.hotel.nombre}» no es un hotel y pediste hotel: me quedo con ` +
+        `«${otro.hotel.nombre}».`,
+      ORIGENES.ninguno
+    );
+    return otro;
+  }
+
+  di(
+    `   OJO en ${ciudad}: no hay hoteles con tus filtros; lo mejor que sale es ` +
+      `«${elegido.hotel.nombre}», que no lo es. Te lo dejo, pero sabiéndolo.`,
+    ORIGENES.ninguno
+  );
+  apuntarHueco(viajeIdDe(elegido) ?? 0, FASE, `${ciudad}: sin hoteles con tus filtros (${elegido.hotel.nombre}).`);
+  return elegido;
+}
+
+/** El viaje al que pertenece un candidato, para poder apuntarle el hueco. */
+function viajeIdDe(candidato) {
+  return una('SELECT viaje_id FROM candidatos WHERE id = ?', candidato.id)?.viaje_id ?? null;
 }
 
 /**

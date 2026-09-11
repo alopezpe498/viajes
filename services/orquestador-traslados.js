@@ -1100,13 +1100,29 @@ function avisarDeSaltosQueNoCuadran(viajeId, etapas, di) {
 
     // Lo que se eligió, con su puerta a puerta ya medido.
     const tramo = una(
-      'SELECT duracion_min FROM transportes WHERE viaje_id = ? AND etapa_origen_id = ? AND etapa_destino_id = ?',
+      `SELECT duracion_min, tipo, notas FROM transportes
+        WHERE viaje_id = ? AND etapa_origen_id = ? AND etapa_destino_id = ?`,
       viajeId,
       a.id,
       b.id
     );
     const elegido = Number(tramo?.duracion_min);
     if (!Number.isFinite(elegido) || elegido <= 0) continue;
+
+    // COMPARAR UN FERRY CON UNA RUTA EN COCHE NO DICE NADA.
+    //
+    // «OJO en Heraclión → Santorini: la ruta del mapa dice 5h 48min en coche y el
+    // traslado elegido 2h 55min». Entre dos islas no hay coche que valga: el
+    // mapa está midiendo un rodeo por tierra que nadie va a hacer, y el aviso
+    // —que existe para cazar ciudades mal situadas— se convierte en ruido que
+    // enseña a ignorar los avisos.
+    //
+    // Solo tiene sentido cuando lo elegido va por carretera o por vía: ahí las
+    // dos medidas hablan del mismo camino.
+    const porTierra = /tren|bus|autob|coche|taxi|furgo|traslado/i.test(
+      `${tramo.tipo ?? ''} ${tramo.notas ?? ''}`
+    );
+    if (!porTierra) continue;
 
     const veces = Math.max(porCarretera / elegido, elegido / porCarretera);
     if (veces < factor) continue;

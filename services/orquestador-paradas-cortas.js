@@ -318,21 +318,68 @@ export function avisarDeParadasSinSusImprescindibles(viaje, di = () => {}) {
       )
     ).length;
 
-    if (colocados > 0) continue;
+    // ANTES BASTABA CON QUE HUBIERA UNO COLOCADO, y eso dejó pasar los dos
+    // casos de libro: Varsovia con Majdanek y Atenas con Delfos. En los dos
+    // quedó algún imprescindible suelto —el del día de llegada— así que el aviso
+    // calló mientras el motivo de la parada se iba entero por el desagüe.
+    //
+    // Lo que se mira ahora es si falta alguno de los PRIMEROS PUESTOS, que son
+    // los que justifican dormir allí, y si hay un día comido por una excursión
+    // de jornada completa: ese día no cuenta como día útil de esta ciudad,
+    // porque esa ciudad no se pisa.
+    const primeros = suyos.slice(0, parametro('puestos_intocables_del_sitio', 3));
+    const faltan = primeros.filter(
+      (x) =>
+        !una(
+          `SELECT 1 FROM itinerario i
+             JOIN candidatos c ON c.id = i.candidato_id
+            WHERE i.viaje_id = ? AND c.tipo = 'sitio' AND c.datos_extra LIKE ?`,
+          viaje.id,
+          `%"deId":${x.id}%`
+        )
+    );
+
+    const diasComidos = todas(
+      `SELECT i.dia, c.titulo, i.duracion_min
+         FROM itinerario i JOIN candidatos c ON c.id = i.candidato_id
+        WHERE i.viaje_id = ? AND i.etapa_id = ? AND c.tipo = 'actividad'
+          AND i.duracion_min >= ?`,
+      viaje.id,
+      etapa.id,
+      parametro('excursion_dia_completo_min', 480)
+    );
+
+    if (colocados > 0 && !(faltan.length && diasComidos.length)) continue;
 
     ejecutar(
       `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
        VALUES (?, 'joya-en-ruta', 'alerta', ?, ?)`,
       viaje.id,
-      `${etapa.nombre_ciudad} (peso ${peso}): duermes allí y no ves ninguno de sus imprescindibles`,
-      `Ninguno de sus ${suyos.length} imprescindibles ha entrado en el lienzo ` +
-        `(${suyos.map((x) => x.nombre).join(', ')}). Se paga la noche y no se ve el motivo ` +
-        'de la parada: mira los horarios de los traslados o dale otro día.'
+      colocados === 0
+        ? `${etapa.nombre_ciudad} (peso ${peso}): duermes allí y no ves ninguno de sus imprescindibles`
+        : `${etapa.nombre_ciudad} (peso ${peso}): una excursión se lleva el día y te deja sin lo esencial`,
+      colocados === 0
+        ? `Ninguno de sus ${suyos.length} imprescindibles ha entrado en el lienzo ` +
+          `(${suyos.map((x) => x.nombre).join(', ')}). Se paga la noche y no se ve el motivo ` +
+          'de la parada: mira los horarios de los traslados o dale otro día.'
+        : `${diasComidos.map((x) => `«${x.titulo}»`).join(' y ')} ocupa(n) un día entero de la ` +
+          `parada, y eso deja fuera ${faltan.map((x) => x.nombre).join(', ')}. Ese día no se pisa ` +
+          `${etapa.nombre_ciudad}: o la excursión va a la mochila, o esta parada necesita otro día.`
     );
 
+    // EL NÚMERO, NO UN CERO ESCRITO A FUEGO.
+    //
+    // Valía mientras el aviso solo saltaba con cero colocados. Ahora también
+    // salta cuando falta alguno de los primeros puestos, y un log que dice «0
+    // de 3» habiendo uno puesto es justo el tipo de número que hace que nadie se
+    // fíe del resto de la línea.
     di(
-      `   AVISO GRAVE · ${etapa.nombre_ciudad} (peso ${peso}): 0 de ${suyos.length} ` +
-        'imprescindibles colocados.'
+      `   AVISO GRAVE · ${etapa.nombre_ciudad} (peso ${peso}): ${colocados} de ${suyos.length} ` +
+        `imprescindibles colocados` +
+        (faltan.length ? `; falta(n) ${faltan.map((x) => x.nombre).join(', ')}` : '') +
+        (diasComidos.length
+          ? ` y ${diasComidos.map((x) => `«${x.titulo}»`).join(' y ')} se lleva(n) un día entero.`
+          : '.')
     );
     avisadas += 1;
   }

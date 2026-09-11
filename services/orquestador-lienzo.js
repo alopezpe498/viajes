@@ -67,6 +67,7 @@ import { horasDeSesion, soloAUltimaHora, abreEl } from '../services/horarios.js'
 import {
   avisarDeParadasQueNoCaben,
   avisarDeParadasSinSusImprescindibles,
+  imprescindiblesDeParada,
 } from '../services/orquestador-paradas-cortas.js';
 
 const FASE = 'lienzo';
@@ -837,6 +838,153 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
 }
 
 /**
+ * UNA EXCURSIÓN OPCIONAL NO SE COME EL DÍA DE LO ESENCIAL.
+ *
+ * EL CASO, Y SALIÓ EN LOS DOS PAÍSES SEGUIDOS:
+ *
+ *   · Varsovia, 2 noches. La excursión a Majdanek y Lublin —nueve horas, y ni
+ *     siquiera es Varsovia— ocupó el único día completo. Fuera: Casco Viejo,
+ *     Museo del Levantamiento, POLIN, Palacio Real y Łazienki.
+ *   · Atenas, 2 noches. Delfos, diez horas, el único día completo. Fuera: Museo
+ *     de la Acrópolis, Ágora Antigua y Museo Arqueológico Nacional.
+ *
+ * La jerarquía no lo cazaba porque NO HAY CHOQUE que resolver: la excursión
+ * ocupa el día y los imprescindibles sencillamente no llegan a colocarse nunca.
+ * No hay dos bloques peleando por una hora; hay uno que nunca entró.
+ *
+ * Así que se mira al revés: si han quedado imprescindibles de los primeros
+ * puestos SIN COLOCAR y hay una excursión opcional de día completo ocupando un
+ * día de esa parada, la excursión se va a la mochila y los sitios ocupan el día
+ * que ella tenía. Una excursión opcional se puede hacer en otro viaje; el motivo
+ * por el que uno duerme en esa ciudad, no.
+ *
+ * NO SE TOCA una excursión ya reservada: esa tiene billete y dinero dentro.
+ */
+function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
+  const etapas = todas(
+    "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden",
+    viajeId
+  );
+  const diaCompleto = parametro('excursion_dia_completo_min', 480);
+  let tocado = false;
+
+  for (const etapa of etapas) {
+    const suyos = imprescindiblesDeParada(etapa).slice(
+      0,
+      parametro('puestos_intocables_del_sitio', 3)
+    );
+    if (!suyos.length) continue;
+
+    const estaColocado = (sitioId) =>
+      Boolean(
+        una(
+          `SELECT 1 FROM itinerario i JOIN candidatos c ON c.id = i.candidato_id
+            WHERE i.viaje_id = ? AND c.tipo = 'sitio' AND c.datos_extra LIKE ?`,
+          viajeId,
+          `%"deId":${sitioId}%`
+        )
+      );
+
+    const sinColocar = suyos.filter((x) => !estaColocado(x.id));
+    if (!sinColocar.length) continue;
+
+    // ¿Hay una excursión opcional de día completo comiéndose un día de aquí?
+    const diasDeLaEtapa = lienzo.dias.filter((d) => d.etapaId === etapa.id).map((d) => d.n);
+    const culpables = lienzo.colocados.filter((c) => {
+      if (!diasDeLaEtapa.includes(c.dia)) return false;
+      const quien = deQuienEs(c);
+      if (quien?.candidato?.tipo !== 'actividad') return false;
+      if (Number(quien.candidato.reservado) === 1) return false;
+      return (Number(c.duracionMin) || 0) >= diaCompleto;
+    });
+
+    if (!culpables.length) continue;
+
+    for (const c of culpables) {
+      di(
+        `   AVISO GRAVE · ${etapa.nombre_ciudad}: «${c.nombre}» ocupa un día entero y deja fuera ` +
+          `${sinColocar.length} imprescindible(s) de la ciudad (${sinColocar.map((x) => x.nombre).join(', ')}).`,
+        ORIGENES.ninguno
+      );
+      sacarDelPlan(c, di, `no cabe sin sacrificar lo esencial de ${etapa.nombre_ciudad}`);
+      apuntarHueco(
+        viajeId,
+        FASE,
+        `${etapa.nombre_ciudad}: «${c.nombre}» a la mochila — no cabía sin dejar fuera lo esencial.`
+      );
+      tocado = true;
+    }
+
+    // Y el día que ha quedado libre se usa para lo que de verdad era el motivo.
+    const fresco = lienzoDeViaje(viajeId);
+    for (const x of sinColocar) {
+      const puesto = colocarImprescindible(viajeId, fresco, etapa, x, di);
+      if (puesto) tocado = true;
+    }
+  }
+
+  return tocado ? lienzoDeViaje(viajeId) : lienzo;
+}
+
+/**
+ * Coloca un imprescindible que se había quedado fuera, en el primer hueco válido
+ * de su parada. Devuelve true si lo ha conseguido.
+ */
+function colocarImprescindible(viajeId, lienzo, etapa, sitio, di) {
+  const candidato = una(
+    `SELECT id FROM candidatos
+      WHERE viaje_id = ? AND etapa_id = ? AND tipo = 'sitio' AND datos_extra LIKE ?`,
+    viajeId,
+    etapa.id,
+    `%"deId":${sitio.id}%`
+  );
+  if (!candidato) {
+    // No está ni apuntado: apuntarlo es de la fase de sitios, no de esta.
+    di(`   ${sitio.nombre} no está entre los candidatos de ${etapa.nombre_ciudad}; no lo coloco yo.`);
+    return false;
+  }
+
+  const falso = {
+    id: null,
+    candidatoId: candidato.id,
+    nombre: sitio.nombre,
+    duracionMin: sitio.minutos,
+    dia: lienzo.dias.find((d) => d.etapaId === etapa.id)?.n ?? 1,
+    franja: 'manana',
+  };
+  const naturaleza = naturalezaDe(falso);
+  const cierre = cierreDe(falso);
+  const cierra = diasDeCierreDe(falso);
+
+  for (const d of lienzo.dias.filter((x) => x.etapaId === etapa.id)) {
+    if (esDiaDeViaje(lienzo, d.n)) continue;
+    if (cierra.includes(diaDeLaSemana(d.fecha))) continue;
+
+    const hora = huecoValido(lienzo, {
+      dia: d.n,
+      colocado: falso,
+      naturaleza,
+      cierre,
+      duracion: sitio.minutos,
+    });
+    if (!hora) continue;
+
+    colocar(viajeId, {
+      candidatoId: candidato.id,
+      dia: d.n,
+      franja: franjaDesde(hora) ?? 'manana',
+      hora,
+      duracionMin: sitio.minutos,
+    });
+    di(`   ${sitio.nombre} entra en el día ${d.n} a las ${hora}, en el hueco que deja la excursión.`);
+    return true;
+  }
+
+  di(`   ${sitio.nombre} sigue sin hueco en ${etapa.nombre_ciudad} ni quitando la excursión.`);
+  return false;
+}
+
+/**
  * DEJA DICHO POR QUÉ EL PRIMER DÍA VA MEDIO VACÍO.
  *
  * EL FALLO QUE ORIGINA ESTO. Tras un vuelo nocturno de más de doce horas y con
@@ -1334,6 +1482,30 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
     // he sabido resolverlo», que es para los que sí tienen arreglo.
     if (aviso.tipo === 'horario-sin-verificar') {
       di(`   ${aviso.texto}`, ORIGENES.ninguno);
+      continue;
+    }
+
+    // ABRE ESE DÍA PERO NO A ESA HORA: se busca una hora suya.
+    //
+    // Es el mismo arreglo que un cierre, solo que sin cambiar de día si no hace
+    // falta: `recolocarConHora` ya respeta la hora de cierre del sitio.
+    if (aviso.tipo === 'fuera-de-horario') {
+      for (const c of afectados) {
+        const r = recolocarConHora(viajeId, lienzo, c);
+        if (r.movido) {
+          di(`   ${c.nombre} estaba fuera de su horario: lo paso al día ${r.dia} a las ${r.hora}.`);
+        } else if (esDeLosQueNoSePuedenPerder(c)) {
+          const ultimo = agotarLaParada(viajeId, lienzo, c, di);
+          if (ultimo.movido) {
+            di(`   ${c.nombre} no se pierde: al día ${ultimo.dia} a las ${ultimo.hora}.`);
+          } else {
+            sacar(c, `no cabe dentro de su horario en ningún día de la parada`);
+          }
+        } else {
+          sacar(c, 'estaba fuera de su horario y no encontré ninguna hora suya libre');
+        }
+        tocados += 1;
+      }
       continue;
     }
 
@@ -1846,6 +2018,12 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // Va aquí, al final, y no en la fase 1: allí la promesa de «cabe» era una
   // suposición porque los traslados aún no existían. Ahora sí: los horarios
   // reales están elegidos y las fichas tienen sus tiempos de visita.
+  // LO ESENCIAL DE LA CIUDAD VA ANTES QUE LA EXCURSIÓN OPCIONAL.
+  //
+  // Se hace aquí, con el lienzo ya montado, y no antes: hasta ahora no se sabía
+  // qué había quedado dentro y qué fuera.
+  final = liberarLoQueSeComeLaExcursion(viajeId, viaje, final, di);
+
   contarLoDeLaAclimatacion(viajeId, final, di);
 
   di('Comprobando si las paradas cortas dan para lo que se va a ver…');
