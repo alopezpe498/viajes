@@ -734,6 +734,18 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     };
   };
 
+  // Las ciudades que siguen VIVAS después de los descartes. Todo lo que se le
+  // enseñe al modelo en este paso —y todo lo que se le pase al generador de
+  // repartos— tiene que estar en esta lista.
+  //
+  // La definición se perdió al reescribir este bloque para que la puerta la
+  // eligiera el ranking: los tres usos se quedaron y el `const` no. Vuelve aquí,
+  // antes del primero.
+  const vivas = new Set(candidatas.map((c) => normalizarNombre(c.nombre)));
+  const tiemposVivos = (tiempos ?? []).filter(
+    (t) => vivas.has(normalizarNombre(t.desde ?? '')) && vivas.has(normalizarNombre(t.hasta ?? ''))
+  );
+
   // LA PUERTA LA ELIGE EL RANKING, NO LA IA.
   //
   // El código ya calculaba las horas útiles ponderadas de cada combinación y las
