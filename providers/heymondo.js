@@ -197,7 +197,7 @@ export async function buscarSegurosHeymondo({
   if (!fechaInicio || !fechaFin) throw new Error('Hacen falta las fechas del viaje.');
   if (!paises.length) throw new Error('Hace falta saber a qué país se viaja.');
 
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Heymondo' });
 
   try {
     await pagina.goto('https://heymondo.es/calcula-tu-seguro-de-viaje/', {

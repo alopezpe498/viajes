@@ -327,7 +327,7 @@ export async function buscarVuelos({ origen, destino, fechaIda, fechaVuelta }) {
   const ida = normalizarFecha(fechaIda, 'fechaIda');
   const vuelta = normalizarFecha(fechaVuelta, 'fechaVuelta');
 
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Vueling' });
   let paginaResultados = null;
 
   try {

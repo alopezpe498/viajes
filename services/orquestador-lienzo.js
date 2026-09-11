@@ -45,6 +45,8 @@ import {
   duracionDeLoColocado,
   horaLibreEn,
   cierraALasMinutos,
+  enMinutos,
+  comoHora,
   FRANJAS,
 } from '../services/lienzo.js';
 import { datosDeSitio, interpretarHorario } from '../services/datos-sitios.js';
@@ -431,38 +433,147 @@ export function esDiaDeViaje(lienzo, dia) {
   return acaba - empieza < minimo;
 }
 
-function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = false } = {}) {
-  const quien = deQuienEs(colocado);
-  const sitio =
-    quien?.de === 'sitio' && quien.deId
-      ? una('SELECT horarios, categoria FROM sitios_lugar WHERE id = ?', quien.deId)
-      : null;
+/** ¿Es este bloque la comida del día? */
+function esComida(colocado) {
+  return /^comer\b/i.test(String(colocado?.nombre ?? ''));
+}
 
-  const cierre = sitio ? cierraALasMinutos(sitio) : null;
+/** A qué hora tiene que haber TERMINADO esto, si es un sitio con cierre. */
+function cierreDe(colocado) {
+  const quien = deQuienEs(colocado);
+  if (quien?.de !== 'sitio' || !quien.deId) return null;
+  const sitio = una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId);
+  return sitio ? cierraALasMinutos(sitio) : null;
+}
+
+/**
+ * CUÁNTO PESA CADA COSA DEL LIENZO.
+ *
+ * Hasta ahora la revisión no se lo preguntaba: ante un solape expulsaba «el
+ * último», que es una propiedad del aviso, no del viaje. Así es como una comida
+ * de 90 minutos echó del plan a la Plaza del Mercado de Cracovia, que es el
+ * sitio número uno de la ciudad. El mundo al revés.
+ *
+ * El peso no se inventa, ya estaba guardado:
+ *
+ *   · `bloque` de la ficha del sitio — «imprescindibles» es el primer nivel,
+ *     «otros» el segundo, que es exactamente la escala que hacía falta.
+ *   · `orden` dentro de ese bloque — la Plaza del Mercado es el #1.
+ *   · una excursión pesa como un imprescindible Y ADEMÁS es rígida: tiene hora
+ *     de encuentro y no se negocia.
+ *   · la comida es lo más flexible del día. Se come antes o después; no se deja
+ *     de ver el sitio número uno de la ciudad.
+ *
+ * `rigido` decide los empates: entre dos cosas del mismo nivel se queda la que
+ * tiene el horario que no se puede mover y se busca hueco para la otra.
+ */
+function importanciaDe(colocado) {
+  if (esComida(colocado)) {
+    return { nivel: 1, orden: 99, rigido: false, que: 'la comida' };
+  }
+
+  const quien = deQuienEs(colocado);
+
+  if (quien?.de === 'sitio' && quien.deId) {
+    const sitio = una(
+      'SELECT bloque, orden, horarios FROM sitios_lugar WHERE id = ?',
+      quien.deId
+    );
+    const nivel = sitio?.bloque === 'imprescindibles' ? 3 : 2;
+    return {
+      nivel,
+      orden: Number(sitio?.orden) || 99,
+      rigido: sitio ? cierraALasMinutos(sitio) != null : false,
+      que: nivel === 3 ? `imprescindible #${Number(sitio?.orden) || '?'}` : 'sitio de segundo nivel',
+    };
+  }
+
+  // Una excursión se contrató con hora y sitio de encuentro: pesa como un
+  // imprescindible y encima no se puede mover.
+  if (quien?.candidato?.tipo === 'actividad') {
+    return { nivel: 3, orden: 0, rigido: true, que: 'una excursión' };
+  }
+
+  return { nivel: 2, orden: 50, rigido: false, que: 'un bloque suelto' };
+}
+
+/**
+ * DE DOS COSAS QUE CHOCAN, ¿CUÁL SE QUEDA?
+ *
+ * Devuelve `{ mas, menos }`. El orden de desempate es el que se declaró: nivel,
+ * después rigidez —el de horario rígido se queda y el flexible se mueve—, y al
+ * final el número de orden dentro de su bloque.
+ */
+function quienPesaMas(a, b) {
+  const ia = importanciaDe(a);
+  const ib = importanciaDe(b);
+
+  const gana = (() => {
+    if (ia.nivel !== ib.nivel) return ia.nivel > ib.nivel;
+    if (ia.rigido !== ib.rigido) return ia.rigido;
+    if (ia.orden !== ib.orden) return ia.orden < ib.orden;
+    return true; // empate perfecto: se queda el primero del día
+  })();
+
+  return gana
+    ? { mas: a, menos: b, impMas: ia, impMenos: ib }
+    : { mas: b, menos: a, impMas: ib, impMenos: ia };
+}
+
+/**
+ * EL MISMO LIENZO PERO SIN UNA TARJETA.
+ *
+ * Para buscarle hueco a algo hay que dejar de contar el hueco que ocupa ello
+ * mismo. Sin esto, `horaLibreEn` veía su propio bloque como ocupado y decía que
+ * no cabía justo donde estaba: la revisión se daba por vencida y expulsaba.
+ */
+function sinEl(lienzo, id) {
+  return { ...lienzo, colocados: lienzo.colocados.filter((c) => c.id !== id) };
+}
+
+function recolocarConHora(
+  viajeId,
+  lienzo,
+  colocado,
+  { desde = null, mismoDia = false, soloOtroDia = false } = {}
+) {
+  const cierre = cierreDe(colocado);
   const duracion = Number(colocado.duracionMin) || 60;
 
-  const franjasDesde = (clave) => CLAVES_FRANJA.slice(CLAVES_FRANJA.indexOf(clave) + 1);
-
-  // 1) Lo que queda del mismo día, detrás de donde estaba.
+  // EL TABLERO SIN ESTA TARJETA.
   //
-  // Salvo que ese día sea de viaje: ahí no se busca hueco ni para lo que ya
-  // estaba, porque el problema es justo que no debería estar.
+  // Buscarle hueco contando el hueco que ella misma ocupa es buscar donde no
+  // hay: `horaLibreEn` empujaba la candidata detrás de su propio bloque y
+  // devolvía null. Ese null se leía como «no cabe en ningún sitio» y acababa en
+  // una expulsión que no hacía falta.
+  const tablero = sinEl(lienzo, colocado.id);
+
+  // Su propia franja entra en la búsqueda, no solo las siguientes.
+  //
+  // Retrasar una visita de las 16:00 a las 16:40 es la solución más barata que
+  // existe y la versión anterior ni la consideraba: empezaba a mirar en la
+  // franja de después, y de ahí saltaba a otro día o a la calle.
   const franjasDelDia = esDiaDeViaje(lienzo, colocado.dia)
     ? []
-    : franjasDesde(colocado.franja);
+    : CLAVES_FRANJA.slice(CLAVES_FRANJA.indexOf(colocado.franja));
 
-  for (const franja of franjasDelDia) {
-    const hora = horaLibreEn(lienzo, {
-      dia: colocado.dia,
-      franja,
-      duracion,
-      noAntesDe: desde,
-      cierraA: cierre,
-    });
-    if (hora) {
-      mover(colocado.id, { dia: colocado.dia, franja });
-      retocar(colocado.id, { hora });
-      return { movido: true, dia: colocado.dia, franja, hora };
+  if (!soloOtroDia) {
+    for (const franja of franjasDelDia) {
+      const hora = horaLibreEn(tablero, {
+        dia: colocado.dia,
+        franja,
+        duracion,
+        noAntesDe: desde,
+        cierraA: cierre,
+      });
+      if (hora) {
+        // Si la fila ya no está —la expulsó otro aviso de esta misma pasada—
+        // `mover` devuelve null. Decir que se ha movido sería mentir en el
+        // registro, que es justo lo que hay que evitar.
+        if (!mover(colocado.id, { dia: colocado.dia, franja })) return { movido: false };
+        retocar(colocado.id, { hora });
+        return { movido: true, dia: colocado.dia, franja, hora };
+      }
     }
   }
 
@@ -476,9 +587,9 @@ function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = 
 
   for (const d of candidatos) {
     for (const franja of CLAVES_FRANJA) {
-      const hora = horaLibreEn(lienzo, { dia: d.n, franja, duracion, cierraA: cierre });
+      const hora = horaLibreEn(tablero, { dia: d.n, franja, duracion, cierraA: cierre });
       if (hora) {
-        mover(colocado.id, { dia: d.n, franja });
+        if (!mover(colocado.id, { dia: d.n, franja })) return { movido: false };
         retocar(colocado.id, { hora });
         return { movido: true, dia: d.n, franja, hora };
       }
@@ -489,16 +600,153 @@ function recolocarConHora(viajeId, lienzo, colocado, { desde = null, mismoDia = 
 }
 
 /**
+ * LA JERARQUÍA AL DESHACER UN CHOQUE.
+ *
+ * El fallo que arregla esto se vio en Polonia: seis expulsiones y ni un solo
+ * reencaje, entre ellas la Plaza del Mercado de Cracovia por pisarse cuarenta
+ * minutos con la comida. Expulsar era el primer recurso y el único.
+ *
+ * Ahora es el ÚLTIMO, y antes se prueban por orden las tres cosas que no cuestan
+ * nada y que una persona haría sin pensarlo:
+ *
+ *   a) RECORTAR el bloque que menos pesa, si es el que va delante. Una comida de
+ *      90 minutos que estorba 40 se come en 50 y no estorba.
+ *   b) RETRASAR lo que va detrás, si el día tiene aire. Preserva las dos cosas.
+ *   c) MOVERLO a otro día de la misma parada.
+ *   d) EXPULSAR, y al que menos pesa de los dos. Nunca al de mayor nivel.
+ *
+ * Y en los cuatro pasos el hueco se busca con los MISMOS chequeos que la
+ * colocación inicial —cierre del sitio, tope del día, bloques fijos, días de
+ * viaje—, porque una solución en hora inválida no es una solución: así se
+ * colocó la Lonja de los Paños a las 21:30 de un sitio que cierra a las 18:00.
+ *
+ * Devuelve cuántas tarjetas ha tocado.
+ */
+function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
+  const pareja = (aviso.idsEnConflicto ?? []).map((id) => porId.get(id)).filter(Boolean);
+
+  // Sin la pareja completa no hay jerarquía posible: se cae al camino de
+  // siempre, que al menos ya valida el hueco.
+  if (pareja.length < 2) {
+    const solo = (aviso.idsAfectados ?? []).map((id) => porId.get(id)).filter(Boolean).pop();
+    if (!solo) return 0;
+    const r = recolocarConHora(viajeId, lienzo, solo, { desde: aviso.libreDesde });
+    if (r.movido) di(`   Día ${aviso.dia}: ${solo.nombre} pasa al día ${r.dia} a las ${r.hora}.`);
+    else sacar(solo, 'chocaba y no había hueco en ningún día de la parada');
+    return 1;
+  }
+
+  const [primero, segundo] = pareja;
+  const { mas, menos, impMas, impMenos } = quienPesaMas(primero, segundo);
+
+  // A qué hora puede empezar el segundo sin pisar al primero. En un solape es
+  // cuando acaba el primero; en un «no llegas» incluye además el trayecto, y por
+  // eso se lee del aviso en vez de recalcularlo.
+  const puedeDesde = enMinutos(aviso.libreDesde);
+  const empiezaSegundo = enMinutos(segundo.hora);
+  if (puedeDesde == null || empiezaSegundo == null) return 0;
+
+  const estorbo = puedeDesde - empiezaSegundo;
+  if (estorbo <= 0) return 0;
+
+  const intentos = [];
+
+  // --- a) RECORTAR el que menos pesa, si va delante ------------------------
+  if (menos.id === primero.id) {
+    const suelo = parametro('duracion_minima_al_recortar_min', 45);
+    const duracion = Number(primero.duracionMin) || 0;
+    const recortada = duracion - estorbo;
+    if (duracion > 0 && recortada >= suelo) {
+      retocar(primero.id, { duracionMin: recortada });
+      di(
+        `   Día ${aviso.dia}: ${primero.nombre} se recorta de ${duracion} a ${recortada} min ` +
+          `y deja sitio a ${segundo.nombre} (${impMas.que} frente a ${impMenos.que}).`
+      );
+      return 1;
+    }
+    intentos.push(
+      duracion > 0
+        ? `recortar ${primero.nombre} (se quedaba en ${recortada} min y el mínimo son ${suelo})`
+        : `recortar ${primero.nombre}, que no tiene duración puesta`
+    );
+  }
+
+  // --- b) RETRASAR lo posterior, si el día tiene aire ----------------------
+  //
+  // Se intenta con el segundo sea quien sea el que pesa más: si cabe un poco más
+  // tarde, se salvan los dos y no hay nada que decidir.
+  const retraso = recolocarConHora(viajeId, lienzo, segundo, {
+    desde: aviso.libreDesde,
+    mismoDia: true,
+  });
+  if (retraso.movido) {
+    di(
+      `   Día ${aviso.dia}: ${segundo.nombre} se retrasa a las ${retraso.hora}, ` +
+        `detrás de ${primero.nombre}.`
+    );
+    return 1;
+  }
+  intentos.push(`retrasar ${segundo.nombre} en su día`);
+
+  // --- c) MOVER el que menos pesa a otro día válido ------------------------
+  //
+  // La comida no viaja de día: es un bloque diario. Si no ha podido recortarse
+  // ni retrasarse, se queda el aviso escrito antes que convertirla en cena.
+  if (esComida(menos)) {
+    di(
+      `   Día ${aviso.dia}: ${menos.nombre} choca con ${mas.nombre} y no he podido ` +
+        `${intentos.join(' ni ')}. La comida no cambia de día: lo dejo dicho.`
+    );
+    return 0;
+  }
+
+  const mudanza = recolocarConHora(viajeId, lienzo, menos, { soloOtroDia: true });
+  if (mudanza.movido) {
+    di(
+      `   Día ${aviso.dia}: ${menos.nombre} pasa al día ${mudanza.dia} a las ${mudanza.hora} ` +
+        `(pesa menos que ${mas.nombre}: ${impMenos.que} frente a ${impMas.que}).`
+    );
+    return 1;
+  }
+  intentos.push('moverlo a otro día de la parada');
+
+  // --- d) EXPULSAR, y al que menos pesa ------------------------------------
+  sacar(
+    menos,
+    `no pude ${intentos.join(' ni ')}: lo expulso por ser el de menor nivel ` +
+      `(${impMenos.que}) frente a ${mas.nombre} (${impMas.que})`
+  );
+  return 1;
+}
+
+/**
  * UNA PASADA DE CORRECCIONES. Devuelve cuántas cosas ha tocado.
  *
  * Cada tipo de aviso tiene su arreglo. Lo que no sepa arreglar se queda como
  * está y se dirá al final: mejor un aviso escrito que un arreglo inventado.
  */
-function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '22:00') {
+export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '22:00') {
   let tocados = 0;
   const porId = new Map(lienzo.colocados.map((c) => [c.id, c]));
 
+  // LO QUE YA SE HA IDO NO SE VUELVE A TOCAR.
+  //
+  // `lienzo` es una foto tomada antes de la pasada, y un aviso puede nombrar una
+  // tarjeta que otro aviso anterior acaba de expulsar. Sin esto, la revisión
+  // «movía al día 6 a las 20:00» algo que ya no estaba en el plan: no rompía
+  // nada, pero escribía en el registro un movimiento que no ocurrió. Un registro
+  // que miente es peor que uno que calla.
+  const idos = new Set();
+  const sacar = (c, motivo) => {
+    idos.add(c.id);
+    fuera.push(sacarDelPlan(c, di, motivo));
+  };
+  const yaNoEsta = (aviso) =>
+    [...(aviso.idsAfectados ?? []), ...(aviso.idsEnConflicto ?? [])].some((id) => idos.has(id));
+
   for (const aviso of lienzo.avisos) {
+    if (yaNoEsta(aviso)) continue;
+
     const dia = lienzo.dias.find((d) => d.n === aviso.dia);
     const afectados = (aviso.idsAfectados ?? []).map((id) => porId.get(id)).filter(Boolean);
 
@@ -512,13 +760,34 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
         fijos.find((f) => f.donde === 'ida')?.hora ??
         null;
 
-      const hora = llega && Number(llega.split(':')[0]) > 13 ? llega : '13:30';
-      const franja = franjaDesde(hora) ?? 'mediodia';
+      const pronto = llega && Number(llega.split(':')[0]) > 13 ? llega : '13:30';
 
-      if (Number(hora.split(':')[0]) >= 16) {
+      // PONER LA COMIDA ES COLOCAR, Y COLOCAR SE VALIDA.
+      //
+      // La versión anterior la clavaba a las 13:30 mirara lo que hubiera en esa
+      // hora: si el día ya tenía algo ahí, el aviso de «sin comida» se cambiaba
+      // por uno de solape y la pasada siguiente lo resolvía a hachazos. Ahora se
+      // busca un hueco de verdad, que es lo mismo que hace la colocación inicial.
+      const hora =
+        horaLibreEn(lienzo, {
+          dia: aviso.dia,
+          franja: 'mediodia',
+          duracion: duracionComida,
+          noAntesDe: pronto,
+        }) ??
+        horaLibreEn(lienzo, {
+          dia: aviso.dia,
+          franja: 'tarde',
+          duracion: duracionComida,
+          noAntesDe: pronto,
+        });
+
+      if (!hora || Number(hora.split(':')[0]) >= 16) {
         di(`   Día ${aviso.dia}: no hay hueco a una hora de comer; lo dejo dicho.`);
         continue;
       }
+
+      const franja = franjaDesde(hora) ?? 'mediodia';
 
       colocar(viajeId, {
         textoManual: 'Comer',
@@ -558,7 +827,7 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
         if (r.movido) {
           di(`   Día ${aviso.dia}: ${c.nombre} pasa al día ${r.dia} a las ${r.hora}, después del viaje.`);
         } else {
-          fuera.push(sacarDelPlan(c, di, 'no cabía después del viaje ni en otro día'));
+          sacar(c, 'no cabía después del viaje ni en otro día');
         }
         tocados += 1;
       }
@@ -572,7 +841,7 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
         if (r.movido) {
           di(`   Día ${aviso.dia}: ${c.nombre} pasa al día ${r.dia} a las ${r.hora}, antes del vuelo.`);
         } else {
-          fuera.push(sacarDelPlan(c, di, 'seguía a la hora del vuelo de vuelta y no cabía antes'));
+          sacar(c, 'seguía a la hora del vuelo de vuelta y no cabía antes');
         }
         tocados += 1;
       }
@@ -585,7 +854,7 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
         if (r.movido) {
           di(`   Día ${aviso.dia}: ${c.nombre} pasa a las ${r.hora}, ya con el viaje hecho.`);
         } else {
-          fuera.push(sacarDelPlan(c, di, 'caía antes de llegar y no había hueco después'));
+          sacar(c, 'caía antes de llegar y no había hueco después');
         }
         tocados += 1;
       }
@@ -594,7 +863,7 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
 
     if (aviso.tipo === 'despues-de-irse') {
       for (const c of afectados) {
-        fuera.push(sacarDelPlan(c, di, 'caía después del viaje de vuelta'));
+        sacar(c, 'caía después del viaje de vuelta');
         tocados += 1;
       }
       continue;
@@ -627,49 +896,59 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
           (d) =>
             d.etapaId === dia?.etapaId &&
             d.n !== c.dia &&
-            !cierra.includes(diaSemana(d.fecha))
+            !cierra.includes(diaSemana(d.fecha)) &&
+            !esDiaDeViaje(lienzo, d.n)
         );
         if (destino) {
+          // AQUÍ SALIÓ EL MOVIMIENTO ILEGAL DE POLONIA.
+          //
+          // Estas dos llamadas buscaban hueco sin pasar `cierraA`, así que el
+          // único tope era el del día: por eso la Lonja de los Paños acabó en el
+          // día 2 a las 21:30 cuando cierra a las 18:00 —dato que el sistema
+          // tenía y que citaba en el aviso original—. Un movimiento de la
+          // revisión que aterriza fuera de horario no resuelve nada, solo cambia
+          // el aviso de sitio.
+          //
+          // Ahora pasa por el mismo camino que todo lo demás, que ya mira cierre,
+          // tope del día, bloques fijos y días de viaje.
           const duracion = Number(c.duracionMin) || 60;
+          const cierre = cierreDe(c);
+          const tablero = sinEl(lienzo, c.id);
           const hora =
-            horaLibreEn(lienzo, { dia: destino.n, franja: c.franja, duracion }) ??
-            CLAVES_FRANJA.map((f) => horaLibreEn(lienzo, { dia: destino.n, franja: f, duracion })).find(
-              Boolean
-            );
+            horaLibreEn(tablero, { dia: destino.n, franja: c.franja, duracion, cierraA: cierre }) ??
+            CLAVES_FRANJA.map((f) =>
+              horaLibreEn(tablero, { dia: destino.n, franja: f, duracion, cierraA: cierre })
+            ).find(Boolean);
           if (hora) {
             mover(c.id, { dia: destino.n, franja: franjaDesde(hora) ?? c.franja });
             retocar(c.id, { hora });
             di(`   ${c.nombre} cerraba ese día: lo paso al día ${destino.n} a las ${hora}.`);
           } else {
-            fuera.push(sacarDelPlan(c, di, 'cierra ese día y el otro día no tiene hueco'));
+            sacar(c, 'cierra ese día y el otro día no tiene hueco dentro de su horario');
           }
         } else {
-          fuera.push(sacarDelPlan(c, di, 'cierra el único día que había para verlo'));
+          sacar(c, 'cierra el único día que había para verlo');
         }
         tocados += 1;
       }
       continue;
     }
 
-    // LOS CUATRO SE ARREGLAN IGUAL: la tarjeta que sobra se busca otro hueco
-    // con hora, y si no lo hay se saca del plan diciendo por qué.
+    // DOS CHOQUES DE PAREJA Y DOS DE UNA SOLA TARJETA.
     //
-    //   solape / no-llegas · choca con lo de al lado.
+    //   solape / no-llegas · dos bloques que se pisan. Hay que decidir cuál se
+    //                        queda, y esa decisión tiene jerarquía: `resolverChoque`.
     //   muy-tarde          · empieza cuando ya no se empieza nada.
     //   recien-llegado     · está pegada a un aterrizaje.
     //
-    // Los dos últimos son nuevos y llegan aquí a propósito: la primera versión
-    // los dejaba sin rama, y un aviso sin rama se convierte en «no he sabido
-    // resolverlo», que para algo tan mecánico como mover una hora es rendirse
-    // antes de intentarlo.
-    if (
-      aviso.tipo === 'no-llegas' ||
-      aviso.tipo === 'solape' ||
-      aviso.tipo === 'muy-tarde' ||
-      aviso.tipo === 'recien-llegado'
-    ) {
-      // El último de la lista es el que sobra: en un solape es el segundo de la
-      // pareja, y en los otros dos es el único que hay.
+    // Los dos últimos no tienen con quién compararse —el problema es la hora, no
+    // el vecino—, así que se les busca hueco y, si no lo hay, salen.
+    if (aviso.tipo === 'solape' || aviso.tipo === 'no-llegas') {
+      tocados += resolverChoque(viajeId, lienzo, aviso, porId, di, sacar);
+      continue;
+    }
+
+    if (aviso.tipo === 'muy-tarde' || aviso.tipo === 'recien-llegado') {
       const ultimo = afectados[afectados.length - 1];
       if (!ultimo) continue;
 
@@ -680,8 +959,7 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
       // que se quería arreglar. Se le da la hora a la que queda libre el día, y
       // si eso ya no es hora de comer se deja el aviso puesto: mejor decir que
       // no he sabido arreglarlo que arreglarlo mal.
-      const esComida = /^comer\b/i.test(String(ultimo.nombre ?? ''));
-      if (esComida) {
+      if (esComida(ultimo)) {
         const libre = aviso.libreDesde;
         const hora = Number(String(libre ?? '').split(':')[0]);
         if (libre && Number.isFinite(hora) && hora < 16) {
@@ -689,20 +967,16 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
           di(`   Día ${aviso.dia}: la comida pasa a las ${libre}, que es cuando queda libre.`);
           tocados += 1;
         } else {
-          di(`   Día ${aviso.dia}: la comida se solapa y no hay hueco a una hora de comer.`);
+          di(`   Día ${aviso.dia}: la comida no cabe a una hora de comer; lo dejo dicho.`);
         }
         continue;
       }
 
       const PORQUE_SE_MUEVE = {
-        solape: ' (se solapaba con lo anterior).',
-        'no-llegas': ' (no daba tiempo).',
         'muy-tarde': ' (empezaba demasiado tarde).',
         'recien-llegado': ' (era nada más aterrizar).',
       };
       const PORQUE_SE_VA = {
-        solape: 'se solapaba y no había hueco con hora en ningún día de la parada',
-        'no-llegas': 'no daba tiempo a llegar y no había hueco en ningún día de la parada',
         'muy-tarde': `empezaba a partir de las ${horaTope} y no había hueco antes en ningún día`,
         'recien-llegado': 'caía justo al aterrizar y no había hueco después en ningún día',
       };
@@ -714,7 +988,7 @@ function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaTope = '
             (PORQUE_SE_MUEVE[aviso.tipo] ?? '.')
         );
       } else {
-        fuera.push(sacarDelPlan(ultimo, di, PORQUE_SE_VA[aviso.tipo] ?? 'no había hueco'));
+        sacar(ultimo, PORQUE_SE_VA[aviso.tipo] ?? 'no había hueco');
       }
       tocados += 1;
     }

@@ -32,6 +32,7 @@
  */
 import { todas, una, ejecutar } from '../db/index.js';
 import { encolar, trabajoActivo, ultimoTrabajo } from '../jobs/cola.js';
+import { arrancarFase, pararFase } from './cronometro.js';
 
 /**
  * LAS SEIS FASES, EN ORDEN.
@@ -829,6 +830,7 @@ export function fotoDeLaBase(viajeId) {
 
 export function empezarFase(viajeId, fase) {
   enCurso = { viajeId, fase };
+  arrancarFase(viajeId, fase);
 
   // LA PASADA SE CUENTA DESDE EL REGISTRO, no desde esta fila.
   //
@@ -989,6 +991,13 @@ export function apuntarHueco(viajeId, fase, texto) {
  * usuario va a mirar.
  */
 export function cerrarFase(viajeId, fase, estado = 'hecho') {
+  // EL CRONÓMETRO, LO PRIMERO. Las líneas del desglose son de esta fase y de
+  // esta pasada, así que se escriben antes de tocar nada más: `anotar` lee la
+  // pasada de la fila, y la fila todavía dice la de ahora.
+  for (const linea of pararFase(FASES.find((f) => f.clave === fase)?.etiqueta ?? fase)) {
+    anotar(viajeId, fase, linea, ORIGENES.ninguno);
+  }
+
   // Se suelta aquí: lo que venga después ya no es de esta fase.
   if (enCurso?.viajeId === viajeId && enCurso?.fase === fase) enCurso = null;
 

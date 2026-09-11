@@ -36,6 +36,7 @@ import { ocupacionDe, aplicarFiltrosLocales } from '../services/proveedores.js';
 import { elegirHotel } from '../services/etapa.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
+import { apuntarReintento } from './cronometro.js';
 
 const FASE = 'dormir';
 
@@ -367,6 +368,13 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         di(`   Sin resultados. Lo intento ${escalon.comoSeLlama}.`, ORIGENES.estimacion);
       }
 
+      // Cada escalón de la escalera es una búsqueda de más: son los minutos que
+      // cuesta no haber encontrado nada a la primera, y se apuntan como lo que
+      // son —un reintento— para que el desglose de la fase los enseñe.
+      const cerrarReintento = escalon.comoSeLlama
+        ? apuntarReintento({ motivo: 'filtros aflojados' })
+        : () => {};
+
       try {
         hoteles = await buscarHoteles({
           destino: ciudad,
@@ -380,6 +388,8 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
       } catch (err) {
         di(`   La búsqueda falló (${err.message}).`);
         hoteles = [];
+      } finally {
+        cerrarReintento();
       }
 
       // «CÉNTRICO», SEGUNDA VUELTA: red de seguridad, ya no la única defensa.

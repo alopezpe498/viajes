@@ -173,7 +173,7 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
       pais
     );
 
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Civitatis' });
   try {
     // 2) El slug directo, que acierta la mayoria de las veces.
     for (const c of candidatos) {
@@ -399,7 +399,7 @@ export async function buscarActividades({ destino, maxResultados = 30, slug: slu
   // El slug ya descubierto manda sobre el fabricado: "Tesalonica" no existe en
   // Civitatis, pero "salonica" si, y quien llama ya lo ha averiguado.
   const slug = slugDado || destinoASlug(destino);
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Civitatis' });
 
   try {
     // ---- PASO 1: abrir la pagina del destino -----------------------------
@@ -642,7 +642,7 @@ export async function buscarFichaActividad({ url }) {
     throw new Error(`[civitatis] La url de la actividad no parece de Civitatis: ${url}`);
   }
 
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Civitatis' });
 
   try {
     await paso('1. Abrir la ficha de la actividad', async () => {

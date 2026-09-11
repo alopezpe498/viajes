@@ -931,6 +931,20 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       REGLA_DEL_EMPATE:
         [reglaDelEmpate, reglaDelAhorro].filter(Boolean).join('\n') ||
         'No se cumple: gana la más rápida puerta a puerta.',
+
+      // LOS DOS UMBRALES DE LA REGLA 3, LEÍDOS DE DONDE VIVEN.
+      //
+      // Estaban escritos a fuego dentro del texto del prompt, y son los mismos
+      // que aplica `horaMinimaDeSalida()` unas líneas más arriba. Con el número
+      // en los dos sitios, cambiar el parámetro dejaba al modelo eligiendo con
+      // el valor viejo y al código corrigiéndole con el nuevo: el modelo no se
+      // equivocaba, es que le habíamos dado mal la regla.
+      //
+      // Van SIN el ajuste del ritmo intenso a propósito: el prompt dice justo
+      // después que con ese ritmo se puede apretar una hora, que es lo que
+      // `horaMinimaDeSalida()` hace con estos mismos valores.
+      HORA_MINIMA_TREN: parametroTexto('hora_minima_tren', '09:00'),
+      HORA_MINIMA_AVION: parametroTexto('hora_minima_avion', '10:00'),
     };
 
     let eleccion = null;

@@ -51,6 +51,7 @@ import {
   anotar,
   apuntarHueco,
   cerrarFase,
+  ORIGENES,
 } from '../services/orquestador.js';
 import { ejecutarFaseCiudades } from '../services/orquestador-ciudades.js';
 import { ejecutarFaseTraslados } from '../services/orquestador-traslados.js';
@@ -104,6 +105,7 @@ import {
 } from '../services/descubrir.js';
 import { modeloIA } from '../lib/ia.js';
 import { sitioPorTexto } from '../services/geocodificar.js';
+import { arrancarViaje, resumenDeViaje } from '../services/cronometro.js';
 import {
   siguientePendiente,
   reclamar,
@@ -1477,6 +1479,10 @@ async function ejecutarOrquestador(trabajo) {
   let conHuecos = 0;
   let conError = 0;
 
+  // El reloj del viaje entero arranca aquí, antes de la primera fase. Lo que
+  // midan las fases por dentro tiene que caber en esto.
+  arrancarViaje(viajeId);
+
   // Una petición vieja no puede parar la ejecución de hoy: si alguien paró el
   // montaje anterior y ahora le da a montar otra vez, esa marca ya no vale.
   limpiarParada(viajeId);
@@ -1621,6 +1627,19 @@ async function ejecutarOrquestador(trabajo) {
   // Va FUERA del bucle y con su propio try/catch por la misma razón que las
   // fases lo tienen: que esto falle no puede convertir un viaje montado entero
   // en un viaje con error.
+  // --- EN QUÉ SE HAN IDO LOS MINUTOS -------------------------------------
+  //
+  // Va antes del presupuesto a propósito: el gasto diario no es una fase, se
+  // pide con el viaje ya montado, y meter su llamada de IA dentro del total
+  // haría que el resumen no cuadrase con la suma de las seis fases.
+  //
+  // Se cuelga de la última fase porque el registro se agrupa por fases y no hay
+  // sitio para una línea huérfana; leído de arriba abajo, cae al final, que es
+  // donde se busca.
+  for (const linea of resumenDeViaje()) {
+    anotar(viajeId, FASES[FASES.length - 1].clave, linea, ORIGENES.ninguno);
+  }
+
   await ejecutarPresupuesto({ id: trabajo.id, viajeId });
 
   console.log(

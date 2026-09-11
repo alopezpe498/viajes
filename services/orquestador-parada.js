@@ -34,6 +34,7 @@
 
 import { todas, una, ejecutar, db } from '../db/index.js';
 import { anotar, ORIGENES, TABLAS_DEL_VIAJE, fotoDeLaBase } from './orquestador.js';
+import { enParada } from './cronometro.js';
 
 export { fotoDeLaBase };
 
@@ -79,6 +80,15 @@ export function limpiarParada(viajeId) {
  * sitios, paso Varsovia» en vez de solo el nombre de la fase.
  */
 export function hayQueParar(viajeId, fase = null, paso = null) {
+  // DE PASO, EL CRONÓMETRO SABE EN QUÉ CIUDAD ESTAMOS.
+  //
+  // Las cinco fases con paradas llaman aquí una vez por parada y con su nombre,
+  // que es justo lo que hace falta para el desglose por ciudad. Colgarlo de este
+  // punto en vez de repetir una línea en cada fase tiene dos ventajas: no se
+  // toca ninguna fase, y una fase nueva con paradas hereda la medición sin
+  // enterarse. No cambia nada de lo que esta función decide.
+  enParada(paso);
+
   const pedida = paradaPedida(viajeId);
   if (!pedida) return false;
 

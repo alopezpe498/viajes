@@ -382,6 +382,8 @@ export function migrarEsquema() {
   migracionPararElOrquestador();
   migracionCorrectivoMeteora();
   migracionPuertaSoloCiudadesVivas();
+  migracionJerarquiaDeLaRevision();
+  migracionPromptsSinNumerosAFuego();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4788,6 +4790,140 @@ existe para este paso.`;
   marcarAplicada(CLAVE);
   console.log(
     `[bd] Migracion: el paso de la puerta ${nuevaFabrica !== fila.prompt_fabrica ? 'ya sabe que la lista es cerrada' : 'NO se pudo cambiar'}.`
+  );
+  return true;
+}
+
+/**
+ * LA REVISIÓN DEL LIENZO RESUELVE CON JERARQUÍA.
+ *
+ * En Polonia la revisión dejó seis expulsiones y cero reencajes: ante un solape
+ * echaba del plan «el último», que es una propiedad del aviso y no del viaje.
+ * Así se fue la Plaza del Mercado de Cracovia —el sitio número uno— por pisarse
+ * cuarenta minutos con la comida.
+ *
+ * Ahora antes de expulsar se prueba recortar, retrasar y mover, y este es el
+ * único número nuevo que hacía falta:
+ *
+ *   duracion_minima_al_recortar_min · Hasta dónde se puede acortar un bloque
+ *       para que quepa el que pesa más. Una comida de 90 minutos que estorba 40
+ *       se come en 50; por debajo de este suelo el recorte deja de ser un ajuste
+ *       y pasa a ser una visita de mentira, y entonces se prueba otra cosa.
+ */
+function migracionJerarquiaDeLaRevision() {
+  const CLAVE = '2026-09-jerarquia-revision-lienzo';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  const orden =
+    db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n + 1;
+
+  meter.run(
+    'duracion_minima_al_recortar_min',
+    '45',
+    '45',
+    'Lo mínimo que puede quedar de un bloque al recortarlo para que quepa otro de más peso',
+    'minutos',
+    orden
+  );
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: la revisión del lienzo recorta antes de expulsar.');
+  return true;
+}
+
+/**
+ * DOS PROMPTS QUE LLEVABAN NUMEROS Y NOMBRES A FUEGO.
+ *
+ * Son dos formas distintas del mismo problema: un dato escrito dentro del texto
+ * del prompt que ya existe en otro sitio.
+ *
+ *   gasto_diario · El ejemplo decia «Grecia, nivel normal: ~45 EUR» dos veces:
+ *       en la regla 4 y en el JSON. Un ejemplo con pais y con cifra es un ancla:
+ *       el modelo tiene delante un numero plausible y un pais concreto justo
+ *       donde se le pide que escriba los suyos, y copiar es mas barato que
+ *       estimar. Pasa a usar {{DESTINO}} y {{NIVEL}} —que se sustituyen con los
+ *       del viaje de verdad— y «XX» donde va la cifra, para que el ejemplo
+ *       ensene la FORMA sin sugerir el contenido.
+ *
+ *   traslados · La regla 3 decia «antes de las 9:00 en tren ni antes de las
+ *       10:00 en avion». Esos dos numeros son `hora_minima_tren` y
+ *       `hora_minima_avion`, existen en la tabla de parametros y los lee
+ *       `horaMinimaDeSalida()`. Escritos tambien en el prompt, cambiar el
+ *       parametro dejaba al modelo leyendo el valor viejo y al codigo aplicando
+ *       el nuevo. Pasan a variables.
+ */
+function migracionPromptsSinNumerosAFuego() {
+  const CLAVE = '2026-09-prompts-sin-numeros-a-fuego';
+  if (yaAplicada(CLAVE)) return false;
+
+  // Cada retoque: la fase, lo que hay que encontrar y por que se cambia. Se
+  // aplica igual a `prompt_fabrica` siempre, y a `prompt_actual` solo si nadie
+  // lo ha tocado a mano: lo editado gana.
+  const retoques = [
+    {
+      fase: 'gasto_diario',
+      viejo:
+        '   Ejemplo: "Grecia, nivel normal: ~45 EUR/persona/dia en tabernas y transporte urbano".',
+      nuevo:
+        '   La forma es esta, con el destino y el nivel de ARRIBA y tu cifra donde pone XX:\n' +
+        '   "{{DESTINO}}, nivel {{NIVEL}}: ~XX EUR/persona/dia en restaurantes y transporte urbano".',
+    },
+    {
+      fase: 'gasto_diario',
+      viejo:
+        '{"importe": 45, "porque": "Grecia, nivel normal: ~45 EUR/persona/dia en tabernas y transporte urbano"}',
+      nuevo:
+        '{"importe": numero, "porque": "{{DESTINO}}, nivel {{NIVEL}}: ~XX EUR/persona/dia en restaurantes y transporte urbano"}',
+    },
+    {
+      fase: 'traslados',
+      viejo:
+        '   8:00: eso significa no coger nada que salga antes de las 9:00 en tren ni antes\n' +
+        '   de las 10:00 en avión.',
+      nuevo:
+        '   8:00: eso significa no coger nada que salga antes de las {{HORA_MINIMA_TREN}}\n' +
+        '   en tren ni antes de las {{HORA_MINIMA_AVION}} en avión.',
+    },
+  ];
+
+  const leer = db.prepare(
+    'SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = ?'
+  );
+  const escribir = db.prepare(
+    'UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = ?'
+  );
+
+  let puestos = 0;
+  let sinEncontrar = [];
+
+  for (const r of retoques) {
+    const fila = leer.get(r.fase);
+    if (!fila) { sinEncontrar.push(`${r.fase} (no existe)`); continue; }
+
+    const cambiar = (t) => (t && t.includes(r.viejo) ? t.replace(r.viejo, r.nuevo) : t);
+
+    const nuevaFabrica = cambiar(fila.prompt_fabrica);
+    const nuevoActual =
+      fila.prompt_actual === fila.prompt_fabrica ? nuevaFabrica : cambiar(fila.prompt_actual);
+
+    if (nuevaFabrica === fila.prompt_fabrica && nuevoActual === fila.prompt_actual) {
+      sinEncontrar.push(`${r.fase} (texto no encontrado)`);
+      continue;
+    }
+
+    escribir.run(nuevoActual, nuevaFabrica, r.fase);
+    puestos += 1;
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: ${puestos} de ${retoques.length} retoque(s) de prompt puestos` +
+      (sinEncontrar.length ? `; sin aplicar: ${sinEncontrar.join(', ')}.` : '.')
   );
   return true;
 }

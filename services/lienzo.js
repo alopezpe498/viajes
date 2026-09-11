@@ -1074,14 +1074,14 @@ function avisosDeComida(dias, colocados, fijos) {
 // =============================================================================
 
 /** "15:30" -> 930 minutos desde medianoche. Null si no hay hora. */
-function enMinutos(hora) {
+export function enMinutos(hora) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hora ?? '').trim());
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
 /** 930 -> "15:30". */
-function comoHora(minutos) {
+export function comoHora(minutos) {
   const h = Math.floor(minutos / 60) % 24;
   const m = minutos % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -1230,6 +1230,14 @@ function avisosDeTiempo(dias, colocados) {
           dia: d.n,
           tipo: 'solape',
           idsAfectados: [b.id],
+          // LOS DOS DE LA PAREJA, EN ORDEN.
+          //
+          // `idsAfectados` nombra al segundo porque es el que llega tarde, y
+          // durante mucho tiempo fue el único que la revisión veía: por eso
+          // expulsaba siempre al segundo, aunque fuese la Plaza del Mercado y
+          // el primero una comida. Para poder decidir cuál se queda hay que
+          // tener delante a los dos.
+          idsEnConflicto: [a.id, b.id],
           // A qué hora queda libre lo anterior. Va en el aviso para que quien lo
           // corrija no tenga que sacarlo del texto: el texto es para leerlo.
           libreDesde: comoHora(acabaA),
@@ -1250,6 +1258,7 @@ function avisosDeTiempo(dias, colocados) {
         dia: d.n,
         tipo: 'no-llegas',
         idsAfectados: [b.id],
+        idsEnConflicto: [a.id, b.id],
         libreDesde: comoHora(llegaria),
         texto:
           `Sales de ${a.nombre} a las ${comoHora(acabaA)} y el trayecto son ` +

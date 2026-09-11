@@ -247,7 +247,7 @@ export async function preguntarAlModoIA(pregunta, { headless = false } = {}) {
   if (!limpia) throw new Error('[google-busqueda] No hay pregunta que hacer.');
 
   const url = BASE_MODO_IA + encodeURIComponent(limpia);
-  const { contexto, pagina } = await abrirNavegador({ headless });
+  const { contexto, pagina } = await abrirNavegador({ headless, de: 'Google' });
 
   try {
     // DIRECTOS AL MODO IA. Sin portada, sin escribir en la caja y sin pulsar

@@ -562,7 +562,7 @@ export async function buscarVuelosKayak({
   const fs = construirFs(filtros);
   if (fs) url += `&fs=${fs}`;
 
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Kayak' });
 
   try {
     await paso(`1. Abrir resultados ${orig}→${dest}`, async () => {

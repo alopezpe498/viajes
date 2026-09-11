@@ -517,7 +517,7 @@ export async function buscarHoteles({
 
   const url = `${BASE}?${params.toString()}`;
 
-  const { contexto, pagina } = await abrirNavegador();
+  const { contexto, pagina } = await abrirNavegador({ de: 'Booking' });
 
   try {
     await paso(`1. Abrir resultados de "${destino}"`, async () => {
