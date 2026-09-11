@@ -86,7 +86,18 @@ export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
   const oNulo = (v) => (v && v !== 'indiferente' ? v : null);
 
   return {
-    precioMin: rango?.min ?? null,
+    // EL MÍNIMO NO SE FILTRA, Y ANTES SE ANUNCIABA COMO SI SÍ.
+    //
+    // Con un filtro de «60-120 €/noche» se eligió un hotel de 25 €. Y está bien:
+    // encontrar algo bueno por debajo del rango no es un problema, es un
+    // hallazgo. El problema era el log, que anunciaba un rango que luego no se
+    // aplicaba, así que el número escrito y el número elegido se contradecían y
+    // no había forma de saber cuál de los dos mentía.
+    //
+    // De las dos salidas posibles —respetar el rango a rajatabla o quitar el
+    // mínimo— se toma la segunda, que es la que no tira alojamientos buenos. Y
+    // entonces el mínimo desaparece de verdad: del filtro y del texto.
+    precioMin: null,
     precioMax: rango?.max ?? null,
     // La valoración mínima va SIEMPRE y no se afloja nunca.
     notaMinima: auto.notaMinima ? Number(auto.notaMinima) : null,
@@ -113,7 +124,8 @@ export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
 /** Cómo se lee un intento en el log. */
 function resumenDeFiltros(f) {
   const t = [];
-  if (f.precioMin || f.precioMax) t.push(`${f.precioMin ?? 0}-${f.precioMax ?? '∞'} €/noche`);
+  // Solo el techo: es lo único que se filtra de verdad.
+  if (f.precioMax) t.push(`hasta ${f.precioMax} €/noche`);
   if (f.notaMinima) t.push(`nota ≥ ${f.notaMinima}`);
   if (f.tipoAlojamiento) t.push(f.tipoAlojamiento);
   if (f.distanciaMax) t.push(`a menos de ${f.distanciaMax} km del centro`);
@@ -396,7 +408,13 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
             maxResultados: MAX_HOTELES,
           });
         } catch (err) {
-          di(`   La búsqueda falló (${err.message}).`);
+          // «No hay hoteles esas noches» no es un fallo de la receta, y decirlo
+          // como si lo fuera manda a revisar código por algo que no es de código.
+          if (err.sinResultados) {
+            di('   Sin alojamientos para esas fechas con estos filtros.', ORIGENES.ninguno);
+          } else {
+            di(`   La búsqueda falló (${err.message}).`);
+          }
           hoteles = [];
         } finally {
           cerrarReintento();
@@ -533,7 +551,7 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         const n = Number(String(r?.elegida ?? '').replace(/\D/g, ''));
         const cand = ids[n - 1];
         if (cand) {
-          elegido = { ...cand, porQue: typeof r?.por_que === 'string' ? r.por_que.trim() : null };
+          elegido = { ...cand, porQue: justificacionQueCuadre(r?.por_que, ids, noches, di) };
         }
       } catch (err) {
         di(`   La IA no pudo elegir (${err.message}).`);
@@ -582,6 +600,61 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
 
   di(`${resueltas} de ${etapas.length} parada(s) con alojamiento.`);
   return { etapas: etapas.length, resueltas };
+}
+
+/**
+ * LAS CIFRAS DE LA JUSTIFICACIÓN TIENEN QUE EXISTIR.
+ *
+ * EL CASO DE POLONIA. El «por qué» de Varsovia decía «precio en rango (120€)»
+ * cuando el hotel elegido costaba 60. Ninguna de las dos cifras era del hotel:
+ * 120 era el techo del filtro y 60 el precio de verdad. Quien lee el resumen no
+ * tiene forma de saber cuál mirar, y una cifra inventada en un texto que por lo
+ * demás es correcto es peor que no dar cifras: parece comprobada.
+ *
+ * Así que se comprueba. Todo número en euros que aparezca en el texto tiene que
+ * estar entre los precios de los candidatos —el elegido o los descartados, por
+ * noche o de la estancia entera—. Si alguno no está, el texto no se guarda: se
+ * deja la versión sin cifras, que dice menos pero no miente.
+ *
+ * NO SE REINTENTA LA LLAMADA. El encargo lo permitía, pero una segunda pasada
+ * cuesta lo mismo que la primera y arregla un adorno, no una decisión: el hotel
+ * ya está elegido y bien elegido. Quitarle las cifras al adorno sale gratis.
+ */
+function justificacionQueCuadre(texto, candidatos, noches, di) {
+  const t = typeof texto === 'string' ? texto.trim() : null;
+  if (!t) return null;
+
+  // Los números en euros que cita el texto.
+  const citadas = [...t.matchAll(/(\d[\d.,]*)\s*(?:€|eur|euros)/gi)]
+    .map((m) => Math.round(Number(m[1].replace(/\./g, '').replace(',', '.'))))
+    .filter((x) => Number.isFinite(x) && x > 0);
+
+  if (!citadas.length) return t;   // sin cifras no hay nada que cuadrar
+
+  // Los números que de verdad existen: de cada candidato, su total y su noche.
+  const reales = new Set();
+  for (const c of candidatos) {
+    const total = Number(c.hotel?.precioTotal);
+    if (!Number.isFinite(total) || total <= 0) continue;
+    reales.add(Math.round(total));
+    reales.add(Math.round(total / Math.max(1, noches)));
+  }
+
+  // Un euro arriba o abajo es redondeo, no una cifra inventada.
+  const existe = (x) => [...reales].some((r) => Math.abs(r - x) <= 1);
+  const inventadas = citadas.filter((x) => !existe(x));
+
+  if (!inventadas.length) return t;
+
+  di(
+    `   La justificación citaba ${inventadas.join(' €, ')} €, que no es el precio de ningún ` +
+      'candidato: la guardo sin cifras.',
+    ORIGENES.ninguno
+  );
+
+  // Se quitan las cifras y se deja lo que decía por lo demás, que suele valer.
+  const limpio = t.replace(/\(?\s*\d[\d.,]*\s*(?:€|eur|euros)\s*\)?/gi, '').replace(/\s{2,}/g, ' ').trim();
+  return limpio.length > 15 ? limpio : 'elegido por relación calidad/precio y ubicación';
 }
 
 /**

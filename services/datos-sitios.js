@@ -28,7 +28,7 @@ import { encolar, trabajoActivo } from '../jobs/cola.js';
 import { resumenDeSitio } from '../lib/resumen-sitio.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { buscarTablaDeSitios, ErrorCaptcha } from '../providers/google-busqueda.js';
-import { diasQueCierra, TODOS_LOS_DIAS } from './horarios.js';
+import { diasQueCierra, horarioPorDias, TODOS_LOS_DIAS } from './horarios.js';
 
 /** A partir de aquí, lo guardado se enseña con un "puede haber cambiado". */
 export const DIAS_PARA_AVISAR = 30;
@@ -739,9 +739,19 @@ export async function interpretarHorario(sitioId) {
 function guardarCierres(sitio, dias, comoSeSupo) {
   const limpios = [...new Set(dias)].sort((a, b) => a - b);
 
+  // EL HORARIO PARSEADO, GUARDADO JUNTO AL SITIO.
+  //
+  // La comprobación de «¿abre el día D?» se hace siempre leyendo el texto, que
+  // es la única fuente que no se queda vieja. Esto se guarda para poder MIRARLO:
+  // qué ha entendido el lector, día a día y con sus rangos. Cuando un aviso
+  // vuelva a decir algo raro, aquí se ve si el fallo fue de la lectura o del
+  // dato que trajo Google.
+  const estructura = horarioPorDias(sitio.horarios);
+
   ejecutar(
-    "UPDATE sitios_lugar SET cierra_dias = ?, cierra_en = datetime('now') WHERE id = ?",
+    "UPDATE sitios_lugar SET cierra_dias = ?, horario_json = ?, cierra_en = datetime('now') WHERE id = ?",
     JSON.stringify(limpios),
+    JSON.stringify(estructura),
     sitio.id
   );
 

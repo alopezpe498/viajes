@@ -139,74 +139,190 @@ function diasDelTramo(tramo) {
 }
 
 /**
- * QUÉ DÍAS ABRE, SEGÚN EL TEXTO. Devuelve null cuando el texto no lo dice.
+ * LOS TRAMOS DE UN TEXTO DE HORARIO.
  *
- * `null` y lista vacía no son lo mismo y la diferencia es la que evita el
- * desastre: null es «no lo sé» y quien llama decide (y decide que abre); una
- * lista con días es una respuesta.
+ * AQUÍ ESTABA EL FALLO DE POLONIA, y es de una línea. Se partía por punto y coma
+ * y salto de línea, nada más, así que esto:
+ *
+ *     «Mié-Dom: 10:00-18:00 (Lun: Cerrado)»
+ *
+ * era UN SOLO tramo, y como dentro aparecía la palabra «Cerrado», el tramo
+ * entero se leía como un tramo de cierre: miércoles a domingo pasaban a ser los
+ * días que el museo CIERRA. El domingo, que es justo cuando abre, quedó marcado
+ * como cerrado y la revisión echó del plan los dos museos de Gdansk.
+ *
+ * El paréntesis es una NOTA APARTE —una excepción a lo que dice la frase de
+ * fuera— y tiene que ser su propio tramo. Se saca antes de partir por el resto
+ * de separadores.
  */
-export function diasQueAbre(texto) {
-  const t = normalizar(texto);
-  if (!t.trim()) return null;
+function tramosDe(t) {
+  const notas = [];
+  // Los paréntesis, fuera y cada uno por su cuenta.
+  const sinParentesis = t.replace(/\(([^)]*)\)/g, (_, dentro) => {
+    notas.push(dentro.trim());
+    return ' ; ';
+  });
 
-  // Los tramos: punto y coma, salto de línea y barra vertical. La coma NO parte,
-  // porque «Lun-Vie, Sab» es un solo tramo con un rango y un día suelto.
-  const tramos = t.split(/[;|\n]+/).map((x) => x.trim()).filter(Boolean);
+  return [...sinParentesis.split(/[;|\n]+/), ...notas]
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
-  const abre = new Set();
-  const cierra = new Set();
-  let algoDicho = false;
-
-  for (const tramo of tramos) {
-    const esDeCierre = CIERRE.some((p) => tramo.includes(p));
-    const dias = diasDelTramo(tramo);
-
-    // «Todos los días» solo cuenta en un tramo que no sea de cierre: «cerrado
-    // todos los lunes» no abre toda la semana.
-    if (!esDeCierre && SIEMPRE.some((p) => tramo.includes(p))) {
-      for (const d of TODOS_LOS_DIAS) abre.add(d);
-      algoDicho = true;
-      continue;
-    }
-
-    if (!dias.size) continue;
-    algoDicho = true;
-    for (const d of dias) (esDeCierre ? cierra : abre).add(d);
+/** Los rangos horarios de un tramo, en minutos desde medianoche. */
+function rangosDelTramo(tramo) {
+  const rangos = [];
+  // "10:00-18:00", "10.00 a 18.00", "9am-5pm", "10:00 - 16:00"
+  const re = /(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?\s*(?:-|a|al|to|hasta|–)\s*(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?/g;
+  let m;
+  while ((m = re.exec(tramo)) !== null) {
+    const enMinutos = (h, min, ampm) => {
+      let hora = Number(h);
+      if (!Number.isInteger(hora) || hora > 24) return null;
+      if (ampm === 'pm' && hora < 12) hora += 12;
+      if (ampm === 'am' && hora === 12) hora = 0;
+      const mm = min === undefined ? 0 : Number(min);
+      if (mm > 59) return null;
+      return hora * 60 + mm;
+    };
+    const desde = enMinutos(m[1], m[2], m[3]);
+    const hasta = enMinutos(m[4], m[5], m[6] ?? m[3]);
+    if (desde == null || hasta == null || hasta <= desde) continue;
+    rangos.push([desde, hasta]);
   }
-
-  if (!algoDicho) return null;
-
-  // Un tramo de cierre sin ningún tramo de apertura describe las excepciones de
-  // una semana que por lo demás abre: «cerrado los lunes» abre los otros seis.
-  const abiertos = abre.size
-    ? [...abre].filter((d) => !cierra.has(d))
-    : TODOS_LOS_DIAS.filter((d) => !cierra.has(d));
-
-  return abiertos.sort((a, b) => a - b);
+  return rangos;
 }
 
 /**
- * LOS DÍAS QUE CIERRA, que es lo que guarda la ficha. El complemento se calcula
- * AQUÍ, que es el cambio que arregla el fallo del viernes.
+ * EL HORARIO, DÍA A DÍA Y EN ESTRUCTURA.
+ *
+ * Devuelve los siete días, cada uno con su estado y sus rangos:
+ *
+ *   abierto     · con `rangos` si el texto los daba, vacío si solo decía el día.
+ *   cerrado     · el texto lo dice.
+ *   desconocido · el texto no habla de ese día y tampoco permite deducirlo.
+ *
+ * LOS TRES ESTADOS SON EL ARREGLO, no un detalle de tipos. Con dos —abierto o
+ * cerrado— cualquier duda acaba convertida en un cierre, y un cierre inventado
+ * echa un sitio del viaje. Con el tercero, la duda se puede tratar como lo que
+ * es: se coloca el sitio y se avisa flojito.
  */
-export function diasQueCierra(texto) {
-  const abre = diasQueAbre(texto);
-  if (abre === null) return null;
+export function horarioPorDias(texto) {
+  const t = normalizar(texto);
+  const porDia = TODOS_LOS_DIAS.map(() => ({ estado: 'desconocido', rangos: [] }));
+  if (!t.trim()) return { porDia, fiable: false };
 
-  // LA REGLA DE ORO. Si la lectura dice que no abre ningún día, la lectura está
-  // mal: ningún sitio publica un horario para decir que nunca abre. Se devuelve
-  // «no lo sé» y el sitio se queda sin días de cierre, que es el lado seguro del
-  // error: molesta encontrarlo cerrado, pero no lo borra del viaje.
-  if (!abre.length) return null;
+  let huboApertura = false;
+  let huboCierre = false;
+  let exclusivo = /\b(solo|unicamente|only|exclusivamente)\b/.test(t) || /\babre\s+(de|los|el)\b/.test(t);
+  let porDefecto = null;
 
-  return TODOS_LOS_DIAS.filter((d) => !abre.includes(d));
+  for (const tramo of tramosDe(t)) {
+    const esDeCierre = CIERRE.some((p2) => tramo.includes(p2));
+    const dias = diasDelTramo(tramo);
+    const rangos = rangosDelTramo(tramo);
+
+    if (!esDeCierre && SIEMPRE.some((p2) => tramo.includes(p2))) {
+      for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'abierto', rangos };
+      huboApertura = true;
+      continue;
+    }
+
+    if (!dias.size) {
+      // Unas horas sin día delante valen para los días que no digan otra cosa.
+      if (!esDeCierre && rangos.length) porDefecto = rangos;
+      continue;
+    }
+
+    for (const d of dias) {
+      porDia[d] = esDeCierre ? { estado: 'cerrado', rangos: [] } : { estado: 'abierto', rangos };
+    }
+    if (esDeCierre) huboCierre = true;
+    else huboApertura = true;
+  }
+
+  // Lo que quede sin decidir, en este orden:
+  for (const d of TODOS_LOS_DIAS) {
+    if (porDia[d].estado !== 'desconocido') continue;
+
+    // 1. Unas horas sueltas sin día valen para todos los que faltan.
+    if (porDefecto) {
+      porDia[d] = { estado: 'abierto', rangos: porDefecto };
+      continue;
+    }
+    // 2. Si el texto ENUMERA días abiertos, la lista es la lista: lo que no
+    //    está, cierra. Es como se leen «Vie a Dom» y «Mié-Dom: 10:00-18:00».
+    if (huboApertura) {
+      porDia[d] = { estado: 'cerrado', rangos: [] };
+      continue;
+    }
+    // 3. Y si lo único que dice el texto son excepciones —«cerrado los
+    //    lunes»—, el resto de la semana abre.
+    if (huboCierre) porDia[d] = { estado: 'abierto', rangos: [] };
+  }
+
+  return { porDia, fiable: huboApertura || huboCierre || Boolean(porDefecto) };
 }
 
-/** ¿Abre este día de la semana? `null` cuando el texto no permite saberlo. */
+/**
+ * ¿ABRE ESTE DÍA? true / false / null cuando el texto no lo dice.
+ *
+ * `null` NO es «cerrado». Quien lo reciba tiene que colocar el sitio igual y
+ * avisar flojito: afirmar un cierre que el horario no dice es exactamente lo
+ * que echó del viaje a dos museos que abrían.
+ */
 export function abreEl(texto, diaSemana) {
-  const abre = diasQueAbre(texto);
-  if (abre === null || !abre.length) return null;
-  return abre.includes(Number(diaSemana));
+  const { porDia, fiable } = horarioPorDias(texto);
+  if (!fiable) return null;
+  const d = porDia[Number(diaSemana)];
+  if (!d || d.estado === 'desconocido') return null;
+  return d.estado === 'abierto';
+}
+
+/** ¿Y a esta hora? Mismos tres estados. `hora` en «HH:MM» o en minutos. */
+export function abiertoA(texto, diaSemana, hora) {
+  const abre = abreEl(texto, diaSemana);
+  if (abre !== true) return abre;
+
+  const { porDia } = horarioPorDias(texto);
+  const rangos = porDia[Number(diaSemana)].rangos;
+  if (!rangos.length) return null; // abre, pero no sabemos entre qué horas
+
+  const m =
+    typeof hora === 'number'
+      ? hora
+      : (() => {
+          const x = /^(\d{1,2}):(\d{2})$/.exec(String(hora ?? '').trim());
+          return x ? Number(x[1]) * 60 + Number(x[2]) : null;
+        })();
+  if (m == null) return null;
+
+  return rangos.some(([desde, hasta]) => m >= desde && m < hasta);
+}
+
+/** Los días que abre. Se mantiene por lo que ya lo usaba. */
+export function diasQueAbre(texto) {
+  const { porDia, fiable } = horarioPorDias(texto);
+  if (!fiable) return null;
+  const abiertos = TODOS_LOS_DIAS.filter((d) => porDia[d].estado === 'abierto');
+  return abiertos.length ? abiertos : null;
+}
+
+/**
+ * LOS DÍAS QUE CIERRA, que es lo que guarda la ficha.
+ *
+ * Solo los que el horario dice que cierran. Un día «desconocido» NO entra aquí:
+ * esa es toda la diferencia entre avisar y expulsar.
+ */
+export function diasQueCierra(texto) {
+  const { porDia, fiable } = horarioPorDias(texto);
+  if (!fiable) return null;
+
+  const cerrados = TODOS_LOS_DIAS.filter((d) => porDia[d].estado === 'cerrado');
+
+  // LA REGLA DE ORO. Si sale que cierra los siete, la lectura está mal: ningún
+  // sitio publica un horario para decir que nunca abre.
+  if (cerrados.length >= 7) return null;
+  return cerrados;
 }
 
 // =============================================================================

@@ -387,6 +387,9 @@ export function migrarEsquema() {
   migracionCorrectivoAsia();
   migracionDosModelosYParalelo();
   migracionScrapingEnFila();
+  anadirColumnaSiFalta('sitios_lugar', 'horario_json', 'TEXT');
+  migracionUnNavegadorPorDominio();
+  migracionFase1NoAfirmaQueCabe();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5102,6 +5105,90 @@ function migracionScrapingEnFila() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el scraping va en fila (una plaza de navegador).');
+  return true;
+}
+
+/**
+ * UN NAVEGADOR POR DOMINIO.
+ *
+ * La plaza unica del correctivo anterior arreglo el «profile in use» a costa de
+ * serializar TODO el scraping: 23m 51s de viaje con 6m 21s de scraping, 5m 12s
+ * de IA y catorce minutos y medio de resto — las tres fases paralelas esperando
+ * turno para un Chrome ocupado con otra cosa.
+ *
+ * Lo que no se puede compartir no es el navegador: es el PERFIL. Con uno por
+ * dominio, Booking y Kayak corren a la vez —son sitios distintos— y sigue
+ * habiendo uno solo por dominio, que es lo que evita el captcha.
+ */
+function migracionUnNavegadorPorDominio() {
+  const CLAVE = '2026-09-un-navegador-por-dominio';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  const orden =
+    db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n + 1;
+
+  meter.run(
+    'concurrencia_por_dominio', '1', '1',
+    'Cuantas busquedas a la vez contra el MISMO sitio (Booking, Kayak...). Dominios distintos corren en paralelo',
+    'a la vez', orden
+  );
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: un navegador por dominio.');
+  return true;
+}
+
+/**
+ * LA FASE 1 NO PUEDE AFIRMAR QUE ALGO «CABE».
+ *
+ * En Polonia, la justificacion de dejar una noche en Gdansk decia que «cabe lo
+ * esencial». La fase 1 no ha visto todavia un solo imprescindible de Gdansk: los
+ * sitios se generan tres fases mas tarde. Era una afirmacion sobre datos que aun
+ * no existen, escrita con la misma seguridad que las que si se pueden comprobar,
+ * y quien lee el resumen no tiene forma de distinguirlas.
+ *
+ * Lo que la fase 1 SI sabe son las horas utiles que deja el reparto. Eso puede
+ * decirlo. Si caben o no las cosas concretas lo dira el lienzo, que es quien las
+ * tiene delante, y ya avisa cuando no caben.
+ */
+function migracionFase1NoAfirmaQueCabe() {
+  const CLAVE = '2026-09-fase1-no-afirma-que-cabe';
+  if (yaAplicada(CLAVE)) return false;
+
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  if (!fila) { marcarAplicada(CLAVE); return false; }
+
+  const VIEJO = `  (b) lo que se va a ver alli cabe en el tiempo util que le queda.`;
+  const NUEVO = `  (b) queda tiempo util de sobra para lo que sea que haya alli.
+
+NO AFIRMES QUE ALGO "CABE". Todavia no sabes que hay en esa ciudad: los sitios se
+buscan tres fases mas tarde. Di las HORAS UTILES que deja el reparto y dejalo
+ahi: "deja ~5 h utiles; la fase del lienzo vera si los imprescindibles caben".
+Escribir "cabe lo esencial" antes de conocer lo esencial es inventarse una
+comprobacion, y se lee igual que las que si se han hecho.`;
+
+  const cambiar = (t) => (t && t.includes(VIEJO) && !t.includes('NO AFIRMES QUE ALGO "CABE"')
+    ? t.replace(VIEJO, NUEVO)
+    : t);
+
+  const nuevaFabrica = cambiar(fila.prompt_fabrica);
+  const nuevoActual = fila.prompt_actual === fila.prompt_fabrica ? nuevaFabrica : cambiar(fila.prompt_actual);
+
+  db.prepare(
+    "UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = 'ciudades_y_noches'"
+  ).run(nuevoActual, nuevaFabrica);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: la fase 1 ${nuevaFabrica !== fila.prompt_fabrica ? 'ya no afirma que algo cabe' : 'NO se pudo cambiar'}.`
+  );
   return true;
 }
 

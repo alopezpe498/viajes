@@ -19,6 +19,7 @@
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
 import { pedirInterpretarHorario } from './datos-sitios.js';
+import { abreEl, horarioPorDias } from './horarios.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { parametro, parametroTexto } from './orquestador.js';
 
@@ -904,15 +905,40 @@ function avisosDeCierre(dias, colocados, viajeId) {
       const info = cierres.get(sitioId);
       if (!info) continue;                       // sin horario: nada que decir
 
-      if (info.dias == null) {
-        porInterpretar.add(sitioId);             // hay horario pero sin traducir
-        continue;
-      }
-
+      // EL VEREDICTO SE CALCULA AQUÍ, CONTRA EL TEXTO DEL HORARIO.
+      //
+      // Antes se leía de `cierra_dias`, una lista guardada que en su día escribió
+      // la IA o un lector que se equivocaba. En Polonia salió «el Museo de la
+      // Segunda Guerra Mundial cierra los domingos» citando un horario que dice
+      // «Mié-Dom: 10:00-18:00»: el aviso se contradecía a sí mismo en la misma
+      // frase, y aun así los dos museos de Gdansk se fueron del plan.
+      //
+      // Ahora el único que dicta es el horario publicado, leído en código. Sin
+      // caché que se quede vieja y sin nadie afirmando cierres de memoria.
+      //
       // EL DÍA SALE DE LA FECHA, no de cómo lo llame nadie. En el registro de
       // Grecia se habló de un «mercadillo dominical» colocado el sábado 26:
       // `queDia` lo calcula `diaDeLaSemana(d.fecha)` y esa es la única fuente.
-      if (!info.dias.includes(queDia)) continue; // abierto: todo bien
+      const abre = abreEl(info.horarios, queDia);
+
+      if (abre === true) continue;               // abierto: todo bien
+
+      if (abre === null) {
+        // NI ABIERTO NI CERRADO: EL HORARIO NO LO DICE.
+        //
+        // Y una duda no puede costar una expulsión, que era lo que pasaba. El
+        // sitio se queda donde está y se avisa flojito para que alguien lo mire.
+        porInterpretar.add(sitioId);
+        avisos.push({
+          dia: d.n,
+          tipo: 'horario-sin-verificar',
+          idsAfectados: [c.id],
+          texto:
+            `${c.nombre}: no he podido leer su horario con seguridad, así que lo dejo ` +
+            `puesto en ${d.fechaCorta}. Compruébalo antes de ir. Dice: «${info.horarios}»`,
+        });
+        continue;
+      }
 
       avisos.push({
         dia: d.n,

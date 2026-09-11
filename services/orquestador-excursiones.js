@@ -34,6 +34,7 @@ import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../servic
 import { lienzoDeViaje } from '../services/lienzo.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 import { porParada } from '../services/paralelo.js';
+import { fueraDeTemporada, mesesDelViaje } from '../services/temporadas.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
 
@@ -122,6 +123,16 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
   );
 
   let elegidasEnTotal = 0;
+
+  // Los meses que toca el viaje, para la comprobación de temporada.
+  const mesesDelDestino = mesesDelViaje(viaje.fecha_inicio, viaje.fecha_fin);
+
+  // LO QUE YA SE HA COGIDO EN OTRAS PARADAS, para no repetir la experiencia.
+  //
+  // El concierto de Chopin acabó colocado en Cracovia Y en Varsovia: dos
+  // entradas distintas del catálogo, la misma noche de piano. Se guardan los
+  // títulos ya elegidos en el viaje —con su ciudad— y se comparan por parecido.
+  const yaEnElViaje = [];
 
   // AQUÍ LAS PARADAS NO SON DEL TODO INDEPENDIENTES, y hay que decirlo.
   //
@@ -376,6 +387,39 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         );
 
       for (const e of elegidas) {
+        // --- FUERA DE TEMPORADA -------------------------------------------
+        //
+        // «Zakopane + paseo en moto de nieve» para un viaje del 21 al 27 de
+        // septiembre. En los Tatras, en septiembre, no hay nieve: o no opera o
+        // opera sin la moto, que es la mitad de por qué la eliges.
+        const temporada = fueraDeTemporada({
+          titulo: e.actividad.titulo,
+          descripcion: e.actividad.descripcion_larga ?? '',
+          fechasPropias: e.actividad.detalles_extra ?? e.actividad.horarios ?? '',
+          meses: mesesDelDestino,
+        });
+
+        if (temporada?.duro) {
+          di(
+            `   ✘ «${e.actividad.titulo}»: fuera de temporada (${temporada.que}: ` +
+              `${temporada.porQue}; va de ${temporada.meses.join(', ')} y vas en ` +
+              `${mesesDelDestino.join(', ')}). La descarto.`,
+            ORIGENES.ninguno
+          );
+          continue;
+        }
+
+        // --- MISMA EXPERIENCIA EN OTRA PARADA ------------------------------
+        const gemela = yaEnElViaje.find((x) => seParecen(x.titulo, e.actividad.titulo));
+        if (gemela) {
+          di(
+            `   ✘ «${e.actividad.titulo}»: equivalente ya incluida en ${gemela.ciudad} ` +
+              `(«${gemela.titulo}»). La descarto.`,
+            ORIGENES.ninguno
+          );
+          continue;
+        }
+
         // `alternarApuntado` ALTERNA: si la excursión ya estuviera apuntada, esa
         // llamada la DESAPUNTARÍA y se llevaría por delante su sitio en el
         // lienzo. Hoy no puede pasar —las ya apuntadas se filtran antes de
@@ -398,6 +442,23 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         }
 
         guardadas.push(e);
+        yaEnElViaje.push({ titulo: e.actividad.titulo, ciudad });
+
+        // Y si la temporada era dudosa —no motivo para tirarla, pero tampoco
+        // para fiarse— se dice aquí, que es donde se lee antes de reservar.
+        if (temporada && !temporada.duro) {
+          di(
+            `   ⚠ «${e.actividad.titulo}»: verifica disponibilidad en tus fechas ` +
+              `(${temporada.que}: ${temporada.porQue}).`,
+            ORIGENES.ninguno
+          );
+          apuntarHueco(
+            viajeId,
+            FASE,
+            `${ciudad}: «${e.actividad.titulo}» puede no operar en tus fechas (${temporada.que}).`
+          );
+        }
+
         di(
           `   Excursión «${e.actividad.titulo}» guardada como candidata de ${ciudad} ` +
             `(candidato #${candidato.id}, catálogo #${e.actividad.id}).`,
@@ -496,6 +557,44 @@ function avisarDeLasQueSeCayeron(viaje, di) {
       `Aviso para el viaje: ${c.nombre} (peso ${c.peso}) se queda fuera —ni parada ni excursión—.`
     );
   }
+}
+
+/**
+ * ¿SON LA MISMA EXPERIENCIA DOS TÍTULOS DE CATÁLOGO?
+ *
+ * El concierto de Chopin en Cracovia y el de Varsovia son entradas distintas,
+ * con su id y su precio, y para el catálogo no tienen nada que ver. Para quien
+ * viaja son la misma noche dos veces.
+ *
+ * Se comparan las palabras con peso —fuera las de relleno y los nombres de
+ * ciudad, que son justo lo que las diferencia— y se pide que compartan la mayor
+ * parte. No es semántica: es que «concierto» y «chopin» estén en los dos.
+ */
+const RELLENO = new Set([
+  'de', 'del', 'la', 'el', 'los', 'las', 'en', 'y', 'a', 'con', 'por', 'para',
+  'un', 'una', 'al', 'tour', 'visita', 'entrada', 'entradas', 'excursion',
+  'guiada', 'guiado', 'free', 'ticket', 'tickets',
+]);
+
+export function seParecen(a, b) {
+  const palabras = (t) =>
+    new Set(
+      String(t ?? '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .split(/[^a-z0-9]+/)
+        .filter((x) => x.length > 2 && !RELLENO.has(x))
+    );
+
+  const x = palabras(a);
+  const y = palabras(b);
+  if (x.size < 1 || y.size < 1) return false;
+
+  const comunes = [...x].filter((p) => y.has(p)).length;
+  // Sobre la lista MÁS CORTA: «Concierto de Chopin» y «Concierto de Chopin en la
+  // Sala de Conciertos de Varsovia» son lo mismo aunque la segunda diga más.
+  return comunes / Math.min(x.size, y.size) >= 0.6;
 }
 
 export default { ejecutarFaseExcursiones, duracionEnMinutos, esLarga };

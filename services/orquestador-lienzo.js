@@ -63,7 +63,7 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
-import { horasDeSesion, soloAUltimaHora } from '../services/horarios.js';
+import { horasDeSesion, soloAUltimaHora, abreEl } from '../services/horarios.js';
 import {
   avisarDeParadasQueNoCaben,
   avisarDeParadasSinSusImprescindibles,
@@ -493,26 +493,40 @@ function importanciaDe(colocado) {
       'SELECT bloque, orden, horarios FROM sitios_lugar WHERE id = ?',
       quien.deId
     );
-    const nivel = sitio?.bloque === 'imprescindibles' ? 3 : 2;
+    const puesto = Number(sitio?.orden) || 99;
+    const esImprescindible = sitio?.bloque === 'imprescindibles';
+    const intocable = esImprescindible && puesto <= parametro('puestos_intocables_del_sitio', 3);
+
     return {
-      nivel,
-      orden: Number(sitio?.orden) || 99,
-      // RÍGIDO ES TENER UNA HORA PUBLICADA, no tener una por defecto.
-      // `cierraALasMinutos` siempre devuelve algo —si no hay horario, las ocho—,
-      // así que preguntarle si es null daba true para todos los sitios y el
-      // desempate por rigidez no desempataba nada.
+      nivel: intocable ? 5 : esImprescindible ? 4 : 3,
+      orden: puesto,
       rigido: /\d{1,2}:\d{2}/.test(String(sitio?.horarios ?? '')),
-      que: nivel === 3 ? `imprescindible #${Number(sitio?.orden) || '?'}` : 'sitio de segundo nivel',
+      que: intocable
+        ? `imprescindible #${puesto} de la ciudad`
+        : esImprescindible
+          ? `imprescindible #${puesto}`
+          : 'sitio de segundo nivel',
     };
   }
 
-  // Una excursión se contrató con hora y sitio de encuentro: pesa como un
-  // imprescindible y encima no se puede mover.
+  // UNA EXCURSIÓN OPCIONAL CEDE ANTES QUE UN SITIO DE SEGUNDO NIVEL.
+  //
+  // Y esto es lo contrario de lo que hacía. Una excursión valía tanto como un
+  // imprescindible, así que en Polonia el día completo de Zakopane —opcional, de
+  // catálogo, sin pagar— ocupó el día 3 y el Castillo de Wawel, que es EL sitio
+  // de Cracovia, se quedó fuera del viaje. Nadie viaja a Cracovia a no ver
+  // Wawel.
+  //
+  // La excepción es la que se paga: una excursión ya RESERVADA tiene hora,
+  // billete y dinero dentro, y esa no cede ante nada.
   if (quien?.candidato?.tipo === 'actividad') {
-    return { nivel: 3, orden: 0, rigido: true, que: 'una excursión' };
+    const reservada = Number(quien.candidato.reservado) === 1;
+    return reservada
+      ? { nivel: 5, orden: 0, rigido: true, que: 'una excursión ya reservada' }
+      : { nivel: 2, orden: 50, rigido: true, que: 'una excursión opcional' };
   }
 
-  return { nivel: 2, orden: 50, rigido: false, que: 'un bloque suelto' };
+  return { nivel: 3, orden: 50, rigido: false, que: 'un bloque suelto' };
 }
 
 /**
@@ -614,17 +628,22 @@ function horaLegitima(naturaleza, hora) {
   return true;
 }
 
-/** Los días de la semana en que un sitio cierra, de su ficha. */
+/**
+ * LOS DÍAS EN QUE UN SITIO CIERRA, leídos de su horario publicado.
+ *
+ * La misma fuente que usa el aviso, y por el mismo motivo: si el aviso dice una
+ * cosa y la recolocación otra, el sitio acaba rebotando entre días o saliendo
+ * del plan por un cierre que solo existía en una lista vieja.
+ *
+ * Un día que el horario no aclara NO cuenta como cierre: aquí se devuelven solo
+ * los que el texto dice, y la duda se queda en el aviso flojito.
+ */
 function diasDeCierreDe(colocado) {
   const quien = deQuienEs(colocado);
   if (quien?.de !== 'sitio' || !quien.deId) return [];
-  const ficha = una('SELECT cierra_dias FROM sitios_lugar WHERE id = ?', quien.deId);
-  try {
-    const l = ficha?.cierra_dias ? JSON.parse(ficha.cierra_dias) : [];
-    return Array.isArray(l) ? l.map(Number).filter((n) => n >= 0 && n <= 6) : [];
-  } catch {
-    return [];
-  }
+  const ficha = una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId);
+  if (!ficha?.horarios) return [];
+  return [0, 1, 2, 3, 4, 5, 6].filter((d) => abreEl(ficha.horarios, d) === false);
 }
 
 /** El día de la semana de una fecha «2026-10-16». */
@@ -827,8 +846,7 @@ function contarLoDeLaAclimatacion(viajeId, lienzo, di) {
  * porque es una decisión de gusto, no una verdad.
  */
 function esDeLosQueNoSePuedenPerder(colocado) {
-  const imp = importanciaDe(colocado);
-  return imp.nivel >= 3 && imp.orden <= parametro('puestos_intocables_del_sitio', 3);
+  return importanciaDe(colocado).nivel >= 5;
 }
 
 /**
@@ -999,7 +1017,15 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   const intentos = [];
 
   // --- a) RECORTAR el que menos pesa, si va delante ------------------------
-  if (menos.id === primero.id) {
+  //
+  // UNA EXCURSIÓN NO SE RECORTA. Dura lo que dura: un día completo a Zakopane no
+  // es un día completo de sesenta minutos. La prueba de este bloque lo dejó a la
+  // vista —«se recorta de 540 a 60 min»— y un plan que dijera eso sería mentira.
+  // Se salta el recorte y se va a moverla, que es lo que de verdad se puede
+  // hacer con ella.
+  const seDejaRecortar = (c) => deQuienEs(c)?.candidato?.tipo !== 'actividad';
+
+  if (menos.id === primero.id && seDejaRecortar(primero)) {
     const suelo = parametro('duracion_minima_al_recortar_min', 45);
     const duracion = Number(primero.duracionMin) || 0;
     const recortada = duracion - estorbo;
@@ -1016,6 +1042,8 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
         ? `recortar ${primero.nombre} (se quedaba en ${recortada} min y el mínimo son ${suelo})`
         : `recortar ${primero.nombre}, que no tiene duración puesta`
     );
+  } else if (menos.id === primero.id) {
+    intentos.push(`recortar ${primero.nombre}, que es una excursión y dura lo que dura`);
   }
 
   // --- b) RETRASAR lo posterior, si el día tiene aire ----------------------
@@ -1108,6 +1136,18 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
   const sacar = (c, motivo) => {
     idos.add(c.id);
     fuera.push(sacarDelPlan(c, di, motivo));
+
+    // PERDER UN IMPRESCINDIBLE DE PRIMER NIVEL NO ES UNA LÍNEA MÁS DEL LOG.
+    //
+    // En Polonia el Castillo de Wawel se fue del viaje y quedó dicho en el
+    // mismo tono que un museo de tercera. Si al final pasa —y con la jerarquía
+    // nueva tiene que costar mucho— se dice con todas las letras y sube a los
+    // huecos de la fase, que es lo que se mira al terminar.
+    if (esDeLosQueNoSePuedenPerder(c)) {
+      const imp = importanciaDe(c);
+      di(`   AVISO GRAVE · ${c.nombre} (${imp.que}) se queda FUERA del viaje: ${motivo}.`, ORIGENES.ninguno);
+      apuntarHueco(viajeId, FASE, `Imprescindible de primer nivel expulsado: ${c.nombre} — ${motivo}.`);
+    }
   };
   const yaNoEsta = (aviso) =>
     [...(aviso.idsAfectados ?? []), ...(aviso.idsEnConflicto ?? [])].some((id) => idos.has(id));
@@ -1247,6 +1287,16 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
       continue;
     }
 
+    // UN HORARIO QUE NO SE ENTIENDE NO SE ARREGLA MOVIENDO NADA.
+    //
+    // Es el aviso flojito del bloque A: el sitio se queda donde está y alguien
+    // lo mira antes de ir. Se atiende aquí para que no caiga en el saco de «no
+    // he sabido resolverlo», que es para los que sí tienen arreglo.
+    if (aviso.tipo === 'horario-sin-verificar') {
+      di(`   ${aviso.texto}`, ORIGENES.ninguno);
+      continue;
+    }
+
     if (aviso.tipo === 'sitio-cerrado') {
       for (const c of afectados) {
         // TODOS LOS DÍAS DE LA PARADA, NO EL PRIMERO QUE HAYA.
@@ -1337,9 +1387,40 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
           `   Día ${aviso.dia}: ${ultimo.nombre} pasa al día ${r.dia}, ${r.franja} a las ${r.hora}` +
             (PORQUE_SE_MUEVE[aviso.tipo] ?? '.')
         );
-      } else {
-        sacar(ultimo, PORQUE_SE_VA[aviso.tipo] ?? 'no había hueco');
+        tocados += 1;
+        continue;
       }
+
+      // UN IMPRESCINDIBLE NO ES «COSA DE ÚLTIMA HORA».
+      //
+      // En Polonia se fueron del plan con esa etiqueta el Casco Viejo de
+      // Varsovia, el Casco Antiguo de Gdańsk y el Palacio de la Cultura. El
+      // casco antiguo ES el motivo de la parada: que la primera hora elegida no
+      // cuadre no lo convierte en un relleno del final del día.
+      //
+      // Antes de echarlo se recorre la parada entera, apartando lo ligero de
+      // cada día, que es lo que ya se hace en los choques.
+      if (esDeLosQueNoSePuedenPerder(ultimo)) {
+        const ultimoIntento = agotarLaParada(viajeId, lienzo, ultimo, di);
+        if (ultimoIntento.movido) {
+          di(
+            `   Día ${aviso.dia}: ${ultimo.nombre} no se pierde por la hora: lo llevo al día ` +
+              `${ultimoIntento.dia} a las ${ultimoIntento.hora}` +
+              (ultimoIntento.aparte ? ` (aparté ${ultimoIntento.aparte}).` : '.')
+          );
+          tocados += 1;
+          continue;
+        }
+        sacar(
+          ultimo,
+          `no cabe en ninguna hora válida de ningún día de la parada — ` +
+            `${ultimoIntento.porQueNo.join('; ') || 'sin días alternativos'}`
+        );
+        tocados += 1;
+        continue;
+      }
+
+      sacar(ultimo, PORQUE_SE_VA[aviso.tipo] ?? 'no había hueco');
       tocados += 1;
     }
   }

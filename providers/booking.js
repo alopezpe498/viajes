@@ -581,9 +581,41 @@ export async function buscarHoteles({
     const crudos = await paso('5. Leer las tarjetas', () => pagina.evaluate(extraerHotelesDelDOM));
 
     if (!crudos.length) {
+      // DOS COSAS DISTINTAS QUE SE CONTABAN IGUAL.
+      //
+      // «El selector ha cambiado: revisa la receta» cuando lo que pasaba era que
+      // no hay hoteles libres esas noches. Mandaba a mirar el codigo durante una
+      // hora por algo que no tiene nada que ver con el codigo.
+      //
+      // Se distinguen por lo que HAY en la pagina: si Booking dice que no hay
+      // resultados —o si la pagina cargo entera y simplemente no hay tarjetas—
+      // la receta funciona perfectamente y la respuesta es «no hay».
+      const vacio = await pagina.evaluate(() => {
+        const t = document.body?.innerText?.toLowerCase() ?? '';
+        return (
+          t.includes('no hay disponibilidad') ||
+          t.includes('no encontramos') ||
+          t.includes('no se han encontrado') ||
+          t.includes('sin resultados') ||
+          t.includes('no properties found') ||
+          t.includes('no results') ||
+          // La pagina de resultados existe y tiene su buscador, pero la lista
+          // esta vacia: busqueda valida sin nada que ofrecer.
+          Boolean(document.querySelector('[data-testid="searchbox-layout-wide"], #search_results_table'))
+        );
+      });
+
+      if (vacio) {
+        const err = new Error(
+          '[booking] Busqueda correcta, pero no hay alojamientos para esas fechas y esos filtros.'
+        );
+        err.sinResultados = true;
+        throw err;
+      }
+
       throw new ErrorReceta(
         '5. Leer las tarjetas',
-        new Error(`El listado cargo pero no encontre ninguna tarjeta ${SEL_TARJETA}`)
+        new Error(`La pagina cargo pero no aparece ninguna tarjeta ${SEL_TARJETA} ni el mensaje de "sin resultados"`)
       );
     }
 

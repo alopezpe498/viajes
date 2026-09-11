@@ -239,6 +239,20 @@ export function apuntarIA({ desde, hasta, modelo, clase = null, web = false }) {
   });
 }
 
+/**
+ * LO QUE SE HA ESPERADO EN LA COLA DEL NAVEGADOR.
+ *
+ * Va en su propio cubo y NUNCA cuenta como trabajo de la parada. La métrica
+ * decía «Gdansk 37m 40s» dentro de una fase de 18m 57s —imposible— porque la
+ * espera se sumaba como si la ciudad hubiera estado haciendo algo. Estaba
+ * parada, que es justo lo contrario y justo lo que había que ver.
+ */
+export function apuntarEsperaDeScraping({ de, ms }) {
+  const f = laMia();
+  if (!f || !ms || ms < 0) return;
+  (f.esperas ??= []).push({ de: de ?? 'sin nombre', ms });
+}
+
 /** Una sesión de navegador: de abrirlo a cerrarlo. */
 export function apuntarScraping({ desde, hasta, de }) {
   const f = laMia();
@@ -324,6 +338,9 @@ function lineaDeDesglose(f) {
     );
   }
 
+  const esperado = (f.esperas ?? []).reduce((n2, x) => n2 + x.ms, 0);
+  if (esperado) trozos.push(`esperando cola ${comoRato(esperado)}`);
+
   trozos.push(`resto ${comoRato(resto)}`);
   return trozos.join(' · ');
 }
@@ -339,9 +356,17 @@ function lineaDeParadas(f) {
     porNombre.set(p.nombre, (porNombre.get(p.nombre) ?? 0) + (p.hasta - p.desde));
   }
 
+  // UNA PARADA NO PUEDE DURAR MÁS QUE SU FASE.
+  //
+  // Y lo decía: «Gdansk 37m 40s» dentro de una fase de 18m 57s. El segmento de
+  // una parada incluye el rato que pasó esperando cola de navegador, que es
+  // tiempo de reloj compartido con las otras paradas. Se acota al total de la
+  // fase para que el número no mienta, y la espera se cuenta aparte.
+  const tope = (f.hasta ?? ahora()) - f.desde;
+
   return [...porNombre.entries()]
     .sort((a, b) => b[1] - a[1])
-    .map(([nombre, ms]) => `${nombre} ${comoRato(ms)}`)
+    .map(([nombre, ms]) => `${nombre} ${comoRato(Math.min(ms, tope))}`)
     .join(' · ');
 }
 
