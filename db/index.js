@@ -381,6 +381,7 @@ export function migrarEsquema() {
   migracionTiempoDeLaIA();
   migracionPararElOrquestador();
   migracionCorrectivoMeteora();
+  migracionPuertaSoloCiudadesVivas();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4736,6 +4737,58 @@ function migracionCorrectivoMeteora() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: correctivo de Meteora (tiempo util verificado y dias de viaje intocables).');
+  return true;
+}
+
+/**
+ * LA CUENTA DE LA PUERTA, SOLO CON CIUDADES VIVAS.
+ *
+ * El fallo es reincidente: primero con Delfos y después con Meteora. La lista de
+ * candidatas que ve el paso 2 ya venía filtrada por la guillotina de las noches,
+ * pero la matriz de tiempos no, y el modelo montaba la cuenta pasando por
+ * ciudades que ya estaban descartadas.
+ *
+ * El arreglo de raíz está en el código —la matriz se filtra antes de enviarla—.
+ * Esta línea del prompt es la otra mitad: decirlo. Un modelo al que se le da una
+ * lista y no se le dice que es cerrada tiende a completarla con lo que recuerda
+ * de dos mensajes antes.
+ */
+function migracionPuertaSoloCiudadesVivas() {
+  const CLAVE = '2026-09-puerta-solo-ciudades-vivas';
+  if (yaAplicada(CLAVE)) return false;
+
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'")
+    .get();
+  if (!fila) { marcarAplicada(CLAVE); return false; }
+
+  const VIEJO = `LAS CIUDADES QUE PROPUSISTE
+{{CANDIDATAS}}`;
+
+  const NUEVO = `LAS CIUDADES QUE PROPUSISTE
+{{CANDIDATAS}}
+
+ESTAS SON TODAS LAS CIUDADES POSIBLES. La lista de arriba es CERRADA: algunas de
+las que propusiste se han caído por no llegar al mínimo de noches y ya no están.
+No añadas ninguna otra a la ruta de tu cuenta, aunque la recuerdes del paso
+anterior y aunque geográficamente encaje. Si una ciudad no aparece ahí arriba, no
+existe para este paso.`;
+
+  const cambiar = (t) => (t && t.includes(VIEJO) && !t.includes('ESTAS SON TODAS LAS CIUDADES POSIBLES')
+    ? t.replace(VIEJO, NUEVO)
+    : t);
+
+  const nuevaFabrica = cambiar(fila.prompt_fabrica);
+  const nuevoActual = fila.prompt_actual === fila.prompt_fabrica ? nuevaFabrica : cambiar(fila.prompt_actual);
+
+  db.prepare(
+    "UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = 'ciudades_y_noches'"
+  ).run(nuevoActual, nuevaFabrica);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: el paso de la puerta ${nuevaFabrica !== fila.prompt_fabrica ? 'ya sabe que la lista es cerrada' : 'NO se pudo cambiar'}.`
+  );
   return true;
 }
 

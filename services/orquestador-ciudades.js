@@ -689,6 +689,13 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   let porQue = null;
   let rutaPrevista = null;
 
+  // Las ciudades que siguen VIVAS después de los descartes. Todo lo que se le
+  // enseñe al modelo en este paso tiene que estar en esta lista.
+  const vivas = new Set(candidatas.map((c) => normalizarNombre(c.nombre)));
+  const tiemposVivos = (tiempos ?? []).filter(
+    (t) => vivas.has(normalizarNombre(t.desde ?? '')) && vivas.has(normalizarNombre(t.hasta ?? ''))
+  );
+
   if (promptPuerta) {
     try {
       const r = await consultarJSON(
@@ -700,11 +707,22 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
           CANDIDATAS: candidatas
             .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
             .join('\n'),
-          TIEMPOS: tiempos.length
-            ? tiempos
+          // LA MATRIZ, SOLO ENTRE CIUDADES VIVAS.
+          //
+          // Aquí estaba el fallo, y es reincidente: primero con Delfos y
+          // después con Meteora. `candidatas` ya venía filtrada por la
+          // guillotina de las noches, pero `tiempos` era la matriz entera del
+          // paso 1, con las descartadas dentro. El modelo leía
+          // «Tesalónica → Meteora: 210 min» y echaba la cuenta de la puerta
+          // pasando por una ciudad que ya no existía en la ruta.
+          //
+          // Un dato que no debería estar delante acaba usándose. Se quita en el
+          // origen; el aviso OJO se queda como red.
+          TIEMPOS: tiemposVivos.length
+            ? tiemposVivos
                 .map((t) => `- ${t.desde} → ${t.hasta}: ${t.minutos} min en ${t.modo ?? 'transporte'}`)
                 .join('\n')
-            : '(no estimaste tiempos entre ciudades)',
+            : '(no estimaste tiempos entre estas ciudades)',
           COMBINACIONES: combinaciones
             .map(
               (c) =>

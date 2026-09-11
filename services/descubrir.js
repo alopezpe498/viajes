@@ -779,6 +779,12 @@ Reglas:
   distancia, déjalo fuera.
 - Sitios CONCRETOS que se visitan: templos, barrios, mercados, miradores, museos, parques. Nada de "la gastronomía" ni "el ambiente".
 - Los nombres, EN ESPAÑOL siempre que exista la forma española ("Museo del Louvre", no "Musée du Louvre").
+- UN NOMBRE ES UN SITIO. El nombre del lugar y nada más: sin coletillas de
+  ciudad y sin alternativas entre paréntesis. "Odeón de Herodes Ático", no
+  "Teatro de Epidauro en Atenas (Odeón de Herodes Ático)". Si al escribirlo te
+  das cuenta de que el sitio que tenías en la cabeza está en otra ciudad, NO lo
+  rebautices con el de aquí: quítalo y pon otro. Y no añadas "en ${punto.nombre}",
+  que ya sé dónde estamos: todo lo de esta lista está ahí.
 - "categoria" tiene que ser UNA de las de la lista, escrita igual. Si dudas, elige la que más se acerque; no te inventes otra.
 - lat y lon son obligatorios y tienen que ser las coordenadas reales del sitio.
 - "titulo_wikipedia_local" es el mismo artículo en la Wikipedia del país, escrito EXACTO.
@@ -797,6 +803,30 @@ function categoriaValida(v) {
   return CATEGORIAS_SITIO.includes(t) ? t : null;
 }
 
+/**
+ * UN NOMBRE, UN SITIO.
+ *
+ * En la Grecia del correctivo salió «Teatro de Epidauro en Atenas (Odeón de
+ * Herodes Ático)». Lo que pasó se lee en el propio nombre: la IA pensó en un
+ * sitio que está a dos horas, chocó con la regla de la hora, y en vez de quitarlo
+ * lo rebautizó con el equivalente de aquí sin borrar el nombre viejo. Eso no es
+ * un sitio, son dos pegados.
+ *
+ * NO se toca el nombre: decidir cuál de los dos es el bueno sería adivinar, y
+ * adivinar es justo lo que produjo el nombre. Pero se deja dicho en el registro,
+ * que es lo único que faltó para verlo cuando pasó.
+ */
+function avisarDeNombresMezclados(sitios, ciudad) {
+  const cola = ` en ${ciudad}`.toLowerCase();
+  for (const s of sitios) {
+    if (!s.nombre.toLowerCase().includes(cola)) continue;
+    console.warn(
+      `[descubrir] Nombre sospechoso en ${ciudad}: «${s.nombre}»` +
+        (s.nombre.includes('(') ? ' — parece dos sitios pegados.' : ' — le sobra la coletilla de ciudad.')
+    );
+  }
+}
+
 /** Una pasada: se le pide un bloque y se sanea lo que conteste. */
 async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
   const respuesta = await consultarJSON(promptDeCiudad(punto, nombreDestino, bloque, opciones), {
@@ -805,24 +835,28 @@ async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
   });
 
   const crudos = Array.isArray(respuesta?.sitios) ? respuesta.sitios : [];
+  const limpios = crudos
+    .filter((s) => s && typeof s.nombre === 'string' && s.nombre.trim())
+    .map((s) => ({
+      nombre: String(s.nombre).trim(),
+      descripcion: textoONulo(s.descripcion),
+      categoria: categoriaValida(s.categoria),
+      lat: numeroONulo(s.lat),
+      lon: numeroONulo(s.lon),
+      titulo_wikipedia: s.titulo_wikipedia
+        ? String(s.titulo_wikipedia).trim()
+        : String(s.nombre).trim(),
+      titulo_wikipedia_local: textoONulo(s.titulo_wikipedia_local),
+      idioma_wikipedia_local: textoONulo(s.idioma_wikipedia_local),
+      bloque,
+    }));
+
+  avisarDeNombresMezclados(limpios, punto.nombre);
+
   return {
     parrafoPorQue: textoONulo(respuesta?.parrafo_por_que),
     comoMoverse: textoONulo(respuesta?.como_moverse),
-    sitios: crudos
-      .filter((s) => s && typeof s.nombre === 'string' && s.nombre.trim())
-      .map((s) => ({
-        nombre: String(s.nombre).trim(),
-        descripcion: textoONulo(s.descripcion),
-        categoria: categoriaValida(s.categoria),
-        lat: numeroONulo(s.lat),
-        lon: numeroONulo(s.lon),
-        titulo_wikipedia: s.titulo_wikipedia
-          ? String(s.titulo_wikipedia).trim()
-          : String(s.nombre).trim(),
-        titulo_wikipedia_local: textoONulo(s.titulo_wikipedia_local),
-        idioma_wikipedia_local: textoONulo(s.idioma_wikipedia_local),
-        bloque,
-      })),
+    sitios: limpios,
   };
 }
 

@@ -583,81 +583,95 @@ export function respetaElRitmo(opcion, hora, ritmo) {
  * valer 144 €—, pero ya no la toma sin mirar el dinero.
  */
 export function reglaDelAhorroGrande(medidas, params) {
-  const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
-  if (conPrecio.length < 2) return null;
+  const cumplen = ahorrosQueCumplen(medidas, params);
+  if (!cumplen.length) return null;
 
-  const barata = [...conPrecio].sort((a, b) => a.precio - b.precio)[0];
-
-  // LA REGLA NO SE ANCLA EN LA MÁS RÁPIDA, Y AQUÍ ESTUVO LA REGRESIÓN.
-  //
-  // Antes se comparaba la barata contra `medidas[0]` —la más rápida de todas— y
-  // se rendía si esa no tenía precio. En Nafplio → Atenas la más rápida era una
-  // opción sin tarifa encontrada, así que la regla moría antes de mirar el par
-  // que importaba: traslado privado de 180 € contra autobús de 15,70 €, once
-  // veces más barato y solo una hora más lento. No salió en el registro porque
-  // nunca llegó a evaluarse.
-  //
-  // Ahora se compara la barata contra TODAS las que son más rápidas y tienen
-  // precio, y gana el par con más ahorro. Que la más rápida del todo tenga o no
-  // tarifa deja de decidir si la regla existe.
-  const candidatas = conPrecio
-    .filter((o) => o.id !== barata.id && o.bloque.total < barata.bloque.total)
-    .map((cara) => ({
-      cara,
-      veces: cara.precio / barata.precio,
-      pierde: barata.bloque.total - cara.bloque.total,
-    }))
-    .filter((x) => x.veces >= params.factorAhorro && x.pierde <= params.maxExtraAhorro)
-    // El par más llamativo primero: el que más veces multiplica el precio.
-    .sort((a, b) => b.veces - a.veces);
-
-  if (!candidatas.length) return null;
-
-  const { cara, veces, pierde } = candidatas[0];
+  // Se propone la MÁS BARATA de las que cumplen: si varias pasan el listón, la
+  // pregunta ya no es cuánto se ahorra sino cuánto cuesta, y eso lo decide el
+  // precio. Las demás se enumeran igualmente para que la decisión se tome con
+  // todas delante.
+  const elegida = [...cumplen].sort((a, b) => a.barata.precio - b.barata.precio)[0];
+  const otras = cumplen.filter((x) => x.barata.id !== elegida.barata.id);
 
   return (
-    `Se cumple la regla del ahorro grande: «${barata.nombre}» cuesta ${barata.precio} € ` +
-    `frente a ${cara.precio} € de «${cara.nombre}» (${veces.toFixed(1)} veces menos) y solo pierde ` +
-    `${comoTexto(Math.max(0, pierde))}. Elígela salvo que haya un motivo de peso ` +
-    '(niños, equipaje, horario).'
+    `Se cumple la regla del ahorro grande frente a «${elegida.ganadora.nombre}» ` +
+    `(${elegida.ganadora.precio} €): «${elegida.barata.nombre}» cuesta ${elegida.barata.precio} € ` +
+    `(${elegida.veces.toFixed(1)} veces menos) y solo pierde ${comoTexto(Math.max(0, elegida.pierde))}.` +
+    (otras.length
+      ? ` También cumplen: ${otras
+          .map(
+            (o) =>
+              `${o.barata.nombre} (${o.barata.precio} €, ${o.veces.toFixed(1)}x, ` +
+              `+${comoTexto(Math.max(0, o.pierde))})`
+          )
+          .join('; ')}.`
+      : '') +
+    ' Elige una salvo que haya un motivo de peso (niños, equipaje, horario).'
   );
 }
 
 /**
- * LO QUE SE MIRÓ Y NO LLEGÓ A REGLA.
+ * TODAS LAS OPCIONES QUE CUMPLEN EL AHORRO GRANDE, no solo la más barata.
  *
- * Cuando el ahorro grande NO se activa hay dos motivos posibles y no dan la
- * misma información: o no hay dos precios que comparar, o los hay y la cuenta no
- * sale. El registro tiene que distinguirlos, porque «no se activó» a secas es
- * exactamente lo que hizo que esta regresión pasara desapercibida una ejecución
- * entera.
+ * AQUÍ ESTABA EL SEGUNDO FALLO DE ESTA REGLA. La versión anterior cogía la
+ * opción MÁS BARATA y la comparaba contra las más rápidas; si esa no cumplía, se
+ * acababa la evaluación. En Nafplio → Atenas la más barata era el tren (13,80 €)
+ * y perdía 2h50 sobre el taxi, así que se descartaba... y ahí paraba todo. El
+ * KTEL —15,70 €, ocho veces más barato que el taxi y solo una hora más lento—
+ * nunca llegó a mirarse, y se eligió un taxi de 140 €.
+ *
+ * Ahora se compara CADA opción con precio contra la candidata a ganar, que es la
+ * más rápida que tiene precio. La lista de las que cumplen es lo que se le pone
+ * delante a la IA.
  */
+export function ahorrosQueCumplen(medidas, params) {
+  const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
+  if (conPrecio.length < 2) return [];
+
+  // La candidata a ganar: la más rápida DE LAS QUE TIENEN PRECIO. Sin precio no
+  // se puede comparar dinero, y anclarse en la más rápida a secas fue el primer
+  // fallo de esta misma regla.
+  const ganadora = [...conPrecio].sort((a, b) => a.bloque.total - b.bloque.total)[0];
+
+  return conPrecio
+    .filter((o) => o.id !== ganadora.id)
+    .map((barata) => ({
+      ganadora,
+      barata,
+      veces: ganadora.precio / barata.precio,
+      pierde: barata.bloque.total - ganadora.bloque.total,
+    }))
+    .filter((x) => x.veces >= params.factorAhorro && x.pierde <= params.maxExtraAhorro)
+    .sort((a, b) => b.veces - a.veces);
+}
+
 export function porQueNoHayAhorroGrande(medidas, params) {
   const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
   if (conPrecio.length < 2) {
     return `Ahorro grande no evaluable: solo ${conPrecio.length} opción(es) con precio.`;
   }
 
-  const barata = [...conPrecio].sort((a, b) => a.precio - b.precio)[0];
-  const masRapidas = conPrecio.filter(
-    (o) => o.id !== barata.id && o.bloque.total < barata.bloque.total
-  );
-  if (!masRapidas.length) {
-    return `Ahorro grande no aplica: «${barata.nombre}» ya es la más barata Y la más rápida.`;
+  const ganadora = [...conPrecio].sort((a, b) => a.bloque.total - b.bloque.total)[0];
+  const resto = conPrecio.filter((o) => o.id !== ganadora.id);
+  if (!resto.length) {
+    return `Ahorro grande no aplica: «${ganadora.nombre}» es la única con precio.`;
   }
 
-  const cerca = masRapidas
-    .map((c) => ({
-      nombre: c.nombre,
-      veces: c.precio / barata.precio,
-      pierde: barata.bloque.total - c.bloque.total,
+  // Se enseña la que MÁS CERCA se quedó, para que se vea que se miraron todas.
+  const cerca = resto
+    .map((o) => ({
+      nombre: o.nombre,
+      precio: o.precio,
+      veces: ganadora.precio / o.precio,
+      pierde: o.bloque.total - ganadora.bloque.total,
     }))
     .sort((a, b) => b.veces - a.veces)[0];
 
   return (
-    `Ahorro grande no llega: «${barata.nombre}» es ${cerca.veces.toFixed(1)} veces más barata que ` +
-    `«${cerca.nombre}» (hacen falta ${params.factorAhorro}) y pierde ${comoTexto(Math.max(0, cerca.pierde))} ` +
-    `(el tope son ${comoTexto(params.maxExtraAhorro)}).`
+    `Ahorro grande no llega con ${resto.length === 1 ? 'la única alternativa' : `ninguna de las ${resto.length} alternativas`} a ` +
+    `«${ganadora.nombre}» (${ganadora.precio} €). La más cerca: «${cerca.nombre}» ` +
+    `(${cerca.veces.toFixed(1)} veces más barata, hacen falta ${params.factorAhorro}; ` +
+    `pierde ${comoTexto(Math.max(0, cerca.pierde))}, el tope son ${comoTexto(params.maxExtraAhorro)}).`
   );
 }
 
