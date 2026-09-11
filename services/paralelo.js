@@ -55,33 +55,6 @@ export async function enParalelo(elementos, limite, tarea) {
 }
 
 /**
- * UN CERROJO: lo que entra aquí espera su turno.
- *
- * Se usa para el navegador. El scraping NO se puede paralelizar en esta casa
- * —hay un único perfil persistente de Chrome y el segundo que intente abrirlo se
- * queda esperando para siempre— pero en cuanto las fases van en paralelo, dos de
- * ellas pueden querer navegador a la vez sin saberlo.
- *
- * Poner el cerrojo en el sitio por el que pasan todos —`abrirNavegador`— en vez
- * de en cada proveedor tiene la ventaja de que no hay que acordarse: un scraper
- * nuevo hereda la protección sin enterarse.
- */
-export function cerrojo() {
-  let cola = Promise.resolve();
-
-  return function conElTurno(fn) {
-    const mio = cola.then(fn, fn);
-    // La cola sigue viva aunque `fn` falle: si no, un error dejaría el cerrojo
-    // cerrado para siempre y el viaje se quedaría sin scraping a partir de ahí.
-    cola = mio.then(
-      () => {},
-      () => {}
-    );
-    return mio;
-  };
-}
-
-/**
  * LAS PARADAS DE UNA FASE, EN PARALELO Y CADA UNA EN SU CONTEXTO.
  *
  * Tres cosas que hay que hacer bien y que si se dejan a cada fase se harán de
@@ -127,4 +100,53 @@ export async function porParada(
   });
 
   return { resultados, parado };
+}
+
+/**
+ * UN SEMÁFORO DE N PLAZAS, que se coge y se suelta a mano.
+ *
+ * El `cerrojo` de arriba envuelve una función y la suelta al terminar, y para el
+ * navegador ESO NO VALE: envolvía solo el arranque de Chrome, así que se soltaba
+ * en cuanto la ventana abría y la sesión seguía viva sin protección. El segundo
+ * scraping arrancaba otro Chrome sobre el mismo perfil y salía «profile is
+ * already in use». La plaza hay que tenerla de abrir a cerrar, y eso obliga a
+ * cogerla en un sitio y soltarla en otro.
+ *
+ * `coger()` devuelve la plaza que te ha tocado y cómo soltarla. El número de
+ * plazas se lee en cada petición, así que cambiarlo en la pantalla no obliga a
+ * reiniciar.
+ */
+export function semaforo(cuantas) {
+  let dentro = 0;
+  const esperando = [];
+  const libres = new Set();
+
+  const plazasAhora = () => Math.max(1, Number(typeof cuantas === 'function' ? cuantas() : cuantas) || 1);
+
+  const siguiente = () => {
+    if (!esperando.length || dentro >= plazasAhora()) return;
+    const quien = esperando.shift();
+    dentro += 1;
+    const plaza = [...libres][0] ?? dentro - 1;
+    libres.delete(plaza);
+    quien({ plaza, soltar: () => soltar(plaza) });
+  };
+
+  const soltar = (plaza) => {
+    if (libres.has(plaza)) return; // soltar dos veces no suma una plaza de más
+    libres.add(plaza);
+    dentro = Math.max(0, dentro - 1);
+    siguiente();
+  };
+
+  return {
+    coger() {
+      return new Promise((listo) => {
+        esperando.push(listo);
+        siguiente();
+      });
+    },
+    /** Cuántos hay dentro ahora. Solo para el registro y las pruebas. */
+    ocupadas: () => dentro,
+  };
 }

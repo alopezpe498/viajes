@@ -386,6 +386,7 @@ export function migrarEsquema() {
   migracionPromptsSinNumerosAFuego();
   migracionCorrectivoAsia();
   migracionDosModelosYParalelo();
+  migracionScrapingEnFila();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5054,6 +5055,53 @@ function migracionDosModelosYParalelo() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: modelo por fase y limites de concurrencia.');
+  return true;
+}
+
+/**
+ * EL SCRAPING VUELVE A IR EN FILA.
+ *
+ * Lo que paso: al paralelizar las fases, dos scrapings podian querer navegador a
+ * la vez. Se puso un cerrojo, pero envolvia solo el ARRANQUE de Chrome y se
+ * soltaba en cuanto la ventana abria; la sesion, que dura minutos, corria sin
+ * proteccion. El segundo Chrome llegaba sobre el mismo `browser-profile`, veia
+ * el SingletonLock y moria. En el viaje de Asia eso se llevo casi todos los
+ * Booking, los datos duros de sitios y las excursiones enteras.
+ *
+ * Ahora la plaza se tiene de abrir a cerrar, y estos dos numeros la gobiernan:
+ *
+ *   concurrencia_scraping · Cuantos navegadores a la vez. UNO, y no es pereza:
+ *       el perfil persistente guarda las sesiones que evitan los captchas de
+ *       Booking y Kayak, y no se puede abrir dos veces. Cada plaza usa su propio
+ *       perfil, asi que subirlo funciona —pero las plazas nuevas empiezan frias
+ *       y desde la misma IP, que es como te bloquean. Se deja en 1.
+ *
+ *   reintentos_navegador · Un «perfil en uso» es transitorio por definicion —un
+ *       Chrome zombi que aun no ha soltado el lock— y darlo por perdido a la
+ *       primera fue lo que convirtio un tropiezo en «0 excursiones».
+ */
+function migracionScrapingEnFila() {
+  const CLAVE = '2026-09-scraping-en-fila';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('concurrencia_scraping', '1',
+    'Cuantos navegadores a la vez. 1 porque el perfil de Chrome con las sesiones no se puede abrir dos veces',
+    'a la vez');
+  nuevo('reintentos_navegador', '2',
+    'Cuantas veces se reintenta abrir el navegador cuando el perfil esta en uso, con espera creciente',
+    'veces');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el scraping va en fila (una plaza de navegador).');
   return true;
 }
 

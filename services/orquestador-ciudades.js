@@ -546,7 +546,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   // PERO EL LÍMITE ES BAJO Y NO POR CAPRICHO. Aquí dentro hay dos cosas de
   // naturaleza distinta: resolver el código IATA es una llamada de IA y se
   // solapa de verdad; buscar en Kayak es scraping, y el scraping de esta casa no
-  // se paraleliza —hay un único perfil de Chrome y el cerrojo de
+  // se paraleliza —hay un único perfil de Chrome y el semáforo de
   // `abrirNavegador` los pone en fila solos—. Así que lo que se gana aquí son
   // los IATA y los ratos muertos, no las búsquedas.
   //

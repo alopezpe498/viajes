@@ -233,7 +233,7 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
   // su búsqueda. `i === 0` era lo único que miraba al bucle, y se sustituye por
   // el índice que ya trae la propia lista.
   //
-  // El scraping de Booking NO se paraleliza aunque esto suba: el cerrojo de
+  // El scraping de Booking NO se paraleliza aunque esto suba: el semáforo de
   // `abrirNavegador` lo serializa porque el perfil de Chrome es uno solo. Lo que
   // se gana aquí son las llamadas de IA del rango de precio y de la elección.
   const { resultados } = await porParada(
@@ -260,8 +260,9 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
       );
       if (yaElegido) {
         di(`${ciudad}: ya tenías elegido «${yaElegido.titulo}». No lo cambio.`);
-        resueltas += 1;
-        return { hecha: false };
+        // Cuenta como resuelta: hay hotel, aunque no lo haya puesto yo ahora.
+        // El mismo `+= 1` sobre la `const` de después que reventaba en sitios.
+        return { hecha: true };
       }
 
       const fechas = fechasDeLaEtapa(etapa, i === 0, llegada);

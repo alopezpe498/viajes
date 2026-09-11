@@ -121,7 +121,7 @@ export async function ejecutarFaseSitios(viaje, prompt) {
   // seguidas. Ninguna necesita nada de la anterior —cada una investiga su ciudad
   // y escribe en su propio punto del catálogo— así que van a la vez.
   //
-  // El scraping que haya dentro sigue haciendo cola solo: el cerrojo de
+  // El scraping que haya dentro sigue haciendo cola solo: el semáforo de
   // `abrirNavegador` se encarga, porque el perfil de Chrome es uno.
   const { resultados } = await porParada(
     etapas,
@@ -156,7 +156,6 @@ export async function ejecutarFaseSitios(viaje, prompt) {
       ).n;
       if (cuantos) {
         di(`${ciudad}: ya existían ${cuantos} sitios. No los regenero.`);
-        generadas += 1;
 
         // PERO SÍ SE REPASAN LAS FOTOS QUE FALTEN.
         //
@@ -173,7 +172,15 @@ export async function ejecutarFaseSitios(viaje, prompt) {
         } catch (err) {
           di(`   ${ciudad}: no pude repasar las fotos (${err.message}).`);
         }
-        return { hecha: false };
+        // ESTA PARADA CUENTA COMO RESUELTA: los sitios están, solo que de antes.
+        //
+        // Aquí estaba el «Cannot access 'generadas' before initialization» de
+        // Hanói. Al pasar el bucle a paralelo, el contador dejó de ser un `let`
+        // de fuera y pasó a calcularse DESPUÉS, contando los resultados; se me
+        // quedó un `generadas += 1` dentro del closure, y leer una `const` que
+        // aún no existe revienta. Solo saltaba en las ciudades que ya tenían
+        // sitios, que es justo por lo que no salió en las pruebas.
+        return { hecha: true };
       }
 
       di(`Buscando qué ver en ${ciudad}…`);

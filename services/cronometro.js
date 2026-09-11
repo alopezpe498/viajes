@@ -274,6 +274,18 @@ export function apuntarReintento({ motivo, ms = null }) {
 // LAS LÍNEAS
 // =============================================================================
 
+/**
+ * LOS NÚMEROS DE UNA FASE ABIERTA, para poder mirarlos sin cerrarla.
+ *
+ * Lo usa la verificación: el reparto entre scraping e IA es lo que hay que poder
+ * comprobar —que uno va en fila y el otro se solapa— y esperar a que la fase
+ * cierre para verlo obliga a leerlo de un texto ya redondeado.
+ */
+export function cuentasDeLaFase(clave) {
+  const f = abiertas.get(clave);
+  return f ? cuentasDe(f) : { total: 0, scraping: 0, ia: 0, resto: 0 };
+}
+
 /** El desglose de una fase, ya en números. */
 function cuentasDe(f) {
   const total = (f.hasta ?? ahora()) - f.desde;
