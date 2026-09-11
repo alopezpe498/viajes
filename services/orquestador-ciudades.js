@@ -515,7 +515,7 @@ function avisarSiLaVueltaEsDeMadrugada(viaje, horaSalida, ciudad, di) {
  * repite. Por debajo de ese umbral la diferencia no se nota y gana la ruta que
  * no obliga a desandar.
  */
-async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, promptPuerta }) {
+async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, promptPuerta, noches, minimoNoches }) {
   const puertas = candidatas
     .filter((c) => c.puerta)
     .sort((a, b) => b.peso - a.peso)
@@ -734,100 +734,314 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     };
   };
 
+  // LA PUERTA LA ELIGE EL RANKING, NO LA IA.
+  //
+  // El código ya calculaba las horas útiles ponderadas de cada combinación y las
+  // escribía en el registro. Y la IA las ignoró: en la tercera Polonia eligió
+  // salir por Cracovia a las 9:40, una combinación que ni siquiera estaba en el
+  // ranking porque la regla de las 12:00 la había dejado en cero. Pedirle que
+  // elija entre números que el código ya ha ordenado es regalarle la
+  // oportunidad de equivocarse en lo único que aquí no se puede fallar.
+  //
+  // Y NO BASTA CON QUE GANE: tiene que tener un reparto posible. Con la puerta
+  // que eligió, los mínimos declarados sumaban 7 noches y había 6, así que no
+  // existía ninguna ruta legal — pero los vuelos ya estaban marcados como
+  // comprados. Se comprueba antes de fijar nada, y si la ganadora no da, se baja
+  // a la siguiente del ranking.
   let elegida = null;
   let porQue = null;
   let rutaPrevista = null;
+  let repartos = [];
 
-  // Las ciudades que siguen VIVAS después de los descartes. Todo lo que se le
-  // enseñe al modelo en este paso tiene que estar en esta lista.
-  const vivas = new Set(candidatas.map((c) => normalizarNombre(c.nombre)));
-  const tiemposVivos = (tiempos ?? []).filter(
-    (t) => vivas.has(normalizarNombre(t.desde ?? '')) && vivas.has(normalizarNombre(t.hasta ?? ''))
+  for (const c of combinaciones) {
+    const suyos = repartosLegales({
+      entrada: c.entrada.ciudad,
+      salida: c.salida.ciudad,
+      candidatas,
+      noches,
+      tiempos: tiemposVivos,
+      minimoNoches,
+    });
+    if (!suyos.length) {
+      anotar(
+        viajeId,
+        'ciudades_y_noches',
+        `   ${c.id} (${c.entrada.ciudad}→${c.salida.ciudad}) queda descartada: con esa puerta no ` +
+          'hay ningún reparto que respete los mínimos declarados.',
+        ORIGENES.ninguno
+      );
+      continue;
+    }
+    elegida = c;
+    repartos = suyos;
+    break;
+  }
+
+  if (!elegida) {
+    // ESTO NO ES «NO ENCONTRÉ VUELOS», que es lo que significa el otro error y
+    // se resuelve eligiendo la puerta a ojo. Aquí los vuelos están: lo que no
+    // hay es forma legal de repartir las noches con ninguno de ellos. Seguir
+    // «a ojo» solo llevaría al mismo muro tres pasos más tarde, así que se dice
+    // y se para, que es lo honesto.
+    return {
+      error:
+        'Ninguna puerta con vuelos reales admite un reparto que respete los mínimos de noches ' +
+        'que tú misma declaraste. Sobran ciudades o faltan noches.',
+      sinReparto: true,
+    };
+  }
+
+  anotar(
+    viajeId,
+    'ciudades_y_noches',
+    `Puerta elegida por ranking: ${elegida.id} (${elegida.util.toFixed(1)} h útiles ponderadas) · ` +
+      `entra por ${elegida.entrada.ciudad}, sale por ${elegida.salida.ciudad} · ` +
+      `${repartos.length} reparto(s) legal(es).`,
+    ORIGENES.ninguno
   );
 
+  porQue = `entro por ${elegida.entrada.ciudad} y salgo por ${elegida.salida.ciudad}`;
+
+  // Y AHORA SÍ, LA IA: redacta el porqué y dice con qué recorrido ha contado.
+  //
+  // Si contradice la puerta o propone otra, su texto se tira y se pide otra vez.
+  // La puerta no se mueve: ya está decidida con números.
   if (promptPuerta) {
-    try {
-      const r = await consultarJSON(
-        rellenar(promptPuerta, {
-          DESTINO: viaje.destino ?? '',
-          DIAS: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin) + 1,
-          NOCHES: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin),
-          ORIGEN: casa,
-          CANDIDATAS: candidatas
-            .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
-            .join('\n'),
-          // LA MATRIZ, SOLO ENTRE CIUDADES VIVAS.
-          //
-          // Aquí estaba el fallo, y es reincidente: primero con Delfos y
-          // después con Meteora. `candidatas` ya venía filtrada por la
-          // guillotina de las noches, pero `tiempos` era la matriz entera del
-          // paso 1, con las descartadas dentro. El modelo leía
-          // «Tesalónica → Meteora: 210 min» y echaba la cuenta de la puerta
-          // pasando por una ciudad que ya no existía en la ruta.
-          //
-          // Un dato que no debería estar delante acaba usándose. Se quita en el
-          // origen; el aviso OJO se queda como red.
-          TIEMPOS: tiemposVivos.length
-            ? tiemposVivos
-                .map((t) => `- ${t.desde} → ${t.hasta}: ${t.minutos} min en ${t.modo ?? 'transporte'}`)
-                .join('\n')
-            : '(no estimaste tiempos entre estas ciudades)',
-          COMBINACIONES: combinaciones
-            .map(
-              (c) =>
-                `- ${c.id} · entrar por ${c.entrada.ciudad}, salir por ${c.salida.ciudad}` +
-                `${c.misma ? ' (la misma ciudad)' : ''}
-` +
-                `  vuelos: ${c.entrada.minutos} min de ida + ${c.salida.minutos} min de vuelta = ${c.total} min en el aire`
-            )
-            .join('\n'),
-        }),
-        { maxTokens: 1200, paso: `puerta de entrada a ${viaje.destino}` }
-      );
-      const cual = combinaciones.find((c) => c.id === String(r?.elegida ?? '').trim());
-      if (cual) {
-        elegida = cual;
-        porQue =
-          typeof r?.por_que === 'string' && r.por_que.trim()
-            ? r.por_que.trim()
-            : `entro por ${cual.entrada.ciudad} y salgo por ${cual.salida.ciudad}`;
+    for (let intento = 1; intento <= 2 && !rutaPrevista; intento += 1) {
+      try {
+        const r = await consultarJSON(
+          rellenar(promptPuerta, {
+            DESTINO: viaje.destino ?? '',
+            DIAS: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin) + 1,
+            NOCHES: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin),
+            ORIGEN: casa,
+            CANDIDATAS: candidatas
+              .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
+              .join('\n'),
+            TIEMPOS: tiemposVivos.length
+              ? tiemposVivos
+                  .map((t) => `- ${t.desde} → ${t.hasta}: ${t.minutos} min en ${t.modo ?? 'transporte'}`)
+                  .join('\n')
+              : '(no estimaste tiempos entre estas ciudades)',
+            COMBINACIONES:
+              `LA PUERTA YA ESTÁ DECIDIDA POR EL RANKING DE HORAS ÚTILES: ${elegida.id}, ` +
+              `entrando por ${elegida.entrada.ciudad} y saliendo por ${elegida.salida.ciudad} ` +
+              `(${elegida.util.toFixed(1)} h útiles ponderadas). NO la discutas ni propongas otra: ` +
+              `devuelve "elegida": "${elegida.id}" y explica por qué es buena.\n\n` +
+              combinaciones
+                .map(
+                  (c) =>
+                    `- ${c.id}: ${c.entrada.ciudad} → ${c.salida.ciudad} · ` +
+                    `${c.util.toFixed(1)} h útiles · ${comoTexto(c.total)} de vuelo`
+                )
+                .join('\n'),
+          }),
+          { maxTokens: 1200, paso: `puerta de entrada a ${viaje.destino}` }
+        );
+
+        if (String(r?.elegida ?? '').trim() !== elegida.id) {
+          anotar(
+            viajeId,
+            'ciudades_y_noches',
+            `   La redacción proponía «${r?.elegida ?? '(nada)'}» en vez de ${elegida.id}: la descarto` +
+              (intento === 1 ? ' y la pido otra vez.' : ' y me quedo con el texto de siempre.'),
+            ORIGENES.ninguno
+          );
+          continue;
+        }
+
+        if (typeof r?.por_que === 'string' && r.por_que.trim()) porQue = r.por_que.trim();
 
         // LA RUTA CON LA QUE HA HECHO LA CUENTA. Se guarda para dársela al paso
-        // 3: la puerta y los vuelos se han decidido sobre ESE recorrido, y
-        // repartir las noches sobre otro distinto convierte la decisión en humo.
-        rutaPrevista = saneaRutaPrevista(r?.ruta_prevista, candidatas, cual, (t) =>
+        // 3: la puerta y los vuelos se han decidido sobre ESE recorrido.
+        rutaPrevista = saneaRutaPrevista(r?.ruta_prevista, candidatas, elegida, (t) =>
           anotar(viajeId, 'ciudades_y_noches', t)
         );
-        const suyos = Math.round(Number(r?.minutos_internos));
         if (rutaPrevista) {
           anotar(
             viajeId,
             'ciudades_y_noches',
-            `   Ruta con la que ha echado la cuenta: ${rutaPrevista.join(' → ')}` +
-              (Number.isFinite(suyos) && suyos > 0 ? ` (${comoTexto(suyos)} de traslados internos)` : ''),
+            `   Ruta con la que ha echado la cuenta: ${rutaPrevista.join(' → ')}`,
             ORIGENES.ia
           );
         }
+      } catch (err) {
+        anotar(viajeId, 'ciudades_y_noches', `   La IA no pudo redactar la puerta (${err.message}).`);
+        break;
       }
-    } catch (err) {
-      anotar(viajeId, 'ciudades_y_noches', `   La IA no pudo elegir la puerta (${err.message}).`);
     }
-  } else {
-    anotar(
-      viajeId,
-      'ciudades_y_noches',
-      '   Tu prompt no tiene la sección de la puerta: la elijo solo por minutos de vuelo.'
-    );
-  }
-
-  if (!elegida) {
-    const respaldo = porMinutosDeVuelo();
-    elegida = respaldo.elegida;
-    porQue = `${respaldo.porQue} (elegido solo por tiempo de vuelo, sin valorar la ruta interna)`;
   }
 
   anotar(viajeId, 'ciudades_y_noches', `Puerta elegida: ${porQue}.`);
-  return { puertas: elegida, porQue, rutaPrevista };
+  return { puertas: elegida, porQue, rutaPrevista, repartos };
+}
+
+// =============================================================================
+// LOS REPARTOS LEGALES, CALCULADOS AQUÍ
+// -----------------------------------------------------------------------------
+// EL FALLO QUE ORIGINA ESTO. La tercera Polonia acabó en «No se pudo», y no por
+// donde parecía. El código calculó bien el ranking de puertas —ganaba c3, entrar
+// por Cracovia y salir por Wrocław con 47,7 h útiles— y la IA lo ignoró: eligió
+// salir por Cracovia con un vuelo a las 9:40, una combinación que ni siquiera
+// estaba en el ranking porque la regla de las 12:00 la había dejado en cero.
+//
+// Con esa puerta no existía NINGÚN reparto legal: los mínimos declarados sumaban
+// 7 noches y solo había 6. Y para cuando eso se descubrió, los vuelos ya estaban
+// marcados como comprados. Los dos reintentos del contrato pelearon contra un
+// muro que no se podía mover.
+//
+// El patrón es el mismo que ya se aplicó a los horarios y a la jerarquía: lo
+// aritmético y comprobable lo decide el código, y la IA opina entre opciones que
+// YA son legales. Aquí eso significa que el reparto no se pide: se genera.
+// =============================================================================
+
+/**
+ * TODAS LAS FORMAS LEGALES DE REPARTIR LAS NOCHES CON ESTA PUERTA.
+ *
+ * Legal quiere decir las cuatro cosas a la vez:
+ *   · entra y sale por donde mandan los vuelos, cada una en su extremo;
+ *   · está la ciudad de mayor peso;
+ *   · nadie baja de su mínimo declarado;
+ *   · y la suma es exactamente las noches que hay.
+ *
+ * Devuelve una lista corta —normalmente dos o tres— ordenada de mejor a peor:
+ * primero las que más noches dan a la ciudad de más peso, y entre iguales, las
+ * que menos carretera tienen.
+ */
+export function repartosLegales({ entrada, salida, candidatas, noches, tiempos = [], minimoNoches = 1 }) {
+  const clave = (x) => normalizarNombre(x ?? '');
+  const buscar = (nombre) => candidatas.find((c) => clave(c.nombre) === clave(nombre)) ?? null;
+
+  const cEntrada = buscar(entrada);
+  const cSalida = buscar(salida);
+  if (!cEntrada || !cSalida) return [];
+
+  const irYVolver = clave(entrada) === clave(salida);
+  const pesoMaximo = Math.max(...candidatas.map((c) => c.peso ?? 3));
+
+  // Las del medio: todas menos los extremos.
+  const medio = candidatas.filter(
+    (c) => clave(c.nombre) !== clave(entrada) && clave(c.nombre) !== clave(salida)
+  );
+
+  const minutosEntre = (a, b) =>
+    tiempos.find((t) => clave(t.desde) === clave(a) && clave(t.hasta) === clave(b))?.minutos ??
+    tiempos.find((t) => clave(t.desde) === clave(b) && clave(t.hasta) === clave(a))?.minutos ??
+    null;
+
+  /** El mejor orden de las de en medio: el que menos carretera suma. */
+  const mejorOrden = (ciudades) => {
+    if (ciudades.length < 2) return { orden: ciudades, minutos: 0 };
+
+    const permutaciones = (xs) =>
+      xs.length <= 1 ? [xs] : xs.flatMap((x, i) =>
+        permutaciones([...xs.slice(0, i), ...xs.slice(i + 1)]).map((r) => [x, ...r])
+      );
+
+    let mejor = null;
+    for (const orden of permutaciones(ciudades)) {
+      const cadena = [cEntrada, ...orden, cSalida];
+      let total = 0;
+      for (let i = 0; i < cadena.length - 1; i += 1) {
+        total += minutosEntre(cadena[i].nombre, cadena[i + 1].nombre) ?? 120;
+      }
+      if (!mejor || total < mejor.minutos) mejor = { orden, minutos: total };
+    }
+    return mejor;
+  };
+
+  /** Los subconjuntos de las de en medio, de menos ciudades a más. */
+  const subconjuntos = [[]];
+  for (const c of medio) {
+    for (const base of [...subconjuntos]) subconjuntos.push([...base, c]);
+  }
+  subconjuntos.sort((a, b) => a.length - b.length);
+
+  const salidas = [];
+
+  // DOS VUELTAS: primero exigiendo también el mínimo general de la guillotina y,
+  // si así no sale ninguno, aflojando a los mínimos declarados. Sin esto, una
+  // ciudad que declara «1-2 noches» generaría un reparto que la red de seguridad
+  // final tiraría después, y eso es dar vueltas para nada.
+  for (const exigirGeneral of [true, false]) {
+    for (const conjunto of subconjuntos) {
+      const ruta = irYVolver ? [cEntrada, ...conjunto] : [cEntrada, ...conjunto, cSalida];
+      if (!ruta.some((c) => (c.peso ?? 3) === pesoMaximo)) continue;
+
+      const suelo = (c) => {
+        const suyo = Math.max(1, Number(c.nochesMin) || 1);
+        if (!exigirGeneral) return suyo;
+        // Una ciudad que declara menos noches de las del mínimo general no se
+        // fuerza por encima de su propio máximo: sería inventarle el rango.
+        return Math.min(Math.max(suyo, minimoNoches), Math.max(1, Number(c.nochesMax) || suyo));
+      };
+      const techo = (c) => Math.max(suelo(c), Number(c.nochesMax) || suelo(c));
+
+      const minimos = ruta.reduce((a, c) => a + suelo(c), 0);
+      const maximos = ruta.reduce((a, c) => a + techo(c), 0);
+      if (noches < minimos || noches > maximos) continue;
+
+      const { orden, minutos } = mejorOrden(conjunto);
+      const enOrden = irYVolver ? [cEntrada, ...orden] : [cEntrada, ...orden, cSalida];
+
+      // La noche sobrante, de dos maneras: toda a la de más peso, y repartida.
+      for (const modo of ['a la de más peso', 'repartida']) {
+        const nochesDe = new Map(enOrden.map((c) => [clave(c.nombre), suelo(c)]));
+        let sobran = noches - minimos;
+
+        const porPeso = [...enOrden].sort((a, b) => (b.peso ?? 3) - (a.peso ?? 3));
+        if (modo === 'a la de más peso') {
+          for (const c of porPeso) {
+            const puede = techo(c) - nochesDe.get(clave(c.nombre));
+            const da = Math.min(puede, sobran);
+            nochesDe.set(clave(c.nombre), nochesDe.get(clave(c.nombre)) + da);
+            sobran -= da;
+          }
+        } else {
+          let vuelta = 0;
+          while (sobran > 0 && vuelta < 50) {
+            for (const c of porPeso) {
+              if (sobran <= 0) break;
+              if (nochesDe.get(clave(c.nombre)) >= techo(c)) continue;
+              nochesDe.set(clave(c.nombre), nochesDe.get(clave(c.nombre)) + 1);
+              sobran -= 1;
+            }
+            vuelta += 1;
+          }
+        }
+        if (sobran !== 0) continue;
+
+        const reparto = enOrden.map((c) => ({
+          ciudad: c.nombre,
+          noches: nochesDe.get(clave(c.nombre)),
+          peso: c.peso ?? 3,
+          // Si se ha aflojado el mínimo general, queda dicho por qué: es lo que
+          // la red de seguridad final pide para no tirarlo.
+          motivo:
+            !exigirGeneral && nochesDe.get(clave(c.nombre)) < minimoNoches
+              ? `declara un mínimo de ${c.nochesMin} noche(s) y es la única forma de que cuadre`
+              : null,
+        }));
+
+        const huella = reparto.map((x) => `${x.ciudad}:${x.noches}`).join('|');
+        if (salidas.some((x) => x.huella === huella)) continue;
+
+        salidas.push({
+          huella,
+          reparto,
+          minutos,
+          // Para ordenar: cuántas noches se lleva la ciudad de más peso.
+          alMasPesado: reparto
+            .filter((x) => x.peso === pesoMaximo)
+            .reduce((a, x) => a + x.noches, 0),
+        });
+      }
+    }
+    if (salidas.length) break;   // con los mínimos buenos ya basta
+  }
+
+  salidas.sort((a, b) => b.alMasPesado - a.alMasPesado || a.minutos - b.minutos);
+  return salidas.slice(0, 6);
 }
 
 // =============================================================================
@@ -1394,11 +1608,19 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     auto,
     viajeId,
     promptPuerta: partes.puerta,
+    noches: nochesTotales,
+    minimoNoches,
   });
 
   let entrada;
   let salida;
   let horariosReales = 'No he podido consultar vuelos reales.';
+
+  if (conVuelos.sinReparto) {
+    // Los vuelos están; lo que no hay es reparto legal. Seguir a ojo llevaría al
+    // mismo muro tres pasos más tarde.
+    throw new Error(conVuelos.error);
+  }
 
   if (conVuelos.error) {
     // HUECO, NO ERROR. Sin vuelos se sigue montando la ruta con el criterio de
@@ -1467,6 +1689,21 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     ),
   };
 
+  // Los repartos que el código ha dado por legales para esta puerta. La IA elige
+  // entre ellos; no los inventa. Vacío si no hubo vuelos y la puerta se eligió a
+  // ojo, y entonces el flujo es el de siempre.
+  const repartosLegales_ = conVuelos.repartos ?? [];
+
+  if (repartosLegales_.length) {
+    di(
+      `Repartos legales con esta puerta (${repartosLegales_.length}): ` +
+        repartosLegales_
+          .map((x) => x.reparto.map((y) => `${y.ciudad} ${y.noches}n`).join(' → '))
+          .join('  |  '),
+      ORIGENES.ninguno
+    );
+  }
+
   let ruta = null;
   let respuesta = null;
   let ultimoFallo = null;
@@ -1494,11 +1731,48 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
       paso: `ruta de ${datos.DESTINO}${intento > 1 ? ' (reintento)' : ''}`,
     });
 
-    const propuesta = (Array.isArray(respuesta?.ruta) ? respuesta.ruta : []).map((p) => ({
+    let propuesta = (Array.isArray(respuesta?.ruta) ? respuesta.ruta : []).map((p) => ({
       ciudad: typeof p?.ciudad === 'string' ? p.ciudad.trim() : null,
       noches: Math.round(Number(p?.noches)),
       motivo: texto(p?.motivo),
     }));
+
+    // LA IA ELIGE ENTRE REPARTOS LEGALES, NO LOS INVENTA.
+    //
+    // Los genera el código —subconjuntos de ciudades con sus mínimos, la suma
+    // exacta y la geografía encadenada— y aquí solo se comprueba que lo que ha
+    // devuelto sea uno de ellos. Si no lo es, se toma el primero de la lista,
+    // que es el que más noches da a la ciudad de mayor peso, y queda dicho.
+    //
+    // Es lo que impide volver al bucle de la tercera Polonia: dos reintentos
+    // peleando contra un reparto que no podía existir.
+    if (repartosLegales_.length) {
+      const huellaDe = (r) =>
+        r
+          .filter((x) => x.ciudad && Number.isFinite(x.noches))
+          .map((x) => `${normalizarNombre(x.ciudad)}:${x.noches}`)
+          .join('|');
+
+      const suya = huellaDe(propuesta);
+      const coincide = repartosLegales_.find(
+        (x) => huellaDe(x.reparto.map((y) => ({ ciudad: y.ciudad, noches: y.noches }))) === suya
+      );
+
+      if (!coincide) {
+        const primero = repartosLegales_[0];
+        di(
+          `La ruta que devolvió no es ninguno de los ${repartosLegales_.length} repartos legales: ` +
+            `me quedo con «${primero.reparto.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ')}», ` +
+            'que es el que más noches deja a la ciudad de más peso.',
+          ORIGENES.ninguno
+        );
+        propuesta = primero.reparto.map((x) => ({
+          ciudad: x.ciudad,
+          noches: x.noches,
+          motivo: x.motivo ?? texto(respuesta?.por_que) ?? null,
+        }));
+      }
+    }
 
     // LO QUE MANDA ES LA RUTA, NO LA CONTABILIDAD.
     //
