@@ -445,10 +445,13 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     let horaFin = null;
     // La hora del billete, que es distinta de cuándo empieza a ocupar el día.
     let salidaReal = null;
+    // Lo que ha costado llegar, solo en el bloque de ida.
+    let esfuerzo = null;
 
     if (donde === 'ida') {
       // Se llega el dia en que empieza la primera parada.
       dia = diaDeLaFecha(destino.fecha_inicio) ?? 1;
+      esfuerzo = esfuerzoDelVuelo(t.vuelo_extra);
       hora = horas.llegada;
       // EL DÍA NO EMPIEZA AL ATERRIZAR: empieza al salir con las maletas.
       horaFin = sumarMinutos(hora, margenes.salidaAeropuerto);
@@ -515,6 +518,10 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       donde,
       icono,
       texto,
+      // Solo en el bloque de ida: cuánto se ha volado y cuántos husos se han
+      // cruzado. Es lo que convierte el día de llegada en un día de
+      // aclimatación en vez de en un día normal con menos horas.
+      esfuerzo,
       etapaId: dias.find((d) => d.n === dia)?.etapaId ?? null,
     });
   }
@@ -574,6 +581,59 @@ function resumenDeSalto(t, origen, destino) {
  * ATERRIZA (es lo que marca a qué hora empieza el viaje de verdad) y de la
  * vuelta cuándo se DESPEGA.
  */
+/**
+ * CUÁNTO DURA UN VUELO Y CUÁNTOS HUSOS CRUZA.
+ *
+ * EL FALLO QUE ORIGINA ESTO. Tras un vuelo nocturno intercontinental de más de
+ * doce horas y con un salto horario grande, el día de llegada se montó con
+ * actividades desde primera hora y carga completa, igual que una llegada
+ * europea de dos horas. El lienzo no distinguía: una llegada era una hora en el
+ * reloj y nada más.
+ *
+ * LOS HUSOS NO SE INVENTAN NI SE BUSCAN: se restan. La tarjeta del vuelo trae la
+ * hora de salida, la de llegada, si cae al día siguiente y la duración REAL del
+ * trayecto. La diferencia entre lo que marca el reloj y lo que de verdad se ha
+ * volado ES el cambio horario, exactamente y sin preguntarle a nadie:
+ *
+ *     Barcelona 12:00 → Bangkok 06:00 (+1), 13 h de vuelo
+ *     reloj: 18 h · vuelo: 13 h · husos: 5
+ *
+ * Devuelve null cuando falta alguno de los dos datos: sin duración no hay resta
+ * que hacer, y suponerla sería justo lo contrario de lo que se busca aquí.
+ */
+function esfuerzoDelVuelo(datosExtra) {
+  if (!datosExtra) return null;
+  let tramo = null;
+  try {
+    const extra = JSON.parse(datosExtra);
+    const tramos = extra.tramos ?? [];
+    tramo = tramos.find((x) => x.tramo === 'ida') ?? tramos[0] ?? null;
+  } catch {
+    return null;
+  }
+  if (!tramo) return null;
+
+  // "13h 05m", "2h 30m", "45m"
+  const d = /(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/.exec(String(tramo.duracion ?? ''));
+  const minutosDeVuelo = d ? Number(d[1] ?? 0) * 60 + Number(d[2] ?? 0) : 0;
+  if (!minutosDeVuelo) return null;
+
+  const salida = enMinutos(normalizarHora(tramo.horaSalida));
+  const llegada = enMinutos(normalizarHora(tramo.horaLlegada));
+  if (salida == null || llegada == null) {
+    return { horas: minutosDeVuelo / 60, husos: null };
+  }
+
+  const dias = Number(tramo.diasDespues) || 0;
+  const enElReloj = llegada + dias * 24 * 60 - salida;
+
+  // El cambio horario, en husos. Se redondea porque hay husos de media hora y
+  // aquí lo que importa es el orden de magnitud, no la geografía.
+  const husos = Math.round((enElReloj - minutosDeVuelo) / 60);
+
+  return { horas: minutosDeVuelo / 60, husos };
+}
+
 function horasDelVuelo(datosExtra) {
   if (!datosExtra) return { llegada: null, salida: null };
   try {
@@ -1579,6 +1639,41 @@ export function cierraALasMinutos(sitio) {
  * hora no se solapa con nada: el aviso desaparecía y el problema se quedaba.
  * Esconder no es resolver.
  */
+/**
+ * ¿HAY QUE ACLIMATARSE EN ESTE VIAJE, Y DESDE QUÉ DÍA?
+ *
+ * Devuelve el día de llegada y por qué, o null si el vuelo de ida fue uno
+ * normal. Los dos umbrales son parámetros porque «largo» y «mucho cambio
+ * horario» son cuestión de cuerpo, no de física.
+ *
+ * Basta con pasarse en UNO de los dos: un vuelo de catorce horas a la misma hora
+ * de Europa cansa igual, y cuatro husos en un vuelo de seis horas descolocan
+ * igual.
+ */
+export function diaDeAclimatacion(lienzo) {
+  const llegada = (lienzo?.fijos ?? []).find((f) => f.donde === 'ida' && f.esfuerzo);
+  if (!llegada) return null;
+
+  const { horas, husos } = llegada.esfuerzo;
+  const topeHoras = parametro('horas_vuelo_largo', 8);
+  const topeHusos = parametro('husos_jetlag', 4);
+
+  const esLargo = Number.isFinite(horas) && horas > topeHoras;
+  const hayJetlag = Number.isFinite(husos) && Math.abs(husos) > topeHusos;
+  if (!esLargo && !hayJetlag) return null;
+
+  return {
+    dia: llegada.dia,
+    horas,
+    husos,
+    porQue:
+      `llegada tras vuelo largo: ${esLargo ? `${Math.round(horas)} h de vuelo` : ''}` +
+      `${esLargo && hayJetlag ? ' y ' : ''}` +
+      `${hayJetlag ? `${Math.abs(husos)} husos de diferencia` : ''}` +
+      ' — día de aclimatación',
+  };
+}
+
 export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = null, cierraA = null }) {
   const bordes = bordesDeFranja(franja);
   if (!bordes) return null;
@@ -1626,12 +1721,38 @@ export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = nu
     return fin == null ? 0 : fin + parametro('margen_tras_llegada_min', 60);
   })();
 
-  const minimo = Math.max(bordes.desde, INICIO_DEL_DIA, trasLlegar, enMinutos(noAntesDe) ?? 0);
+  // --- EL DÍA DE ACLIMATACIÓN Y EL DE DESPUÉS -----------------------------
+  //
+  // Tras doce horas de avión y cinco husos, el día de llegada se montaba con
+  // carga completa desde primera hora, igual que una llegada de Ámsterdam. No es
+  // un día normal con menos horas: es medio día y suave.
+  //
+  //   · El día de llegada acaba a MEDIO CAMINO entre salir del aeropuerto y el
+  //     final del día. Es la definición más honesta de «medio día» que se puede
+  //     escribir con los datos que hay, y se ajusta sola: quien aterriza a las
+  //     seis de la mañana tiene hasta las dos, y quien aterriza a las ocho de la
+  //     tarde no tiene nada, que es justo lo que debe pasar.
+  //   · El día siguiente no empieza antes de la hora del parámetro.
+  const aclimatacion = diaDeAclimatacion(lienzo);
+  let inicio = INICIO_DEL_DIA;
+  let finDelDia = topeDelDia;
+
+  if (aclimatacion && dia === aclimatacion.dia) {
+    finDelDia = Math.min(finDelDia, Math.round((Math.max(trasLlegar, INICIO_DEL_DIA) + topeDelDia) / 2));
+  }
+  if (aclimatacion && dia === aclimatacion.dia + 1) {
+    inicio = Math.max(inicio, enMinutos(parametroTexto('hora_inicio_tras_jetlag', '10:00')) ?? inicio);
+  }
+
+  const minimo = Math.max(bordes.desde, inicio, trasLlegar, enMinutos(noAntesDe) ?? 0);
 
   // El tope de cierre acota cuándo tiene que haber TERMINADO; el del día, cuándo
   // puede EMPEZAR. Son dos cosas distintas: una cena que empieza a las 21:30 y
   // acaba a las 23:00 está bien; una visita que empieza a las 22:30, no.
-  const tope = Math.min(bordes.hasta, cierraA ?? 24 * 60);
+  //
+  // En el día de aclimatación son la misma: lo que se ponga tiene que haber
+  // acabado dentro del medio día, no empezar dentro y acabar de noche.
+  const tope = Math.min(bordes.hasta, cierraA ?? 24 * 60, finDelDia);
 
   let candidata = minimo;
   for (const [ini, fin] of ocupado) {
@@ -1641,7 +1762,7 @@ export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = nu
 
   if (candidata + duracion > tope) return null;
   if (candidata >= bordes.hasta) return null;    // ya no es esta franja
-  if (candidata >= topeDelDia) return null;      // a esa hora ya no se empieza nada
+  if (candidata >= finDelDia) return null;       // a esa hora ya no se empieza nada
   return comoHora(candidata);
 }
 

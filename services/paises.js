@@ -117,6 +117,8 @@ export async function interpretarDestino(textoDestino) {
   const r = await consultarJSON(rellenar(promptDeFase('paises_interpretar'), { TEXTO: t }), {
     maxTokens: 600,
     paso: `interpretar el destino «${t}»`,
+    // Sacar los nombres de país de una frase es leer, no decidir.
+    modelo: 'rapido',
   });
 
   const paises = (Array.isArray(r?.paises) ? r.paises : [])
@@ -209,7 +211,13 @@ export async function opinarSobreSeleccion(viaje, seleccion) {
         `${adultos} adulto(s)` + (edadesNinos.length ? ` y ${edadesNinos.length} niño(s)` : ''),
       RITMO: viaje.ritmo || 'normal',
     }),
-    { maxTokens: 1500, paso: `criterio sobre ${elegidos.join(' + ')}` }
+    {
+      maxTokens: 1500,
+      paso: `criterio sobre ${elegidos.join(' + ')}`,
+      // Decir si tres países caben en nueve días y cuál quitar es la clase de
+      // juicio por la que se paga el modelo grande.
+      modelo: 'criterio',
+    }
   );
 
   // EL VEREDICTO SOLO PUEDE SER UNA DE DOS COSAS, y de él depende que el botón
@@ -328,7 +336,12 @@ export async function calcularFronteras(viaje) {
       PASAPORTE,
       ORIGEN: viaje.ciudad_origen || 'España',
     }),
-    { maxTokens: 1600, paso: `fronteras de ${secuencia.map((s) => s.pais).join(' → ')}` }
+    {
+      maxTokens: 1600,
+      paso: `fronteras de ${secuencia.map((s) => s.pais).join(' → ')}`,
+      // Un visado mal contado estropea el viaje entero: aquí no se ahorra.
+      modelo: 'criterio',
+    }
   );
 
   const cruces = (Array.isArray(r?.cruces) ? r.cruces : [])

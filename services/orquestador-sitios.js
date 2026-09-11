@@ -42,8 +42,11 @@ import { situarLosSitios } from '../services/direcciones.js';
 import { buscarDatosDeSitios } from '../services/datos-sitios.js';
 import { destinoPorNombre } from '../services/catalogo.js';
 import { ocupacionDe } from '../services/proveedores.js';
-import { anotar, apuntarHueco, configAuto, ORIGENES } from '../services/orquestador.js';
+import { anotar, apuntarHueco, configAuto, parametro, ORIGENES } from '../services/orquestador.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
+import { porParada } from '../services/paralelo.js';
+import { enFase } from '../services/fase-actual.js';
+import { enParada } from '../services/cronometro.js';
 
 const FASE = 'sitios';
 
@@ -104,155 +107,172 @@ export async function ejecutarFaseSitios(viaje, prompt) {
     di('Sin intereses declarados: se generan los sitios como en el flujo manual.');
   }
 
-  di(`${etapas.length} parada(s), de una en una para no amontonar búsquedas.`);
+  const aLaVez = Math.max(1, parametro('concurrencia_paradas', 3));
+  di(
+    `${etapas.length} parada(s)` +
+      (aLaVez > 1 && etapas.length > 1 ? `, de ${aLaVez} en ${aLaVez}.` : ', de una en una.'),
+    ORIGENES.ninguno
+  );
 
-  let generadas = 0;
+  // LAS PARADAS NO DEPENDEN UNAS DE OTRAS.
+  //
+  // Iban en fila solo porque un `for` es lo más fácil de escribir, y el
+  // cronómetro puso el precio encima de la mesa: 6m 35s de IA en tres ciudades
+  // seguidas. Ninguna necesita nada de la anterior —cada una investiga su ciudad
+  // y escribe en su propio punto del catálogo— así que van a la vez.
+  //
+  // El scraping que haya dentro sigue haciendo cola solo: el cerrojo de
+  // `abrirNavegador` se encarga, porque el perfil de Chrome es uno.
+  const { resultados } = await porParada(
+    etapas,
+    {
+      limite: aLaVez,
+      nombreDe: (e) => e.nombre_ciudad,
+      hayQueParar: (ciudad) => hayQueParar(viajeId, FASE, ciudad),
+      enFase: (fn) => enFase(viajeId, FASE, fn),
+      enParada,
+      di: (t) => di(t, ORIGENES.ninguno),
+    },
+    async (etapa, ciudad) => {
 
-  for (const etapa of etapas) {
-    const ciudad = etapa.nombre_ciudad;
+      const punto = etapa.punto_interes_id
+        ? una('SELECT * FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
+        : null;
 
-    // EL PUNTO DE CONTROL DE LA PARADA.
-    //
-    // Entre ciudad y ciudad no hay nada a medias: la anterior está terminada y
-    // de la siguiente no se ha tocado nada. Es el mejor sitio para dejarlo, y
-    // por eso se mira aquí y no dentro del trabajo de una ciudad.
-    //
-    // Se corta con `break` y NO con una excepción: la fase devuelve lo que lleve
-    // hecho y el worker la cierra como terminada. Lo hecho, hecho queda; lo que
-    // falte lo hará el relanzado.
-    if (hayQueParar(viajeId, FASE, ciudad)) {
-      di(`Parada pedida: lo dejo antes de ${ciudad}.`, ORIGENES.ninguno);
-      break;
-    }
-
-    const punto = etapa.punto_interes_id
-      ? una('SELECT * FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
-      : null;
-
-    if (!punto) {
-      apuntarHueco(
-        viajeId,
-        FASE,
-        `${ciudad}: la parada no tiene ficha propia en el catálogo, así que no hay dónde guardar los sitios.`
-      );
-      di(`${ciudad}: sin ficha en el catálogo. Lo dejo como hueco.`);
-      continue;
-    }
-
-    // --- Lo que ya está no se toca ---------------------------------------
-    const cuantos = una(
-      'SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ?',
-      punto.id
-    ).n;
-    if (cuantos) {
-      di(`${ciudad}: ya existían ${cuantos} sitios. No los regenero.`);
-      generadas += 1;
-
-      // PERO SÍ SE REPASAN LAS FOTOS QUE FALTEN.
-      //
-      // Las fichas viejas se guardaron cuando solo se miraba la Wikipedia en
-      // español, y fuera de los sitios muy famosos ahí no hay artículo: de
-      // veinte sitios de Gdansk llegaron tres con foto. Regenerarlas sería
-      // tirar trabajo bueno, así que se rellena solo el hueco de la foto.
-      try {
-        const destinoDeLaCiudad = punto.destino_id
-          ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)
-          : null;
-        const puestas = await repasarFotosDeSitios(punto, destinoDeLaCiudad?.nombre ?? viaje.destino);
-        if (puestas) di(`   ${ciudad}: ${puestas} foto(s) recuperadas de fichas que no tenían.`);
-      } catch (err) {
-        di(`   ${ciudad}: no pude repasar las fotos (${err.message}).`);
+      if (!punto) {
+        apuntarHueco(
+          viajeId,
+          FASE,
+          `${ciudad}: la parada no tiene ficha propia en el catálogo, así que no hay dónde guardar los sitios.`
+        );
+        di(`${ciudad}: sin ficha en el catálogo. Lo dejo como hueco.`);
+        return { hecha: false };
       }
-      continue;
-    }
 
-    di(`Buscando qué ver en ${ciudad}…`);
+      // --- Lo que ya está no se toca ---------------------------------------
+      const cuantos = una(
+        'SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ?',
+        punto.id
+      ).n;
+      if (cuantos) {
+        di(`${ciudad}: ya existían ${cuantos} sitios. No los regenero.`);
+        generadas += 1;
 
-    // --- 1) La generación de siempre, en tres bloques ---------------------
-    let ficha;
-    try {
-      const destino = punto.destino_id
-        ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)
-        : destinoPorNombre(viaje.destino ?? '');
-      ficha = await investigarCiudadConIA(punto, destino?.nombre ?? ciudad, {
-        edadesNinos,
-        sesgo,
-      });
-    } catch (err) {
-      apuntarHueco(viajeId, FASE, `${ciudad}: no se pudieron generar los sitios (${err.message}).`);
-      di(`${ciudad}: la generación falló (${err.message}). Sigo con la siguiente parada.`);
-      continue;
-    }
+        // PERO SÍ SE REPASAN LAS FOTOS QUE FALTEN.
+        //
+        // Las fichas viejas se guardaron cuando solo se miraba la Wikipedia en
+        // español, y fuera de los sitios muy famosos ahí no hay artículo: de
+        // veinte sitios de Gdansk llegaron tres con foto. Regenerarlas sería
+        // tirar trabajo bueno, así que se rellena solo el hueco de la foto.
+        try {
+          const destinoDeLaCiudad = punto.destino_id
+            ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)
+            : null;
+          const puestas = await repasarFotosDeSitios(punto, destinoDeLaCiudad?.nombre ?? viaje.destino);
+          if (puestas) di(`   ${ciudad}: ${puestas} foto(s) recuperadas de fichas que no tenían.`);
+        } catch (err) {
+          di(`   ${ciudad}: no pude repasar las fotos (${err.message}).`);
+        }
+        return { hecha: false };
+      }
 
-    // --- 2) Wikipedia: foto y enlace --------------------------------------
-    await ponerFotosDeWikipedia(ficha.sitios);
-    guardarFichaProfunda(punto, ficha);
-    ejecutar("UPDATE puntos_interes SET investigado_en = datetime('now') WHERE id = ?", punto.id);
+      di(`Buscando qué ver en ${ciudad}…`);
 
-    // --- 3) Dirección y coordenada, como en el flujo manual ---------------
-    try {
-      await situarLosSitios(punto);
-    } catch (err) {
-      // Que Places no conteste no deja la parada sin sitios: solo sin
-      // direcciones, que es un hueco menor y se ve en la ficha.
-      di(`   ${ciudad}: no pude situar los sitios (${err.message}).`);
-    }
+      // --- 1) La generación de siempre, en tres bloques ---------------------
+      let ficha;
+      try {
+        const destino = punto.destino_id
+          ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)
+          : destinoPorNombre(viaje.destino ?? '');
+        ficha = await investigarCiudadConIA(punto, destino?.nombre ?? ciudad, {
+          edadesNinos,
+          sesgo,
+        });
+      } catch (err) {
+        apuntarHueco(viajeId, FASE, `${ciudad}: no se pudieron generar los sitios (${err.message}).`);
+        di(`${ciudad}: la generación falló (${err.message}). Sigo con la siguiente parada.`);
+        return { hecha: false };
+      }
 
-    // --- 4) Los datos duros, una sola búsqueda ----------------------------
-    //
-    // Se ESPERA a que termine en vez de encolarla. En el flujo manual se encola
-    // porque hay alguien mirando la pantalla y la ficha se completa sola; aquí
-    // no hay nadie mirando, y la fase tiene que poder decir si los datos
-    // entraron o no antes de darse por terminada.
-    let datos = null;
-    try {
-      datos = await buscarDatosDeSitios(punto);
-    } catch (err) {
-      apuntarHueco(
-        viajeId,
-        FASE,
-        `${ciudad}: los sitios están, pero la búsqueda de precios y horarios falló (${err.message}).`
+      // --- 2) Wikipedia: foto y enlace --------------------------------------
+      await ponerFotosDeWikipedia(ficha.sitios);
+      guardarFichaProfunda(punto, ficha);
+      ejecutar("UPDATE puntos_interes SET investigado_en = datetime('now') WHERE id = ?", punto.id);
+
+      // --- 3) Dirección y coordenada, como en el flujo manual ---------------
+      try {
+        await situarLosSitios(punto);
+      } catch (err) {
+        // Que Places no conteste no deja la parada sin sitios: solo sin
+        // direcciones, que es un hueco menor y se ve en la ficha.
+        di(`   ${ciudad}: no pude situar los sitios (${err.message}).`);
+      }
+
+      // --- 4) Los datos duros, una sola búsqueda ----------------------------
+      //
+      // Se ESPERA a que termine en vez de encolarla. En el flujo manual se encola
+      // porque hay alguien mirando la pantalla y la ficha se completa sola; aquí
+      // no hay nadie mirando, y la fase tiene que poder decir si los datos
+      // entraron o no antes de darse por terminada.
+      let datos = null;
+      try {
+        datos = await buscarDatosDeSitios(punto);
+      } catch (err) {
+        apuntarHueco(
+          viajeId,
+          FASE,
+          `${ciudad}: los sitios están, pero la búsqueda de precios y horarios falló (${err.message}).`
+        );
+      }
+
+      // LO QUE LA BÚSQUEDA NO HA PODIDO CONFIRMAR, FUERA Y DICHO.
+      //
+      // El filtro lo aplica la propia búsqueda de datos duros (no hay una segunda
+      // búsqueda para esto); aquí solo se cuenta lo que ha tirado y por qué, que
+      // es lo que permite ver si se está pasando de estricto.
+      for (const x of datos?.descartados ?? []) {
+        di(`   Descartado por no verificado: ${x.nombre} (${x.motivo})`);
+      }
+
+      const sinDatos = datos ? datos.sitios - datos.rellenados : null;
+      // Se cuenta de la BASE y no de lo que propuso la IA: entre medias el filtro
+      // de existencia puede haber tirado alguno, y el registro tiene que decir lo
+      // que ha quedado, no lo que se pidió.
+      const porBloque = todas(
+        `SELECT bloque, COUNT(*) AS n FROM sitios_lugar
+          WHERE punto_interes_id = ? GROUP BY bloque`,
+        punto.id
+      ).reduce((m, r) => ({ ...m, [r.bloque ?? 'imprescindibles']: r.n }), {});
+      const generales = (porBloque.imprescindibles ?? 0) + (porBloque.otros ?? 0);
+      const infantiles = porBloque.ninos ?? 0;
+      const conFotoAhora = una(
+        'SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ? AND imagen_url IS NOT NULL',
+        punto.id
+      ).n;
+
+      di(
+        `${ciudad}: ${generales} sitios` +
+          (infantiles ? ` (+${infantiles} para niños)` : '') +
+          `, ${conFotoAhora} con foto, ` +
+          (datos === null
+            ? 'datos de Google pendientes.'
+            : sinDatos === 0
+              ? 'datos de Google al completo.'
+              : `datos de Google pendientes en ${sinDatos} sitio(s).`)
       );
+      return { hecha: true };
     }
+  );
 
-    // LO QUE LA BÚSQUEDA NO HA PODIDO CONFIRMAR, FUERA Y DICHO.
-    //
-    // El filtro lo aplica la propia búsqueda de datos duros (no hay una segunda
-    // búsqueda para esto); aquí solo se cuenta lo que ha tirado y por qué, que
-    // es lo que permite ver si se está pasando de estricto.
-    for (const x of datos?.descartados ?? []) {
-      di(`   Descartado por no verificado: ${x.nombre} (${x.motivo})`);
-    }
-
-    const sinDatos = datos ? datos.sitios - datos.rellenados : null;
-    // Se cuenta de la BASE y no de lo que propuso la IA: entre medias el filtro
-    // de existencia puede haber tirado alguno, y el registro tiene que decir lo
-    // que ha quedado, no lo que se pidió.
-    const porBloque = todas(
-      `SELECT bloque, COUNT(*) AS n FROM sitios_lugar
-        WHERE punto_interes_id = ? GROUP BY bloque`,
-      punto.id
-    ).reduce((m, r) => ({ ...m, [r.bloque ?? 'imprescindibles']: r.n }), {});
-    const generales = (porBloque.imprescindibles ?? 0) + (porBloque.otros ?? 0);
-    const infantiles = porBloque.ninos ?? 0;
-    const conFotoAhora = una(
-      'SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ? AND imagen_url IS NOT NULL',
-      punto.id
-    ).n;
-
-    di(
-      `${ciudad}: ${generales} sitios` +
-        (infantiles ? ` (+${infantiles} para niños)` : '') +
-        `, ${conFotoAhora} con foto, ` +
-        (datos === null
-          ? 'datos de Google pendientes.'
-          : sinDatos === 0
-            ? 'datos de Google al completo.'
-            : `datos de Google pendientes en ${sinDatos} sitio(s).`)
-    );
-
-    generadas += 1;
+  // UN FALLO EN UNA CIUDAD NO SE TRAGA NI SE LLEVA A LAS DEMÁS.
+  for (const [k, r] of resultados.entries()) {
+    if (!r?.error) continue;
+    const ciudad = etapas[k]?.nombre_ciudad ?? `parada ${k + 1}`;
+    di(`${ciudad}: no se pudo (${r.error.message}).`);
+    apuntarHueco(viajeId, FASE, `${ciudad}: ${r.error.message}`);
   }
+
+  const generadas = resultados.filter((r) => r?.valor?.hecha).length;
 
   di(`${generadas} de ${etapas.length} parada(s) con sus sitios.`);
   return { etapas: etapas.length, generadas };

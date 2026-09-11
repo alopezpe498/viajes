@@ -384,6 +384,8 @@ export function migrarEsquema() {
   migracionPuertaSoloCiudadesVivas();
   migracionJerarquiaDeLaRevision();
   migracionPromptsSinNumerosAFuego();
+  migracionCorrectivoAsia();
+  migracionDosModelosYParalelo();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -4925,6 +4927,133 @@ function migracionPromptsSinNumerosAFuego() {
     `[bd] Migracion: ${puestos} de ${retoques.length} retoque(s) de prompt puestos` +
       (sinEncontrar.length ? `; sin aplicar: ${sinEncontrar.join(', ')}.` : '.')
   );
+  return true;
+}
+
+/**
+ * CORRECTIVO DE ASIA: los cinco numeros del primer viaje multipais.
+ *
+ * Los cinco salen de cosas que en Europa nunca se notaron y fuera saltaron a la
+ * primera:
+ *
+ *   puestos_intocables_del_sitio · Cuantos imprescindibles de una ciudad no se
+ *       pueden perder. El sitio mas iconico de una ciudad se quedo fuera porque
+ *       cerraba el dia que se intento colocar y nadie miro los demas dias. No
+ *       todos los imprescindibles pesan igual: el #1 no se negocia, el #7 si.
+ *
+ *   factor_discrepancia_traslado · Cuanto pueden diferir los kilometros del mapa
+ *       y el puerta a puerta del traslado elegido antes de que sea sospechoso.
+ *       Dos saltos aparecieron al doble de lo real por una ciudad mal situada, y
+ *       las dos medidas del mismo trayecto se contradecian sin que nadie las
+ *       comparara.
+ *
+ *   factor_precio_sospechoso · Cuantas veces por debajo del suelo estimado tiene
+ *       que estar una noche para no creersela. Un hotel de categoria alta salio
+ *       por el precio de un menu del dia: "THB 4,500" se leia como 4,5.
+ *
+ *   horas_vuelo_largo · husos_jetlag · hora_inicio_tras_jetlag · El dia de
+ *       llegada tras doce horas de avion y cinco husos se monto con carga
+ *       completa desde primera hora, como una llegada de Amsterdam.
+ */
+function migracionCorrectivoAsia() {
+  const CLAVE = '2026-09-correctivo-asia';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('puestos_intocables_del_sitio', '3',
+    'Cuantos imprescindibles de una ciudad no se expulsan sin agotar antes todos los dias de la parada',
+    'puestos');
+  nuevo('factor_discrepancia_traslado', '1.5',
+    'Cuanto pueden diferir los km del mapa y el puerta a puerta elegido antes de avisar',
+    'veces');
+  nuevo('factor_precio_sospechoso', '3',
+    'Cuantas veces por debajo del suelo estimado marca una noche como precio a verificar',
+    'veces');
+  nuevo('horas_vuelo_largo', '8',
+    'A partir de aqui el dia de llegada es de aclimatacion, no un dia normal',
+    'horas');
+  nuevo('husos_jetlag', '4',
+    'Cambio horario a partir del cual el dia de llegada es de aclimatacion',
+    'husos');
+  nuevo('hora_inicio_tras_jetlag', '10:00',
+    'Antes de esta hora no se planifica nada el dia siguiente a una llegada de aclimatacion',
+    'hora');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: correctivo de Asia (horarios, sesiones, kilometros, precios y jet lag).');
+  return true;
+}
+
+/**
+ * DOS MODELOS POR FASE Y CONCURRENCIA.
+ *
+ * El cronometro dejo el motivo por escrito: 17m 02s de viaje, 56 llamadas de IA
+ * y todas al modelo grande, con «Que ver» llevandose 7m 48s en tres paradas que
+ * no dependen entre si. Dos palancas distintas:
+ *
+ *   modelo_<fase> · "criterio" o "rapido", NUNCA un nombre de modelo. Los
+ *       nombres viven en el .env (MODELO_CRITERIO y MODELO_RAPIDO), asi que el
+ *       dia que salga una version nueva se cambia en un sitio y no en diez
+ *       filas. De fabrica decide el modelo grande lo que decide el viaje
+ *       —que ciudades, que excursiones, como se reparte el dia— y el rapido
+ *       hace la mecanica: listar sitios, traducir horarios, buscar un hotel.
+ *
+ *   concurrencia_paradas · Cuantas ciudades se procesan a la vez dentro de una
+ *       fase. Las paradas no dependen unas de otras.
+ *
+ *   concurrencia_vuelos · Cuantas puertas se miran a la vez en la fase 1. Mas
+ *       bajo que el anterior a proposito: son busquedas contra Kayak y
+ *       apretarlas es como se consigue que te bloqueen.
+ *
+ * OJO: el scraping NO se paraleliza aunque estos numeros suban. El navegador
+ * usa un unico perfil persistente y Chrome delega en la instancia que ya lo
+ * tenga abierto, dejando a Playwright esperando para siempre. `abrirNavegador`
+ * lleva un cerrojo: la IA va en paralelo y el navegador hace cola solo.
+ */
+function migracionDosModelosYParalelo() {
+  const CLAVE = '2026-09-dos-modelos-y-paralelo';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  // --- Que modelo usa cada fase -------------------------------------------
+  const porFase = [
+    ['ciudades_y_noches', 'criterio', 'Fase 1: que ciudades, cuantas noches y por donde se entra'],
+    ['traslados', 'rapido', 'Fase 2: elegir entre opciones ya medidas'],
+    ['dormir', 'rapido', 'Fase 3: elegir hotel entre los que trajo la busqueda'],
+    ['sitios', 'rapido', 'Fase 4: listar los sitios de cada parada'],
+    ['excursiones', 'criterio', 'Fase 5: que excursion merece la pena y donde encaja'],
+    ['lienzo', 'criterio', 'Fase 6: repartir los dias y revisar'],
+  ];
+  for (const [fase, clase, que] of porFase) {
+    nuevo(`modelo_${fase}`, clase, `${que} — "criterio" (el listo) o "rapido" (el barato)`, 'criterio/rapido');
+  }
+
+  // --- Cuanto se paraleliza ------------------------------------------------
+  nuevo('concurrencia_paradas', '3',
+    'Cuantas paradas se procesan a la vez dentro de una fase (solo afecta a las llamadas de IA)',
+    'a la vez');
+  nuevo('concurrencia_vuelos', '2',
+    'Cuantas puertas se miran a la vez en la fase 1. Bajo a proposito: son busquedas contra Kayak',
+    'a la vez');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: modelo por fase y limites de concurrencia.');
   return true;
 }
 

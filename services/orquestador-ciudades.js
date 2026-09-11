@@ -30,6 +30,7 @@
 import { db, todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { resolverIata } from '../lib/iata.js';
+import { enParalelo } from '../services/paralelo.js';
 import { buscarVuelosKayak } from '../providers/kayak.js';
 import { ocupacionDe, ciudadDeCasa } from '../services/proveedores.js';
 import { asegurarDestino, destinoPorNombre } from '../services/catalogo.js';
@@ -538,18 +539,34 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   );
 
   // --- Las búsquedas, una por puerta y sentido ----------------------------
+  //
+  // LAS PUERTAS NO DEPENDEN UNAS DE OTRAS: cada una resuelve su aeropuerto y
+  // busca su ida y su vuelta. Iban en fila por el bucle, no por necesidad.
+  //
+  // PERO EL LÍMITE ES BAJO Y NO POR CAPRICHO. Aquí dentro hay dos cosas de
+  // naturaleza distinta: resolver el código IATA es una llamada de IA y se
+  // solapa de verdad; buscar en Kayak es scraping, y el scraping de esta casa no
+  // se paraleliza —hay un único perfil de Chrome y el cerrojo de
+  // `abrirNavegador` los pone en fila solos—. Así que lo que se gana aquí son
+  // los IATA y los ratos muertos, no las búsquedas.
+  //
+  // Y aunque el navegador lo permitiera, apretar Kayak con varias búsquedas a la
+  // vez desde la misma IP es la forma más rápida de que te enseñe un captcha.
+  // `concurrencia_vuelos` es bajo (2 de fábrica) por eso.
   const idas = new Map();
   const vueltas = new Map();
 
-  for (const p of puertas) {
+  const aLaVez = Math.max(1, parametro('concurrencia_vuelos', 2));
+
+  await enParalelo(puertas, aLaVez, async (p) => {
     const iata = p.iata ?? (await resolverIata(p.nombre));
     if (!iata) {
       anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: sin aeropuerto que resolver; la salto.`);
-      continue;
+      return;
     }
     if (iata === iataCasa) {
       anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: es el mismo aeropuerto del que sales; la salto.`);
-      continue;
+      return;
     }
     p.iataResuelto = iata;
 
@@ -583,7 +600,17 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     } else {
       anotar(viajeId, 'ciudades_y_noches', `   ${p.nombre}: sin ninguna vuelta utilizable.`);
     }
-  }
+  }).then((rs) => {
+    // Una puerta que revienta no se lleva a las demás, pero se dice.
+    for (const [k, r] of rs.entries()) {
+      if (!r?.error) continue;
+      anotar(
+        viajeId,
+        'ciudades_y_noches',
+        `   ${puertas[k]?.nombre ?? `puerta ${k + 1}`}: falló la búsqueda (${r.error.message}).`
+      );
+    }
+  });
 
   if (!idas.size || !vueltas.size) {
     return { error: 'No encontré vuelos reales ni de ida ni de vuelta para ninguna puerta.' };

@@ -47,6 +47,7 @@ import {
   cierraALasMinutos,
   enMinutos,
   comoHora,
+  diaDeAclimatacion,
   FRANJAS,
 } from '../services/lienzo.js';
 import { datosDeSitio, interpretarHorario } from '../services/datos-sitios.js';
@@ -62,6 +63,7 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
+import { horasDeSesion, soloAUltimaHora } from '../services/horarios.js';
 import {
   avisarDeParadasQueNoCaben,
   avisarDeParadasSinSusImprescindibles,
@@ -438,12 +440,24 @@ function esComida(colocado) {
   return /^comer\b/i.test(String(colocado?.nombre ?? ''));
 }
 
-/** A qué hora tiene que haber TERMINADO esto, si es un sitio con cierre. */
+/**
+ * A qué hora tiene que haber TERMINADO esto, si es un sitio con cierre.
+ *
+ * CON PASES NO HAY HORA DE CIERRE QUE VALGA, y esto lo descubrió la prueba.
+ * `cierraALasMinutos` busca horas en el texto y se queda con la más temprana de
+ * la tarde; ante «Pases a las 20:00 y 21:30» concluye que el sitio cierra a las
+ * 20:00, así que un espectáculo de hora y media no cabe en su propio pase y el
+ * plan se queda sin él. Una lista de pases no es un horario de apertura: son
+ * cosas distintas escritas en el mismo campo, y la hora de cada pase ya es toda
+ * la restricción que hace falta.
+ */
 function cierreDe(colocado) {
   const quien = deQuienEs(colocado);
   if (quien?.de !== 'sitio' || !quien.deId) return null;
   const sitio = una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId);
-  return sitio ? cierraALasMinutos(sitio) : null;
+  if (!sitio) return null;
+  if (horasDeSesion(sitio.horarios)?.length) return null;
+  return cierraALasMinutos(sitio);
 }
 
 /**
@@ -483,7 +497,11 @@ function importanciaDe(colocado) {
     return {
       nivel,
       orden: Number(sitio?.orden) || 99,
-      rigido: sitio ? cierraALasMinutos(sitio) != null : false,
+      // RÍGIDO ES TENER UNA HORA PUBLICADA, no tener una por defecto.
+      // `cierraALasMinutos` siempre devuelve algo —si no hay horario, las ocho—,
+      // así que preguntarle si es null daba true para todos los sitios y el
+      // desempate por rigidez no desempataba nada.
+      rigido: /\d{1,2}:\d{2}/.test(String(sitio?.horarios ?? '')),
       que: nivel === 3 ? `imprescindible #${Number(sitio?.orden) || '?'}` : 'sitio de segundo nivel',
     };
   }
@@ -531,6 +549,125 @@ function sinEl(lienzo, id) {
   return { ...lienzo, colocados: lienzo.colocados.filter((c) => c.id !== id) };
 }
 
+/**
+ * LO QUE UNA COSA ES, ADEMÁS DE CUÁNTO PESA.
+ *
+ * EL FALLO QUE ORIGINA ESTO. La revisión movió un espectáculo nocturno de luces
+ * —con pases a horas fijas— a las 09:00 de la mañana de otro día para deshacer
+ * un solape. Comprobó el cierre del sitio y el tope del día, que era todo lo que
+ * sabía comprobar, y no comprobó lo único que importaba: que a esa hora ese
+ * espectáculo no existe.
+ *
+ * `importanciaDe` dice si algo se puede mover antes que otra cosa. Esto dice si
+ * se puede mover A DONDE SEA, que es una pregunta distinta y hasta ahora nadie
+ * la hacía.
+ *
+ *   sesiones    · las horas exactas a las que existe, si el dato está.
+ *   soloDeNoche · la red cuando no lo está: un espectáculo nocturno no puede
+ *                 acabar en una mañana aunque no sepamos a qué hora empieza.
+ */
+function naturalezaDe(colocado) {
+  const quien = deQuienEs(colocado);
+  let horarios = null;
+  let descripcion = null;
+
+  if (quien?.de === 'sitio' && quien.deId) {
+    const sitio = una('SELECT descripcion, horarios FROM sitios_lugar WHERE id = ?', quien.deId);
+    horarios = sitio?.horarios ?? null;
+    descripcion = sitio?.descripcion ?? null;
+  } else if (quien?.candidato?.tipo === 'actividad' && quien.deId) {
+    const act = una(
+      'SELECT horarios, descripcion_larga FROM catalogo_actividades WHERE id = ?',
+      quien.deId
+    );
+    horarios = act?.horarios ?? null;
+    descripcion = act?.descripcion_larga ?? null;
+  }
+
+  return {
+    sesiones: horasDeSesion(horarios),
+    soloDeNoche: soloAUltimaHora(colocado.nombre, descripcion, horarios),
+  };
+}
+
+/** Las franjas en las que algo puede estar, según lo que es. */
+function franjasQueAdmite(naturaleza) {
+  // Con pases, la franja la deciden las horas y no al revés.
+  if (naturaleza.sesiones?.length) {
+    return [...new Set(naturaleza.sesiones.map((h) => franjaDesde(h)).filter(Boolean))];
+  }
+  // Sin dato de pases, lo nocturno al menos no se va a la mañana.
+  if (naturaleza.soloDeNoche) return ['tarde', 'noche'];
+  return CLAVES_FRANJA;
+}
+
+/**
+ * ¿PUEDE ESTA COSA EMPEZAR A ESTA HORA?
+ *
+ * La comprobación que faltaba. Se aplica igual que la del cierre: un movimiento
+ * que no la pasa no es una solución, es el mismo problema en otro sitio.
+ */
+function horaLegitima(naturaleza, hora) {
+  if (!hora) return false;
+  if (naturaleza.sesiones?.length) return naturaleza.sesiones.includes(hora);
+  if (naturaleza.soloDeNoche) return ['tarde', 'noche'].includes(franjaDesde(hora));
+  return true;
+}
+
+/** Los días de la semana en que un sitio cierra, de su ficha. */
+function diasDeCierreDe(colocado) {
+  const quien = deQuienEs(colocado);
+  if (quien?.de !== 'sitio' || !quien.deId) return [];
+  const ficha = una('SELECT cierra_dias FROM sitios_lugar WHERE id = ?', quien.deId);
+  try {
+    const l = ficha?.cierra_dias ? JSON.parse(ficha.cierra_dias) : [];
+    return Array.isArray(l) ? l.map(Number).filter((n) => n >= 0 && n <= 6) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** El día de la semana de una fecha «2026-10-16». */
+function diaDeLaSemana(fecha) {
+  return fecha ? new Date(`${fecha}T12:00:00`).getDay() : null;
+}
+
+/**
+ * UN HUECO VÁLIDO PARA ESTA COSA EN ESTE DÍA, o null.
+ *
+ * Junta en un solo sitio las cuatro comprobaciones: el hueco libre, el cierre
+ * del sitio, el tope del día y —la nueva— la naturaleza de lo que se coloca.
+ */
+function huecoValido(tablero, { dia, colocado, naturaleza, cierre, duracion, noAntesDe = null }) {
+  // EL DÍA DE ACLIMATACIÓN NO ADMITE NADA CON HORA COMPRADA.
+  //
+  // El medio día lo impone ya `horaLibreEn`, que acorta el día. Lo que no puede
+  // imponer es esto: una excursión o un pase con hora fija obliga a estar en un
+  // sitio concreto a una hora concreta, y eso es exactamente lo que no se le
+  // pide a alguien que acaba de bajar de un vuelo de doce horas. Si pierde el
+  // pase, además, lo ha pagado.
+  const aclimatacion = diaDeAclimatacion(tablero);
+  if (aclimatacion && dia === aclimatacion.dia && naturaleza.sesiones?.length) return null;
+
+  // Con pases, no se busca «el primer hueco»: se prueban SUS horas.
+  if (naturaleza.sesiones?.length) {
+    for (const hora of naturaleza.sesiones) {
+      const franja = franjaDesde(hora);
+      if (!franja) continue;
+      if (noAntesDe && hora < noAntesDe) continue;
+      const libre = horaLibreEn(tablero, { dia, franja, duracion, noAntesDe: hora, cierraA: cierre });
+      if (libre === hora) return hora;
+    }
+    return null;
+  }
+
+  for (const franja of franjasQueAdmite(naturaleza)) {
+    const hora = horaLibreEn(tablero, { dia, franja, duracion, noAntesDe, cierraA: cierre });
+    if (hora && horaLegitima(naturaleza, hora)) return hora;
+  }
+  return null;
+}
+
 function recolocarConHora(
   viajeId,
   lienzo,
@@ -538,7 +675,9 @@ function recolocarConHora(
   { desde = null, mismoDia = false, soloOtroDia = false } = {}
 ) {
   const cierre = cierreDe(colocado);
+  const naturaleza = naturalezaDe(colocado);
   const duracion = Number(colocado.duracionMin) || 60;
+  const cierra = diasDeCierreDe(colocado);
 
   // EL TABLERO SIN ESTA TARJETA.
   //
@@ -548,55 +687,263 @@ function recolocarConHora(
   // una expulsión que no hacía falta.
   const tablero = sinEl(lienzo, colocado.id);
 
-  // Su propia franja entra en la búsqueda, no solo las siguientes.
+  const puedeEnEsteDia = (d) =>
+    !esDiaDeViaje(lienzo, d.n) && !cierra.includes(diaDeLaSemana(d.fecha));
+
+  // 1) Su propio día, incluida su propia franja.
   //
   // Retrasar una visita de las 16:00 a las 16:40 es la solución más barata que
   // existe y la versión anterior ni la consideraba: empezaba a mirar en la
   // franja de después, y de ahí saltaba a otro día o a la calle.
-  const franjasDelDia = esDiaDeViaje(lienzo, colocado.dia)
-    ? []
-    : CLAVES_FRANJA.slice(CLAVES_FRANJA.indexOf(colocado.franja));
-
-  if (!soloOtroDia) {
-    for (const franja of franjasDelDia) {
-      const hora = horaLibreEn(tablero, {
-        dia: colocado.dia,
-        franja,
-        duracion,
-        noAntesDe: desde,
-        cierraA: cierre,
-      });
-      if (hora) {
-        // Si la fila ya no está —la expulsó otro aviso de esta misma pasada—
-        // `mover` devuelve null. Decir que se ha movido sería mentir en el
-        // registro, que es justo lo que hay que evitar.
-        if (!mover(colocado.id, { dia: colocado.dia, franja })) return { movido: false };
-        retocar(colocado.id, { hora });
-        return { movido: true, dia: colocado.dia, franja, hora };
-      }
+  const diaActual = lienzo.dias.find((d) => d.n === colocado.dia);
+  if (!soloOtroDia && diaActual && puedeEnEsteDia(diaActual)) {
+    const hora = huecoValido(tablero, {
+      dia: colocado.dia,
+      colocado,
+      naturaleza,
+      cierre,
+      duracion,
+      noAntesDe: desde,
+    });
+    if (hora) {
+      const franja = franjaDesde(hora) ?? colocado.franja;
+      if (!mover(colocado.id, { dia: colocado.dia, franja })) return { movido: false };
+      retocar(colocado.id, { hora });
+      return { movido: true, dia: colocado.dia, franja, hora };
     }
   }
 
   if (mismoDia) return { movido: false };
 
-  // 2) Otro día de la misma parada, empezando por el primero.
-  const diaActual = lienzo.dias.find((d) => d.n === colocado.dia);
-  const candidatos = lienzo.dias.filter(
-    (x) => x.etapaId === diaActual?.etapaId && x.n !== colocado.dia && !esDiaDeViaje(lienzo, x.n)
-  );
+  // 2) Otro día de la misma parada, empezando por el primero. EL DÍA DE
+  //    ACLIMATACIÓN VA EL ÚLTIMO: el medio día que tiene es para descansar, no
+  //    para recoger lo que no cupo en los demás.
+  const aclimatacion = diaDeAclimatacion(lienzo);
+  const candidatos = lienzo.dias
+    .filter((x) => x.etapaId === diaActual?.etapaId && x.n !== colocado.dia && puedeEnEsteDia(x))
+    .sort((a, b) => (a.n === aclimatacion?.dia ? 1 : 0) - (b.n === aclimatacion?.dia ? 1 : 0));
 
   for (const d of candidatos) {
-    for (const franja of CLAVES_FRANJA) {
-      const hora = horaLibreEn(tablero, { dia: d.n, franja, duracion, cierraA: cierre });
-      if (hora) {
-        if (!mover(colocado.id, { dia: d.n, franja })) return { movido: false };
-        retocar(colocado.id, { hora });
-        return { movido: true, dia: d.n, franja, hora };
-      }
+    const hora = huecoValido(tablero, { dia: d.n, colocado, naturaleza, cierre, duracion });
+    if (hora) {
+      const franja = franjaDesde(hora) ?? colocado.franja;
+      if (!mover(colocado.id, { dia: d.n, franja })) return { movido: false };
+      retocar(colocado.id, { hora });
+      return { movido: true, dia: d.n, franja, hora };
     }
   }
 
   return { movido: false };
+}
+
+/**
+ * LO QUE ESTÁ A UNA HORA A LA QUE NO EXISTE.
+ *
+ * EL FALLO QUE ORIGINA ESTO. Un espectáculo nocturno de luces, con pases a las
+ * 20:00 y las 21:30, acabó a las 09:00 de la mañana. La comprobación de cierres
+ * lo dejaba pasar porque el sitio «abre» a esa hora: lo que no hay a esa hora es
+ * el espectáculo.
+ *
+ * Se mira TODO lo colocado, no solo lo que la revisión vaya a mover, porque el
+ * reparto también se equivoca y su error no lo cazaba nadie. Lo que está a una
+ * hora imposible se lleva a una de las suyas; si no cabe en ninguna, sale del
+ * plan diciendo por qué, que es mejor que un plan con una cita a la que nadie
+ * puede acudir.
+ */
+function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
+  let tocados = 0;
+
+  for (const c of lienzo.colocados) {
+    if (idos.has(c.id)) continue;
+    if (esComida(c)) continue;
+
+    const naturaleza = naturalezaDe(c);
+    if (!naturaleza.sesiones?.length && !naturaleza.soloDeNoche) continue;
+    if (horaLegitima(naturaleza, c.hora)) continue;
+
+    const comoEs = naturaleza.sesiones?.length
+      ? `solo tiene pases a las ${naturaleza.sesiones.join(' y ')}`
+      : 'es cosa de última hora';
+
+    const r = recolocarConHora(viajeId, lienzo, c);
+    if (r.movido) {
+      di(`   ${c.nombre} estaba a las ${c.hora} y ${comoEs}: lo paso al día ${r.dia} a las ${r.hora}.`);
+    } else {
+      sacar(c, `estaba a las ${c.hora} y ${comoEs}; no encontré ninguna de sus horas libre`);
+    }
+    tocados += 1;
+  }
+
+  return tocados;
+}
+
+/**
+ * DEJA DICHO POR QUÉ EL PRIMER DÍA VA MEDIO VACÍO.
+ *
+ * EL FALLO QUE ORIGINA ESTO. Tras un vuelo nocturno de más de doce horas y con
+ * un cambio horario grande, el día de llegada se montó con actividades desde
+ * primera hora y carga completa, como si fuera una llegada europea de dos horas.
+ *
+ * La regla la aplica `horaLibreEn`, que ese día acorta el día a la mitad y el
+ * siguiente no lo deja empezar temprano. Pero una regla que actúa en silencio se
+ * lee como un hueco sin explicar: quien mire el plan verá el primer día flojo y
+ * pensará que falta algo. Aquí se dice el motivo, que es la mitad del arreglo.
+ *
+ * Y se comprueba lo que quedó puesto: si la IA colocó ahí algo con hora
+ * comprada, la revisión ya no lo mueve —lo suyo es no ponerlo— pero tiene que
+ * salir en los avisos.
+ */
+function contarLoDeLaAclimatacion(viajeId, lienzo, di) {
+  const a = diaDeAclimatacion(lienzo);
+  if (!a) return;
+
+  di(
+    `Día ${a.dia}: ${a.porQue}. Lo dejo a medio gas y cerca del hotel, y el día ` +
+      `${a.dia + 1} no empieza antes de las ${parametroTexto('hora_inicio_tras_jetlag', '10:00')}.`,
+    ORIGENES.ninguno
+  );
+
+  const conHora = lienzo.colocados.filter(
+    (c) => c.dia === a.dia && naturalezaDe(c).sesiones?.length
+  );
+  if (conHora.length) {
+    for (const c of conHora) {
+      di(`   OJO: ${c.nombre} tiene hora fija y cae el día de aclimatación.`, ORIGENES.ninguno);
+    }
+    apuntarHueco(
+      viajeId,
+      FASE,
+      `El día ${a.dia} es de aclimatación y lleva ${conHora.length} cosa(s) con hora fija.`
+    );
+  }
+}
+
+/**
+ * ¿ES ESTO DE LO QUE NO SE PUEDE PRESCINDIR?
+ *
+ * Un imprescindible de los primeros puestos de la ciudad. No todos los
+ * imprescindibles son iguales: el #1 de Cracovia es la Plaza del Mercado y el
+ * #7 es una sinagoga que mucha gente se salta. El corte sale de un parámetro
+ * porque es una decisión de gusto, no una verdad.
+ */
+function esDeLosQueNoSePuedenPerder(colocado) {
+  const imp = importanciaDe(colocado);
+  return imp.nivel >= 3 && imp.orden <= parametro('puestos_intocables_del_sitio', 3);
+}
+
+/**
+ * ANTES DE ECHAR UN IMPRESCINDIBLE, AGOTAR LA PARADA ENTERA.
+ *
+ * EL FALLO QUE ORIGINA ESTO. El sitio más icónico de una ciudad se quedó fuera
+ * del viaje con el motivo «el otro día no tiene hueco dentro de su horario»,
+ * cuando la parada tenía más días y alguno con la mañana libre. La búsqueda
+ * miraba UN día alternativo, el primero que encontraba, y con lo que ya hubiera
+ * puesto encima.
+ *
+ * Un sitio del primer nivel no se va del viaje porque un museo de segundo nivel
+ * le esté ocupando la mañana: la jerarquía ya existe y aquí se usa también,
+ * apartando al que menos pesa de cada día antes de darse por vencido.
+ *
+ * Y si al final no cabe, el motivo dice QUÉ PASÓ CADA DÍA. «No había hueco» es
+ * lo que se escribió la primera vez y no permite saber si el fallo fue del
+ * reparto o del dato.
+ */
+function agotarLaParada(viajeId, lienzo, colocado, di) {
+  const naturaleza = naturalezaDe(colocado);
+  const cierre = cierreDe(colocado);
+  const cierra = diasDeCierreDe(colocado);
+  const duracion = Number(colocado.duracionMin) || 60;
+
+  const diaActual = lienzo.dias.find((d) => d.n === colocado.dia);
+  const aclimatacion = diaDeAclimatacion(lienzo);
+  const dias = lienzo.dias
+    .filter((d) => d.etapaId === diaActual?.etapaId)
+    .sort((a, b) => (a.n === aclimatacion?.dia ? 1 : 0) - (b.n === aclimatacion?.dia ? 1 : 0));
+
+  const porQueNo = [];
+  let tablero = lienzo;
+
+  for (const d of dias) {
+    if (esDiaDeViaje(lienzo, d.n)) {
+      porQueNo.push(`día ${d.n}: es día de viaje`);
+      continue;
+    }
+    if (cierra.includes(diaDeLaSemana(d.fecha))) {
+      porQueNo.push(`día ${d.n}: el sitio cierra ese día`);
+      continue;
+    }
+
+    // 1) ¿Cabe tal cual?
+    const hora = huecoValido(sinEl(tablero, colocado.id), {
+      dia: d.n,
+      colocado,
+      naturaleza,
+      cierre,
+      duracion,
+    });
+    if (hora) {
+      const franja = franjaDesde(hora) ?? colocado.franja;
+      if (mover(colocado.id, { dia: d.n, franja })) {
+        retocar(colocado.id, { hora });
+        return { movido: true, dia: d.n, franja, hora, porQueNo };
+      }
+    }
+
+    // 2) ¿Y si aparto lo que menos pesa de ese día?
+    const apartado = apartarAlMasLigero(viajeId, tablero, colocado, d.n, di);
+    if (!apartado) {
+      porQueNo.push(`día ${d.n}: lleno y sin nada de menor nivel que apartar`);
+      continue;
+    }
+
+    tablero = lienzoDeViaje(viajeId);
+    const segunda = huecoValido(sinEl(tablero, colocado.id), {
+      dia: d.n,
+      colocado,
+      naturaleza,
+      cierre,
+      duracion,
+    });
+    if (segunda) {
+      const franja = franjaDesde(segunda) ?? colocado.franja;
+      if (mover(colocado.id, { dia: d.n, franja })) {
+        retocar(colocado.id, { hora: segunda });
+        return { movido: true, dia: d.n, franja, hora: segunda, aparte: apartado, porQueNo };
+      }
+    }
+    porQueNo.push(`día ${d.n}: ni apartando ${apartado} quedaba sitio en su horario`);
+  }
+
+  return { movido: false, porQueNo };
+}
+
+/**
+ * APARTA DE UN DÍA LO QUE MENOS PESA, si pesa menos que quien pide sitio.
+ *
+ * Devuelve el nombre de lo apartado, o null si no había nada que apartar. No
+ * expulsa a nadie: solo lo manda a otro día donde quepa. Si no cabe en ningún
+ * otro sitio, se queda donde está y quien pedía sitio se busca la vida.
+ */
+function apartarAlMasLigero(viajeId, lienzo, quienPide, dia, di) {
+  const impPide = importanciaDe(quienPide);
+
+  const candidatos = lienzo.colocados
+    .filter((c) => c.dia === dia && c.id !== quienPide.id && !esComida(c))
+    .map((c) => ({ c, imp: importanciaDe(c) }))
+    .filter((x) => x.imp.nivel < impPide.nivel || (x.imp.nivel === impPide.nivel && x.imp.orden > impPide.orden))
+    .sort((a, b) => a.imp.nivel - b.imp.nivel || b.imp.orden - a.imp.orden);
+
+  for (const { c, imp } of candidatos) {
+    const r = recolocarConHora(viajeId, lienzo, c, { soloOtroDia: true });
+    if (r.movido) {
+      di(
+        `   Aparto ${c.nombre} (${imp.que}) al día ${r.dia} a las ${r.hora} para hacer sitio a ` +
+          `${quienPide.nombre} (${impPide.que}).`
+      );
+      return c.nombre;
+    }
+  }
+  return null;
 }
 
 /**
@@ -711,6 +1058,27 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   intentos.push('moverlo a otro día de la parada');
 
   // --- d) EXPULSAR, y al que menos pesa ------------------------------------
+  //
+  // Salvo que el que toca echar sea de los que no se pueden perder: entonces se
+  // recorre la parada entera antes, apartando lo ligero de cada día. Es caro y
+  // se hace solo aquí, que es donde el error no tiene arreglo después.
+  if (esDeLosQueNoSePuedenPerder(menos)) {
+    const ultimo = agotarLaParada(viajeId, lienzo, menos, di);
+    if (ultimo.movido) {
+      di(
+        `   Día ${aviso.dia}: ${menos.nombre} (${impMenos.que}) no se pierde: lo llevo al día ` +
+          `${ultimo.dia} a las ${ultimo.hora}` + (ultimo.aparte ? ` (aparté ${ultimo.aparte}).` : '.')
+      );
+      return 1;
+    }
+    sacar(
+      menos,
+      `es de lo que no hay que perderse, pero no pude ${intentos.join(' ni ')} ` +
+        `y tampoco cabe en ningún otro día — ${ultimo.porQueNo.join('; ') || 'sin días alternativos'}`
+    );
+    return 1;
+  }
+
   sacar(
     menos,
     `no pude ${intentos.join(' ni ')}: lo expulso por ser el de menor nivel ` +
@@ -743,6 +1111,16 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
   };
   const yaNoEsta = (aviso) =>
     [...(aviso.idsAfectados ?? []), ...(aviso.idsEnConflicto ?? [])].some((id) => idos.has(id));
+
+  // LAS HORAS IMPOSIBLES, ANTES QUE NADA.
+  //
+  // Va delante del bucle de avisos y no dentro por lo que enseñó la prueba: el
+  // espectáculo nocturno ya estaba a las 10:00 ANTES de la revisión, puesto por
+  // el reparto. La revisión deshizo el solape recortando al vecino —solución
+  // correcta para el solape— y dejó el espectáculo a las diez de la mañana, que
+  // era el problema de verdad. Un movimiento válido no arregla una colocación
+  // imposible: hay que mirarla por su cuenta.
+  tocados += enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos);
 
   for (const aviso of lienzo.avisos) {
     if (yaNoEsta(aviso)) continue;
@@ -871,63 +1249,35 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
 
     if (aviso.tipo === 'sitio-cerrado') {
       for (const c of afectados) {
-        // OTRO DÍA DE LA MISMA PARADA EN EL QUE ESE SITIO ABRA.
+        // TODOS LOS DÍAS DE LA PARADA, NO EL PRIMERO QUE HAYA.
+        //
+        // La versión anterior buscaba UN día alternativo en el que el sitio
+        // abriera y miraba si quedaba hueco con lo que ya hubiera puesto encima.
+        // Si no, fuera. Así se perdió el sitio más icónico de una ciudad que
+        // tenía más días libres, y el motivo escrito —«el otro día no tiene
+        // hueco»— ni siquiera decía cuáles se habían mirado.
         //
         // Los días de cierre se leen de la ficha (`cierra_dias`, 0 = domingo),
         // no del texto del aviso: el texto está escrito para una persona y
         // reconstruir el dato a base de expresiones regulares es pedir un fallo.
-        const quien = deQuienEs(c);
-        const ficha =
-          quien?.de === 'sitio' && quien.deId
-            ? una('SELECT cierra_dias FROM sitios_lugar WHERE id = ?', quien.deId)
-            : null;
+        const r = agotarLaParada(viajeId, lienzo, c, di);
 
-        let cierra = [];
-        try {
-          cierra = ficha?.cierra_dias ? JSON.parse(ficha.cierra_dias) : [];
-        } catch {
-          cierra = [];
-        }
-
-        const diaSemana = (fecha) =>
-          fecha ? new Date(`${fecha}T12:00:00`).getDay() : null;
-
-        const destino = lienzo.dias.find(
-          (d) =>
-            d.etapaId === dia?.etapaId &&
-            d.n !== c.dia &&
-            !cierra.includes(diaSemana(d.fecha)) &&
-            !esDiaDeViaje(lienzo, d.n)
-        );
-        if (destino) {
-          // AQUÍ SALIÓ EL MOVIMIENTO ILEGAL DE POLONIA.
-          //
-          // Estas dos llamadas buscaban hueco sin pasar `cierraA`, así que el
-          // único tope era el del día: por eso la Lonja de los Paños acabó en el
-          // día 2 a las 21:30 cuando cierra a las 18:00 —dato que el sistema
-          // tenía y que citaba en el aviso original—. Un movimiento de la
-          // revisión que aterriza fuera de horario no resuelve nada, solo cambia
-          // el aviso de sitio.
-          //
-          // Ahora pasa por el mismo camino que todo lo demás, que ya mira cierre,
-          // tope del día, bloques fijos y días de viaje.
-          const duracion = Number(c.duracionMin) || 60;
-          const cierre = cierreDe(c);
-          const tablero = sinEl(lienzo, c.id);
-          const hora =
-            horaLibreEn(tablero, { dia: destino.n, franja: c.franja, duracion, cierraA: cierre }) ??
-            CLAVES_FRANJA.map((f) =>
-              horaLibreEn(tablero, { dia: destino.n, franja: f, duracion, cierraA: cierre })
-            ).find(Boolean);
-          if (hora) {
-            mover(c.id, { dia: destino.n, franja: franjaDesde(hora) ?? c.franja });
-            retocar(c.id, { hora });
-            di(`   ${c.nombre} cerraba ese día: lo paso al día ${destino.n} a las ${hora}.`);
-          } else {
-            sacar(c, 'cierra ese día y el otro día no tiene hueco dentro de su horario');
-          }
+        if (r.movido) {
+          di(
+            `   ${c.nombre} cerraba ese día: lo paso al día ${r.dia} a las ${r.hora}` +
+              (r.aparte ? ` (aparté ${r.aparte}).` : '.')
+          );
         } else {
-          sacar(c, 'cierra el único día que había para verlo');
+          // EL MOTIVO ENUMERA LOS DÍAS. Sin esto no se puede saber si el fallo
+          // fue del reparto o del dato de horarios, que es la diferencia entre
+          // arreglar el orquestador y arreglar el scraper.
+          const detalle = r.porQueNo.length ? r.porQueNo.join('; ') : 'la parada no tiene días';
+          sacar(
+            c,
+            esDeLosQueNoSePuedenPerder(c)
+              ? `es de lo que no hay que perderse y aun así no cabe en ningún día — ${detalle}`
+              : `no cabe en ningún día de la parada — ${detalle}`
+          );
         }
         tocados += 1;
       }
@@ -1375,6 +1725,8 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // Va aquí, al final, y no en la fase 1: allí la promesa de «cabe» era una
   // suposición porque los traslados aún no existían. Ahora sí: los horarios
   // reales están elegidos y las fichas tienen sus tiempos de visita.
+  contarLoDeLaAclimatacion(viajeId, final, di);
+
   di('Comprobando si las paradas cortas dan para lo que se va a ver…');
   const noCaben = avisarDeParadasQueNoCaben(viaje, di);
   // Y la otra cara: paradas de peso que SÍ están en la ruta pero cuyos

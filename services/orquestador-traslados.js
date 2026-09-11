@@ -50,7 +50,7 @@ import {
   configAuto,
   ORIGENES,
 } from '../services/orquestador.js';
-import { calcularDistanciasDeLaRuta } from '../services/distancias-ciudades.js';
+import { calcularDistanciasDeLaRuta, distanciaGuardada } from '../services/distancias-ciudades.js';
 import { ambitoDeTramo, POR_GRUPO } from '../services/presupuesto.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 
@@ -1063,7 +1063,71 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     di(`No pude calcular los kilometros de la ruta (${err.message}).`);
   }
 
+  avisarDeSaltosQueNoCuadran(viajeId, etapas, di);
+
   return { saltos: etapas.length - 1, resueltos };
+}
+
+/**
+ * ¿DICEN LO MISMO LOS KILÓMETROS DE LA RUTA Y EL TRASLADO QUE SE ELIGIÓ?
+ *
+ * EL FALLO QUE ORIGINA ESTO. En el viaje de Asia, dos saltos por carretera
+ * aparecían en la ruta confirmada con el doble de kilómetros y de tiempo de los
+ * reales, contradiciendo la duración puerta a puerta que esta misma fase había
+ * medido y elegido. Nadie lo vio hasta que alguien miró el mapa y le extrañó.
+ *
+ * Son dos medidas del mismo trayecto por caminos distintos: una sale de las
+ * coordenadas de las dos ciudades y Google Routes, la otra del horario real del
+ * transporte elegido. Pueden y deben diferir un poco —un tren no va por la
+ * carretera— pero no pueden ir al doble. Cuando lo hacen, casi siempre es que
+ * una de las dos ciudades está mal situada.
+ *
+ * No se corrige nada: no hay forma de saber cuál de las dos miente sin mirarlo.
+ * Se deja dicho, que es lo que faltaba.
+ */
+function avisarDeSaltosQueNoCuadran(viajeId, etapas, di) {
+  const factor = Math.max(1.1, parametro('factor_discrepancia_traslado', 1.5));
+  let raros = 0;
+
+  for (let i = 0; i < etapas.length - 1; i += 1) {
+    const a = etapas[i];
+    const b = etapas[i + 1];
+    if (!a.punto_interes_id || !b.punto_interes_id) continue;
+
+    const ref = distanciaGuardada(a.punto_interes_id, b.punto_interes_id);
+    const porCarretera = Number(ref?.minutos_coche);
+    if (!Number.isFinite(porCarretera) || porCarretera <= 0) continue;
+
+    // Lo que se eligió, con su puerta a puerta ya medido.
+    const tramo = una(
+      'SELECT duracion_min FROM transportes WHERE viaje_id = ? AND etapa_origen_id = ? AND etapa_destino_id = ?',
+      viajeId,
+      a.id,
+      b.id
+    );
+    const elegido = Number(tramo?.duracion_min);
+    if (!Number.isFinite(elegido) || elegido <= 0) continue;
+
+    const veces = Math.max(porCarretera / elegido, elegido / porCarretera);
+    if (veces < factor) continue;
+
+    raros += 1;
+    di(
+      `OJO en ${a.nombre_ciudad} → ${b.nombre_ciudad}: la ruta del mapa dice ` +
+        `${comoTexto(porCarretera)} en coche y el traslado elegido ${comoTexto(elegido)} ` +
+        `puerta a puerta (${veces.toFixed(1)} veces). Suele ser que una de las dos ciudades ` +
+        'está mal situada: mira sus coordenadas antes de fiarte de los kilómetros.',
+      ORIGENES.ninguno
+    );
+  }
+
+  if (raros) {
+    apuntarHueco(
+      viajeId,
+      FASE,
+      `${raros} salto(s) donde los kilómetros del mapa no cuadran con el traslado elegido.`
+    );
+  }
 }
 
 export default { ejecutarFaseTraslados, puertaAPuerta, aMinutos, aPrecio, comoTexto };

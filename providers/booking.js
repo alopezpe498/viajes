@@ -50,6 +50,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { precioDeTexto } from '../services/importes.js';
 import {
   abrirNavegador,
   cerrarNavegador,
@@ -411,9 +412,18 @@ function extraerHotelesDelDOM() {
     const precioTexto = txt(card.querySelector('[data-testid="price-and-discounted-price"]'));
     const mMoneda = precioTexto ? /([€$£])|\b(EUR|USD|GBP)\b/.exec(precioTexto) : null;
 
+    // EL PRECIO SE DEVUELVE EN CRUDO Y SE LEE FUERA.
+    //
+    // Aqui dentro no se puede importar nada —esto corre en el navegador— y el
+    // lector de precios que habia, escrito a mano, daba por hecho el formato
+    // europeo: convertia "THB 4,500" en 4,5. Un hotel de cuatro mil quinientos
+    // bats pasaba por uno de cuatro euros con cincuenta y nadie mira dos veces
+    // un hotel barato.
+    //
+    // El texto sale tal cual y lo lee `services/importes.js`, que si se puede
+    // probar con casos. Una sola verdad sobre como se lee un precio.
     return {
       nombre: txt(card.querySelector('[data-testid="title"]')),
-      precioTotal: aNumero(precioTexto),
       monedaCruda: mMoneda ? (mMoneda[1] ?? mMoneda[2]) : null,
       precioTexto,
       valoracion: mValoracion ? aNumero(mValoracion[1]) : null,
@@ -578,10 +588,18 @@ export async function buscarHoteles({
     }
 
     // Normalizacion al contrato comun, recortando a lo pedido.
-    return crudos.slice(0, maxResultados).map((h) => ({
+    return crudos.slice(0, maxResultados).map((h) => {
+      // El texto del precio manda: trae el numero Y la moneda, y las dos cosas
+      // se leen con las mismas reglas.
+      const precio = precioDeTexto(h.precioTexto);
+      return {
       nombre: h.nombre,
-      precioTotal: h.precioTotal,
-      moneda: normalizarMoneda(h.monedaCruda),
+      precioTotal: precio?.importe ?? null,
+      // `enEuros` viene a null cuando el precio esta en moneda local: no se
+      // convierte a ciegas ni se hace pasar por euros, que es lo que hacia
+      // reventar el presupuesto del viaje de Asia.
+      precioEnEuros: precio?.enEuros ?? null,
+      moneda: precio?.moneda ?? normalizarMoneda(h.monedaCruda),
       valoracion: h.valoracion,
       numOpiniones: h.numOpiniones,
       zona: h.zona,
@@ -595,7 +613,8 @@ export async function buscarHoteles({
       esAnuncio: h.esAnuncio,
       precioTexto: h.precioTexto,
       estanciaTexto: h.estanciaTexto,
-    }));
+      };
+    });
   } catch (err) {
     await capturaDeFallo(pagina, err.paso ? err.paso.split('.')[0] : 'error');
     throw err;

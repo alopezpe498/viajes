@@ -33,6 +33,9 @@ import { ocupacionDe } from '../services/proveedores.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 import { lienzoDeViaje } from '../services/lienzo.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
+import { porParada } from '../services/paralelo.js';
+import { enFase } from '../services/fase-actual.js';
+import { enParada } from '../services/cronometro.js';
 
 const FASE = 'excursiones';
 
@@ -120,310 +123,314 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
 
   let elegidasEnTotal = 0;
 
-  for (const etapa of etapas) {
-    const ciudad = etapa.nombre_ciudad;
-
-    // EL PUNTO DE CONTROL DE LA PARADA.
-    //
-    // Entre ciudad y ciudad no hay nada a medias: la anterior está terminada y
-    // de la siguiente no se ha tocado nada. Es el mejor sitio para dejarlo, y
-    // por eso se mira aquí y no dentro del trabajo de una ciudad.
-    //
-    // Se corta con `break` y NO con una excepción: la fase devuelve lo que lleve
-    // hecho y el worker la cierra como terminada. Lo hecho, hecho queda; lo que
-    // falte lo hará el relanzado.
-    if (hayQueParar(viajeId, FASE, ciudad)) {
-      di(`Parada pedida: lo dejo antes de ${ciudad}.`, ORIGENES.ninguno);
-      break;
-    }
-
-    // --- 1) Buscar, con la misma función del flujo manual ----------------
-    di(`Buscando excursiones en ${ciudad}…`);
-    let cuantas = 0;
-    try {
-      const antes = actividadesDeCiudad(ciudad).length;
-      // Con el país y la ciudad base delante: sin ellos, una parada cuyo
-      // nombre no coincide con su slug se queda sin excursiones y parece que
-      // Civitatis no tiene nada, cuando lo que no teníamos era la dirección.
-      const punto = etapa.punto_interes_id
-        ? una('SELECT ciudad_base, destino_id FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
-        : null;
-      const suDestino = punto?.destino_id
-        ? una('SELECT pais, nombre FROM destinos WHERE id = ?', punto.destino_id)
-        : null;
-
-      cuantas = await traerExcursionesSiHacenFalta(ciudad, {
-        pais: suDestino?.pais ?? suDestino?.nombre ?? viaje.destino ?? null,
-        ciudadBase: punto?.ciudad_base ?? null,
-      });
-      if (antes) di(`   ${ciudad}: ya existían ${antes} excursiones. No vuelvo a buscar.`);
-    } catch (err) {
-      // ESTO SÍ ES UN HUECO: la búsqueda ha fallado y no se sabe qué hay.
-      apuntarHueco(viajeId, FASE, `${ciudad}: la búsqueda de excursiones falló (${err.message}).`);
-      di(`   ${ciudad}: la búsqueda falló (${err.message}). Sigo con la siguiente parada.`);
-      continue;
-    }
-
-    const disponibles = actividadesDeCiudad(ciudad);
-    if (!disponibles.length) {
-      // Esto NO es un hueco: es que en esa ciudad no hay nada que ofrecer.
-      di(`   ${ciudad}: Civitatis no tiene excursiones. No es un fallo: no hay.`);
-      continue;
-    }
-
-    // Lo que ya estuviera apuntado a mano se respeta y cuenta para los topes.
-    const yaApuntadas = todas(
-      "SELECT titulo, url, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'actividad'",
-      etapa.id
+  // AQUÍ LAS PARADAS NO SON DEL TODO INDEPENDIENTES, y hay que decirlo.
+  //
+  // Las otras dos fases con paradas se paralelizan enteras porque cada ciudad se
+  // resuelve sola. Esta tiene un tope para TODO el viaje
+  // (`max_excursiones_por_viaje`) que se consulta dentro del bucle: cada parada
+  // necesita saber cuántas llevan elegidas las anteriores. Con tres corriendo a
+  // la vez, las tres leerían el mismo contador antes de que ninguna lo subiera y
+  // el tope se pasaría de largo.
+  //
+  // Repartir la cuota por adelantado lo arreglaría, pero eso ya es cambiar la
+  // lógica, y el encargo dice que no. Así que: si hay tope, se va en fila como
+  // hasta ahora; si no lo hay —que es lo de fábrica, 0 = sin límite— las paradas
+  // van a la vez. Cuando el tope importa, se dice en el registro por qué se
+  // tarda más.
+  const aLaVez = maxPorViaje ? 1 : Math.max(1, parametro('concurrencia_paradas', 3));
+  if (maxPorViaje) {
+    di(
+      `Hay tope de ${maxPorViaje} excursión(es) para todo el viaje, así que las paradas ` +
+        'van de una en una: cada una necesita saber lo que llevan las anteriores.',
+      ORIGENES.ninguno
     );
-    if (yaApuntadas.length) {
-      di(`   ${ciudad}: ya tenías ${yaApuntadas.length} apuntada(s); las respeto y cuentan para el tope.`);
-    }
-    // POR IDENTIDAD Y, DE PROPINA, POR TEXTO. La identidad es la buena: la
-    // pareja (tabla, id) que guarda el candidato. El texto se conserva para los
-    // candidatos viejos que se apuntaron antes de que existiera `datos_extra`.
-    const yaPuestas = new Set();
-    for (const c of yaApuntadas) {
-      yaPuestas.add(c.url ?? `titulo:${c.titulo}`);
+  }
+
+  const { resultados } = await porParada(
+    etapas,
+    {
+      limite: aLaVez,
+      nombreDe: (e) => e.nombre_ciudad,
+      hayQueParar: (ciudad) => hayQueParar(viajeId, FASE, ciudad),
+      enFase: (fn) => enFase(viajeId, FASE, fn),
+      enParada,
+      di: (t) => di(t, ORIGENES.ninguno),
+    },
+    async (etapa, ciudad) => {
+
+      // --- 1) Buscar, con la misma función del flujo manual ----------------
+      di(`Buscando excursiones en ${ciudad}…`);
+      let cuantas = 0;
       try {
-        const extra = c.datos_extra ? JSON.parse(c.datos_extra) : null;
-        if (extra?.de === 'actividad' && extra.deId != null) {
-          yaPuestas.add(`actividad:${Number(extra.deId)}`);
-        }
-      } catch {
-        /* datos_extra roto: se queda con el respaldo por texto */
+        const antes = actividadesDeCiudad(ciudad).length;
+        // Con el país y la ciudad base delante: sin ellos, una parada cuyo
+        // nombre no coincide con su slug se queda sin excursiones y parece que
+        // Civitatis no tiene nada, cuando lo que no teníamos era la dirección.
+        const punto = etapa.punto_interes_id
+          ? una('SELECT ciudad_base, destino_id FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
+          : null;
+        const suDestino = punto?.destino_id
+          ? una('SELECT pais, nombre FROM destinos WHERE id = ?', punto.destino_id)
+          : null;
+
+        cuantas = await traerExcursionesSiHacenFalta(ciudad, {
+          pais: suDestino?.pais ?? suDestino?.nombre ?? viaje.destino ?? null,
+          ciudadBase: punto?.ciudad_base ?? null,
+        });
+        if (antes) di(`   ${ciudad}: ya existían ${antes} excursiones. No vuelvo a buscar.`);
+      } catch (err) {
+        // ESTO SÍ ES UN HUECO: la búsqueda ha fallado y no se sabe qué hay.
+        apuntarHueco(viajeId, FASE, `${ciudad}: la búsqueda de excursiones falló (${err.message}).`);
+        di(`   ${ciudad}: la búsqueda falló (${err.message}). Sigo con la siguiente parada.`);
+        return { guardadas: 0 };
       }
-    }
 
-    // --- 2) Preseleccionar -----------------------------------------------
-    const sitios = etapa.punto_interes_id
-      ? todas(
-          `SELECT nombre, categoria, bloque FROM sitios_lugar
-            WHERE punto_interes_id = ? AND bloque <> 'busqueda' ORDER BY orden, id`,
-          etapa.punto_interes_id
-        )
-      : [];
+      const disponibles = actividadesDeCiudad(ciudad);
+      if (!disponibles.length) {
+        // Esto NO es un hueco: es que en esa ciudad no hay nada que ofrecer.
+        di(`   ${ciudad}: Civitatis no tiene excursiones. No es un fallo: no hay.`);
+        return { guardadas: 0 };
+      }
 
-    // LA ETIQUETA DEL PROMPT VA EN SU PROPIO CAMPO, NO ENCIMA DEL ID.
-    //
-    // Aquí estuvo el fallo que dejó la fase entera trabajando en vano. A la IA
-    // se le dan las excursiones numeradas «ex1, ex2…» para que pueda
-    // referirse a ellas, y eso se hacía escribiendo `id: 'ex7'` ENCIMA del id
-    // real de `catalogo_actividades`. Luego, al guardar, `alternarApuntado`
-    // buscaba la fila 'ex7' del catálogo, no la encontraba y devolvía null sin
-    // decir nada: el registro contaba las elegidas, la pantalla no pintaba
-    // ninguna y el lienzo nunca colocó una excursión en ningún viaje.
-    //
-    // La etiqueta ahora es `ref` y el id sigue siendo el id.
-    const candidatas = disponibles
-      .filter(
-        (a) =>
-          !yaPuestas.has(`actividad:${Number(a.id)}`) &&
-          !yaPuestas.has(a.url ?? `titulo:${a.titulo}`)
-      )
-      .map((a, i) => ({ ...a, ref: `ex${i + 1}` }));
-
-    if (!candidatas.length) {
-      di(`   ${ciudad}: todas las excursiones ya estaban apuntadas.`);
-      continue;
-    }
-
-    const noches = Math.max(0, Number(etapa.noches) || 0);
-
-    // LOS DÍAS LIBRES DE VERDAD, antes de elegir nada. Va al registro porque es
-    // el número que explica por qué se eligieron una o tres.
-    const utiles = diasUtilesDeEtapa(viajeId, etapa.id);
-    if (utiles) {
-      di(
-        `   ${ciudad}: ${utiles.total} día(s) de parada, ${utiles.libres} con hueco para una ` +
-          'excursión larga (los demás se los comen la llegada, la salida o el traslado).'
+      // Lo que ya estuviera apuntado a mano se respeta y cuenta para los topes.
+      const yaApuntadas = todas(
+        "SELECT titulo, url, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'actividad'",
+        etapa.id
       );
-    }
+      if (yaApuntadas.length) {
+        di(`   ${ciudad}: ya tenías ${yaApuntadas.length} apuntada(s); las respeto y cuentan para el tope.`);
+      }
+      // POR IDENTIDAD Y, DE PROPINA, POR TEXTO. La identidad es la buena: la
+      // pareja (tabla, id) que guarda el candidato. El texto se conserva para los
+      // candidatos viejos que se apuntaron antes de que existiera `datos_extra`.
+      const yaPuestas = new Set();
+      for (const c of yaApuntadas) {
+        yaPuestas.add(c.url ?? `titulo:${c.titulo}`);
+        try {
+          const extra = c.datos_extra ? JSON.parse(c.datos_extra) : null;
+          if (extra?.de === 'actividad' && extra.deId != null) {
+            yaPuestas.add(`actividad:${Number(extra.deId)}`);
+          }
+        } catch {
+          /* datos_extra roto: se queda con el respaldo por texto */
+        }
+      }
 
-    // Y EL TOPE DE LARGAS SALE DE AHÍ, no de las noches. Antes era «las que
-    // quepan en las noches», que es otra cosa: en Atenas daban tres y solo había
-    // un día libre. Si no se sabe, se conserva el criterio viejo.
-    const topeLargasReal =
-      utiles != null
-        ? Math.min(maxLargasPorDia * Math.max(utiles.libres, 0), Math.max(utiles.libres, 0))
-        : null;
+      // --- 2) Preseleccionar -----------------------------------------------
+      const sitios = etapa.punto_interes_id
+        ? todas(
+            `SELECT nombre, categoria, bloque FROM sitios_lugar
+              WHERE punto_interes_id = ? AND bloque <> 'busqueda' ORDER BY orden, id`,
+            etapa.punto_interes_id
+          )
+        : [];
 
-    const topes =
-      `como mucho ${maxLargasPorDia} excursión(es) de día completo por día, y esta parada tiene ` +
-      `${noches} noche(s)` +
-      (maxPorViaje ? `; en todo el viaje no pueden pasar de ${maxPorViaje}, y ya llevas ${elegidasEnTotal}.` : '.');
-
-    const datos = {
-      CIUDAD: ciudad,
-      NOCHES: noches,
-      RITMO: viaje.ritmo || 'normal',
-      VIAJEROS:
-        `${adultos} adulto(s)` +
-        (edadesNinos.length ? ` y niños de ${edadesNinos.join(' y ')} años` : ''),
-      INTERESES:
-        [auto.intereses, (auto.categorias ?? []).join(', ')].filter(Boolean).join(' · ') ||
-        '(no lo han dicho)',
-      TOPES: topes,
-      DIAS_UTILES: utiles == null ? 'no lo sé' : String(utiles.libres),
-      SITIOS: sitios.length
-        ? sitios.map((s) => `- ${s.nombre}${s.categoria ? ` (${s.categoria})` : ''}`).join('\n')
-        : '(esta parada todavía no tiene fichas de sitios)',
-      EXCURSIONES: candidatas
-        .map(
+      // LA ETIQUETA DEL PROMPT VA EN SU PROPIO CAMPO, NO ENCIMA DEL ID.
+      //
+      // Aquí estuvo el fallo que dejó la fase entera trabajando en vano. A la IA
+      // se le dan las excursiones numeradas «ex1, ex2…» para que pueda
+      // referirse a ellas, y eso se hacía escribiendo `id: 'ex7'` ENCIMA del id
+      // real de `catalogo_actividades`. Luego, al guardar, `alternarApuntado`
+      // buscaba la fila 'ex7' del catálogo, no la encontraba y devolvía null sin
+      // decir nada: el registro contaba las elegidas, la pantalla no pintaba
+      // ninguna y el lienzo nunca colocó una excursión en ningún viaje.
+      //
+      // La etiqueta ahora es `ref` y el id sigue siendo el id.
+      const candidatas = disponibles
+        .filter(
           (a) =>
-            `- ${a.ref} · ${a.titulo}\n` +
-            `  duración: ${a.duracion ?? 'no la dice'}` +
-            `${esLarga(a.duracion) ? ' (día completo)' : ''}` +
-            ` · precio: ${a.precio != null ? `${a.precio} ${a.moneda ?? '€'}` : 'no lo dice'}` +
-            `${a.valoracion ? ` · valoración ${a.valoracion}` : ''}` +
-            `${a.punto_encuentro ? `\n  punto de encuentro: ${String(a.punto_encuentro).slice(0, 120)}` : ''}` +
-            `${a.horarios ? `\n  horarios: ${String(a.horarios).slice(0, 120)}` : ''}`
+            !yaPuestas.has(`actividad:${Number(a.id)}`) &&
+            !yaPuestas.has(a.url ?? `titulo:${a.titulo}`)
         )
-        .join('\n'),
-    };
+        .map((a, i) => ({ ...a, ref: `ex${i + 1}` }));
 
-    let respuesta = null;
-    try {
-      respuesta = await consultarJSON(rellenar(prompt, datos), {
-        maxTokens: 2500,
-        paso: `excursiones de ${ciudad}`,
-      });
-    } catch (err) {
-      // SIN IA NO SE PRESELECCIONA, y no se inventa un criterio de emergencia:
-      // el valor de esta fase ES el criterio. Las excursiones quedan buscadas y
-      // visibles en la pestaña, que es donde estarían sin el orquestador.
-      apuntarHueco(
-        viajeId,
-        FASE,
-        `${ciudad}: las excursiones están buscadas pero no pude preseleccionar (${err.message}).`
-      );
-      di(`   ${ciudad}: no pude preseleccionar (${err.message}). Quedan en la pestaña para que elijas.`);
-      continue;
-    }
-
-    // --- 3) Aplicar los topes, que son duros -----------------------------
-    const pedidas = (Array.isArray(respuesta?.elegidas) ? respuesta.elegidas : [])
-      .map((e) => ({
-        ...e,
-        // La IA contesta con la etiqueta («ex7»), no con el id del catálogo.
-        actividad: candidatas.find((c) => c.ref === String(e?.id ?? '').trim()),
-      }))
-      .filter((e) => e.actividad);
-
-    // El tope que se hace cumplir en código, no solo en el prompt: si la IA pide
-    // tres excursiones de jornada y solo hay un día libre, entran las que caben.
-    const topeLargas =
-      topeLargasReal != null
-        ? topeLargasReal
-        : Math.max(0, maxLargasPorDia * Math.max(noches, 1));
-    const elegidas = [];
-    let largas = 0;
-
-    for (const e of pedidas) {
-      if (maxPorViaje && elegidasEnTotal + elegidas.length >= maxPorViaje) {
-        di(`   Tope del viaje (${maxPorViaje}): dejo fuera «${e.actividad.titulo}».`);
-        continue;
-      }
-      if (esLarga(e.actividad.duracion)) {
-        if (largas >= topeLargas) {
-          di(`   Tope de largas (${topeLargas} en ${noches} noche(s)): dejo fuera «${e.actividad.titulo}».`);
-          continue;
-        }
-        largas += 1;
-      }
-      elegidas.push(e);
-    }
-
-    // --- 4) Guardar, con la misma función del botón «Me lo apunto» -------
-    //
-    // Y COMPROBANDO QUE SE HA GUARDADO. `alternarApuntado` devuelve null cuando
-    // no encuentra el origen, y ese null en silencio es exactamente lo que
-    // permitió que esta fase pareciera funcionar durante meses. Ahora, si una
-    // no entra, se dice en el registro y se apunta como hueco.
-    const cubiertos = [];
-    const guardadas = [];
-    // El candidato de una excursión, por su IDENTIDAD: la misma pareja
-    // (tabla, id) con la que la pestaña decide qué pintar como apuntado. Si
-    // esto lo encuentra, la pantalla también.
-    const candidatoDe = (actividadId) =>
-      una(
-        `SELECT id FROM candidatos
-          WHERE etapa_id = ? AND tipo = 'actividad'
-            AND datos_extra LIKE ? ORDER BY id DESC LIMIT 1`,
-        etapa.id,
-        `%"deId":${Number(actividadId)}%`
-      );
-
-    for (const e of elegidas) {
-      // `alternarApuntado` ALTERNA: si la excursión ya estuviera apuntada, esa
-      // llamada la DESAPUNTARÍA y se llevaría por delante su sitio en el
-      // lienzo. Hoy no puede pasar —las ya apuntadas se filtran antes de
-      // ofrecérselas a la IA—, pero la fase no puede depender de ese detalle
-      // de otro sitio: si ya está, no se toca.
-      if (!candidatoDe(e.actividad.id)) {
-        alternarApuntado(etapa.id, 'actividad', e.actividad.id);
+      if (!candidatas.length) {
+        di(`   ${ciudad}: todas las excursiones ya estaban apuntadas.`);
+        return { guardadas: 0 };
       }
 
-      const candidato = candidatoDe(e.actividad.id);
+      const noches = Math.max(0, Number(etapa.noches) || 0);
 
-      if (!candidato) {
+      // LOS DÍAS LIBRES DE VERDAD, antes de elegir nada. Va al registro porque es
+      // el número que explica por qué se eligieron una o tres.
+      const utiles = diasUtilesDeEtapa(viajeId, etapa.id);
+      if (utiles) {
+        di(
+          `   ${ciudad}: ${utiles.total} día(s) de parada, ${utiles.libres} con hueco para una ` +
+            'excursión larga (los demás se los comen la llegada, la salida o el traslado).'
+        );
+      }
+
+      // Y EL TOPE DE LARGAS SALE DE AHÍ, no de las noches. Antes era «las que
+      // quepan en las noches», que es otra cosa: en Atenas daban tres y solo había
+      // un día libre. Si no se sabe, se conserva el criterio viejo.
+      const topeLargasReal =
+        utiles != null
+          ? Math.min(maxLargasPorDia * Math.max(utiles.libres, 0), Math.max(utiles.libres, 0))
+          : null;
+
+      const topes =
+        `como mucho ${maxLargasPorDia} excursión(es) de día completo por día, y esta parada tiene ` +
+        `${noches} noche(s)` +
+        (maxPorViaje ? `; en todo el viaje no pueden pasar de ${maxPorViaje}, y ya llevas ${elegidasEnTotal}.` : '.');
+
+      const datos = {
+        CIUDAD: ciudad,
+        NOCHES: noches,
+        RITMO: viaje.ritmo || 'normal',
+        VIAJEROS:
+          `${adultos} adulto(s)` +
+          (edadesNinos.length ? ` y niños de ${edadesNinos.join(' y ')} años` : ''),
+        INTERESES:
+          [auto.intereses, (auto.categorias ?? []).join(', ')].filter(Boolean).join(' · ') ||
+          '(no lo han dicho)',
+        TOPES: topes,
+        DIAS_UTILES: utiles == null ? 'no lo sé' : String(utiles.libres),
+        SITIOS: sitios.length
+          ? sitios.map((s) => `- ${s.nombre}${s.categoria ? ` (${s.categoria})` : ''}`).join('\n')
+          : '(esta parada todavía no tiene fichas de sitios)',
+        EXCURSIONES: candidatas
+          .map(
+            (a) =>
+              `- ${a.ref} · ${a.titulo}\n` +
+              `  duración: ${a.duracion ?? 'no la dice'}` +
+              `${esLarga(a.duracion) ? ' (día completo)' : ''}` +
+              ` · precio: ${a.precio != null ? `${a.precio} ${a.moneda ?? '€'}` : 'no lo dice'}` +
+              `${a.valoracion ? ` · valoración ${a.valoracion}` : ''}` +
+              `${a.punto_encuentro ? `\n  punto de encuentro: ${String(a.punto_encuentro).slice(0, 120)}` : ''}` +
+              `${a.horarios ? `\n  horarios: ${String(a.horarios).slice(0, 120)}` : ''}`
+          )
+          .join('\n'),
+      };
+
+      let respuesta = null;
+      try {
+        respuesta = await consultarJSON(rellenar(prompt, datos), {
+          maxTokens: 2500,
+          paso: `excursiones de ${ciudad}`,
+        });
+      } catch (err) {
+        // SIN IA NO SE PRESELECCIONA, y no se inventa un criterio de emergencia:
+        // el valor de esta fase ES el criterio. Las excursiones quedan buscadas y
+        // visibles en la pestaña, que es donde estarían sin el orquestador.
         apuntarHueco(
           viajeId,
           FASE,
-          `${ciudad}: «${e.actividad.titulo}» se eligió pero no se pudo guardar como candidata.`
+          `${ciudad}: las excursiones están buscadas pero no pude preseleccionar (${err.message}).`
         );
-        di(`   ✘ «${e.actividad.titulo}» NO se pudo guardar como candidata.`, ORIGENES.ninguno);
-        continue;
+        di(`   ${ciudad}: no pude preseleccionar (${err.message}). Quedan en la pestaña para que elijas.`);
+        return { guardadas: 0 };
       }
 
-      guardadas.push(e);
-      di(
-        `   Excursión «${e.actividad.titulo}» guardada como candidata de ${ciudad} ` +
-          `(candidato #${candidato.id}, catálogo #${e.actividad.id}).`,
-        ORIGENES.scraping
-      );
-      for (const nombre of Array.isArray(e.cubre_sitios) ? e.cubre_sitios : []) {
-        const sitio = una(
-          `SELECT id, nombre FROM sitios_lugar
-            WHERE punto_interes_id = ? AND lower(nombre) = lower(?)`,
-          etapa.punto_interes_id,
-          String(nombre).trim()
+      // --- 3) Aplicar los topes, que son duros -----------------------------
+      const pedidas = (Array.isArray(respuesta?.elegidas) ? respuesta.elegidas : [])
+        .map((e) => ({
+          ...e,
+          // La IA contesta con la etiqueta («ex7»), no con el id del catálogo.
+          actividad: candidatas.find((c) => c.ref === String(e?.id ?? '').trim()),
+        }))
+        .filter((e) => e.actividad);
+
+      // El tope que se hace cumplir en código, no solo en el prompt: si la IA pide
+      // tres excursiones de jornada y solo hay un día libre, entran las que caben.
+      const topeLargas =
+        topeLargasReal != null
+          ? topeLargasReal
+          : Math.max(0, maxLargasPorDia * Math.max(noches, 1));
+      const elegidas = [];
+      let largas = 0;
+
+      for (const e of pedidas) {
+        if (maxPorViaje && elegidasEnTotal + elegidas.length >= maxPorViaje) {
+          di(`   Tope del viaje (${maxPorViaje}): dejo fuera «${e.actividad.titulo}».`);
+          return { guardadas: 0 };
+        }
+        if (esLarga(e.actividad.duracion)) {
+          if (largas >= topeLargas) {
+            di(`   Tope de largas (${topeLargas} en ${noches} noche(s)): dejo fuera «${e.actividad.titulo}».`);
+            continue;
+          }
+          largas += 1;
+        }
+        elegidas.push(e);
+      }
+
+      // --- 4) Guardar, con la misma función del botón «Me lo apunto» -------
+      //
+      // Y COMPROBANDO QUE SE HA GUARDADO. `alternarApuntado` devuelve null cuando
+      // no encuentra el origen, y ese null en silencio es exactamente lo que
+      // permitió que esta fase pareciera funcionar durante meses. Ahora, si una
+      // no entra, se dice en el registro y se apunta como hueco.
+      const cubiertos = [];
+      const guardadas = [];
+      // El candidato de una excursión, por su IDENTIDAD: la misma pareja
+      // (tabla, id) con la que la pestaña decide qué pintar como apuntado. Si
+      // esto lo encuentra, la pantalla también.
+      const candidatoDe = (actividadId) =>
+        una(
+          `SELECT id FROM candidatos
+            WHERE etapa_id = ? AND tipo = 'actividad'
+              AND datos_extra LIKE ? ORDER BY id DESC LIMIT 1`,
+          etapa.id,
+          `%"deId":${Number(actividadId)}%`
         );
-        if (sitio && candidato) {
-          ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, sitio.id);
-          cubiertos.push(`${sitio.nombre} (lo cubre «${e.actividad.titulo}»)`);
+
+      for (const e of elegidas) {
+        // `alternarApuntado` ALTERNA: si la excursión ya estuviera apuntada, esa
+        // llamada la DESAPUNTARÍA y se llevaría por delante su sitio en el
+        // lienzo. Hoy no puede pasar —las ya apuntadas se filtran antes de
+        // ofrecérselas a la IA—, pero la fase no puede depender de ese detalle
+        // de otro sitio: si ya está, no se toca.
+        if (!candidatoDe(e.actividad.id)) {
+          alternarApuntado(etapa.id, 'actividad', e.actividad.id);
+        }
+
+        const candidato = candidatoDe(e.actividad.id);
+
+        if (!candidato) {
+          apuntarHueco(
+            viajeId,
+            FASE,
+            `${ciudad}: «${e.actividad.titulo}» se eligió pero no se pudo guardar como candidata.`
+          );
+          di(`   ✘ «${e.actividad.titulo}» NO se pudo guardar como candidata.`, ORIGENES.ninguno);
+          return { guardadas: 0 };
+        }
+
+        guardadas.push(e);
+        di(
+          `   Excursión «${e.actividad.titulo}» guardada como candidata de ${ciudad} ` +
+            `(candidato #${candidato.id}, catálogo #${e.actividad.id}).`,
+          ORIGENES.scraping
+        );
+        for (const nombre of Array.isArray(e.cubre_sitios) ? e.cubre_sitios : []) {
+          const sitio = una(
+            `SELECT id, nombre FROM sitios_lugar
+              WHERE punto_interes_id = ? AND lower(nombre) = lower(?)`,
+            etapa.punto_interes_id,
+            String(nombre).trim()
+          );
+          if (sitio && candidato) {
+            ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, sitio.id);
+            cubiertos.push(`${sitio.nombre} (lo cubre «${e.actividad.titulo}»)`);
+          }
         }
       }
+
+      // Cuentan las GUARDADAS, no las elegidas: el tope del viaje tiene que
+      // hablar de lo que existe en la base, no de lo que se pensó.
+      elegidasEnTotal += guardadas.length;
+      return { guardadas: guardadas.length };
     }
+  );
 
-    // Cuentan las GUARDADAS, no las elegidas: el tope del viaje tiene que
-    // hablar de lo que existe en la base, no de lo que se pensó.
-    elegidasEnTotal += guardadas.length;
-
-    const descartadas = (Array.isArray(respuesta?.descartadas) ? respuesta.descartadas : [])
-      .map((d) => ({ ...d, actividad: candidatas.find((c) => c.id === String(d?.id ?? '').trim()) }))
-      .filter((d) => d.actividad);
-
-    di(
-      `${ciudad}: elegidas ${elegidas.length}` +
-        (elegidas.length ? ` (${elegidas.map((e) => e.actividad.titulo).join(', ')})` : '') +
-        `, descartadas ${descartadas.length} de ${candidatas.length} miradas.`
-    );
-    for (const e of elegidas) if (e.por_que) di(`   ✔ ${e.actividad.titulo}: ${e.por_que}`);
-    for (const d of descartadas) if (d.por_que) di(`   ✘ ${d.actividad.titulo}: ${d.por_que}`);
-    for (const c of cubiertos) di(`   Ya no hace falta ir por libre a ${c}.`);
-    if (!elegidas.length) {
-      di(`   En ${ciudad} no hay ninguna que aporte sobre lo que ya vais a ver. No es un hueco: es la decisión.`);
-    }
+  // UN FALLO EN UNA CIUDAD NO SE TRAGA NI SE LLEVA A LAS DEMÁS.
+  for (const [k, r] of resultados.entries()) {
+    if (!r?.error) continue;
+    const cual = etapas[k]?.nombre_ciudad ?? `parada ${k + 1}`;
+    di(`${cual}: no se pudo (${r.error.message}).`);
+    apuntarHueco(viajeId, FASE, `${cual}: ${r.error.message}`);
   }
-
-  // --- LA JOYA QUE SE HA QUEDADO FUERA -------------------------------------
-  //
-  // Se avisa aquí y no en la fase 1 porque hasta ahora no se sabía: una
-  // candidata puede caerse como parada y volver por la puerta de atrás como
-  // excursión, y entonces no hay nada que decir. Solo cuando las excursiones ya
-  // están elegidas se puede saber si de verdad ha desaparecido del viaje.
-  avisarDeLasQueSeCayeron(viaje, di);
 
   di(`${elegidasEnTotal} excursión(es) preseleccionada(s) en todo el viaje.`);
   return { etapas: etapas.length, elegidas: elegidasEnTotal };

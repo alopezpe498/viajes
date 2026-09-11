@@ -23,7 +23,7 @@
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { referenciaDeTramo, comoDuracion } from './distancias.js';
-import { geocodificarConGoogle } from '../lib/google.js';
+import { geocodificarConGoogle, pareceUnaCiudad } from '../lib/google.js';
 import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 
 // =============================================================================
@@ -114,10 +114,30 @@ async function asegurarCoordenadas(puntoId) {
     .join(', ');
 
   let hallado = null;
+  let sospechoso = null;
   try {
     hallado = await geocodificarConGoogle(consulta);
   } catch (err) {
     console.warn(`[distancias] no pude situar "${consulta}": ${err.message}`);
+  }
+
+  // UN PUNTO DE REGION NO SIRVE PARA MEDIR UN SALTO ENTRE CIUDADES.
+  //
+  // De aqui salieron los kilometros inflados del viaje de Asia: la
+  // geocodificacion devolvia la division administrativa y su centroide, que esta
+  // donde no vive nadie, y el salto medido pasaba por ahi. `partial_match` es la
+  // otra forma de equivocarse: un homonimo en otro pais.
+  //
+  // No se descarta del todo —quedarse sin coordenadas tampoco arregla nada—: se
+  // aparta, se prueba la IA, y si la IA tampoco sabe se usa este avisando.
+  if (hallado && (!pareceUnaCiudad(hallado) || hallado.parcial)) {
+    sospechoso = hallado;
+    hallado = null;
+    console.warn(
+      `[distancias] "${consulta}" resolvio a «${sospechoso.direccion}» ` +
+        `(${sospechoso.parcial ? 'coincidencia parcial' : (sospechoso.tipos ?? []).join(', ')}): ` +
+        'no parece el punto de la ciudad, pruebo otra via.'
+    );
   }
 
   // SEGUNDA VIA: LA IA, que es de donde salen las coordenadas del resto del
@@ -141,6 +161,16 @@ async function asegurarCoordenadas(puntoId) {
     } catch (err) {
       console.warn(`[distancias] la IA tampoco situo "${consulta}": ${err.message}`);
     }
+  }
+
+  // Si la IA tampoco supo, se acepta el punto dudoso antes que quedarse sin
+  // nada, pero queda dicho en el log de donde salio.
+  if (!hallado && sospechoso) {
+    hallado = sospechoso;
+    console.warn(
+      `[distancias] me quedo con «${sospechoso.direccion}» para "${consulta}" a falta de algo mejor: ` +
+        'los kilometros de ese salto pueden estar inflados.'
+    );
   }
 
   if (!hallado) {

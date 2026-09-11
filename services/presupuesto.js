@@ -146,6 +146,19 @@ function linea({
   const unitario = hay ? Number(importe) : null;
   const cuantos = ambito === POR_PERSONA ? Math.max(1, personas) : 1;
 
+  // LO QUE NO ESTÁ EN EUROS NO SE SUMA.
+  //
+  // Es la misma regla que ya rige aquí para lo que no tiene precio: la línea
+  // existe, el importe se enseña, y el total del concepto dice cuántas no cuenta.
+  //
+  // Hace falta desde el viaje por Asia. Antes un hotel en bats entraba en la
+  // suma como si fueran euros, y como el lector de precios además se comía tres
+  // ceros («THB 4,500» → 4,5), el error se tapaba solo y el presupuesto salía
+  // creíble. Arreglado el lector, 4.500 bats sumarían 4.500 € si nadie mirara la
+  // moneda. No hay tabla de cambio en esta casa y no se va a inventar una:
+  // convertir a ojo sería el mismo fallo con mejor cara.
+  const enOtraMoneda = Boolean(moneda) && moneda !== 'EUR';
+
   return {
     titulo,
     detalle,
@@ -154,10 +167,14 @@ function linea({
     ambitoTexto: NOMBRE_DE_AMBITO[ambito ?? POR_GRUPO],
     // Solo se enseña la multiplicación cuando de verdad multiplica.
     multiplica: ambito === POR_PERSONA && cuantos > 1 ? cuantos : null,
-    total: unitario == null ? null : Math.round(unitario * cuantos * 100) / 100,
+    total:
+      unitario == null || enOtraMoneda ? null : Math.round(unitario * cuantos * 100) / 100,
     moneda,
+    enOtraMoneda,
     reservado: Boolean(reservado),
-    nota,
+    nota:
+      nota ??
+      (enOtraMoneda ? `El precio está en ${moneda} y aquí no se convierte: no lo sumo.` : null),
     url,
   };
 }
@@ -481,7 +498,8 @@ export async function estimarGastoDiario(viaje) {
   const r = await consultarJSONConGoogle(
     `Cuánto se gasta al día por persona en comida y transporte urbano en ${donde}`,
     prompt,
-    { paso: `el gasto diario en ${destino}`, maxTokens: 800 }
+    // El contexto de Google ya trae los números: esto es leerlos y promediar.
+    { paso: `el gasto diario en ${destino}`, maxTokens: 800, modelo: 'rapido' }
   );
 
   const importe = Number(r?.importe);

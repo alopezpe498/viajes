@@ -105,7 +105,9 @@ import {
 } from '../services/descubrir.js';
 import { modeloIA } from '../lib/ia.js';
 import { sitioPorTexto } from '../services/geocodificar.js';
-import { arrancarViaje, resumenDeViaje } from '../services/cronometro.js';
+import { arrancarViaje, resumenDeViaje, abrirBloqueParalelo } from '../services/cronometro.js';
+import { enFase } from '../services/fase-actual.js';
+import { enParalelo } from '../services/paralelo.js';
 import {
   siguientePendiente,
   reclamar,
@@ -1489,106 +1491,176 @@ async function ejecutarOrquestador(trabajo) {
 
   let parada = null;
 
-  for (const fase of FASES) {
-    // --- EL PUNTO DE CONTROL ENTRE FASES -----------------------------------
-    //
-    // Es el mínimo garantizado: aunque una fase no mire nada por dentro, aquí se
-    // para siempre, y se para en el sitio más limpio que hay —entre dos fases no
-    // hay nada a medias por definición—.
-    parada = paradaPedida(viajeId);
-    if (parada) {
-      console.log(`[worker] Trabajo #${trabajo.id}: parada «${parada}» pedida antes de «${fase.clave}».`);
-      break;
-    }
+  /**
+   * UNA FASE, DE PRINCIPIO A FIN.
+   *
+   * Es el cuerpo del bucle de siempre, sacado a función y sin cambiarle nada por
+   * dentro: el punto de control, el prompt de la tabla, el try/catch que impide
+   * que una fase caída tumbe al viaje, el cierre y la atención a la parada.
+   *
+   * DOS COSAS SÍ SON NUEVAS:
+   *
+   *   · Corre dentro de `enFase`, que es lo que permite que tres a la vez no se
+   *     confundan entre ellas: a qué registro va cada línea, a qué fase se le
+   *     apunta cada llamada de IA y qué modelo le toca.
+   *   · Devuelve qué ha pasado en una palabra, porque quien la llama ya no está
+   *     dentro de un bucle y no puede hacer `break` desde aquí.
+   */
+  const correrUnaFase = (fase) =>
+    enFase(viajeId, fase.clave, async () => {
+      // --- EL PUNTO DE CONTROL ENTRE FASES ---------------------------------
+      //
+      // Es el mínimo garantizado: aunque una fase no mire nada por dentro, aquí
+      // se para siempre, y se para en el sitio más limpio que hay —entre dos
+      // fases no hay nada a medias por definición—.
+      const pedida = paradaPedida(viajeId);
+      if (pedida) {
+        console.log(
+          `[worker] Trabajo #${trabajo.id}: parada «${pedida}» pedida antes de «${fase.clave}».`
+        );
+        return 'parar-antes';
+      }
 
-    // LO QUE YA ESTÁ HECHO NO SE REHACE.
-    //
-    // Es lo que convierte «volver a encolar» en «reanudar»: tras una parada, las
-    // fases que llegaron a terminar siguen en 'hecho' y aquí se saltan, así que
-    // el montaje arranca en la primera pendiente, que es donde se dejó.
-    //
-    // «Volver a montar» sigue rehaciendo todo, porque `lanzarOrquestador` deja
-    // las seis en 'pendiente' antes de encolar: la diferencia está allí, no aquí.
-    const yaEstaba = una(
-      'SELECT estado FROM orquestador_fases WHERE viaje_id = ? AND fase = ?',
-      viajeId,
-      fase.clave
-    )?.estado;
-    if (['hecho', 'con_huecos'].includes(yaEstaba)) {
-      console.log(`[worker] Trabajo #${trabajo.id}: «${fase.clave}» ya estaba ${yaEstaba}; la salto.`);
-      if (yaEstaba === 'con_huecos') conHuecos += 1;
+      // LO QUE YA ESTÁ HECHO NO SE REHACE.
+      //
+      // Es lo que convierte «volver a encolar» en «reanudar»: tras una parada,
+      // las fases que llegaron a terminar siguen en 'hecho' y aquí se saltan,
+      // así que el montaje arranca en la primera pendiente, que es donde se
+      // dejó. «Volver a montar» sigue rehaciendo todo, porque
+      // `lanzarOrquestador` deja las seis en 'pendiente' antes de encolar.
+      const yaEstaba = una(
+        'SELECT estado FROM orquestador_fases WHERE viaje_id = ? AND fase = ?',
+        viajeId,
+        fase.clave
+      )?.estado;
+      if (['hecho', 'con_huecos'].includes(yaEstaba)) {
+        console.log(`[worker] Trabajo #${trabajo.id}: «${fase.clave}» ya estaba ${yaEstaba}; la salto.`);
+        return yaEstaba === 'con_huecos' ? 'con_huecos' : 'ya-estaba';
+      }
+
+      empezarFase(viajeId, fase.clave);
+
+      try {
+        // El prompt se lee AQUÍ, de la tabla: así, el día que la fase llame a la
+        // IA, el camino ya está hecho y nadie cae en la tentación de escribirlo
+        // en una constante de este archivo.
+        const prompt = promptDeFase(fase.clave);
+
+        const implementada = FASES_IMPLEMENTADAS[fase.clave];
+        if (implementada) {
+          await implementada(una('SELECT * FROM viajes WHERE id = ?', viajeId), prompt);
+        } else {
+          // Los dos segundos no son decorativos: la pantalla de progreso se
+          // sondea en vivo, y sin ellos las fases que quedan pasarían de
+          // pendiente a hecho en el mismo parpadeo y no se vería el refresco.
+          await dormir(2000);
+          anotar(viajeId, fase.clave, 'Fase pendiente de implementar.');
+          anotar(viajeId, fase.clave, `Prompt cargado de la tabla (${prompt.length} caracteres).`);
+        }
+
+        // ¿Han pedido parar MIENTRAS corría esta fase? La fase ha terminado
+        // entera, así que se cierra como lo que es —hecha— y se para después.
+        const final = cerrarFase(viajeId, fase.clave, 'hecho');
+
+        if (paradaPedida(viajeId) === 'limpia') {
+          anotarParada(viajeId, fase.clave, fase.etiqueta, pasoDeLaFase(viajeId, fase.clave));
+          limpiarParada(viajeId);
+          console.log(`[worker] Trabajo #${trabajo.id}: parado limpio tras «${fase.clave}».`);
+          return 'parado';
+        }
+
+        return final === 'con_huecos' ? 'con_huecos' : 'hecho';
+      } catch (err) {
+        // --- ¿ESTO ES UN FALLO O ES QUE LA HAN CORTADO? --------------------
+        //
+        // Un aborto llega hasta aquí como un error cualquiera —la llamada de IA
+        // cancelada, el navegador cerrado de golpe—, y tratarlo como un fallo
+        // dejaría la fase en 'error' y seguiría con la siguiente, que es
+        // exactamente lo contrario de lo que se ha pedido.
+        if (paradaPedida(viajeId) === 'abortar') {
+          const paso = pasoDeLaFase(viajeId, fase.clave);
+          const { borrado } = limpiarParcialesDeFase(viajeId, fase.clave);
+          dejarFaseAMedias(viajeId, fase.clave);
+          anotarAborto(viajeId, fase.clave, fase.etiqueta, paso, borrado);
+          vaciarColaDelViaje(viajeId);
+          limpiarParada(viajeId);
+          console.log(
+            `[worker] Trabajo #${trabajo.id}: ABORTADO en «${fase.clave}». ` +
+              `Parciales limpiados: ${JSON.stringify(borrado)}.`
+          );
+          return 'abortado';
+        }
+
+        // Aquí muere el fallo de una fase. Se anota, se cierra en error y se
+        // sigue con la siguiente: un viaje con una fase caída es algo que se
+        // puede repasar; un viaje que se paró en la segunda no es nada.
+        anotar(viajeId, fase.clave, `No se pudo: ${err.message}`);
+        apuntarHueco(viajeId, fase.clave, err.message);
+        cerrarFase(viajeId, fase.clave, 'error');
+        console.warn(`[worker] Trabajo #${trabajo.id}: fase «${fase.clave}» falló (${err.message}).`);
+        return 'error';
+      }
+    });
+
+  const cuenta = (salida) => {
+    if (salida === 'con_huecos') conHuecos += 1;
+    if (salida === 'error') conError += 1;
+  };
+
+  // LAS TRES DEL MEDIO VAN JUNTAS.
+  //
+  // «Dormir», «sitios» y «excursiones» dependen las tres de lo mismo —la ruta y
+  // los traslados— y de ninguna de las otras dos: ni el hotel de Atenas cambia
+  // qué se ve en Atenas, ni al revés. Iban en fila porque el bucle de fases es
+  // una lista, no porque hiciera falta.
+  //
+  // El orden fase 1 → traslados → (estas tres) → lienzo NO se toca: el bloque se
+  // espera entero antes de seguir, que es justo lo que el lienzo necesita.
+  const EL_BLOQUE = ['dormir', 'sitios', 'excursiones'];
+  let cortado = false;
+
+  for (let n = 0; n < FASES.length && !cortado; n += 1) {
+    const fase = FASES[n];
+
+    if (fase.clave === EL_BLOQUE[0]) {
+      const juntas = FASES.filter((f) => EL_BLOQUE.includes(f.clave));
+      n += juntas.length - 1;
+
+      console.log(`[worker] Trabajo #${trabajo.id}: lanzo ${juntas.length} fases a la vez.`);
+      const cerrarBloque = abrirBloqueParalelo('En paralelo (dormir · sitios · excursiones)');
+
+      const resultados = await enParalelo(juntas, juntas.length, (f) => correrUnaFase(f));
+      cerrarBloque(juntas.map((f) => f.clave));
+
+      for (const [k, r] of resultados.entries()) {
+        // UN FALLO NO SE TRAGA. `enParalelo` no deja que una tumbe a las otras,
+        // pero lo que pete fuera del try/catch de la fase tiene que verse.
+        if (r?.error) {
+          conError += 1;
+          console.warn(
+            `[worker] Trabajo #${trabajo.id}: «${juntas[k].clave}» reventó (${r.error.message}).`
+          );
+          anotar(viajeId, juntas[k].clave, `No se pudo: ${r.error.message}`);
+          apuntarHueco(viajeId, juntas[k].clave, r.error.message);
+          cerrarFase(viajeId, juntas[k].clave, 'error');
+          continue;
+        }
+        cuenta(r.valor);
+        if (['parado', 'abortado', 'parar-antes'].includes(r.valor)) cortado = true;
+      }
+
+      parada = paradaPedida(viajeId);
+      if (cortado || parada) break;
       continue;
     }
 
-    empezarFase(viajeId, fase.clave);
+    const salida = await correrUnaFase(fase);
+    cuenta(salida);
 
-    try {
-      // El prompt se lee AQUÍ, de la tabla, aunque todavía no se use para nada:
-      // así, el día que la fase llame a la IA, el camino ya está hecho y nadie
-      // cae en la tentación de escribirlo en una constante de este archivo.
-      const prompt = promptDeFase(fase.clave);
-
-      const implementada = FASES_IMPLEMENTADAS[fase.clave];
-      if (implementada) {
-        // La fase de verdad. Se le pasa el viaje recién leído y el prompt de la
-        // tabla; todo lo que decida lo narra ella en el log.
-        await implementada(una('SELECT * FROM viajes WHERE id = ?', viajeId), prompt);
-      } else {
-        // --- EL CASCARÓN ------------------------------------------------
-        // Los dos segundos no son decorativos: la pantalla de progreso se sondea
-        // en vivo, y sin ellos las fases que quedan pasarían de pendiente a
-        // hecho en el mismo parpadeo y no se vería el refresco.
-        await dormir(2000);
-        anotar(viajeId, fase.clave, 'Fase pendiente de implementar.');
-        anotar(viajeId, fase.clave, `Prompt cargado de la tabla (${prompt.length} caracteres).`);
-      }
-
-      // ¿Han pedido parar MIENTRAS corría esta fase? La fase ha terminado
-      // entera, así que se cierra como lo que es —hecha— y se para después.
-      // Cortar aquí una fase completa sería tirar trabajo bueno.
-      const final = cerrarFase(viajeId, fase.clave, 'hecho');
-      if (final === 'con_huecos') conHuecos += 1;
-
+    if (salida === 'parado' || salida === 'abortado') return;
+    if (salida === 'parar-antes') {
       parada = paradaPedida(viajeId);
-      if (parada === 'limpia') {
-        anotarParada(viajeId, fase.clave, fase.etiqueta, pasoDeLaFase(viajeId, fase.clave));
-        limpiarParada(viajeId);
-        console.log(`[worker] Trabajo #${trabajo.id}: parado limpio tras «${fase.clave}».`);
-        return;
-      }
-    } catch (err) {
-      // --- ¿ESTO ES UN FALLO O ES QUE LA HAN CORTADO? ----------------------
-      //
-      // Un aborto llega hasta aquí como un error cualquiera —la llamada de IA
-      // cancelada, el navegador cerrado de golpe—, y tratarlo como un fallo
-      // dejaría la fase en 'error' y seguiría con la siguiente, que es
-      // exactamente lo contrario de lo que se ha pedido.
-      parada = paradaPedida(viajeId);
-      if (parada === 'abortar') {
-        const paso = pasoDeLaFase(viajeId, fase.clave);
-        const { borrado } = limpiarParcialesDeFase(viajeId, fase.clave);
-        dejarFaseAMedias(viajeId, fase.clave);
-        anotarAborto(viajeId, fase.clave, fase.etiqueta, paso, borrado);
-        vaciarColaDelViaje(viajeId);
-        limpiarParada(viajeId);
-        console.log(
-          `[worker] Trabajo #${trabajo.id}: ABORTADO en «${fase.clave}». ` +
-            `Parciales limpiados: ${JSON.stringify(borrado)}.`
-        );
-        return;
-      }
-
-      // Aquí muere el fallo de una fase. Se anota, se cierra en error y se sigue
-      // con la siguiente: un viaje con una fase caída es algo que se puede
-      // repasar; un viaje que se paró en la segunda no es nada.
-      conError += 1;
-      anotar(viajeId, fase.clave, `No se pudo: ${err.message}`);
-      // Sin el nombre de la fase delante: el hueco ya vive dentro de su fase, y
-      // el resumen de arriba le antepone la etiqueta. Ponerlo aqui lo duplicaba
-      // ("Donde dormir: Donde dormir: ...").
-      apuntarHueco(viajeId, fase.clave, err.message);
-      cerrarFase(viajeId, fase.clave, 'error');
-      console.warn(`[worker] Trabajo #${trabajo.id}: fase «${fase.clave}» falló (${err.message}).`);
+      break;
     }
   }
 

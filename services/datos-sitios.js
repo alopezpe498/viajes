@@ -28,6 +28,7 @@ import { encolar, trabajoActivo } from '../jobs/cola.js';
 import { resumenDeSitio } from '../lib/resumen-sitio.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { buscarTablaDeSitios, ErrorCaptcha } from '../providers/google-busqueda.js';
+import { diasQueCierra, TODOS_LOS_DIAS } from './horarios.js';
 
 /** A partir de aquí, lo guardado se enseña con un "puede haber cambiado". */
 export const DIAS_PARA_AVISAR = 30;
@@ -665,6 +666,29 @@ export async function interpretarHorario(sitioId) {
   const s = una('SELECT id, nombre, horarios FROM sitios_lugar WHERE id = ?', Number(sitioId));
   if (!s) return null;
   if (!s.horarios) return null;
+
+  // --- PRIMERO, LEERLO ---------------------------------------------------
+  //
+  // La inmensa mayoría de los horarios reales se entienden sin preguntarle a
+  // nadie: «Vie a Dom», «Mon-Fri 9AM-5PM», «Lun: 10-15; Mar-Dom: 9-19». Leerlos
+  // aquí sale gratis, es instantáneo y —lo que importa— es lo único que se puede
+  // probar con casos antes de que falle en un viaje.
+  const leidos = diasQueCierra(s.horarios);
+  if (leidos !== null) {
+    return guardarCierres(s, leidos, 'leído del texto');
+  }
+
+  // --- Y SI NO, PREGUNTAR. PERO POR LOS DÍAS QUE ABRE ---------------------
+  //
+  // Aquí estaba el fallo de Asia. Se le pedía la lista de días que CIERRA, y
+  // ante «abre de viernes a domingo» eso le obliga a expandir el rango, restarlo
+  // de los siete y devolver el complemento. Devolvió el rango tal cual, el sitio
+  // quedó marcado como cerrado en viernes —el único día que abría, y el único
+  // día que la parada tenía— y se fue del viaje.
+  //
+  // Ahora se le pregunta lo que el texto dice, que es cuándo abre, y el
+  // complemento se calcula abajo. No es que el modelo no sepa restar: es que no
+  // hay ninguna razón para pedírselo.
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
   const r = await consultarJSON(
@@ -673,40 +697,59 @@ export async function interpretarHorario(sitioId) {
       '',
       s.horarios,
       '',
-      '¿Qué días de la semana está CERRADO todo el día?',
+      '¿Qué días de la semana ABRE?',
       '',
       'Reglas:',
       '- Números del 0 al 6, con el domingo en el 0 y el sábado en el 6.',
-      '- Solo los días que cierra ENTERO. Un día con horario reducido está',
-      '  abierto y no cuenta.',
-      '- Si abre todos los días, o si el texto no permite saberlo, devuelve una',
-      '  lista vacía. No adivines por lo que sepas del sitio: solo cuenta lo que',
-      '  diga ese texto.',
-      '- OJO CON LO QUE ABRE UN SOLO DÍA: "solo domingos" o "mercadillo',
-      '  dominical" significa que cierra los otros SEIS, así que la respuesta es',
-      '  [1,2,3,4,5,6]. Es el caso que más se falla y el que más molesta: quien',
-      '  lea el plan se planta allí un sábado y no hay nada.',
+      '- La lista es de días ABIERTOS. No me des los que cierra ni me hagas',
+      '  ninguna resta: de eso me encargo yo.',
+      '- UN RANGO SE EXPANDE HACIA DELANTE, dando la vuelta a la semana si hace',
+      '  falta. "Abre de viernes a domingo" son viernes, sábado y domingo:',
+      '  {"abre":[5,6,0]}. No es lunes a jueves; esos son justo los que NO.',
+      '- Un día con horario reducido está abierto y cuenta.',
+      '- "Cerrado los lunes" quiere decir que abre los otros seis:',
+      '  {"abre":[0,2,3,4,5,6]}.',
+      '- Si el horario viene en inglés con AM/PM ("Fri-Sun 10AM-6PM"), se lee',
+      '  igual: son viernes, sábado y domingo.',
+      '- Si el texto no permite saberlo, devuelve {"abre":null}. No adivines por',
+      '  lo que sepas del sitio: solo cuenta lo que diga ese texto.',
       '',
-      'Devuelve SOLO: {"cierra":[1]}',
+      'Devuelve SOLO: {"abre":[5,6,0]}',
     ].join('\n'),
     { maxTokens: 200, paso: `interpretar el horario de ${s.nombre}` }
   );
 
-  const dias = (Array.isArray(r?.cierra) ? r.cierra : [])
+  const abre = (Array.isArray(r?.abre) ? r.abre : [])
     .map(Number)
     .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
 
+  // Sin días abiertos no se concluye que cierre los siete: eso no lo dice ningún
+  // horario del mundo y dejaría el sitio sin un solo día en el que colocarse. Se
+  // trata como «no lo sé», que es el lado seguro de equivocarse.
+  const cierra = abre.length ? TODOS_LOS_DIAS.filter((d) => !abre.includes(d)) : [];
+
+  return guardarCierres(s, cierra, abre.length ? 'preguntado a la IA' : 'la IA no supo decirlo');
+}
+
+/**
+ * Guarda SIEMPRE algo, aunque sea una lista vacía: sin marca, el lienzo volvería
+ * a encolar el mismo trabajo en cada pintada. Una lista vacía es una respuesta
+ * legítima —«no cierra ningún día fijo»— y hay que poder decirla.
+ */
+function guardarCierres(sitio, dias, comoSeSupo) {
+  const limpios = [...new Set(dias)].sort((a, b) => a - b);
+
   ejecutar(
     "UPDATE sitios_lugar SET cierra_dias = ?, cierra_en = datetime('now') WHERE id = ?",
-    JSON.stringify([...new Set(dias)]),
-    s.id
+    JSON.stringify(limpios),
+    sitio.id
   );
 
   console.log(
-    `[datos-sitios] ${s.nombre}: cierra ${dias.length ? dias.join(', ') : 'ningún día fijo'}` +
-      ` (de «${s.horarios.slice(0, 60)}»)`
+    `[datos-sitios] ${sitio.nombre}: cierra ${limpios.length ? limpios.join(', ') : 'ningún día fijo'}` +
+      ` (${comoSeSupo}, de «${sitio.horarios.slice(0, 60)}»)`
   );
-  return dias;
+  return limpios;
 }
 
 export default {

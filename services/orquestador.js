@@ -33,6 +33,7 @@
 import { todas, una, ejecutar } from '../db/index.js';
 import { encolar, trabajoActivo, ultimoTrabajo } from '../jobs/cola.js';
 import { arrancarFase, pararFase } from './cronometro.js';
+import { faseDeAqui, marcarFaseSuelta, paradaDeAqui } from './fase-actual.js';
 
 /**
  * LAS SEIS FASES, EN ORDEN.
@@ -787,8 +788,21 @@ export function lanzarOrquestador(viajeId) {
 let enCurso = null;
 
 /** El viaje y la fase que se están ejecutando, o null. */
+/**
+ * LA FASE DE ESTA LLAMADA.
+ *
+ * Era una variable de módulo, y con las seis fases en fila valía. Con tres
+ * corriendo a la vez pasa a ser mentira —la última en arrancar pisa a las
+ * otras— y todo lo que cuelga de ella se lo atribuye a quien no es: a qué
+ * registro va una línea, a qué fase se le apunta una llamada de IA, qué modelo
+ * le toca.
+ *
+ * `faseDeAqui()` lo resuelve por cadena de ejecución (ver `fase-actual.js`) y
+ * cae en la variable de siempre cuando nadie ha abierto contexto, que es lo que
+ * hace que nada de lo anterior deje de funcionar.
+ */
 export function faseEnCurso() {
-  return enCurso;
+  return faseDeAqui();
 }
 
 /**
@@ -830,6 +844,7 @@ export function fotoDeLaBase(viajeId) {
 
 export function empezarFase(viajeId, fase) {
   enCurso = { viajeId, fase };
+  marcarFaseSuelta(enCurso);
   arrancarFase(viajeId, fase);
 
   // LA PASADA SE CUENTA DESDE EL REGISTRO, no desde esta fila.
@@ -939,8 +954,19 @@ export function llevaDato(texto) {
  * ningún dato, no se etiqueta nada.
  */
 export function anotar(viajeId, fase, linea, origen = null) {
-  const texto = String(linea ?? '').trim();
+  let texto = String(linea ?? '').trim();
   if (!texto) return;
+
+  // EL PREFIJO DE LA PARADA, CUANDO HACE FALTA.
+  //
+  // Con las paradas en paralelo, las líneas de Atenas, Nafplio y Delfos se
+  // entremezclan en el registro y «2 sitios sin foto» deja de querer decir nada.
+  // Se antepone la ciudad, pero SOLO si la línea no la nombra ya: la mayoría lo
+  // hacen («Atenas: 12 sitios») y repetirla sería ruido.
+  const parada = paradaDeAqui();
+  if (parada && !texto.toLowerCase().includes(parada.toLowerCase())) {
+    texto = `[${parada}] ${texto}`;
+  }
 
   const marca =
     origen === ORIGENES.ninguno
@@ -994,12 +1020,15 @@ export function cerrarFase(viajeId, fase, estado = 'hecho') {
   // EL CRONÓMETRO, LO PRIMERO. Las líneas del desglose son de esta fase y de
   // esta pasada, así que se escriben antes de tocar nada más: `anotar` lee la
   // pasada de la fila, y la fila todavía dice la de ahora.
-  for (const linea of pararFase(FASES.find((f) => f.clave === fase)?.etiqueta ?? fase)) {
+  for (const linea of pararFase(FASES.find((f) => f.clave === fase)?.etiqueta ?? fase, fase)) {
     anotar(viajeId, fase, linea, ORIGENES.ninguno);
   }
 
   // Se suelta aquí: lo que venga después ya no es de esta fase.
-  if (enCurso?.viajeId === viajeId && enCurso?.fase === fase) enCurso = null;
+  if (enCurso?.viajeId === viajeId && enCurso?.fase === fase) {
+    enCurso = null;
+    marcarFaseSuelta(null);
+  }
 
   const fila = una(
     'SELECT huecos FROM orquestador_fases WHERE viaje_id = ? AND fase = ?',

@@ -35,6 +35,8 @@
  * motivo: la cola corre los trabajos de uno en uno.
  */
 
+import { faseDeAqui, enParadaDeAqui, segmentoDeAqui } from './fase-actual.js';
+
 // =============================================================================
 // EL ESTADO
 // =============================================================================
@@ -42,8 +44,26 @@
 /** El viaje que se está montando ahora, con lo que ya han contado sus fases. */
 let viaje = null;
 
-/** La fase abierta ahora mismo. */
-let fase = null;
+/**
+ * LAS FASES ABIERTAS AHORA MISMO, por clave.
+ *
+ * Era una sola variable, y con las seis fases en fila valía. Con «dormir»,
+ * «sitios» y «excursiones» corriendo a la vez ya no: la última en arrancar
+ * pisaba a las otras dos y todo lo que midiera se lo quedaba ella.
+ *
+ * Cuál de las abiertas es la de una llamada concreta lo dice `faseDeAqui()`, que
+ * lo arrastra por la cadena de ejecución. Aquí solo se guardan.
+ */
+const abiertas = new Map();
+
+/** La fase de esta cadena de ejecución, si está abierta. */
+function laMia() {
+  const ctx = faseDeAqui();
+  if (ctx?.fase && abiertas.has(ctx.fase)) return abiertas.get(ctx.fase);
+  // Fuera de todo contexto, y con una sola fase abierta, es esa. Es lo que hace
+  // que nada de lo que ya funcionaba deje de funcionar.
+  return abiertas.size === 1 ? [...abiertas.values()][0] : null;
+}
 
 const ahora = () => Date.now();
 
@@ -117,8 +137,8 @@ function contar(lista, comoSeLlama) {
 
 /** Empieza a cronometrar un viaje entero. Lo llama el worker antes del bucle. */
 export function arrancarViaje(viajeId) {
-  viaje = { viajeId, desde: ahora(), fases: [] };
-  fase = null;
+  viaje = { viajeId, desde: ahora(), fases: [], bloques: [] };
+  abiertas.clear();
 }
 
 /**
@@ -126,10 +146,9 @@ export function arrancarViaje(viajeId) {
  * pasa cuando una fase revienta y el bucle sigue con la siguiente.
  */
 export function arrancarFase(viajeId, clave) {
-  if (fase) pararFase();
   if (!viaje || viaje.viajeId !== viajeId) arrancarViaje(viajeId);
 
-  fase = {
+  abiertas.set(clave, {
     viajeId,
     clave,
     desde: ahora(),
@@ -137,6 +156,24 @@ export function arrancarFase(viajeId, clave) {
     scraping: [],
     paradas: [],
     reintentos: [],
+  });
+}
+
+/**
+ * UN BLOQUE EN PARALELO: cuánto duró de reloj y cuánto de trabajo.
+ *
+ * Sin esto, el resumen de un viaje con tres fases a la vez no cuadra: la suma de
+ * las fases pasa del total del viaje y parece un error de cuentas cuando es
+ * justo lo contrario —es lo que se ha ganado—. Se marca el bloque y el resumen
+ * lo dice con sus dos números.
+ */
+export function abrirBloqueParalelo(nombre) {
+  if (!viaje) return () => {};
+  const bloque = { nombre, desde: ahora(), hasta: null, claves: [] };
+  viaje.bloques.push(bloque);
+  return (claves) => {
+    bloque.hasta = ahora();
+    bloque.claves = claves ?? [];
   };
 }
 
@@ -149,14 +186,39 @@ export function arrancarFase(viajeId, clave) {
  * paradas, el desglose le sale solo.
  */
 export function enParada(nombre) {
-  if (!fase) return;
+  const f = laMia();
+  if (!f) return;
 
   const limpio = String(nombre ?? '').trim();
-  const ultima = fase.paradas[fase.paradas.length - 1];
-  if (ultima && !ultima.hasta) ultima.hasta = ahora();
-  if (!limpio) return;
 
-  fase.paradas.push({ nombre: limpio, desde: ahora(), hasta: null });
+  // CON PARADAS EN PARALELO, CADA UNA LLEVA SU RELOJ.
+  //
+  // Antes se cerraba «el último segmento abierto», y valía porque solo había uno
+  // vivo. Con tres a la vez eso deja de querer decir nada. El segmento va colgado
+  // del contexto de ejecución, así que cada rama cierra EL SUYO — y en las fases
+  // que siguen yendo en fila, donde la fase entera comparte contexto, cada parada
+  // cierra la anterior exactamente como antes.
+  const abierto = segmentoDeAqui();
+  if (abierto && !abierto.hasta) abierto.hasta = ahora();
+
+  enParadaDeAqui(limpio || null);
+
+  // Repetir el mismo nombre cierra: es como `porParada` marca el final de una
+  // parada sin tener que inventar una función aparte.
+  if (!limpio || abierto?.nombre === limpio) {
+    segmentoDeAqui(null);
+    enParadaDeAqui(null);
+    return;
+  }
+
+  const nuevo = { nombre: limpio, desde: ahora(), hasta: null };
+  f.paradas.push(nuevo);
+  segmentoDeAqui(nuevo);
+}
+
+/** Cierra el reloj de una parada. Lo llama quien la abrió, al acabar. */
+export function fueraDeParada(nombre) {
+  enParada(nombre);
 }
 
 // =============================================================================
@@ -164,15 +226,24 @@ export function enParada(nombre) {
 // =============================================================================
 
 /** Una llamada al modelo, con lo que costó, qué modelo fue y si buscó en la web. */
-export function apuntarIA({ desde, hasta, modelo, web = false }) {
-  if (!fase || !desde || !hasta) return;
-  fase.ia.push({ desde, hasta, modelo: modelo ?? 'desconocido', web: Boolean(web) });
+export function apuntarIA({ desde, hasta, modelo, clase = null, web = false }) {
+  const f = laMia();
+  if (!f || !desde || !hasta) return;
+  f.ia.push({
+    desde,
+    hasta,
+    modelo: modelo ?? 'desconocido',
+    clase,
+    web: Boolean(web),
+    parada: faseDeAqui()?.parada ?? null,
+  });
 }
 
 /** Una sesión de navegador: de abrirlo a cerrarlo. */
 export function apuntarScraping({ desde, hasta, de }) {
-  if (!fase || !desde || !hasta) return;
-  fase.scraping.push({ desde, hasta, de: de ?? 'sin nombre' });
+  const f = laMia();
+  if (!f || !desde || !hasta) return;
+  f.scraping.push({ desde, hasta, de: de ?? 'sin nombre' });
 }
 
 /**
@@ -185,17 +256,17 @@ export function apuntarScraping({ desde, hasta, de }) {
  * Si no se pasa `ms`, se devuelve la función que cierra la cuenta.
  */
 export function apuntarReintento({ motivo, ms = null }) {
-  if (!fase) return () => {};
+  const f = laMia();
+  if (!f) return () => {};
 
   if (ms != null) {
-    fase.reintentos.push({ motivo, ms });
+    f.reintentos.push({ motivo, ms });
     return () => {};
   }
 
   const desde = ahora();
-  const suyo = fase;
   return () => {
-    suyo.reintentos.push({ motivo, ms: ahora() - desde });
+    f.reintentos.push({ motivo, ms: ahora() - desde });
   };
 }
 
@@ -233,10 +304,11 @@ function lineaDeDesglose(f) {
 
   if (f.ia.length) {
     const modelos = [...new Set(f.ia.map((x) => x.modelo))].join(' y ');
+    const clases = [...new Set(f.ia.map((x) => x.clase).filter(Boolean))].join('/');
     const conWeb = f.ia.filter((x) => x.web).length;
     trozos.push(
       `IA ${comoRato(ia)} (${f.ia.length} llamada${f.ia.length === 1 ? '' : 's'}, ${modelos}` +
-        `${conWeb ? `; ${conWeb} con búsqueda web` : ''})`
+        `${clases ? ` [${clases}]` : ''}${conWeb ? `; ${conWeb} con búsqueda web` : ''})`
     );
   }
 
@@ -281,26 +353,29 @@ function lineaDeReintentos(reintentos) {
  *
  * `etiqueta` es el nombre bonito de la fase; si no se pasa se usa la clave.
  */
-export function pararFase(etiqueta = null) {
-  if (!fase) return [];
+export function pararFase(etiqueta = null, clave = null) {
+  const cual = clave ?? faseDeAqui()?.fase ?? (abiertas.size === 1 ? [...abiertas.keys()][0] : null);
+  const f = cual ? abiertas.get(cual) : null;
+  if (!f) return [];
 
-  enParada(null); // cierra el segmento de la última parada
-  fase.hasta = ahora();
+  // Cierra los segmentos de parada que sigan abiertos.
+  for (const p of f.paradas) if (!p.hasta) p.hasta = ahora();
+  f.hasta = ahora();
+  abiertas.delete(cual);
 
-  const { total } = cuentasDe(fase);
-  const comoSeLlama = etiqueta ?? fase.clave;
+  const { total } = cuentasDe(f);
+  const comoSeLlama = etiqueta ?? f.clave;
 
   const lineas = [`Fase «${comoSeLlama}» completada en ${comoRato(total)}.`];
-  lineas.push(`   Desglose: ${lineaDeDesglose(fase)}.`);
+  lineas.push(`   Desglose: ${lineaDeDesglose(f)}.`);
 
-  const paradas = lineaDeParadas(fase);
+  const paradas = lineaDeParadas(f);
   if (paradas) lineas.push(`   Por parada: ${paradas}.`);
 
-  const reintentos = lineaDeReintentos(fase.reintentos);
+  const reintentos = lineaDeReintentos(f.reintentos);
   if (reintentos) lineas.push(`   Incluye ${reintentos}.`);
 
-  if (viaje) viaje.fases.push({ ...fase, etiqueta: comoSeLlama });
-  fase = null;
+  if (viaje) viaje.fases.push({ ...f, etiqueta: comoSeLlama });
 
   return lineas;
 }
@@ -314,7 +389,7 @@ export function pararFase(etiqueta = null) {
  * arriba y nadie se fíe de ninguna.
  */
 export function resumenDeViaje() {
-  if (fase) pararFase();
+  for (const clave of [...abiertas.keys()]) pararFase(null, clave);
   if (!viaje || !viaje.fases.length) return [];
 
   const total = ahora() - viaje.desde;
@@ -332,6 +407,22 @@ export function resumenDeViaje() {
 
   const lineas = [`Viaje generado en ${comoRato(total)}: ${porFase}.`];
 
+  // LO QUE FUE EN PARALELO SE DICE CON SUS DOS NÚMEROS.
+  //
+  // Sin esto la línea de arriba no cuadra: tres fases de 4, 3 y 2 minutos dentro
+  // de un bloque que duró 4 suman 9, y quien lo lea pensará que las cuentas
+  // están mal. Están bien: esos 5 minutos de diferencia son exactamente lo que
+  // se ha ganado, y es el número que se quería ver.
+  for (const b of viaje.bloques ?? []) {
+    if (!b.hasta) continue;
+    const suyas = viaje.fases.filter((f) => b.claves.includes(f.clave));
+    const trabajo = suyas.reduce((n2, f) => n2 + ((f.hasta ?? ahora()) - f.desde), 0);
+    lineas.push(
+      `   ${b.nombre}: ${comoRato(b.hasta - b.desde)} de reloj, ${comoRato(trabajo)} de trabajo` +
+        `${trabajo > b.hasta - b.desde ? ` (${comoRato(trabajo - (b.hasta - b.desde))} ahorrados)` : ''}.`
+    );
+  }
+
   const trozos = [];
   if (todoScraping.length) {
     const cuales = comoLista(contar(todoScraping, (x) => x.de), {
@@ -343,6 +434,8 @@ export function resumenDeViaje() {
   if (todaIA.length) {
     // Con un modelo solo se dice su nombre; con dos o más, cuántas de cada uno.
     // «38 llamadas: 38 claude-haiku-4-5» es la mitad de la línea sin decir nada.
+    // POR MODELO REAL, no por clase: «criterio» no dice cuánto cuesta ni cuánto
+    // tarda, y el nombre sí. La clase se ve en el desglose de cada fase.
     const cuentas = contar(todaIA, (x) => x.modelo);
     const modelos =
       cuentas.size > 1 ? `: ${comoLista(cuentas)}` : `, ${[...cuentas.keys()][0]}`;
