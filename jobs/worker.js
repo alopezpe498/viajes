@@ -105,7 +105,7 @@ import {
 } from '../services/descubrir.js';
 import { modeloIA } from '../lib/ia.js';
 import { sitioPorTexto } from '../services/geocodificar.js';
-import { arrancarViaje, resumenDeViaje, abrirBloqueParalelo } from '../services/cronometro.js';
+import { arrancarViaje, resumenDeViaje, abrirBloqueParalelo, comoRato } from '../services/cronometro.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParalelo } from '../services/paralelo.js';
 import {
@@ -1485,6 +1485,12 @@ async function ejecutarOrquestador(trabajo) {
   // midan las fases por dentro tiene que caber en esto.
   arrancarViaje(viajeId);
 
+  // Y aparte, la hora de salida a secas, para poder decir al final cuánto ha
+  // tardado TODO. El resumen del cronómetro se escribe antes del presupuesto
+  // —para que sus cuentas cuadren con la suma de las seis fases— así que su
+  // total no llega hasta el final de verdad. Este sí.
+  const empezoEl = Date.now();
+
   // Una petición vieja no puede parar la ejecución de hoy: si alguien paró el
   // montaje anterior y ahora le da a montar otra vez, esa marca ya no vale.
   limpiarParada(viajeId);
@@ -1713,6 +1719,14 @@ async function ejecutarOrquestador(trabajo) {
   }
 
   await ejecutarPresupuesto({ id: trabajo.id, viajeId });
+
+  // LO ÚLTIMO DE TODO: cuánto ha tardado, de principio a fin.
+  anotar(
+    viajeId,
+    FASES[FASES.length - 1].clave,
+    `Orquestador terminado. Tiempo total: ${comoRato(Date.now() - empezoEl)}.`,
+    ORIGENES.ninguno
+  );
 
   console.log(
     `[worker] Trabajo #${trabajo.id}: viaje «${viaje.nombre}» orquestado ` +

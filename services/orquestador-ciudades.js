@@ -638,11 +638,33 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         entrada: ida,
         salida: vuelta,
         total: ida.minutos + vuelta.minutos,
+        util: horasUtilesDeLaPuerta(ida, vuelta, puertas),
         misma: ida.ciudad === vuelta.ciudad,
       });
     }
   }
-  combinaciones.sort((a, b) => a.total - b.total);
+
+  // GANA LA QUE DEJA MÁS DÍA, NO LA QUE VUELA MENOS.
+  //
+  // Con el criterio viejo salió elegida una vuelta desde Cracovia a las 9:40:
+  // pocos minutos de vuelo, sí, y el último día de la ciudad de peso 5 borrado
+  // del mapa. Los minutos de avión no son el coste; el coste es el tiempo que te
+  // quita en destino, y ese depende de la HORA, no de la duración.
+  //
+  // Los minutos quedan de desempate, que es el papel que les corresponde: entre
+  // dos combinaciones que dejan el mismo día, mejor la que vuela menos.
+  combinaciones.sort((a, b) => b.util - a.util || a.total - b.total);
+
+  // Y la cuenta de arriba, escrita para poder leerla en el registro.
+  for (const c of combinaciones.slice(0, 6)) {
+    anotar(
+      viajeId,
+      'ciudades_y_noches',
+      `   ${c.id}: entra por ${c.entrada.ciudad}, sale por ${c.salida.ciudad} · ` +
+        `${c.util.toFixed(1)} h útiles ponderadas · ${comoTexto(c.total)} de vuelo`,
+      ORIGENES.ninguno
+    );
+  }
 
   // QUÉ CONSIGUIÓ CADA PUERTA, dicho antes de elegir.
   //
@@ -1112,7 +1134,7 @@ export function nochesEntre(desde, hasta) {
  * nada: una ruta con una etapa de cero noches no es media ruta, es una ruta
  * rota, y arreglarla después es peor que pedirla otra vez.
  */
-export function validarRuta(ruta, { nochesTotales, entrada, salida, minimoNoches }) {
+export function validarRuta(ruta, { nochesTotales, entrada, salida, minimoNoches, candidatas = [] }) {
   if (!Array.isArray(ruta) || !ruta.length) return 'no devolvió ninguna ciudad.';
 
   // ENTRAR Y SALIR POR LA MISMA CIUDAD PERMITE UNA PARADA SIN NOCHES, y solo
@@ -1139,6 +1161,28 @@ export function validarRuta(ruta, { nochesTotales, entrada, salida, minimoNoches
       return (
         `«${p.ciudad}» tiene ${p.noches} noche(s), por debajo del mínimo de ${minimoNoches}, ` +
         'y no viene el campo "motivo" que lo justifique.'
+      );
+    }
+
+    // EL RANGO QUE ELLA MISMA DECLARÓ ES UN CONTRATO, Y NO TIENE EXCEPCIONES.
+    //
+    // En Polonia la fase 1 escribió «Cracovia: peso 5, 3-4 noches» y luego le
+    // dio UNA, y de paso resucitó Poznań —descartada en la pasada anterior por
+    // no llegar al mínimo— colándola como «tránsito geográfico». El campo
+    // "motivo" era la puerta por la que se colaba todo: valía para saltarse el
+    // mínimo general y se usó para saltarse también el propio.
+    //
+    // Aquí ya no. Si el reparto no cuadra, lo que se quita es una CIUDAD, no
+    // noches de la ciudad que más las necesita. Y «de paso» no exime: o entra
+    // con su mínimo o no entra como etapa.
+    const suya = candidatas.find((c) => normalizarNombre(c.nombre) === normalizarNombre(p.ciudad));
+    const suMinimo = Number(suya?.nochesMin);
+    if (p.noches > 0 && Number.isFinite(suMinimo) && p.noches < suMinimo) {
+      return (
+        `«${p.ciudad}» se queda con ${p.noches} noche(s) y tú misma declaraste que necesita ` +
+        `${suMinimo} como mínimo. Ese rango es un contrato: si no caben todas las ciudades, ` +
+        `QUITA la de menor peso de la ruta y reparte sus noches, pero NO bajes a ninguna de su ` +
+        'mínimo. Un "motivo" no sirve para saltárselo.'
       );
     }
   }
@@ -1473,7 +1517,13 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
         ? ` (además dices que suman ${suyo} y suman ${real}: haz la cuenta)`
         : '';
 
-    const problema = validarRuta(propuesta, { nochesTotales, entrada, salida, minimoNoches });
+    const problema = validarRuta(propuesta, {
+      nochesTotales,
+      entrada,
+      salida,
+      minimoNoches,
+      candidatas: candidatasDeRuta,
+    });
     const fallo = problema ? problema + seEquivocaAlSumar : null;
 
     // Cuando lo que falla es la cuenta, se le dice qué quitar o qué poner y
@@ -1614,6 +1664,53 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   di(`${creadas.length} etapas creadas, ${nochesTotales} noches repartidas.`);
 
   return { etapas: creadas.length, noches: nochesTotales, entrada, salida };
+}
+
+/**
+ * LAS HORAS ÚTILES QUE DEJA UNA COMBINACIÓN, PONDERADAS POR PESO.
+ *
+ * Lo que de verdad cuesta un vuelo no son sus minutos: es el trozo de día que se
+ * come. Una vuelta a las 9:40 desde la ciudad de peso 5 borra su último día
+ * entero; la misma vuelta a las 19:00 lo deja casi completo. Para el criterio
+ * viejo —minimizar minutos de vuelo— las dos eran casi iguales.
+ *
+ * LA CUENTA, y es aritmética simple a propósito:
+ *
+ *   · Primer día, ciudad de entrada: lo que queda desde que sales del
+ *     aeropuerto hasta las 22:00. Aterrizar pasadas las 20:00 deja cero.
+ *   · Último día, ciudad de salida: lo que hay desde las 9:00 hasta que toca ir
+ *     al aeropuerto. Despegar antes de las 12:00 deja cero.
+ *   · Cada una multiplicada por el peso de SU ciudad, que es lo que convierte
+ *     «unas horas» en «unas horas donde importan».
+ */
+export function horasUtilesDeLaPuerta(ida, vuelta, puertas) {
+  const pesoDe = (ciudad) =>
+    puertas.find((p) => normalizarNombre(p.nombre) === normalizarNombre(ciudad))?.peso ?? 3;
+
+  const enHoras = (hhmm) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? '').trim());
+    return m ? Number(m[1]) + Number(m[2]) / 60 : null;
+  };
+
+  const FIN_DEL_DIA = 22;
+  const INICIO_DEL_DIA = 9;
+
+  // Las horas salen de la opción de Kayak, que es donde están: el hallazgo
+  // guarda la tarjeta entera en `opcion` y ahí viven los tramos.
+  const deLaOpcion = (h, cual) => {
+    const tramos = h?.opcion?.tramos ?? [];
+    return cual === 'llegada' ? (tramos.at(-1)?.horaLlegada ?? null) : (tramos[0]?.horaSalida ?? null);
+  };
+
+  // Aterrizar tarde no deja nada: a las 20:00 ya solo da para cenar y dormir.
+  const llega = enHoras(deLaOpcion(ida, 'llegada'));
+  const utilPrimero = llega == null ? 2 : Math.max(0, FIN_DEL_DIA - (llega + 1.5));
+
+  // Y salir pronto tampoco: a las 12:00 hay que estar en el aeropuerto a las 10.
+  const sale = enHoras(deLaOpcion(vuelta, 'salida'));
+  const utilUltimo = sale == null ? 2 : Math.max(0, sale - 2.5 - INICIO_DEL_DIA);
+
+  return utilPrimero * pesoDe(ida?.ciudad) + utilUltimo * pesoDe(vuelta?.ciudad);
 }
 
 export default { ejecutarFaseCiudades, partirPrompt, rellenar, validarRuta, nochesEntre };

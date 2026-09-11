@@ -600,7 +600,20 @@ function naturalezaDe(colocado) {
 
   return {
     sesiones: horasDeSesion(horarios),
-    soloDeNoche: soloAUltimaHora(colocado.nombre, descripcion, horarios),
+    // LA DESCRIPCIÓN NO DECIDE SI ALGO ES NOCTURNO, Y AQUÍ ESTABA MEDIO FALLO.
+    //
+    // Se le pasaba la descripción de la ficha, y la descripción de cualquier
+    // casco antiguo dice cosas como «al atardecer las terrazas se llenan» o «por
+    // la noche es cuando más ambiente tiene». Eso marcaba como nocturnos el
+    // Casco Viejo de Varsovia y la Plaza Mayor de Cracovia —comprobado con sus
+    // descripciones reales— y de ahí salían expulsados como «cosa de última
+    // hora». Una plaza no es un espectáculo de luces porque su folleto sea
+    // bonito.
+    //
+    // Lo que sí decide: cómo se LLAMA y qué dice su HORARIO. Un «espectáculo
+    // nocturno de luces» lo lleva en el nombre; un pase de las 21:30 lo lleva en
+    // el horario. Las dos son afirmaciones, no prosa.
+    soloDeNoche: soloAUltimaHora(colocado.nombre, horarios),
   };
 }
 
@@ -787,9 +800,36 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
     const r = recolocarConHora(viajeId, lienzo, c);
     if (r.movido) {
       di(`   ${c.nombre} estaba a las ${c.hora} y ${comoEs}: lo paso al día ${r.dia} a las ${r.hora}.`);
-    } else {
-      sacar(c, `estaba a las ${c.hora} y ${comoEs}; no encontré ninguna de sus horas libre`);
+      tocados += 1;
+      continue;
     }
+
+    // Y LA OTRA MITAD DEL FALLO: esta ruta expulsaba directamente.
+    //
+    // La jerarquía existía desde el correctivo anterior, pero vivía en la rama
+    // de los choques y en la de «muy tarde». Esta —que es la que de verdad puso
+    // la etiqueta— llamaba a `sacar` sin preguntarle a nadie. Toda expulsión
+    // pasa por el mismo sitio o la regla no sirve de nada.
+    if (esDeLosQueNoSePuedenPerder(c)) {
+      const ultimo = agotarLaParada(viajeId, lienzo, c, di);
+      if (ultimo.movido) {
+        di(
+          `   ${c.nombre} no se pierde: lo llevo al día ${ultimo.dia} a las ${ultimo.hora}` +
+            (ultimo.aparte ? ` (aparté ${ultimo.aparte}).` : '.')
+        );
+        tocados += 1;
+        continue;
+      }
+      sacar(
+        c,
+        `${comoEs} y no cabe en ninguna de sus horas en ningún día de la parada — ` +
+          `${ultimo.porQueNo.join('; ') || 'sin días alternativos'}`
+      );
+      tocados += 1;
+      continue;
+    }
+
+    sacar(c, `estaba a las ${c.hora} y ${comoEs}; no encontré ninguna de sus horas libre`);
     tocados += 1;
   }
 

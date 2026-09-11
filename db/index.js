@@ -390,6 +390,7 @@ export function migrarEsquema() {
   anadirColumnaSiFalta('sitios_lugar', 'horario_json', 'TEXT');
   migracionUnNavegadorPorDominio();
   migracionFase1NoAfirmaQueCabe();
+  migracionTopePorTrabajo();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5189,6 +5190,35 @@ comprobacion, y se lee igual que las que si se han hecho.`;
   console.log(
     `[bd] Migracion: la fase 1 ${nuevaFabrica !== fila.prompt_fabrica ? 'ya no afirma que algo cabe' : 'NO se pudo cambiar'}.`
   );
+  return true;
+}
+
+/**
+ * EL TOPE POR TRABAJO DE SCRAPING.
+ *
+ * El primer trabajo de Civitatis se colgo y el vigilante tardo QUINCE minutos en
+ * soltar la plaza — y al soltarla dejo el navegador vivo, asi que el siguiente
+ * se encontro el perfil ocupado. Tres minutos y matando: un scraping que no ha
+ * terminado en tres minutos no va a terminar, porque cada paso ya tiene su tope
+ * de 30 s y si se pasa de ahi es que ninguno salto.
+ */
+function migracionTopePorTrabajo() {
+  const CLAVE = '2026-09-tope-por-trabajo-scraping';
+  if (yaAplicada(CLAVE)) return false;
+
+  const orden =
+    db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n + 1;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (clave) DO NOTHING`
+  ).run(
+    'tope_por_trabajo_scraping_min', '3', '3',
+    'Minutos que se le dan a un trabajo de scraping antes de matar el navegador y soltar la plaza',
+    'minutos', orden
+  );
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: tope de 3 min por trabajo de scraping.');
   return true;
 }
 

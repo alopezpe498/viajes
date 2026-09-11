@@ -290,6 +290,116 @@ async function unaTanda(ciudad, nombres) {
 }
 
 /**
+ * OTRA VUELTA PARA LOS QUE NO APARECIERON, CON OTRO NOMBRE.
+ *
+ * Solo para los que nadie ha sabido encontrar. El otro motivo de descarte —«la
+ * dirección apunta a otra ciudad»— no se reintenta: ahí el sitio SÍ se encontró,
+ * y lo que dice la búsqueda es que está en otro sitio. Insistir con otro nombre
+ * sería buscar hasta que salga lo que uno quiere.
+ *
+ * Devuelve el conjunto de ids que se han salvado. Los que siguen sin aparecer
+ * van al filtro de siempre, ahora con el registro diciendo qué se probó.
+ */
+async function segundaOportunidad(ciudad, punto, sitios, sospechosos, cuando) {
+  const rescatados = new Set();
+
+  const aBuscar = sospechosos.filter((x) => !x.motivo.startsWith('la dirección'));
+  if (!aBuscar.length) return rescatados;
+
+  const porId = new Map(sitios.map((s) => [s.id, s]));
+  const pais = punto?.destino_id
+    ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)?.nombre
+    : null;
+
+  // 1) El nombre nativo, de una sola llamada para todos: es mecánica de
+  //    traducción, no criterio, así que va al modelo rápido.
+  let nativos = new Map();
+  if (hayClaveIA()) {
+    try {
+      const r = await consultarJSON(
+        [
+          `Estos sitios están en ${ciudad}${pais ? ` (${pais})` : ''}:`,
+          ...aBuscar.map((x) => `- ${x.nombre}`),
+          '',
+          'Dame el nombre NATIVO y OFICIAL de cada uno: como lo llaman allí y como',
+          'aparecería en un cartel o en Google Maps del país. Si el nombre que te',
+          'doy ya es el nativo, repítelo. Si no sabes cuál es, pon null.',
+          '',
+          'Devuelve SOLO: {"nombres":[{"dado":"...","nativo":"..."}]}',
+        ].join('\n'),
+        { maxTokens: 800, paso: `nombre nativo de ${aBuscar.length} sitio(s) de ${ciudad}`, modelo: 'rapido' }
+      );
+      for (const x of r?.nombres ?? []) {
+        const dado = texto(x?.dado);
+        const nativo = texto(x?.nativo);
+        if (dado && nativo) nativos.set(normalizarNombre(dado), nativo);
+      }
+    } catch (err) {
+      console.warn(`[datos-sitios] ${ciudad}: no pude pedir los nombres nativos (${err.message}).`);
+    }
+  }
+
+  // 2) Las variantes que se van a probar, por sitio y en orden.
+  const variantes = new Map();
+  for (const x of aBuscar) {
+    const nativo = nativos.get(normalizarNombre(x.nombre));
+    const lista = [];
+    if (nativo && normalizarNombre(nativo) !== normalizarNombre(x.nombre)) lista.push(nativo);
+    lista.push([x.nombre, ciudad, pais].filter(Boolean).join(', '));
+    variantes.set(x.id, lista);
+  }
+
+  // 3) Una tanda por ronda: la primera con los nativos, la segunda con
+  //    nombre+ciudad+país. Dos búsquedas como mucho, no una por sitio.
+  for (let ronda = 0; ronda < 2; ronda += 1) {
+    const ahora = aBuscar
+      .filter((x) => !rescatados.has(x.id) && variantes.get(x.id)[ronda])
+      .map((x) => ({ id: x.id, nombre: x.nombre, buscar: variantes.get(x.id)[ronda] }));
+    if (!ahora.length) continue;
+
+    let porNombre;
+    try {
+      ({ porNombre } = await unaTanda(ciudad, ahora.map((x) => x.buscar)));
+    } catch (err) {
+      console.warn(`[datos-sitios] ${ciudad}: la segunda búsqueda falló (${err.message}).`);
+      break;
+    }
+
+    for (const x of ahora) {
+      const d = porNombre.get(normalizarNombre(x.buscar));
+      if (!traeAlgo(d)) {
+        console.log(`[datos-sitios] ${ciudad}: «${x.nombre}» tampoco aparece como «${x.buscar}».`);
+        continue;
+      }
+
+      rescatados.add(x.id);
+      const fila = porId.get(x.id);
+      console.log(
+        `[datos-sitios] ${ciudad}: «${x.nombre}» RESCATADO buscándolo como «${x.buscar}».`
+      );
+
+      // Lo que ha traído se guarda, que para eso se ha buscado.
+      ejecutar(
+        `UPDATE sitios_lugar
+            SET precio = COALESCE(precio, ?), horarios = COALESCE(horarios, ?),
+                tiempo_visita = COALESCE(tiempo_visita, ?), web = COALESCE(web, ?),
+                telefono = COALESCE(telefono, ?), datos_en = ?
+          WHERE id = ?`,
+        texto(d.precio),
+        texto(d.horarios),
+        texto(d.tiempoVisita),
+        texto(d.web),
+        texto(d.telefono),
+        cuando,
+        fila?.id ?? x.id
+      );
+    }
+  }
+
+  return rescatados;
+}
+
+/**
  * ¿La búsqueda ha encontrado ALGO de este sitio?
  *
  * Cualquier campo vale: un teléfono, una web, una dirección. No hace falta la
@@ -541,12 +651,27 @@ export async function buscarDatosDeSitios(punto, { ids = null } = {}) {
     );
   }
 
+  // --- 3 bis) SEGUNDA OPORTUNIDAD CON OTRO NOMBRE -------------------------
+  //
+  // EL CASO QUE ORIGINA ESTO. En Poznań se descartaron cinco sitios «por no
+  // verificados», y entre ellos Stary Rynek, que es LA plaza mayor de la ciudad.
+  // Existe, claro que existe: lo que no existe es «Mercado de Stary Rynek (Plaza
+  // Mayor)», que es como lo había bautizado la generación. Se buscó ese nombre,
+  // no salió nada, y el sitio se fue.
+  //
+  // Antes de tirar nada se prueba otra vez, con las dos variantes que arreglan
+  // casi todos estos casos: el nombre nativo —que es como lo llaman ahí y como
+  // está escrito en todas partes— y el nombre con ciudad y país detrás, que
+  // desambigua los homónimos.
+  const rescatados = await segundaOportunidad(ciudad, punto, sitios, sospechosos, cuando);
+  const sinRescatar = sospechosos.filter((x) => !rescatados.has(x.id));
+
   // --- 4) EL FILTRO DE EXISTENCIA -----------------------------------------
   //
   // Lo que la búsqueda no ha podido confirmar, fuera. Se hace aquí y no antes
   // porque hasta ahora no había con qué comparar, y se hace con el conjunto
   // delante por lo que viene justo abajo.
-  const descartados = filtrarNoVerificados(ciudad, punto, sitios, sospechosos);
+  const descartados = filtrarNoVerificados(ciudad, punto, sitios, sinRescatar);
 
   const resumen =
     `${rellenados} de ${sitios.length} sitios con algún dato (${campos} campos) ` +
