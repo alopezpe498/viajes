@@ -391,6 +391,7 @@ export function migrarEsquema() {
   migracionUnNavegadorPorDominio();
   migracionFase1NoAfirmaQueCabe();
   migracionTopePorTrabajo();
+  migracionCosteDeTrasladosInternos();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5219,6 +5220,45 @@ function migracionTopePorTrabajo() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: tope de 3 min por trabajo de scraping.');
+  return true;
+}
+
+/**
+ * LO QUE CUESTA MOVERSE POR DENTRO, AVISADO EN LA FASE 1.
+ *
+ * El ranking de puertas puntua horas utiles, que es lo que se le pidio, y del
+ * dinero nadie se enteraba hasta la fase de traslados — con los vuelos ya
+ * comprados. En Grecia la puerta ganadora obligaba a dos vuelos internos y en
+ * Polonia a uno de 176 EUR por persona.
+ *
+ * Los dos primeros numeros son ordenes de magnitud, no precios: en fase 1 no se
+ * ha buscado nada todavia. El tercero es cuando merece la pena decirlo.
+ */
+function migracionCosteDeTrasladosInternos() {
+  const CLAVE = '2026-09-coste-traslados-internos';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  // 160 y no 120: el unico vuelo interno del que hay dato real —Cracovia →
+  // Gdansk en la ultima Polonia— costo 176 EUR por persona. Con 120 un vuelo
+  // suelto no llegaba al umbral de 150 y el aviso no saltaba justo en el caso
+  // que lo motivo, que es la forma mas tonta de tener un aviso.
+  nuevo('coste_estimado_vuelo_interno', '160',
+    'Lo que se supone que cuesta por persona un vuelo entre dos paradas del viaje (estimacion gruesa)', 'euros');
+  nuevo('coste_estimado_ferry_interno', '60',
+    'Lo mismo para un ferry entre dos paradas', 'euros');
+  nuevo('umbral_traslados_internos', '150',
+    'A partir de este total por persona en traslados internos, la fase 1 lo avisa', 'euros');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: aviso de coste de traslados internos.');
   return true;
 }
 

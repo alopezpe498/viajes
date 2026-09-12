@@ -661,7 +661,10 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       viajeId,
       'ciudades_y_noches',
       `   ${c.id}: entra por ${c.entrada.ciudad}, sale por ${c.salida.ciudad} · ` +
-        `${c.util.toFixed(1)} h útiles ponderadas · ${comoTexto(c.total)} de vuelo`,
+        `${c.util.toFixed(1)} h útiles ponderadas · ${comoTexto(c.total)} de vuelo` +
+        // UN CERO SIEMPRE VIENE CON SU MOTIVO. Sin esto parece un fallo del
+        // programa y no lo es: son dos días de extremo que no dan de sí.
+        (c.util < 0.05 ? ` — 0 h porque ${porQueEsaPuntuacion(c.entrada, c.salida) || 'no tengo las horas de los vuelos'}` : ''),
       ORIGENES.ninguno
     );
   }
@@ -813,6 +816,8 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   );
 
   porQue = `entro por ${elegida.entrada.ciudad} y salgo por ${elegida.salida.ciudad}`;
+
+  avisarDeTrasladosCaros(viajeId, elegida, combinaciones, candidatas, tiemposVivos, noches, minimoNoches);
 
   // Y AHORA SÍ, LA IA: redacta el porqué y dice con qué recorrido ha contado.
   //
@@ -1132,6 +1137,88 @@ async function redactarLaRutaDeVerdad(ruta, descartadas, di) {
   }
 
   return generica;
+}
+
+/**
+ * LO QUE VA A COSTAR MOVERSE POR DENTRO, DICHO AL ELEGIR LA PUERTA.
+ *
+ * EL CASO. En Grecia la puerta ganadora obligaba a dos vuelos internos —unos
+ * 320 € y 140 € por persona— y en Polonia a un Cracovia → Gdansk de 176 €. El
+ * ranking puntúa horas útiles, que es lo que se le pidió, y del dinero nadie se
+ * enteraba hasta la fase de traslados, cuando los vuelos ya estaban comprados.
+ *
+ * ESTO NO CAMBIA LA DECISIÓN, solo la cuenta. La fórmula del ranking se queda
+ * como está: aquí únicamente se dice lo que va a costar y cuánto costaría la
+ * siguiente del ranking, para que la próxima vez se decida sabiéndolo.
+ *
+ * Y LA CIFRA ES GRUESA Y SE DICE QUE LO ES. En esta fase no hay precios: los
+ * busca la fase 2, después. Lo que hay es el modo de cada salto —la matriz de
+ * tiempos lo trae— y con eso se pone un orden de magnitud por tipo.
+ */
+function avisarDeTrasladosCaros(viajeId, elegida, combinaciones, candidatas, tiempos, noches, minimoNoches) {
+  const porVuelo = parametro('coste_estimado_vuelo_interno', 120);
+  const porFerry = parametro('coste_estimado_ferry_interno', 60);
+  const umbral = parametro('umbral_traslados_internos', 150);
+
+  const modoEntre = (a, b) =>
+    tiempos.find(
+      (t) =>
+        (normalizarNombre(t.desde) === normalizarNombre(a) && normalizarNombre(t.hasta) === normalizarNombre(b)) ||
+        (normalizarNombre(t.desde) === normalizarNombre(b) && normalizarNombre(t.hasta) === normalizarNombre(a))
+    )?.modo ?? null;
+
+  /** Lo que cuesta por persona moverse dentro de esta combinación. */
+  const costeDe = (c) => {
+    const suyos = repartosLegales({
+      entrada: c.entrada.ciudad,
+      salida: c.salida.ciudad,
+      candidatas,
+      noches,
+      tiempos,
+      minimoNoches,
+    });
+    if (!suyos.length) return null;
+
+    const ruta = suyos[0].reparto.map((x) => x.ciudad);
+    let total = 0;
+    const caros = [];
+    for (let i = 0; i < ruta.length - 1; i += 1) {
+      const modo = modoEntre(ruta[i], ruta[i + 1]);
+      if (modo === 'vuelo') {
+        total += porVuelo;
+        caros.push(`${ruta[i]} → ${ruta[i + 1]} en avión`);
+      } else if (modo === 'barco') {
+        total += porFerry;
+        caros.push(`${ruta[i]} → ${ruta[i + 1]} en ferry`);
+      }
+    }
+    return { total, caros };
+  };
+
+  const suyo = costeDe(elegida);
+  if (!suyo || suyo.total < umbral) return;
+
+  // La siguiente del ranking que salga más barata, si la hay.
+  let alternativa = null;
+  for (const c of combinaciones) {
+    if (c.id === elegida.id) continue;
+    const x = costeDe(c);
+    if (x && x.total < suyo.total) {
+      alternativa = { id: c.id, ciudades: `${c.entrada.ciudad}→${c.salida.ciudad}`, total: x.total };
+      break;
+    }
+  }
+
+  anotar(
+    viajeId,
+    'ciudades_y_noches',
+    `OJO con el bolsillo: esta ruta lleva ${suyo.caros.join(' y ')}, unos ${suyo.total} € por ` +
+      'persona en traslados internos (estimación gruesa por tipo, no un precio buscado).' +
+      (alternativa
+        ? ` La alternativa ${alternativa.id} (${alternativa.ciudades}) bajaría a ~${alternativa.total} €.`
+        : ' No hay otra puerta del ranking que salga más barata.'),
+    ORIGENES.estimacion
+  );
 }
 
 // =============================================================================
@@ -2087,6 +2174,42 @@ export function horasUtilesDeLaPuerta(ida, vuelta, puertas) {
   const utilUltimo = sale == null ? 2 : Math.max(0, sale - 2.5 - INICIO_DEL_DIA);
 
   return utilPrimero * pesoDe(ida?.ciudad) + utilUltimo * pesoDe(vuelta?.ciudad);
+}
+
+/**
+ * POR QUÉ UNA COMBINACIÓN PUNTÚA LO QUE PUNTÚA.
+ *
+ * En Grecia salió «c7: 0.0 h útiles» y no había forma de saber si era un fallo o
+ * la verdad. Era la verdad: la vuelta desde Atenas salía a las 9:05 —hay que
+ * estar en el aeropuerto a las 6:35, ese día no da para nada— y la ida aterrizaba
+ * pasadas las 20:30, que tampoco. Dos días muertos en los extremos.
+ *
+ * La fórmula estaba bien; lo que faltaba era decirlo. Un cero sin explicación se
+ * lee como un error del programa, y se pierde media tarde comprobándolo.
+ */
+export function porQueEsaPuntuacion(ida, vuelta) {
+  const enHoras = (hhmm) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? '').trim());
+    return m ? Number(m[1]) + Number(m[2]) / 60 : null;
+  };
+  const deLaOpcion = (h, cual) => {
+    const tramos = h?.opcion?.tramos ?? [];
+    return cual === 'llegada' ? (tramos.at(-1)?.horaLlegada ?? null) : (tramos[0]?.horaSalida ?? null);
+  };
+
+  const horaLlegada = deLaOpcion(ida, 'llegada');
+  const horaSalida = deLaOpcion(vuelta, 'salida');
+  const llega = enHoras(horaLlegada);
+  const sale = enHoras(horaSalida);
+
+  const motivos = [];
+  if (llega != null && 22 - (llega + 1.5) <= 0) {
+    motivos.push(`se aterriza a las ${horaLlegada} y ese día ya no da para nada`);
+  }
+  if (sale != null && sale - 2.5 - 9 <= 0) {
+    motivos.push(`se vuela de vuelta a las ${horaSalida}, así que el último día es de aeropuerto`);
+  }
+  return motivos.join(' y ');
 }
 
 export default { ejecutarFaseCiudades, partirPrompt, rellenar, validarRuta, nochesEntre };

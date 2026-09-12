@@ -34,7 +34,8 @@
  *      entre medias— es un fallo de esta fase, no del aviso. Por eso se
  *      comprueban al final y se cuentan en el log en vez de dejarlos ahí.
  */
-import { todas, una, ejecutar } from '../db/index.js';
+import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
+import { distanciaKm } from '../services/distancias.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import {
   lienzoDeViaje,
@@ -63,7 +64,7 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
-import { horasDeSesion, soloAUltimaHora, abreEl } from '../services/horarios.js';
+import { horasDeSesion, soloAUltimaHora, abreEl, horarioPorDias } from '../services/horarios.js';
 import {
   avisarDeParadasQueNoCaben,
   avisarDeParadasSinSusImprescindibles,
@@ -442,6 +443,35 @@ function esComida(colocado) {
 }
 
 /**
+ * A QUÉ HORA ABRE ESTE SITIO ESE DÍA, en minutos. Null si no se sabe.
+ *
+ * EL FALLO QUE ORIGINA ESTO. La Barbacana de Cracovia acabó recolocada a las
+ * 9:00 con un horario que dice 10:00-18:00. `horaLibreEn` acotaba por arriba
+ * —`cierraA`, que nadie visita después de cerrar— pero por abajo solo tenía
+ * `INICIO_DEL_DIA`, las 9:00 a secas. Un sitio que abre más tarde no existía
+ * para el buscador de huecos.
+ */
+function aperturaDe(colocado, fecha) {
+  const quien = deQuienEs(colocado);
+  if (quien?.de !== 'sitio' || !quien.deId) return null;
+  const sitio = una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId);
+  if (!sitio?.horarios) return null;
+
+  const dia = fecha ? new Date(`${fecha}T12:00:00`).getDay() : null;
+  const mes = fecha ? Number(String(fecha).slice(5, 7)) : null;
+  if (dia == null) return null;
+
+  const rangos = horarioPorDias(sitio.horarios, mes).porDia[dia]?.rangos ?? [];
+  return rangos.length ? Math.min(...rangos.map(([desde]) => desde)) : null;
+}
+
+/** «540» → «09:00», para poder pasárselo a `horaLibreEn` como suelo. */
+function comoHoraDeMinutos(m) {
+  if (m == null) return null;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/**
  * A qué hora tiene que haber TERMINADO esto, si es un sitio con cierre.
  *
  * CON PASES NO HAY HORA DE CIERRE QUE VALGA, y esto lo descubrió la prueba.
@@ -672,6 +702,11 @@ function diaDeLaSemana(fecha) {
  * del sitio, el tope del día y —la nueva— la naturaleza de lo que se coloca.
  */
 function huecoValido(tablero, { dia, colocado, naturaleza, cierre, duracion, noAntesDe = null }) {
+  // NI ANTES DE QUE ABRA. El suelo del hueco es el más tardío de los dos: lo que
+  // pida quien llama y la hora a la que el sitio abre ese día.
+  const abre = comoHoraDeMinutos(aperturaDe(colocado, tablero.dias?.find((d) => d.n === dia)?.fecha));
+  const suelo = [noAntesDe, abre].filter(Boolean).sort().pop() ?? null;
+  noAntesDe = suelo;
   // EL DÍA DE ACLIMATACIÓN NO ADMITE NADA CON HORA COMPRADA.
   //
   // El medio día lo impone ya `horaLibreEn`, que acorta el día. Lo que no puede
@@ -1041,6 +1076,134 @@ function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = [
 }
 
 /**
+ * LA VISITA ENTERA TIENE QUE CABER, NO SOLO SU PRIMERA HORA.
+ *
+ * Se pasa por todo lo colocado y se comprueba que empieza cuando el sitio ya ha
+ * abierto y termina antes de que cierre. Lo que no cabe se mueve a un hueco
+ * válido —de su día si lo hay, de otro día de la parada si no— con la misma
+ * lógica de siempre.
+ *
+ * Va ANTES de la revisión a propósito: la revisión resuelve conflictos entre
+ * bloques, y un bloque que no cabe en su propio horario no es un conflicto con
+ * nadie, es un error de colocación. Arreglarlo antes le quita a la revisión un
+ * problema que no es suyo y que resolvía tirando la tarjeta.
+ */
+function enderezarLoQueNoCabeEnSuHorario(viajeId, lienzo, di) {
+  let tocado = false;
+  let tablero = lienzo;
+
+  for (const c of lienzo.colocados) {
+    if (esComida(c)) continue;
+
+    const quien = deQuienEs(c);
+    if (quien?.de !== 'sitio' || !quien.deId) continue;
+
+    const dia = tablero.dias.find((d) => d.n === c.dia);
+    const abre = aperturaDe(c, dia?.fecha);
+    const cierra = cierreDe(c);
+    const empieza = enMinutos(c.hora);
+    const dura = Number(c.duracionMin) || 0;
+    if (empieza == null || !dura) continue;
+
+    const tarde = abre != null && empieza < abre;
+    const pasada = cierra != null && empieza + dura > cierra;
+    if (!tarde && !pasada) continue;
+
+    const comoEs = tarde
+      ? `abre a las ${comoHoraDeMinutos(abre)} y estaba puesto a las ${c.hora}`
+      : `cierra a las ${comoHoraDeMinutos(cierra)} y ${dura} min desde las ${c.hora} no caben`;
+
+    const r = recolocarConHora(viajeId, tablero, c);
+    if (r.movido) {
+      di(`   ${c.nombre}: ${comoEs}. Lo paso al día ${r.dia} a las ${r.hora}.`);
+      tablero = lienzoDeViaje(viajeId);
+      tocado = true;
+    } else {
+      // No se expulsa aquí: se deja como está y que la revisión lo trate con su
+      // jerarquía, que es quien sabe a quién apartar para hacerle sitio.
+      di(`   ${c.nombre}: ${comoEs}, y no encontré hueco. Lo dejo para la revisión.`);
+    }
+  }
+
+  return tocado ? lienzoDeViaje(viajeId) : lienzo;
+}
+
+/**
+ * ¿PISA EL PLAN LA ZONA DONDE SE DUERME?
+ *
+ * EL CASO. En Santorini el hotel estaba en Oia, el itinerario entero se montó en
+ * Fira y «Oia» acabó expulsada del plan por falta de franja. El viajero eligió
+ * Oia al reservar —se paga por eso— y el plan no la pisa ni una tarde.
+ *
+ * ESTO SOLO AVISA. No recoloca nada: decidir qué visita se mueve a la zona del
+ * hotel es criterio, y el criterio va en el reparto. Aquí solo se comprueba lo
+ * que se puede comprobar —si la localidad del hotel aparece en algún bloque del
+ * día o hay algo a menos de un kilómetro— y se dice cuando no.
+ */
+function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
+  const etapas = todas(
+    "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden",
+    viajeId
+  );
+
+  for (const etapa of etapas) {
+    const hotel = una(
+      "SELECT titulo, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
+      etapa.id
+    );
+    if (!hotel) continue;
+
+    let extra = {};
+    try {
+      extra = hotel.datos_extra ? JSON.parse(hotel.datos_extra) : {};
+    } catch {
+      extra = {};
+    }
+
+    // La localidad: lo primero de la zona de Booking, que es donde viene («Oia,
+    // Santorini» → «Oia»). Sin zona no hay nada que comprobar.
+    const zona = String(extra.zona ?? '').split(',')[0].trim();
+    if (!zona || normalizarNombre(zona) === normalizarNombre(etapa.nombre_ciudad)) continue;
+
+    const dias = lienzo.dias.filter((d) => d.etapaId === etapa.id).map((d) => d.n);
+    const delaParada = lienzo.colocados.filter((c) => dias.includes(c.dia));
+    if (!delaParada.length) continue;
+
+    // ¿La nombra algún bloque del plan?
+    const laPisa = delaParada.some((c) =>
+      normalizarNombre(`${c.nombre ?? ''}`).includes(normalizarNombre(zona))
+    );
+    if (laPisa) continue;
+
+    // O ¿hay algo colocado a menos de un kilómetro del hotel?
+    const cerca = (() => {
+      const lat = Number(extra.lat);
+      const lon = Number(extra.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+      return delaParada.some((c) => {
+        const quien = deQuienEs(c);
+        if (quien?.de !== 'sitio' || !quien.deId) return false;
+        const sitio = una('SELECT lat, lon FROM sitios_lugar WHERE id = ?', quien.deId);
+        if (!Number.isFinite(Number(sitio?.lat))) return false;
+        return distanciaKm({ lat, lon }, { lat: Number(sitio.lat), lon: Number(sitio.lon) }) <= 1;
+      });
+    })();
+    if (cerca) continue;
+
+    di(
+      `   Duermes en ${zona} («${hotel.titulo}») pero el plan de ${etapa.nombre_ciudad} no la pisa: ` +
+        'considera mover una visita o el paseo de la tarde allí.',
+      ORIGENES.ninguno
+    );
+    apuntarHueco(
+      viajeId,
+      FASE,
+      `${etapa.nombre_ciudad}: duermes en ${zona} y el plan no pasa por allí.`
+    );
+  }
+}
+
+/**
  * DEJA DICHO POR QUÉ EL PRIMER DÍA VA MEDIO VACÍO.
  *
  * EL FALLO QUE ORIGINA ESTO. Tras un vuelo nocturno de más de doce horas y con
@@ -1307,10 +1470,87 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   }
   intentos.push(`retrasar ${segundo.nombre} en su día`);
 
-  // --- c) MOVER el que menos pesa a otro día válido ------------------------
+  // --- c) ADELANTAR LA COMIDA ---------------------------------------------
+  //
+  // Los dos recursos de arriba tiran del lado tarde: recortar lo de delante o
+  // retrasar lo de detrás. Y con el solape de Atenas —«Comer · Plaka acaba a las
+  // 15:00 y Plaka empieza a las 14:00»— ninguno servía: la comida quedaba en 30
+  // minutos y el sitio no tenía dónde retrasarse. La revisión se rendía teniendo
+  // a mano la solución más obvia de todas: comer antes.
+  //
+  // Se adelanta hasta las 13:00, que es el borde temprano de una hora de comer
+  // razonable. Más pronto ya no es comer, es almorzar a deshora.
+  const comida = esComida(primero) ? primero : esComida(segundo) ? segundo : null;
+  if (comida) {
+    const TOPE_TEMPRANO = 13 * 60;
+    const empiezaComida = enMinutos(comida.hora);
+    const duraComida = Number(comida.duracionMin) || 0;
+
+    // Cuánto hay que adelantarla: lo justo para dejar libre al otro.
+    const otro = comida.id === primero.id ? segundo : primero;
+    const necesita =
+      comida.id === primero.id
+        ? empiezaComida + duraComida - (enMinutos(otro.hora) ?? 0)
+        : empiezaComida + duraComida - puedeDesde;
+
+    if (empiezaComida != null && necesita > 0 && empiezaComida - necesita >= TOPE_TEMPRANO) {
+      const nueva = comoHoraDeMinutos(empiezaComida - necesita);
+      const libre = horaLibreEn(sinEl(lienzo, comida.id), {
+        dia: comida.dia,
+        franja: franjaDesde(nueva) ?? comida.franja,
+        duracion: duraComida,
+        noAntesDe: nueva,
+      });
+      if (libre === nueva) {
+        mover(comida.id, { dia: comida.dia, franja: franjaDesde(nueva) ?? comida.franja });
+        retocar(comida.id, { hora: nueva });
+        di(
+          `   Día ${aviso.dia}: la comida se adelanta a las ${nueva} y deja sitio a ` +
+            `${otro.nombre}.`
+        );
+        return 1;
+      }
+    }
+    intentos.push(`adelantar la comida (no cabe antes de las ${comoHoraDeMinutos(TOPE_TEMPRANO)})`);
+  }
+
+  // --- d) ADELANTAR EL SITIO, si su horario lo permite ---------------------
+  //
+  // El otro lado de la misma idea: si lo que va detrás puede empezar antes —el
+  // sitio ya ha abierto y no pisa nada por delante— se adelanta y el solape
+  // desaparece sin tocar la comida.
+  if (!esComida(segundo)) {
+    const nat = naturalezaDe(segundo);
+    if (!nat.sesiones?.length) {
+      const dia = lienzo.dias.find((d) => d.n === segundo.dia);
+      const abre = aperturaDe(segundo, dia?.fecha);
+      const dura = Number(segundo.duracionMin) || 60;
+      const desde = comoHoraDeMinutos(Math.max(abre ?? 9 * 60, 9 * 60));
+
+      const libre = horaLibreEn(sinEl(lienzo, segundo.id), {
+        dia: segundo.dia,
+        franja: franjaDesde(desde) ?? segundo.franja,
+        duracion: dura,
+        noAntesDe: desde,
+        cierraA: cierreDe(segundo),
+      });
+      // Solo vale si de verdad queda ANTES de donde estaba y del bloque que le
+      // pisaba: adelantarlo a la misma hora no arregla nada.
+      if (libre && enMinutos(libre) + dura <= (enMinutos(primero.hora) ?? Infinity)) {
+        mover(segundo.id, { dia: segundo.dia, franja: franjaDesde(libre) ?? segundo.franja });
+        retocar(segundo.id, { hora: libre });
+        di(`   Día ${aviso.dia}: ${segundo.nombre} se adelanta a las ${libre}, antes de ${primero.nombre}.`);
+        return 1;
+      }
+    }
+    intentos.push(`adelantar ${segundo.nombre}`);
+  }
+
+  // --- e) MOVER el que menos pesa a otro día válido ------------------------
   //
   // La comida no viaja de día: es un bloque diario. Si no ha podido recortarse
-  // ni retrasarse, se queda el aviso escrito antes que convertirla en cena.
+  // ni retrasarse ni adelantarse, se queda el aviso escrito antes que
+  // convertirla en cena.
   if (esComida(menos)) {
     di(
       `   Día ${aviso.dia}: ${menos.nombre} choca con ${mas.nombre} y no he podido ` +
@@ -1379,16 +1619,20 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
   const idos = new Set();
   const sacar = (c, motivo) => {
     idos.add(c.id);
+
+    // EL PESO SE MIRA ANTES DE SACARLO, Y AQUÍ ESTABA EL SILENCIO DE WAWEL.
+    //
+    // `sacarDelPlan` borra el candidato —eso es lo que significa desapuntar— y
+    // `importanciaDe` lo busca por su candidato. Preguntando después, la fila ya
+    // no existía, `deQuienEs` devolvía null y todo caía al nivel 3 por defecto:
+    // el aviso grave no podía saltar NUNCA, por importante que fuera lo que se
+    // estaba tirando. El Castillo de Wawel se fue del viaje sin una línea.
+    const imp = importanciaDe(c);
+    const noSePodiaPerder = esDeLosQueNoSePuedenPerder(c);
+
     fuera.push(sacarDelPlan(c, di, motivo));
 
-    // PERDER UN IMPRESCINDIBLE DE PRIMER NIVEL NO ES UNA LÍNEA MÁS DEL LOG.
-    //
-    // En Polonia el Castillo de Wawel se fue del viaje y quedó dicho en el
-    // mismo tono que un museo de tercera. Si al final pasa —y con la jerarquía
-    // nueva tiene que costar mucho— se dice con todas las letras y sube a los
-    // huecos de la fase, que es lo que se mira al terminar.
-    if (esDeLosQueNoSePuedenPerder(c)) {
-      const imp = importanciaDe(c);
+    if (noSePodiaPerder) {
       di(`   AVISO GRAVE · ${c.nombre} (${imp.que}) se queda FUERA del viaje: ${motivo}.`, ORIGENES.ninguno);
       apuntarHueco(viajeId, FASE, `Imprescindible de primer nivel expulsado: ${c.nombre} — ${motivo}.`);
     }
@@ -2079,6 +2323,16 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // Se hace aquí, con el lienzo ya montado, y no antes: hasta ahora no se sabía
   // qué había quedado dentro y qué fuera.
   final = liberarLoQueSeComeLaExcursion(viajeId, viaje, final, di);
+
+  // LO QUE LA IA COLOCÓ FUERA DE HORARIO, ANTES DE QUE LA REVISIÓN SE PELEE.
+  //
+  // El Castillo de Wawel se colocó a las 16:30 con 180 minutos y cerrando a las
+  // 17:00. La hora de INICIO era válida —el sitio estaba abierto— y nadie miró
+  // que la visita entera no cabía. La revisión lo heredó ya roto y acabó
+  // echándolo del viaje.
+  final = enderezarLoQueNoCabeEnSuHorario(viajeId, final, di);
+
+  avisarSiElHotelNoSePisa(viajeId, final, di);
 
   contarLoDeLaAclimatacion(viajeId, final, di);
 
