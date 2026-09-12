@@ -17,3 +17,8 @@ Desktop.ini
 
 # Capturas de fallo de las recetas: se acumulan solas y no son del proyecto.
 capturas/
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm

@@ -1056,6 +1056,84 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
   return salidas.slice(0, 6);
 }
 
+/**
+ * VUELVE A REDACTAR EL PORQUÉ, CON LA RUTA QUE DE VERDAD SALIÓ.
+ *
+ * Solo cuando el código ha sustituido la propuesta de la IA por un reparto legal
+ * del generador. En ese caso su texto habla de otro viaje —en Grecia mencionaba
+ * Meteora como parada y daba a Nafplio por descartada, siendo Nafplio la parada
+ * de en medio— y reutilizarlo es contar una ruta que no existe.
+ *
+ * SE COMPRUEBA LO QUE DICE, y es una comprobación barata: toda ciudad que nombre
+ * tiene que estar en la ruta, y ninguna de la ruta puede aparecer como
+ * descartada. Si no cuadra se pide una vez más, y si sigue sin cuadrar se guarda
+ * una frase sin nombres: decir poco es mejor que decir algo falso.
+ */
+async function redactarLaRutaDeVerdad(ruta, descartadas, di) {
+  const enLaRuta = ruta.map((p) => p.ciudad);
+  const generica =
+    'La propuesta inicial no respetaba los mínimos de noches, así que se aplicó el reparto ' +
+    'que más noches deja a la ciudad de mayor peso.';
+
+  if (!hayClaveIA()) return generica;
+
+  for (let intento = 1; intento <= 2; intento += 1) {
+    let textoRedactado;
+    try {
+      const r = await consultarJSON(
+        [
+          'Esta es la ruta FINAL de un viaje, ya decidida:',
+          ...ruta.map((p) => `- ${p.ciudad}: ${p.noches} noche(s)`),
+          '',
+          descartadas.length
+            ? `Se quedaron fuera: ${descartadas.map((d) => d.nombre).join(', ')}.`
+            : 'No se quedó fuera ninguna ciudad.',
+          '',
+          'La primera propuesta no valía porque dejaba alguna ciudad por debajo del mínimo',
+          'de noches que se había declarado, así que se aplicó el reparto que más noches da',
+          'a la ciudad de mayor peso.',
+          '',
+          'Escribe en DOS O TRES FRASES por qué esta ruta tiene sentido. Habla SOLO de las',
+          'ciudades de la lista de arriba. No menciones ninguna otra ciudad como parada, y no',
+          'digas que una ciudad de la ruta se queda fuera.',
+          '',
+          'Devuelve SOLO: {"resumen":"..."}',
+        ].join('\n'),
+        { maxTokens: 400, paso: 'redactar la ruta final', modelo: 'rapido' }
+      );
+      textoRedactado = typeof r?.resumen === 'string' ? r.resumen.trim() : null;
+    } catch (err) {
+      di(`   No pude redactar el porqué de la ruta (${err.message}).`);
+      return generica;
+    }
+
+    if (!textoRedactado) continue;
+
+    const enMinusculas = textoRedactado.toLowerCase();
+    const nombra = (c) => enMinusculas.includes(String(c).toLowerCase());
+
+    // Ninguna ciudad de la ruta puede salir como descartada.
+    const daPorFuera = enLaRuta.find((c) =>
+      new RegExp(`${c.toLowerCase()}[^.]{0,40}(queda fuera|se queda fuera|descartad)`, 'i').test(
+        enMinusculas
+      )
+    );
+    // Y ninguna ciudad ajena puede salir como parada.
+    const intrusa = descartadas
+      .map((d) => d.nombre)
+      .find((c) => new RegExp(`(parada|noches?|dormir)[^.]{0,40}${c.toLowerCase()}`, 'i').test(enMinusculas));
+
+    if (!daPorFuera && !intrusa) return textoRedactado;
+
+    di(
+      `   La redacción de la ruta no cuadra (${daPorFuera ? `da ${daPorFuera} por descartada` : `mete ${intrusa} como parada`})` +
+        (intento === 1 ? ': la pido otra vez.' : ': me quedo con una frase sin nombres.')
+    );
+  }
+
+  return generica;
+}
+
 // =============================================================================
 // GUARDAR LOS VUELOS ELEGIDOS
 // =============================================================================
@@ -1720,6 +1798,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   let respuesta = null;
   let ultimoFallo = null;
   let arreglo = null;
+  let seUsoElFallback = false;
 
   // DOS VUELTAS: la buena y la de «te lo explico y lo vuelves a hacer». La
   // segunda lleva el motivo exacto del rechazo, que es lo que hace que sirva de
@@ -1781,8 +1860,16 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
         propuesta = primero.reparto.map((x) => ({
           ciudad: x.ciudad,
           noches: x.noches,
-          motivo: x.motivo ?? texto(respuesta?.por_que) ?? null,
+          motivo: x.motivo ?? null,
         }));
+        // EL TEXTO DE LA PROPUESTA RECHAZADA NO VALE PARA LA RUTA BUENA.
+        //
+        // En Grecia el resumen habló de Meteora como parada y dijo que «Nafplio
+        // queda fuera» — y la ruta final era Tesalónica → Nafplio → Atenas. El
+        // reparto se corrigió y la explicación se quedó describiendo el que se
+        // había tirado, que es peor que no explicar nada: el que lo lee cree que
+        // el viaje es otro.
+        seUsoElFallback = true;
       }
     }
 
@@ -1943,7 +2030,10 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
       ` → ${casa}`
   );
   for (const p of ruta) if (p.motivo) di(`   ${p.ciudad}: ${p.motivo}`);
-  if (respuesta?.resumen) di(`Por qué esta ruta: ${respuesta.resumen}`);
+  const resumen = seUsoElFallback
+    ? await redactarLaRutaDeVerdad(ruta, descartadas, di)
+    : respuesta?.resumen;
+  if (resumen) di(`Por qué esta ruta: ${resumen}`);
   if (descartadas.length) {
     di(`Descartadas y guardadas: ${descartadas.map((d) => d.nombre).join(', ')}.`);
   }

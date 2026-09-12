@@ -31,6 +31,8 @@
  * colocar ningún día y desaparece del viaje sin que nadie sepa por qué.
  */
 
+import { mesesDeTexto } from './temporadas.js';
+
 /** Domingo es 0, como en `Date.getDay()` y como en `cierra_dias`. */
 export const TODOS_LOS_DIAS = [0, 1, 2, 3, 4, 5, 6];
 
@@ -193,6 +195,39 @@ function rangosDelTramo(tramo) {
 }
 
 /**
+ * ¿ESTE TRAMO ES DE UNA TEMPORADA CONCRETA?
+ *
+ * EL FALLO QUE ORIGINA ESTO. La Fortaleza de Palamidio —el imprescindible
+ * estrella de Nafplio— se fue del plan por «estar cerrada a las 16:00», leyendo
+ * esto:
+ *
+ *     «Verano: 08:00 - 20:00 | Invierno: 08:30 - 15:30»
+ *
+ * El lector no sabía que eran DOS horarios alternativos, así que se quedó con el
+ * último que vio: el de invierno. Y el viaje era el 24 de septiembre, cuando en
+ * Grecia rige el de verano hasta las ocho de la tarde. La expulsión fue en falso
+ * y se perdió el motivo de la parada.
+ *
+ * Devuelve los meses en los que manda ese tramo, o null si no habla de
+ * temporadas —que es lo normal—.
+ */
+function temporadaDelTramo(tramo) {
+  // Si el propio texto da los meses, mandan ellos: «de abril a octubre».
+  const suyos = mesesDeTexto(tramo);
+  const nombraMeses = Boolean(suyos?.length);
+
+  const esVerano = /\b(verano|temporada alta|summer|high season|estival)\b/.test(tramo);
+  const esInvierno = /\b(invierno|temporada baja|winter|low season|invernal)\b/.test(tramo);
+
+  if (!esVerano && !esInvierno) return nombraMeses ? suyos : null;
+  if (nombraMeses) return suyos;
+
+  // El reparto de por defecto, hemisferio norte. Es una convención, no una
+  // verdad, y por eso el que la usa lo dice en el aviso suave.
+  return esVerano ? [4, 5, 6, 7, 8, 9, 10] : [11, 12, 1, 2, 3];
+}
+
+/**
  * EL HORARIO, DÍA A DÍA Y EN ESTRUCTURA.
  *
  * Devuelve los siete días, cada uno con su estado y sus rangos:
@@ -206,17 +241,53 @@ function rangosDelTramo(tramo) {
  * echa un sitio del viaje. Con el tercero, la duda se puede tratar como lo que
  * es: se coloca el sitio y se avisa flojito.
  */
-export function horarioPorDias(texto) {
+export function horarioPorDias(texto, mes = null) {
   const t = normalizar(texto);
   const porDia = TODOS_LOS_DIAS.map(() => ({ estado: 'desconocido', rangos: [] }));
-  if (!t.trim()) return { porDia, fiable: false };
+  if (!t.trim()) return { porDia, fiable: false, temporadaDudosa: false };
 
   let huboApertura = false;
   let huboCierre = false;
-  let exclusivo = /\b(solo|unicamente|only|exclusivamente)\b/.test(t) || /\babre\s+(de|los|el)\b/.test(t);
   let porDefecto = null;
+  let temporadaDudosa = false;
 
-  for (const tramo of tramosDe(t)) {
+  // LOS TRAMOS QUE HABLAN DE TEMPORADA SE RESUELVEN ANTES DE NADA.
+  //
+  // Sin esto, dos horarios alternativos se leían como uno detrás de otro y
+  // ganaba el último: el de invierno, en un viaje de septiembre.
+  const todos = tramosDe(t);
+  const conTemporada = todos.map((x) => ({ tramo: x, meses: temporadaDelTramo(x) }));
+  const hayTemporadas = conTemporada.some((x) => x.meses);
+
+  let tramos = todos;
+  if (hayTemporadas) {
+    if (mes == null) {
+      // No se sabe cuándo se va: se coge el horario MÁS AMPLIO y se avisa. Lo
+      // contrario —quedarse con el restrictivo— es lo que echó a Palamidio.
+      temporadaDudosa = true;
+      tramos = [
+        conTemporada
+          .filter((x) => x.meses)
+          .sort((a, b) => {
+            const ancho = (y) =>
+              rangosDelTramo(y.tramo).reduce((n2, [d, h]) => n2 + (h - d), 0);
+            return ancho(b) - ancho(a);
+          })[0].tramo,
+        ...conTemporada.filter((x) => !x.meses).map((x) => x.tramo),
+      ];
+    } else {
+      const suyos = conTemporada.filter((x) => x.meses?.includes(Number(mes)));
+      tramos = suyos.length
+        ? [...suyos.map((x) => x.tramo), ...conTemporada.filter((x) => !x.meses).map((x) => x.tramo)]
+        : todos;
+      if (!suyos.length) temporadaDudosa = true;
+    }
+  }
+
+  const exclusivo =
+    /\b(solo|unicamente|only|exclusivamente)\b/.test(t) || /\babre\s+(de|los|el)\b/.test(t);
+
+  for (const tramo of tramos) {
     const esDeCierre = CIERRE.some((p2) => tramo.includes(p2));
     const dias = diasDelTramo(tramo);
     const rangos = rangosDelTramo(tramo);
@@ -260,7 +331,7 @@ export function horarioPorDias(texto) {
     if (huboCierre) porDia[d] = { estado: 'abierto', rangos: [] };
   }
 
-  return { porDia, fiable: huboApertura || huboCierre || Boolean(porDefecto) };
+  return { porDia, fiable: huboApertura || huboCierre || Boolean(porDefecto), temporadaDudosa };
 }
 
 /**
@@ -270,8 +341,8 @@ export function horarioPorDias(texto) {
  * avisar flojito: afirmar un cierre que el horario no dice es exactamente lo
  * que echó del viaje a dos museos que abrían.
  */
-export function abreEl(texto, diaSemana) {
-  const { porDia, fiable } = horarioPorDias(texto);
+export function abreEl(texto, diaSemana, mes = null) {
+  const { porDia, fiable } = horarioPorDias(texto, mes);
   if (!fiable) return null;
   const d = porDia[Number(diaSemana)];
   if (!d || d.estado === 'desconocido') return null;
@@ -279,11 +350,11 @@ export function abreEl(texto, diaSemana) {
 }
 
 /** ¿Y a esta hora? Mismos tres estados. `hora` en «HH:MM» o en minutos. */
-export function abiertoA(texto, diaSemana, hora) {
-  const abre = abreEl(texto, diaSemana);
+export function abiertoA(texto, diaSemana, hora, mes = null) {
+  const abre = abreEl(texto, diaSemana, mes);
   if (abre !== true) return abre;
 
-  const { porDia } = horarioPorDias(texto);
+  const { porDia } = horarioPorDias(texto, mes);
   const rangos = porDia[Number(diaSemana)].rangos;
   if (!rangos.length) return null; // abre, pero no sabemos entre qué horas
 

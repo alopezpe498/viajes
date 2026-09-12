@@ -917,10 +917,33 @@ function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
 
     // Y el día que ha quedado libre se usa para lo que de verdad era el motivo.
     const fresco = lienzoDeViaje(viajeId);
+    const diasLibres = [...new Set(culpables.map((c) => c.dia))];
+    const liberados = diasLibres.join(', ');
+    di(
+      `   Día ${liberados} liberado: repesco ${sinColocar.map((x) => x.nombre).join(', ')}.`,
+      ORIGENES.ninguno
+    );
+
+    // EL TABLERO SE RELEE ENTRE UNA Y OTRA.
+    //
+    // Con la foto de antes, los tres vieron el mismo hueco de las 09:00 y los
+    // tres se colocaron ahí, encimados. Un hueco deja de estarlo en cuanto lo
+    // ocupa el primero.
+    const repescados = [];
+    let tablero = fresco;
     for (const x of sinColocar) {
-      const puesto = colocarImprescindible(viajeId, fresco, etapa, x, di);
-      if (puesto) tocado = true;
+      if (colocarImprescindible(viajeId, tablero, etapa, x, di, diasLibres)) {
+        repescados.push(x.nombre);
+        tocado = true;
+        tablero = lienzoDeViaje(viajeId);
+      }
     }
+    di(
+      repescados.length
+        ? `   ${etapa.nombre_ciudad}: repescados ${repescados.join(', ')}.`
+        : `   ${etapa.nombre_ciudad}: no cupo ninguno ni con el día libre.`,
+      ORIGENES.ninguno
+    );
   }
 
   return tocado ? lienzoDeViaje(viajeId) : lienzo;
@@ -930,18 +953,44 @@ function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
  * Coloca un imprescindible que se había quedado fuera, en el primer hueco válido
  * de su parada. Devuelve true si lo ha conseguido.
  */
-function colocarImprescindible(viajeId, lienzo, etapa, sitio, di) {
-  const candidato = una(
+function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = []) {
+  let candidato = una(
     `SELECT id FROM candidatos
       WHERE viaje_id = ? AND etapa_id = ? AND tipo = 'sitio' AND datos_extra LIKE ?`,
     viajeId,
     etapa.id,
     `%"deId":${sitio.id}%`
   );
+  // LA REPESCA. Y aquí estaba el hueco que dejó Tesalónica vacía.
+  //
+  // El aviso grave hizo bien su trabajo: echó la excursión a Pozar y Édessa
+  // porque se comía el día de los imprescindientes. Pero los tres que liberaba
+  // —Santa Sofía, los Santos Demetrio y el Museo Arqueológico— ya no eran ni
+  // candidatos: la colocación inicial los había descartado por falta de hueco,
+  // cuando la excursión todavía ocupaba el día. Esta función se encontró sin
+  // candidato al que agarrarse y dijo «no lo coloco yo». Resultado: dos noches
+  // en Tesalónica para un free tour.
+  //
+  // Liberar un día y no repescar lo que ese día impedía es quedarse a medias. Se
+  // vuelve a apuntar —`alternarApuntado` crea el candidato cuando no lo hay— y
+  // se coloca con la misma lógica de siempre.
   if (!candidato) {
-    // No está ni apuntado: apuntarlo es de la fase de sitios, no de esta.
-    di(`   ${sitio.nombre} no está entre los candidatos de ${etapa.nombre_ciudad}; no lo coloco yo.`);
-    return false;
+    const r = alternarApuntado(etapa.id, 'sitio', sitio.id);
+    if (!r) {
+      di(`   ${sitio.nombre} no se pudo volver a apuntar en ${etapa.nombre_ciudad}.`);
+      return false;
+    }
+    candidato = una(
+      `SELECT id FROM candidatos
+        WHERE viaje_id = ? AND etapa_id = ? AND tipo = 'sitio' AND datos_extra LIKE ?`,
+      viajeId,
+      etapa.id,
+      `%"deId":${sitio.id}%`
+    );
+    if (!candidato) {
+      di(`   ${sitio.nombre}: lo apunté pero no lo encuentro de vuelta; lo dejo.`);
+      return false;
+    }
   }
 
   const falso = {
@@ -956,7 +1005,14 @@ function colocarImprescindible(viajeId, lienzo, etapa, sitio, di) {
   const cierre = cierreDe(falso);
   const cierra = diasDeCierreDe(falso);
 
-  for (const d of lienzo.dias.filter((x) => x.etapaId === etapa.id)) {
+  // EL DÍA QUE HA QUEDADO LIBRE VA PRIMERO: es el que la excursión ocupaba y el
+  // que se ha vaciado para esto. Repescar y mandarlo a otro día sería dejar el
+  // día vacío igual, que es justo lo que se quería evitar.
+  const dias = lienzo.dias
+    .filter((x) => x.etapaId === etapa.id)
+    .sort((a, b) => (diasLibres.includes(b.n) ? 1 : 0) - (diasLibres.includes(a.n) ? 1 : 0));
+
+  for (const d of dias) {
     if (esDiaDeViaje(lienzo, d.n)) continue;
     if (cierra.includes(diaDeLaSemana(d.fecha))) continue;
 

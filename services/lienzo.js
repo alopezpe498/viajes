@@ -919,7 +919,12 @@ function avisosDeCierre(dias, colocados, viajeId) {
       // EL DÍA SALE DE LA FECHA, no de cómo lo llame nadie. En el registro de
       // Grecia se habló de un «mercadillo dominical» colocado el sábado 26:
       // `queDia` lo calcula `diaDeLaSemana(d.fecha)` y esa es la única fuente.
-      const abre = abreEl(info.horarios, queDia);
+      // EL MES DEL DÍA PLANIFICADO, que es lo que decide si rige el horario de
+      // verano o el de invierno. Sin él, «Verano: 08:00-20:00 | Invierno:
+      // 08:30-15:30» se leía quedándose con el último, y Palamidio se fue del
+      // plan «por cerrar a las 16:00» un 24 de septiembre.
+      const mes = d.fecha ? Number(String(d.fecha).slice(5, 7)) : null;
+      const abre = abreEl(info.horarios, queDia, mes);
 
       if (abre === true) {
         // ABRE ESE DÍA, ¿PERO A ESA HORA?
@@ -932,9 +937,9 @@ function avisosDeCierre(dias, colocados, viajeId) {
         // que entra diez minutos antes de cerrar tampoco existe.
         const empieza = enMinutos(c.hora);
         const dura = Number(c.duracionMin) || 0;
-        const dentro = empieza == null ? null : abiertoA(info.horarios, queDia, empieza);
+        const dentro = empieza == null ? null : abiertoA(info.horarios, queDia, empieza, mes);
         const acabaDentro =
-          empieza == null || !dura ? null : abiertoA(info.horarios, queDia, empieza + dura - 1);
+          empieza == null || !dura ? null : abiertoA(info.horarios, queDia, empieza + dura - 1, mes);
 
         if (dentro === false || acabaDentro === false) {
           avisos.push({
@@ -949,6 +954,19 @@ function avisosDeCierre(dias, colocados, viajeId) {
           });
         }
         continue;                                // abierto ese día: lo demás, arriba
+      }
+
+      // TEMPORADA QUE NO SE PUEDE RESOLVER: se usa el horario más amplio —eso lo
+      // hace el lector— y se avisa flojito, nunca se expulsa.
+      if (abre === true && horarioPorDias(info.horarios, mes).temporadaDudosa) {
+        avisos.push({
+          dia: d.n,
+          tipo: 'horario-sin-verificar',
+          idsAfectados: [c.id],
+          texto:
+            `${c.nombre} tiene horarios distintos por temporada y no he sabido cuál toca en ` +
+            `${d.fechaCorta}: he supuesto el más amplio. Compruébalo. Dice: «${info.horarios}»`,
+        });
       }
 
       if (abre === null) {
