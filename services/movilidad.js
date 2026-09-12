@@ -718,7 +718,7 @@ export async function investigarTramo(ciudadA, ciudadB) {
   const fichas = medios.map((m, i) => {
     const hallado = precios.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
     // El del texto manda; el del widget rellena el hueco cuando no hay.
-    const suyo = delWidget.porOperador.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
+    const suyo = delWidget.precioDe(texto(m?.nombre) ?? '');
     const precio = hallado?.precio ?? suyo ?? delWidget.minimoDe(texto(m?.medio)) ?? null;
     return guardarFichaTramo(
       ciudadA,
@@ -744,9 +744,9 @@ export async function investigarTramo(ciudadA, ciudadB) {
   // En Cracovia → Varsovia el widget lista Leo Express compitiendo con PKP en la
   // misma ruta y más barato. El resumen del Modo IA no lo nombraba, así que esa
   // opción no llegaba a existir y la elección se hacía sin ella.
-  const yaEstan = new Set(medios.map((m) => normalizarNombre(texto(m?.nombre) ?? '')));
   const nuevas = delWidget.operadores
-    .filter((n) => !yaEstan.has(normalizarNombre(n)))
+    .filter((n) => !medios.some((m) => delWidget.precioDe(texto(m?.nombre) ?? '') != null
+      && delWidget.precioDe(n) === delWidget.precioDe(texto(m?.nombre) ?? '')))
     .map((n, k) =>
       guardarFichaTramo(
         ciudadA,
@@ -786,7 +786,14 @@ async function preciosDelWidget(ciudadA, ciudadB) {
   }
   if (!bloque?.texto) return vacio;
 
-  return leerWidgetDeTransporte(bloque.texto);
+  const leido = leerWidgetDeTransporte(bloque.texto);
+  if (!leido.traeTrenes) {
+    console.log(
+      `[movilidad] ${ciudadA} → ${ciudadB}: el widget no traía filas de tren; ` +
+        'los trenes se quedan sin precio del widget.'
+    );
+  }
+  return leido;
 }
 
 /**
@@ -808,7 +815,7 @@ export function leerWidgetDeTransporte(texto) {
   // Los operadores con su precio: «Leo Express 15 €», «PKP Intercity · 37 €».
   const porOperador = new Map();
   const operadores = [];
-  const re = /([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ.&' -]{2,28}?)\s*[·:|–-]?\s*([\d.,]+)\s*€/g;
+  const re = /([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ.&'()/ -]{2,34}?)\s*[·:|–-]?\s*([\d.,]+)\s*€/g;
   let m;
   while ((m = re.exec(t)) !== null) {
     const nombre = m[1].trim().replace(/\s+/g, ' ');
@@ -821,14 +828,85 @@ export function leerWidgetDeTransporte(texto) {
     if (!operadores.includes(nombre)) operadores.push(nombre);
   }
 
+  /**
+   * EL CASADO, TOLERANTE. Y aquí estaba el «precio no encontrado» de PKP.
+   *
+   * Se buscaba por IGUALDAD: el catálogo dice «PKP Intercity (EIP/IC)» y el
+   * widget guarda «PKP Intercity», así que no casaban nunca. FlixBus sí casaba
+   * —su nombre no lleva paréntesis— y por eso parecía que el widget funcionaba a
+   * medias. Funcionaba entero; era la comparación la que no.
+   *
+   * Se quita el paréntesis y lo que lleve dentro, se compara por inclusión en
+   * los dos sentidos, y de postre se prueban los alias del operador: el mismo
+   * tren se anuncia como PKP, como Intercity y como EIC o EIP según quién lo
+   * escriba.
+   */
+  const ALIAS = [
+    ['pkp', 'intercity', 'eic', 'eip', 'ic', 'tlk'],
+    ['renfe', 'ave', 'avlo'],
+    ['trenitalia', 'frecciarossa', 'italo'],
+    ['flixbus', 'flix'],
+    ['blablacar', 'blablabus', 'ouibus'],
+  ];
+
+  const pelar = (x) =>
+    String(x ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/\([^)]*\)/g, ' ')      // fuera los paréntesis y su contenido
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const precioDe = (nombre) => {
+    const suyo = pelar(nombre);
+    if (!suyo) return null;
+
+    for (const [clave, precio] of porOperador) {
+      const otro = pelar(clave);
+      if (!otro) continue;
+      if (suyo === otro || suyo.includes(otro) || otro.includes(suyo)) return precio;
+    }
+
+    // Y por alias: «PKP Intercity (EIP/IC)» y «EIC» son el mismo tren.
+    const familia = ALIAS.find((f) => f.some((a) => suyo.split(' ').includes(a)));
+    if (familia) {
+      for (const [clave, precio] of porOperador) {
+        const palabras = pelar(clave).split(' ');
+        if (familia.some((a) => palabras.includes(a))) return precio;
+      }
+    }
+    return null;
+  };
+
   return {
     porOperador,
     operadores,
     minimo,
+    precioDe,
+    // DE QUÉ HABLA EL WIDGET. La cabecera lo dice: «Trenes de X a Y» o
+    // «Autobuses de X a Y». Importa porque el mínimo de una tabla de buses no
+    // es el precio de un tren, y dárselo sería inventar un dato con cara de
+    // buscado.
+    traeTrenes: /\btrenes?\b/i.test(t),
+    traeBuses: /\b(autobuses?|buses?)\b/i.test(t),
+
     // Para un medio sin operador reconocido, el mínimo del widget es lo mejor
-    // que se puede decir, y es mejor que un hueco.
-    minimoDe: (medio) =>
-      /tren|bus|autob/i.test(String(medio ?? '')) ? minimo : null,
+    // que se puede decir —y es mejor que un hueco— pero solo si el widget
+    // hablaba de ESE medio.
+    minimoDe: (medio) => {
+      const m = String(medio ?? '');
+      const hayTrenes = /\btrenes?\b/i.test(t);
+      const hayBuses = /\b(autobuses?|buses?)\b/i.test(t);
+      // Un widget que habla de LOS DOS anuncia un solo «el más económico», y no
+      // dice de cuál de los dos es. Atribuírselo a uno sería inventárselo: en
+      // ese caso no hay mínimo que dar, y el precio se queda sin encontrar.
+      if (hayTrenes && hayBuses) return null;
+      if (/tren/i.test(m)) return hayTrenes ? minimo : null;
+      if (/bus|autob/i.test(m)) return hayBuses ? minimo : null;
+      return null;
+    },
   };
 }
 

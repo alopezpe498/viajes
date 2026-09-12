@@ -1408,15 +1408,36 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
     return 1;
   }
 
-  const [primero, segundo] = pareja;
+  // EL TABLERO, RECIÉN LEÍDO.
+  //
+  // `lienzo` es la foto con la que arrancó la pasada, y dentro de una misma
+  // pasada se resuelven varios solapes seguidos. Calculando sobre la foto vieja,
+  // el segundo arreglo manda un bloque a un hueco que el primero acaba de
+  // ocupar: en la prueba, la comida se fue a las 13:30 y la Grúa a las 14:30, y
+  // se pisaron entre ellas. Cada resolución mira lo que hay AHORA.
+  const tablero = lienzoDeViaje(viajeId);
+  const alDia = new Map(tablero.colocados.map((c) => [c.id, c]));
+
+  const [primero, segundo] = pareja.map((x) => alDia.get(x.id) ?? x);
+
+  // Si alguno ya no está —lo movió o lo quitó otro aviso de esta misma pasada—
+  // este conflicto puede haber dejado de existir.
+  if (!alDia.has(pareja[0].id) || !alDia.has(pareja[1].id)) return 0;
+
+  const finPrimero = (enMinutos(primero.hora) ?? 0) + (Number(primero.duracionMin) || 0);
+  if ((enMinutos(segundo.hora) ?? 0) >= finPrimero) return 0;   // ya no se pisan
+
   const { mas, menos, impMas, impMenos } = quienPesaMas(primero, segundo);
 
   // A qué hora puede empezar el segundo sin pisar al primero. En un solape es
   // cuando acaba el primero; en un «no llegas» incluye además el trayecto, y por
   // eso se lee del aviso en vez de recalcularlo.
-  const puedeDesde = enMinutos(aviso.libreDesde);
+  // Y la hora a la que el segundo puede empezar se recalcula sobre lo que hay
+  // ahora, no sobre la que traía el aviso: si el primero se ha movido o recortado
+  // entre medias, aquella ya no vale.
+  const puedeDesde = Math.max(finPrimero, enMinutos(aviso.libreDesde) ?? 0);
   const empiezaSegundo = enMinutos(segundo.hora);
-  if (puedeDesde == null || empiezaSegundo == null) return 0;
+  if (empiezaSegundo == null) return 0;
 
   const estorbo = puedeDesde - empiezaSegundo;
   if (estorbo <= 0) return 0;
@@ -1457,11 +1478,24 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   //
   // Se intenta con el segundo sea quien sea el que pesa más: si cabe un poco más
   // tarde, se salvan los dos y no hay nada que decidir.
-  const retraso = recolocarConHora(viajeId, lienzo, segundo, {
+  const retraso = recolocarConHora(viajeId, tablero, segundo, {
     desde: aviso.libreDesde,
     mismoDia: true,
   });
-  if (retraso.movido) {
+  // UNA COMIDA RETRASADA A LAS CUATRO YA NO ES UNA COMIDA.
+  //
+  // El paso de arriba resolvió el solape mandándola a las 16:00, que es legal y
+  // es malo. Las 16:00 son el corte que ya usa el resto de la fase para decir
+  // «no hay hueco a una hora de comer»; aquí vale el mismo. Si el retraso la
+  // saca de hora, se deshace y se prueban los recursos de abajo.
+  const seLeFueLaHora =
+    retraso.movido && esComida(segundo) && (enMinutos(retraso.hora) ?? 0) >= 16 * 60;
+
+  if (seLeFueLaHora) {
+    mover(segundo.id, { dia: segundo.dia, franja: segundo.franja });
+    retocar(segundo.id, { hora: segundo.hora });
+    intentos.push(`retrasar la comida (se iba a las ${retraso.hora})`);
+  } else if (retraso.movido) {
     di(
       `   Día ${aviso.dia}: ${segundo.nombre} se retrasa a las ${retraso.hora}, ` +
         `detrás de ${primero.nombre}.`
@@ -1495,7 +1529,7 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
 
     if (empiezaComida != null && necesita > 0 && empiezaComida - necesita >= TOPE_TEMPRANO) {
       const nueva = comoHoraDeMinutos(empiezaComida - necesita);
-      const libre = horaLibreEn(sinEl(lienzo, comida.id), {
+      const libre = horaLibreEn(sinEl(tablero, comida.id), {
         dia: comida.dia,
         franja: franjaDesde(nueva) ?? comida.franja,
         duracion: duraComida,
@@ -1522,12 +1556,12 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   if (!esComida(segundo)) {
     const nat = naturalezaDe(segundo);
     if (!nat.sesiones?.length) {
-      const dia = lienzo.dias.find((d) => d.n === segundo.dia);
+      const dia = tablero.dias.find((d) => d.n === segundo.dia);
       const abre = aperturaDe(segundo, dia?.fecha);
       const dura = Number(segundo.duracionMin) || 60;
       const desde = comoHoraDeMinutos(Math.max(abre ?? 9 * 60, 9 * 60));
 
-      const libre = horaLibreEn(sinEl(lienzo, segundo.id), {
+      const libre = horaLibreEn(sinEl(tablero, segundo.id), {
         dia: segundo.dia,
         franja: franjaDesde(desde) ?? segundo.franja,
         duracion: dura,
@@ -1552,6 +1586,25 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   // ni retrasarse ni adelantarse, se queda el aviso escrito antes que
   // convertirla en cena.
   if (esComida(menos)) {
+    // SI LA COMIDA NO SE PUEDE MOVER, SE MUEVE EL OTRO.
+    //
+    // Es lo que faltaba. La comida es un bloque diario y a una hora: no viaja de
+    // día ni se va a las cuatro. El sitio sí. Moverlo no rompe la jerarquía
+    // —nadie pierde nada, solo cambia de hora— y es la diferencia entre un día
+    // resuelto y un «no he sabido resolverlo» con la comida pisada.
+    const elOtro = menos.id === primero.id ? segundo : primero;
+    if (!esComida(elOtro)) {
+      const r = recolocarConHora(viajeId, tablero, elOtro);
+      if (r.movido) {
+        di(
+          `   Día ${aviso.dia}: la comida no se puede mover, así que muevo ${elOtro.nombre} ` +
+            `al día ${r.dia} a las ${r.hora}.`
+        );
+        return 1;
+      }
+      intentos.push(`mover ${elOtro.nombre}`);
+    }
+
     di(
       `   Día ${aviso.dia}: ${menos.nombre} choca con ${mas.nombre} y no he podido ` +
         `${intentos.join(' ni ')}. La comida no cambia de día: lo dejo dicho.`
@@ -1559,7 +1612,7 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
     return 0;
   }
 
-  const mudanza = recolocarConHora(viajeId, lienzo, menos, { soloOtroDia: true });
+  const mudanza = recolocarConHora(viajeId, tablero, menos, { soloOtroDia: true });
   if (mudanza.movido) {
     di(
       `   Día ${aviso.dia}: ${menos.nombre} pasa al día ${mudanza.dia} a las ${mudanza.hora} ` +

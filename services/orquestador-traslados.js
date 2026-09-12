@@ -1064,8 +1064,105 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
   }
 
   avisarDeSaltosQueNoCuadran(viajeId, etapas, di);
+  avisarDeLoQueCuestanLosSaltos(viaje, di);
 
   return { saltos: etapas.length - 1, resueltos };
+}
+
+/**
+ * LO QUE CUESTAN DE VERDAD LOS SALTOS DE DENTRO, CUANDO YA SE SABE.
+ *
+ * EL FALLO QUE ORIGINA ESTO. Polonia salió con un vuelo de LOT de Cracovia a
+ * Gdansk a 176 € por persona y el aviso de traslados internos no apareció por
+ * ningún lado. No estaba sin implementar: `avisarDeTrasladosCaros` existe en la
+ * fase 1 y funciona. Lo que pasa es que suma con el `modo` de la matriz de
+ * tiempos de ESA fase, que para Cracovia → Gdansk dice tren —porque hay tren, y
+ * lo hay— así que sumaba 0 €, no llegaba al umbral y no podía dispararse nunca.
+ * El vuelo aparece después, aquí, cuando esta fase mira las opciones reales y
+ * elige.
+ *
+ * Son dos avisos distintos y los dos hacen falta. El de la fase 1 es una
+ * ESTIMACIÓN GRUESA por tipo de salto, y sirve para lo suyo: comparar puertas
+ * antes de que exista ningún precio; se queda en el registro, que es donde se
+ * lee mientras se decide la ruta. Este es el DEFINITIVO, con lo que cuesta el
+ * billete elegido, y es el que va además a los avisos del viaje: al final tiene
+ * que quedar el número real donde se ve sin abrir el registro.
+ *
+ * NO INVENTA EL QUE FALTA. Si un salto se quedó sin precio, no se estima: se
+ * suma lo que hay y se dice cuántos faltan, que es distinto de decir que la ruta
+ * cuesta eso. Y por eso también se avisa aunque falten precios: 176 € de uno
+ * solo ya pasan el umbral, y que el otro no se sepa no lo hace más barato.
+ *
+ * Exportada para poder probarla contra un viaje real sin arrancar la fase
+ * entera, que es la única forma de saber si el número que saca es el bueno.
+ */
+export function avisarDeLoQueCuestanLosSaltos(viaje, di) {
+  const umbral = parametro('umbral_traslados_internos', 150);
+  const personas = Math.max(1, (Number(viaje.adultos) || 0) + (Number(viaje.ninos) || 0));
+
+  // SOLO LOS SALTOS DE DENTRO. Los vuelos de ida y vuelta tienen las dos puntas
+  // fuera —una es casa— y ya se ven en el presupuesto por su cuenta.
+  const saltos = todas(
+    `SELECT t.id, t.tipo, t.precio_estimado, t.precio_ambito, t.notas,
+            o.nombre_ciudad AS desde, d.nombre_ciudad AS hasta
+       FROM transportes t
+       JOIN etapas o ON o.id = t.etapa_origen_id
+       JOIN etapas d ON d.id = t.etapa_destino_id
+      WHERE t.viaje_id = ?
+      ORDER BY t.id`,
+    viaje.id
+  );
+  if (!saltos.length) return;
+
+  let total = 0;
+  let sinPrecio = 0;
+  const detalle = [];
+
+  for (const t of saltos) {
+    const precio = Number(t.precio_estimado);
+    if (!Number.isFinite(precio) || precio <= 0) {
+      sinPrecio += 1;
+      continue;
+    }
+    // El precio se guardó con su ámbito: un billete es de cada uno, un taxi es
+    // del coche entero. El umbral está en euros POR PERSONA, así que se traduce.
+    const porPersona = t.precio_ambito === POR_GRUPO ? precio / personas : precio;
+    total += porPersona;
+    detalle.push(
+      `${t.desde} → ${t.hasta} ${Math.round(porPersona)} €` +
+        (t.tipo === 'vuelo' ? ' en avión' : '')
+    );
+  }
+
+  if (total < umbral) return;
+
+  const redondo = Math.round(total);
+  const cuerpo =
+    `Los saltos de dentro del viaje suman unos ${redondo} € por persona: ` +
+    `${detalle.join(', ')}.` +
+    (sinPrecio
+      ? ` Y ${sinPrecio} salto(s) más sin precio encontrado, así que puede ser más.`
+      : '') +
+    ' Son los precios de las opciones elegidas, no una estimación. Si te parece ' +
+    'mucho, el sitio donde se cambia es la ruta: otra puerta de entrada o una ' +
+    'ciudad menos se nota aquí más que en ninguna otra parte.';
+
+  // AL VIAJE, Y BORRANDO EL DE LA ESTIMACIÓN. Mismo título para que una segunda
+  // pasada actualice el aviso en vez de dejar dos con números distintos.
+  const titulo = `Los traslados internos salen por unos ${redondo} € por persona`;
+  ejecutar(
+    "DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'traslado' AND titulo LIKE '%traslados internos%'",
+    viaje.id
+  );
+  ejecutar(
+    `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+     VALUES (?, 'traslado', 'aviso', ?, ?)`,
+    viaje.id,
+    titulo,
+    cuerpo
+  );
+
+  di(`OJO con el bolsillo: ${cuerpo}`, ORIGENES.busqueda);
 }
 
 /**

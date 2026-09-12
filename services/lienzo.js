@@ -1311,18 +1311,44 @@ function avisosDeTiempo(dias, colocados) {
   for (const d of dias) {
     // El mismo orden en el que se ven: por franja, y dentro de la franja por
     // hora y por el orden manual.
+    // POR HORA, Y SOLO POR HORA.
+    //
+    // Antes se ordenaba por franja y DESPUÉS por hora, que no es el orden en que
+    // ocurren las cosas: un bloque de las 13:00 metido en la franja «mañana» se
+    // colocaba antes que uno de las 12:00 en «mediodía». Para comparar si dos
+    // cosas se pisan, lo único que manda es el reloj.
     const delDia = colocados
       .filter((c) => c.dia === d.n)
       .sort(
         (x, y) =>
-          orden(x.franja) - orden(y.franja) ||
           (enMinutos(x.hora) ?? 9999) - (enMinutos(y.hora) ?? 9999) ||
+          orden(x.franja) - orden(y.franja) ||
           (x.orden ?? 0) - (y.orden ?? 0)
       );
 
+    // TODOS LOS PARES QUE SE PISAN, NO SOLO LOS VECINOS.
+    //
+    // Aquí estaba el solape que «ni se señaló». Se comparaba `delDia[i]` con
+    // `delDia[i+1]` y nada más, así que en el día 6 de Gdansk —Casco Viejo
+    // 11:30-13:30, Grúa 11:45, Comer 13:00— se miraba Casco↔Grúa y Grúa↔Comer,
+    // pero NUNCA Casco↔Comer, que también se pisaban.
+    //
+    // Y el efecto era peor que un aviso de menos: ese solape solo aparecía
+    // cuando la revisión movía la Grúa y los dos quedaban contiguos, o sea en la
+    // pasada siguiente — y las pasadas se acaban. De ahí venían los «se solapan»
+    // que quedaban sin resolver siendo perfectamente resolubles: no fallaba la
+    // cadena, es que se enteraba tarde.
+    //
+    // Se compara cada bloque con todos los que empiezan antes de que él termine.
+    // Son unas pocas tarjetas por día: el coste es irrelevante y la ceguera no.
     for (let i = 0; i < delDia.length - 1; i++) {
       const a = delDia[i];
-      const b = delDia[i + 1];
+      const finDeA = (enMinutos(a.hora) ?? 0) + (Number(a.duracionMin) || 0);
+
+      for (let k = i + 1; k < delDia.length; k++) {
+        const b = delDia[k];
+        // En cuanto uno empieza después de que A acabe, los siguientes también.
+        if ((enMinutos(b.hora) ?? 9999) >= finDeA) break;
 
       const empiezaA = enMinutos(a.hora);
       const empiezaB = enMinutos(b.hora);
@@ -1398,6 +1424,7 @@ function avisosDeTiempo(dias, colocados) {
           `: no llegas a ${b.nombre} a las ${comoHora(empiezaB)}` +
           ` (llegarías a las ${comoHora(llegaria)})`,
       });
+      }
     }
   }
 
