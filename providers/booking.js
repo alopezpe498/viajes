@@ -548,22 +548,91 @@ export async function buscarHoteles({
 
     // PASO 3: confirmar que el listado esta ahi.
     await paso('3. Esperar el listado de alojamientos', async () => {
+      // TRES COSAS DISTINTAS SE PARECEN AQUI, y confundirlas cuesta caro:
+      //
+      //   1. El challenge antibot. Booking mete una pagina de verificacion antes
+      //      del listado y la URL se queda con `chal_t`. Un Chrome con cookies lo
+      //      pasa solo; un Chromium de Playwright con perfil recien hecho, no. El
+      //      listado no llega nunca y esto se leia como «no hay hoteles».
+      //   2. La busqueda valida SIN resultados: la pagina carga entera, con sus
+      //      filtros y su «0 alojamientos encontrados». No es un fallo de nadie.
+      //   3. El selector cambiado: ni listado, ni mensaje, ni challenge.
+      //
+      // La reaccion es distinta en cada caso, asi que se distinguen antes.
+      const esperarListado = () =>
+        pagina.locator(SEL_TARJETA).first().waitFor({ state: 'visible', timeout: TIMEOUT_LARGO });
+
+      const hayChallenge = async () => {
+        if (/[?&]chal_t=/.test(pagina.url())) return true;
+        return (
+          (await pagina
+            .locator(
+              'iframe[src*="challenge"], iframe[title*="challenge" i], ' +
+                '[id*="challenge" i], [class*="challenge" i], ' +
+                'text=/verificando que eres|verifying you are|no soy un robot/i'
+            )
+            .count()
+            .catch(() => 0)) > 0
+        );
+      };
+
       try {
-        await pagina.locator(SEL_TARJETA).first().waitFor({ state: 'visible', timeout: TIMEOUT_LARGO });
+        await esperarListado();
+        return;
       } catch (err) {
-        // Si no hay tarjetas puede ser un muro que no reconocimos, o un destino
-        // sin resultados. Miramos si la pagina lo dice antes de rendirnos.
-        const sinResultados = await pagina
-          .locator('text=/no (hemos encontrado|se han encontrado)|sin resultados/i')
-          .count()
-          .catch(() => 0);
-        if (sinResultados) {
-          throw new Error(
-            `Booking no devuelve alojamientos para "${destino}" en esas fechas. ` +
-              'Comprueba el destino y las fechas.'
-          );
+        if (!(await hayChallenge())) {
+          const sinResultados = await pagina
+            .locator('text=/no (hemos encontrado|se han encontrado)|sin resultados/i')
+            .count()
+            .catch(() => 0);
+          if (sinResultados) {
+            const vacio = new Error(
+              `Booking no devuelve alojamientos para "${destino}" con esos filtros y esas fechas.`
+            );
+            vacio.sinResultados = true;
+            throw vacio;
+          }
+          throw err;
         }
-        throw err;
+
+        // ES EL CHALLENGE: ni se aflojan filtros ni se da por vacia la busqueda.
+        //
+        // Se espera y se repite LA MISMA busqueda. El primer intento ya ha
+        // sembrado la cookie en el perfil persistente, que es exactamente por lo
+        // que el segundo intento —el del radio aflojado— «funcionaba»: llegaba
+        // segundo, no llegaba mejor. Con esto el merito vuelve a quien lo tiene y
+        // el usuario ve los hoteles de su filtro de verdad.
+        console.warn('[booking] Challenge antibot detectado. Espero y repito la MISMA busqueda.');
+        await dormir(5000);
+        await pagina.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+        await pausaHumana(1500, 2500);
+
+        try {
+          await esperarListado();
+          console.log('[booking] El challenge ha pasado: sigo con los mismos filtros.');
+          return;
+        } catch (err2) {
+          if (await hayChallenge()) {
+            const muro = new Error(
+              'Booking sigue pidiendo verificacion tras dos intentos. Con Chrome del sistema ' +
+                'y un perfil con cookies esto no deberia pasar: mira RUTA_CHROME en el .env.'
+            );
+            muro.porChallenge = true;
+            throw muro;
+          }
+          const sinResultados = await pagina
+            .locator('text=/no (hemos encontrado|se han encontrado)|sin resultados/i')
+            .count()
+            .catch(() => 0);
+          if (sinResultados) {
+            const vacio = new Error(
+              `Booking no devuelve alojamientos para "${destino}" con esos filtros y esas fechas.`
+            );
+            vacio.sinResultados = true;
+            throw vacio;
+          }
+          throw err2;
+        }
       }
     });
 

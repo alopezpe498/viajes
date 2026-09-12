@@ -410,7 +410,17 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         } catch (err) {
           // «No hay hoteles esas noches» no es un fallo de la receta, y decirlo
           // como si lo fuera manda a revisar código por algo que no es de código.
-          if (err.sinResultados) {
+          if (err.porChallenge) {
+            // NO ES QUE NO HAYA HOTELES: es que Booking no nos ha dejado verlos.
+            // Aflojar filtros aquí sería cambiar la búsqueda por un motivo que no
+            // tiene nada que ver con la búsqueda.
+            di(
+              '   Booking pidió verificación antibot y no la pasamos. No aflojo filtros: ' +
+                'el problema no son tus filtros.',
+              ORIGENES.ninguno
+            );
+            apuntarHueco(viajeId, FASE, `${ciudad}: Booking bloqueó la búsqueda (verificación antibot).`);
+          } else if (err.sinResultados) {
             di('   Sin alojamientos para esas fechas con estos filtros.', ORIGENES.ninguno);
           } else {
             di(`   La búsqueda falló (${err.message}).`);

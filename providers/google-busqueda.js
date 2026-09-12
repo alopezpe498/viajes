@@ -38,6 +38,7 @@ import {
   abrirNavegador,
   cerrarNavegador,
   dormir,
+  pausaHumana,
   TIMEOUT_LARGO,
 } from '../lib/browser.js';
 
@@ -242,6 +243,80 @@ export async function buscarTablaDeSitios({ ciudad, sitios, headless = false }) 
  * Devuelve `{texto, fuente, url}`. Quien llama decide qué hacer con el texto;
  * aquí no se interpreta nada.
  */
+/**
+ * EL WIDGET DE TRANSPORTE DE GOOGLE, que es donde están los precios de verdad.
+ *
+ * EL FALLO QUE ORIGINA ESTO. Cuatro pasadas seguidas con «precio no encontrado»
+ * en Cracovia → Varsovia y la regla del ahorro grande «no evaluable». Y los
+ * precios estaban en la página todo el tiempo: no en el texto del Modo IA —que
+ * describe el trayecto pero no trae la tabla— sino en el bloque estructurado que
+ * Google pinta arriba:
+ *
+ *     Trenes de Cracovia a Varsovia
+ *     El más rápido 2h 10min · El más económico 15 € · 36 trenes diarios
+ *     07:41 → 15 €   14:32 → 37 €   18:53 → 27 €
+ *
+ * El widget además lista operadores que el texto no menciona —Leo Express
+ * compitiendo con PKP en la misma ruta, y más barato—, así que no es solo el
+ * precio: son opciones que no se estaban viendo.
+ *
+ * LA FECHA DEL WIDGET NO SE TOCA. Sale con la de mañana, solo ida y un pasajero.
+ * Pelearse con el selector de fechas es media receta más para afinar un número
+ * que solo hace falta para comparar opciones entre sí. Los precios salen de aquí
+ * ETIQUETADOS como orientativos, que es lo que son.
+ */
+export async function preciosDeTransporteEnGoogle(desde, hasta, { headless = false } = {}) {
+  const consulta = `precio tren ${desde} ${hasta}`;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(consulta)}&hl=es`;
+
+  const { contexto, pagina } = await abrirNavegador({ headless, de: 'Google' });
+
+  try {
+    await pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
+    await aceptarCookies(pagina);
+
+    if (await hayCaptcha(pagina)) {
+      throw new ErrorCaptcha('Google pidió verificación al buscar precios de transporte.');
+    }
+
+    await pausaHumana(1200, 2000);
+
+    // EL BLOQUE, buscado por su texto y no por una clase.
+    //
+    // Las clases de Google cambian cada dos por tres; el encabezado «Trenes de X
+    // a Y» y las etiquetas «El más económico» / «El más rápido» llevan años
+    // iguales. Se sube desde ahí al contenedor y se lee entero.
+    const bruto = await pagina.evaluate(() => {
+      const pinta = (el) => (el?.innerText ?? '').trim();
+
+      // El nodo que contiene las etiquetas del widget.
+      const marcas = ['El más económico', 'El más rápido', 'El más barato', 'trenes diarios', 'autobuses diarios'];
+      const todos = [...document.querySelectorAll('div, section')];
+
+      let mejor = null;
+      for (const el of todos) {
+        const t = pinta(el);
+        if (t.length < 40 || t.length > 4000) continue;
+        const cuantas = marcas.filter((m) => t.includes(m)).length;
+        if (cuantas < 2) continue;
+        // El más PEQUEÑO que las contenga: subir de más arrastra media página.
+        if (!mejor || t.length < mejor.texto.length) mejor = { texto: t, cuantas };
+      }
+      return mejor?.texto ?? '';
+    });
+
+    if (!bruto) {
+      console.log(`[google-busqueda] Sin widget de transporte para «${desde} → ${hasta}».`);
+      return null;
+    }
+
+    console.log(`[google-busqueda] Widget de transporte: ${bruto.length} caracteres.`);
+    return { texto: bruto, fuente: 'google-widget-transporte', url: pagina.url() };
+  } finally {
+    await cerrarNavegador(contexto);
+  }
+}
+
 export async function preguntarAlModoIA(pregunta, { headless = false } = {}) {
   const limpia = String(pregunta ?? '').trim();
   if (!limpia) throw new Error('[google-busqueda] No hay pregunta que hacer.');

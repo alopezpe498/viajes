@@ -25,6 +25,7 @@
  */
 
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
+import { preciosDeTransporteEnGoogle } from '../providers/google-busqueda.js';
 import { consultarJSONConGoogle } from '../lib/ia.js';
 import { promptDeFase } from './orquestador.js';
 import { trabajoActivo, ultimoTrabajo, encolar } from '../jobs/cola.js';
@@ -706,9 +707,19 @@ export async function investigarTramo(ciudadA, ciudadB) {
   // cuela igual es exactamente el dato inventado que se quiere evitar.
   const precios = await preciosDeLasOpciones(ciudadA, ciudadB, medios);
 
-  return medios.map((m, i) => {
+  // Y EL WIDGET DE GOOGLE, QUE ES DONDE ESTÁN LOS PRECIOS DE VERDAD.
+  //
+  // Cuatro pasadas de Polonia con «precio no encontrado» en Cracovia → Varsovia
+  // y el ahorro grande sin poder evaluarse, teniendo Google la tabla pintada
+  // arriba del todo: «El más económico 15 €», con sus salidas y sus operadores.
+  // El texto del Modo IA describe el trayecto; el widget trae los números.
+  const delWidget = await preciosDelWidget(ciudadA, ciudadB);
+
+  const fichas = medios.map((m, i) => {
     const hallado = precios.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
-    const precio = hallado?.precio ?? null;
+    // El del texto manda; el del widget rellena el hueco cuando no hay.
+    const suyo = delWidget.porOperador.get(normalizarNombre(texto(m?.nombre) ?? '')) ?? null;
+    const precio = hallado?.precio ?? suyo ?? delWidget.minimoDe(texto(m?.medio)) ?? null;
     return guardarFichaTramo(
       ciudadA,
       ciudadB,
@@ -716,6 +727,10 @@ export async function investigarTramo(ciudadA, ciudadB) {
         ...m,
         precio,
         precioOrigen: precio ? 'busqueda' : null,
+        // Del widget salen con la fecha de mañana: son para comparar, no para
+        // reservar, y eso se dice en vez de hacerlos pasar por exactos.
+        precioNota:
+          !hallado?.precio && precio ? 'precio orientativo (fecha aproximada, widget de Google)' : null,
         // Sin precio no hay ámbito que guardar: se deja que lo ponga la regla.
         precioPorGrupo: precio ? hallado?.porGrupo ?? null : null,
         orden: i + 1,
@@ -723,6 +738,98 @@ export async function investigarTramo(ciudadA, ciudadB) {
       'ia'
     );
   });
+
+  // UN OPERADOR QUE EL TEXTO NO MENCIONABA TAMBIÉN ES UNA OPCIÓN.
+  //
+  // En Cracovia → Varsovia el widget lista Leo Express compitiendo con PKP en la
+  // misma ruta y más barato. El resumen del Modo IA no lo nombraba, así que esa
+  // opción no llegaba a existir y la elección se hacía sin ella.
+  const yaEstan = new Set(medios.map((m) => normalizarNombre(texto(m?.nombre) ?? '')));
+  const nuevas = delWidget.operadores
+    .filter((n) => !yaEstan.has(normalizarNombre(n)))
+    .map((n, k) =>
+      guardarFichaTramo(
+        ciudadA,
+        ciudadB,
+        {
+          nombre: n,
+          medio: 'tren',
+          precio: delWidget.porOperador.get(n.toLowerCase()) ?? null,
+          precioOrigen: 'busqueda',
+          precioNota: 'precio orientativo (fecha aproximada, widget de Google)',
+          orden: medios.length + k + 1,
+        },
+        'ia'
+      )
+    );
+
+  return [...fichas, ...nuevas];
+}
+
+/**
+ * LO QUE DICE EL WIDGET, YA EN NÚMEROS.
+ *
+ * Devuelve los precios por operador y el mínimo por medio, más los operadores
+ * que el texto no mencionaba. Si no hay widget —rutas menores— devuelve un
+ * objeto vacío y todo sigue como antes: «precio no encontrado» y ahorro grande
+ * no evaluable, que ahora será la excepción y no la norma.
+ */
+async function preciosDelWidget(ciudadA, ciudadB) {
+  const vacio = { porOperador: new Map(), minimoDe: () => null, operadores: [] };
+
+  let bloque;
+  try {
+    bloque = await preciosDeTransporteEnGoogle(ciudadA, ciudadB);
+  } catch (err) {
+    console.warn(`[movilidad] sin widget de transporte (${err.message}).`);
+    return vacio;
+  }
+  if (!bloque?.texto) return vacio;
+
+  return leerWidgetDeTransporte(bloque.texto);
+}
+
+/**
+ * EL LECTOR DEL WIDGET. Está aparte y exportado para poder probarlo con el texto
+ * real sin abrir un navegador, que es la única forma de saber si lee bien.
+ */
+export function leerWidgetDeTransporte(texto) {
+  const t = String(texto ?? '');
+
+  const aPrecioEuros = (x) => {
+    const n = Number(String(x).replace(/[^\d,.]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  // El mínimo que anuncia el propio widget.
+  const mMin = /el m[áa]s (?:econ[óo]mico|barato)\s*:?\s*([\d.,]+)\s*€/i.exec(t);
+  const minimo = mMin ? aPrecioEuros(mMin[1]) : null;
+
+  // Los operadores con su precio: «Leo Express 15 €», «PKP Intercity · 37 €».
+  const porOperador = new Map();
+  const operadores = [];
+  const re = /([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ.&' -]{2,28}?)\s*[·:|–-]?\s*([\d.,]+)\s*€/g;
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    const nombre = m[1].trim().replace(/\s+/g, ' ');
+    // Las etiquetas del propio widget no son operadores.
+    if (/^(el|la|los|las|desde|hasta|precio|m[áa]s|trenes?|autobuses?|buses?)\b/i.test(nombre)) continue;
+    const precio = aPrecioEuros(m[2]);
+    if (!precio) continue;
+    const clave = nombre.toLowerCase();
+    if (!porOperador.has(clave) || precio < porOperador.get(clave)) porOperador.set(clave, precio);
+    if (!operadores.includes(nombre)) operadores.push(nombre);
+  }
+
+  return {
+    porOperador,
+    operadores,
+    minimo,
+    // Para un medio sin operador reconocido, el mínimo del widget es lo mejor
+    // que se puede decir, y es mejor que un hueco.
+    minimoDe: (medio) =>
+      /tren|bus|autob/i.test(String(medio ?? '')) ? minimo : null,
+  };
 }
 
 /** Pregunta por una ciudad. Devuelve las fichas ya guardadas. */
