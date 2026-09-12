@@ -1134,6 +1134,23 @@ async function redactarLaRutaDeVerdad(ruta, descartadas, di) {
   return generica;
 }
 
+/** «día 1: lunes 21 sep · día 2: martes 22 sep · …» */
+function calendarioDelViaje(desde, cuantos) {
+  const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+  const arranca = new Date(`${desde}T12:00:00`);
+  if (Number.isNaN(arranca.getTime()) || !Number.isFinite(cuantos)) return '(sin fechas)';
+
+  const lineas = [];
+  for (let i = 0; i < Math.min(cuantos, 40); i += 1) {
+    const d = new Date(arranca);
+    d.setDate(d.getDate() + i);
+    lineas.push(`día ${i + 1}: ${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`);
+  }
+  return lineas.join(' · ');
+}
+
 // =============================================================================
 // GUARDAR LOS VUELOS ELEGIDOS
 // =============================================================================
@@ -1635,6 +1652,14 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     NOCHES: nochesTotales,
     FECHA_INICIO: viaje.fecha_inicio,
     FECHA_FIN: viaje.fecha_fin,
+    // LOS DÍAS DE LA SEMANA, ESCRITOS.
+    //
+    // Uno de los principios nuevos pide mirar si el día que gana una noche extra
+    // cae en lunes, que es cuando cierran los museos. Con solo «2026-09-21» en el
+    // prompt, saber que el día 3 es miércoles es una cuenta de calendario — y
+    // este proyecto ya ha aprendido dónde acaban las cuentas que se le piden al
+    // modelo. Se le dan hechas.
+    CALENDARIO: calendarioDelViaje(viaje.fecha_inicio, dias),
     ORIGEN: ciudadDeCasa(viaje),
     VIAJEROS: viajeros,
     RITMO: viaje.ritmo || 'normal',

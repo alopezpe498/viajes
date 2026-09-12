@@ -1040,6 +1040,29 @@ function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = [
   return false;
 }
 
+/** «Hotel Alkyon, en Oia · a 3,2 km del centro», o lo que se sepa de él. */
+function dondeSeDuerme(etapa) {
+  const h = una(
+    "SELECT titulo, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
+    etapa.id
+  );
+  if (!h) return '(todavía sin alojamiento elegido)';
+
+  let extra = {};
+  try {
+    extra = h.datos_extra ? JSON.parse(h.datos_extra) : {};
+  } catch {
+    extra = {};
+  }
+
+  const donde = [extra.zona, extra.direccion].filter(Boolean)[0] ?? null;
+  return (
+    `${h.titulo}` +
+    (donde ? ` · zona: ${donde}` : '') +
+    (extra.distanciaCentro ? ` · ${extra.distanciaCentro}` : '')
+  );
+}
+
 /**
  * DEJA DICHO POR QUÉ EL PRIMER DÍA VA MEDIO VACÍO.
  *
@@ -1786,6 +1809,17 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
       DURACION_COMIDA: duracionComida,
       MAX_LARGAS: maxLargas,
       FRANJAS: FRANJAS.map((f) => `${f.clave} (${f.etiqueta}, ${f.horas})`).join(' · '),
+      // DÓNDE SE DUERME.
+      //
+      // El prompt no lo sabía, y uno de los principios nuevos pide que el plan
+      // pise la zona del hotel — y que si el hotel está en otra localidad que el
+      // grueso del plan, esa localidad se gane un atardecer. Es exactamente el
+      // caso de Santorini: se dormía en Oia, el plan entero estaba en Fira y Oia
+      // acabó expulsada «por falta de franja».
+      //
+      // Sin el dato, ese principio sería una invitación a suponer dónde está el
+      // hotel. Con él, es una comprobación.
+      HOTEL: dondeSeDuerme(etapa),
       DIAS: dias
         .map((d) => {
           const lineas = [`- día ${d.n} · ${d.fecha} (${d.diaSemana})`];
