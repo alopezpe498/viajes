@@ -52,6 +52,7 @@ import {
 } from '../services/orquestador.js';
 import { calcularDistanciasDeLaRuta, distanciaGuardada } from '../services/distancias-ciudades.js';
 import { ambitoDeTramo, POR_GRUPO } from '../services/presupuesto.js';
+import { precioConMoneda } from '../services/importes.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 
 const FASE = 'traslados';
@@ -99,25 +100,16 @@ export function aMinutos(texto) {
   return null;
 }
 
-/** "89 €", "unos 30-40 EUR" -> 89 / 30. El suelo, que es lo que se compara. */
+/**
+ * El lector de precios con moneda vive en `services/importes.js`, que es donde
+ * viven los demas: alli esta el vocabulario de monedas y la tabla de cambio, y
+ * alli puede usarlo tambien el presupuesto sin que los dos modulos se importen
+ * en circulo. Aqui solo se usa.
+ */
+
+/** El precio en euros y a secas. Se queda por compatibilidad. */
 export function aPrecio(texto) {
-  const t = String(texto ?? '');
-
-  // SOLO EUROS, Y SI NO SE SABE LA MONEDA NO HAY NUMERO.
-  //
-  // Desde que los precios los trae la busqueda, vienen como los escribe la
-  // fuente: "Entre 40 PLN y 94 PLN (~9 EUR a 22 EUR)". Leer el primer numero
-  // daba 40 y lo comparaba con euros, o sea que un tren de 9 EUR entraba en la
-  // regla del empate como si costara 40. Se busca el primer numero que este
-  // en euros y se ignoran los que llevan otra moneda pegada.
-  if (!/€|\beur/i.test(t)) return null;
-
-  // El numero entero, no un trozo suyo: sin los bordes, al descartar "40 PLN"
-  // el buscador se quedaba con el "0" de al lado y devolvia 4.
-  const m = t.match(
-    /(?<![\d.,])(\d+(?:[.,]\d+)?)(?![\d.,])(?!\s*(?:PLN|z\u0142|CZK|HUF|RON|GBP|USD|CHF|SEK|NOK|DKK|K\u010d))/i
-  );
-  return m ? Number(m[1].replace(',', '.')) : null;
+  return precioConMoneda(texto)?.euros ?? null;
 }
 
 /**
@@ -227,7 +219,13 @@ async function opcionesPorTierra(ciudadA, ciudadB, viajeId) {
       // entraban en la regla del empate como si fueran ciertos. Ahora solo se
       // usa el que trajo la búsqueda o el que escribiste tú; el resto es un
       // hueco declarado, que es la verdad.
-      precio: ['busqueda', 'manual'].includes(f.precio_origen) ? aPrecio(f.precio) : null,
+      // EL PRECIO VIENE CON SU MONEDA. Si la fuente lo escribio en zlotys, en
+      // zlotys se queda guardado y aqui se lee convertido a euros para poder
+      // compararlo —marcado como aproximado, que es lo que luego pone el «≈»—.
+      ...(() => {
+        const p = ['busqueda', 'manual'].includes(f.precio_origen) ? precioConMoneda(f.precio) : null;
+        return { precio: p?.euros ?? null, moneda: p?.moneda ?? null, aproximado: p?.aproximado ?? false };
+      })(),
       horario: f.frecuencia || null,
       nota: f.nota || null,
     }))
@@ -457,8 +455,15 @@ export function precioPorPersona(precio, ambito, personas) {
 function comoPrecio(o, personas) {
   if (o.precioPersona == null) return 'precio no encontrado';
   const cada = Math.round(o.precioPersona);
-  if (personas <= 1) return `${cada} €`;
-  return `${cada} €/persona (${Math.round(o.precioPersona * personas)} € los ${personas})`;
+
+  // EL «≈» NO ES ADORNO. Si ese euro ha salido de la tabla de cambio y no del
+  // texto de la fuente, se dice, y se dice de qué moneda venía. «4 €» a secas
+  // haría pasar una estimación por un precio consultado.
+  const casi = o.aproximado ? '≈ ' : '';
+  const origen = o.aproximado ? ` [${o.moneda} convertido]` : '';
+
+  if (personas <= 1) return `${casi}${cada} €${origen}`;
+  return `${casi}${cada} €/persona (${casi}${Math.round(o.precioPersona * personas)} € los ${personas})${origen}`;
 }
 
 function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
@@ -481,7 +486,19 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
       // horario del billete. Con «sobre las» sigue sirviendo para colocar el
       // traslado en el lienzo sin fingir un dato que nadie ha consultado.
       horario: horaSalida ? `sobre las ${horaSalida}` : null,
-      precioReal: opcion.precio != null ? String(opcion.precio) : null,
+      // EL PRECIO QUE VA AL DOSIER, CON SU MARCA SI ES CONVERTIDO.
+      //
+      // Esto se imprime tal cual en el dosier y en la ficha del transporte. Antes
+      // se guardaba el número pelado —«10.35»— y desde que un precio puede venir
+      // de una conversión, un número pelado es una estimación disfrazada de
+      // precio consultado. Va con su moneda original entre paréntesis para que se
+      // pueda comprobar en la web del operador.
+      precioReal:
+        opcion.precio == null
+          ? null
+          : opcion.aproximado
+            ? `≈ ${Math.round(opcion.precio)} € (${opcion.moneda} en origen)`
+            : `${opcion.precio} €`,
       referencia: null,
       nota: porQue,
     });
@@ -636,7 +653,22 @@ export function reglaDelAhorroGrande(medidas, params) {
   // todas delante.
   const elegida = [...cumplen].sort((a, b) => a.barata.precioPersona - b.barata.precioPersona)[0];
   const otras = cumplen.filter((x) => x.barata.id !== elegida.barata.id);
-  const euros = (o) => `${Math.round(o.precioPersona)} €/persona`;
+  const euros = (o) => `${o.aproximado ? '≈ ' : ''}${Math.round(o.precioPersona)} €/persona`;
+
+  // SI LA CUENTA SE APOYA EN UNA CONVERSIÓN, SE DICE ANTES DE RECOMENDAR NADA.
+  //
+  // El ahorro grande necesita una escala común y por eso compara en euros. Pero
+  // «cuatro veces más barata» calculado entre un billete en zlotys convertido y
+  // otro en euros de verdad no es el mismo dato que entre dos precios
+  // consultados, y quien lee la recomendación tiene derecho a saber cuál de los
+  // dos tiene delante.
+  const convertidos = [elegida.ganadora, elegida.barata, ...otras.map((o) => o.barata)]
+    .filter((o) => o.aproximado)
+    .map((o) => `${o.nombre} (${o.moneda})`);
+  const aviso = convertidos.length
+    ? ` COMPARACIÓN APROXIMADA: el precio original de ${[...new Set(convertidos)].join(' y ')} ` +
+      'no está en euros, así que la proporción sale de una conversión, no de dos precios consultados.'
+    : '';
 
   return (
     `Se cumple la regla del ahorro grande frente a «${elegida.ganadora.nombre}» ` +
@@ -651,6 +683,7 @@ export function reglaDelAhorroGrande(medidas, params) {
           )
           .join('; ')}.`
       : '') +
+    aviso +
     ' Elige una salvo que haya un motivo de peso (niños, equipaje, horario).'
   );
 }
@@ -716,9 +749,14 @@ export function porQueNoHayAhorroGrande(medidas, params) {
 
   return (
     `Ahorro grande no llega con ${resto.length === 1 ? 'la única alternativa' : `ninguna de las ${resto.length} alternativas`} a ` +
-    `«${ganadora.nombre}» (${Math.round(ganadora.precioPersona)} €/persona). La más cerca: «${cerca.nombre}» ` +
+    `«${ganadora.nombre}» (${ganadora.aproximado ? '≈ ' : ''}${Math.round(ganadora.precioPersona)} €/persona). ` +
+    `La más cerca: «${cerca.nombre}» ` +
     `(${cerca.veces.toFixed(1)} veces más barata, hacen falta ${params.factorAhorro}; ` +
-    `pierde ${comoTexto(Math.max(0, cerca.pierde))}, el tope son ${comoTexto(params.maxExtraAhorro)}).`
+    `pierde ${comoTexto(Math.max(0, cerca.pierde))}, el tope son ${comoTexto(params.maxExtraAhorro)})` +
+    // La proporción se enseña también cuando la regla NO salta, así que aquí
+    // vale la misma advertencia: un número convertido no es un precio visto.
+    (ganadora.aproximado || cerca.aproximado ? ' — proporción aproximada: hay precios convertidos.' : '') +
+    '.'
   );
 }
 

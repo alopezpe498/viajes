@@ -40,6 +40,7 @@
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { consultarJSONConGoogle } from '../lib/ia.js';
 import { ocupacionDe } from './proveedores.js';
+import { precioConMoneda } from './importes.js';
 import { configAuto, promptDeFase } from './orquestador.js';
 
 /** Los dos ámbitos posibles. No hay un tercero: o es de todos o es de cada uno. */
@@ -155,8 +156,16 @@ function linea({
   // suma como si fueran euros, y como el lector de precios además se comía tres
   // ceros («THB 4,500» → 4,5), el error se tapaba solo y el presupuesto salía
   // creíble. Arreglado el lector, 4.500 bats sumarían 4.500 € si nadie mirara la
-  // moneda. No hay tabla de cambio en esta casa y no se va a inventar una:
-  // convertir a ojo sería el mismo fallo con mejor cara.
+  // moneda.
+  //
+  // Y AQUÍ NO SE CONVIERTE, aunque desde hace poco haya una tabla de cambio en
+  // `services/importes.js`. Esa tabla nació para COMPARAR —la regla del ahorro
+  // grande necesita una escala común para decidir si un tren en zlotys es cuatro
+  // veces más barato que un taxi en euros— y comparar admite un orden de
+  // magnitud. Esto es otra cosa: es el dinero que se va a pagar. Meter en el
+  // total un número sacado de una tasa de hace meses lo volvería tan falso como
+  // sumar bats, solo que más difícil de ver. La línea se enseña, el total la deja
+  // fuera, y se dice.
   const enOtraMoneda = Boolean(moneda) && moneda !== 'EUR';
 
   return {
@@ -321,9 +330,23 @@ function conceptoTraslados(viaje, viajeros, etapas) {
       ? una('SELECT * FROM catalogo_transporte_tramo WHERE id = ?', t.ficha_transporte_id)
       : null;
 
+    // SI ESE EURO VIENE DE UNA CONVERSIÓN, AQUÍ TAMBIÉN SE DICE.
+    //
+    // `precio_estimado` es siempre un número en euros, pero desde que la fase de
+    // traslados sabe leer precios en zlotys y en dólares, ese euro puede haber
+    // salido de la tabla de cambio en vez del texto del operador. Sin esto, el
+    // presupuesto —que es la pantalla donde el número se lee como definitivo—
+    // enseñaría «≈ 11 €» como «11 €», que es justo lo que este fichero lleva
+    // evitando desde el viaje por Asia. La moneda de origen está en la ficha del
+    // catálogo, que se guarda con el texto literal de la fuente.
+    const enOrigen = ficha ? precioConMoneda(ficha.precio) : null;
+    const convertido = Boolean(enOrigen?.aproximado) && t.precio_estimado != null;
+
     return linea({
       titulo: `${desde} → ${hasta}`,
-      detalle: t.notas ?? ficha?.nombre ?? t.tipo,
+      detalle:
+        (t.notas ?? ficha?.nombre ?? t.tipo) +
+        (convertido ? ` · ≈ convertido desde ${enOrigen.moneda}` : ''),
       importe: t.precio_estimado,
       ambito: t.precio_ambito ?? (ficha ? ambitoDeTramo(ficha) : ambitoDeTramo({ medio: t.tipo })),
       personas: viajeros.total,

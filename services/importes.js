@@ -85,6 +85,32 @@ export function importeDeTexto(texto) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * LA MONEDA MÁS CERCANA AL PRINCIPIO DEL TEXTO, no la primera de la lista.
+ *
+ * `monedaDeTexto` recorre los códigos en el orden en que están escritos, y para
+ * su pregunta —«¿de qué moneda habla esto?»— vale. Para la de `precioConMoneda`
+ * —«¿en qué está ESTE número?»— no: en «desde 7 € / 8 USD» el dólar aparece más
+ * tarde pero gana, porque «USD» está antes que el símbolo «€» en la lista. Y
+ * entonces siete euros se leen como siete dólares.
+ *
+ * Aquí manda la POSICIÓN: lo que esté pegado al número es lo suyo.
+ */
+function monedaMasCercana(texto) {
+  const t = String(texto ?? '');
+  let mejor = null;
+
+  for (const codigo of CODIGOS) {
+    const m = new RegExp(`\\b${codigo}\\b`, 'i').exec(t);
+    if (m && (mejor == null || m.index < mejor.donde)) mejor = { donde: m.index, codigo };
+  }
+  for (const [simbolo, codigo] of Object.entries(MONEDAS)) {
+    const donde = t.indexOf(simbolo);
+    if (donde >= 0 && (mejor == null || donde < mejor.donde)) mejor = { donde, codigo };
+  }
+  return mejor?.codigo ?? null;
+}
+
 /** El código de moneda que nombra un texto, o null. */
 export function monedaDeTexto(texto) {
   const t = String(texto ?? '');
@@ -117,5 +143,106 @@ export function precioDeTexto(texto) {
     moneda,
     enEuros: moneda === 'EUR' || moneda === null ? importe : null,
     texto: String(texto).trim(),
+  };
+}
+
+/**
+ * LO QUE VALE CADA MONEDA EN EUROS. FIJAS Y FECHADAS: septiembre de 2026.
+ *
+ * ESTO NO EXISTÍA A PROPÓSITO, y el comentario de `services/presupuesto.js` lo
+ * dice: «No hay tabla de cambio en esta casa y no se va a inventar una». Sigue
+ * valiendo PARA EL PRESUPUESTO, que es dinero que se va a pagar: ahí un precio en
+ * bats no se suma, se deja fuera del total y se dice.
+ *
+ * Nace ahora para otra cosa: para PODER COMPARAR. La regla del ahorro grande
+ * tiene que decidir si un tren en zlotys es cuatro veces más barato que un taxi
+ * en euros, y sin una escala común esa pregunta no se puede ni formular. Para eso
+ * sobra el orden de magnitud, y una llamada de red en vivo sería una dependencia
+ * nueva y un modo de fallo nuevo a cambio de decimales que no cambian ninguna
+ * decisión.
+ *
+ * LA CONTRAPARTIDA ES INNEGOCIABLE: todo número que salga de aquí se enseña con
+ * «≈» y diciendo de qué moneda viene. Un euro sacado de una tasa de hace meses no
+ * es un precio consultado, y hacerlo pasar por uno es el pecado que ya se pagó
+ * con los 176 €.
+ *
+ * Solo están las monedas de los sitios a los que de verdad se viaja desde aquí.
+ * El zloty va primero por algo: Polonia es el viaje de la casa y el PLN es la
+ * moneda que más aparece en el catálogo de traslados.
+ */
+export const A_EURO_FECHA = 'septiembre de 2026';
+export const A_EURO = {
+  EUR: 1,
+  PLN: 0.23,   // ~4,35 zl/EUR
+  USD: 0.92,   // ~1,09 USD/EUR
+  GBP: 1.17,
+  CHF: 1.06,
+  CZK: 0.040,  // ~25 Kc/EUR
+  HUF: 0.0025, // ~400 Ft/EUR
+  RON: 0.20,
+  SEK: 0.088,
+  NOK: 0.086,
+  DKK: 0.134,
+};
+
+/**
+ * EL PRECIO Y LA MONEDA QUE LE CORRESPONDE A ESE NÚMERO EN CONCRETO.
+ *
+ * EL FALLO QUE ORIGINA ESTO. En el catálogo de traslados estaba esto:
+ *
+ *     "Alquiler: 15-30 USD/día + 80 EUR/90 USD tasa retorno one-way; ..."
+ *
+ * y el lector de la fase de traslados devolvía 15. Quince EUROS. Su guarda solo
+ * miraba si había una moneda PEGADA al número —así bloqueaba "40 PLN"— y en un
+ * RANGO la moneda va detrás del SEGUNDO número: "15-30 USD" colaba entero. Un
+ * alquiler de quince dólares compitiendo en la regla del ahorro grande contra
+ * billetes que sí eran euros.
+ *
+ * Y al revés también fallaba: "49 PLN (aprox. 11-13 USD) anticipado" no tiene un
+ * solo euro en todo el texto, así que devolvía null y ese precio de PKP se tiraba
+ * a la basura teniéndolo escrito delante.
+ *
+ * POR QUÉ NO VALE `precioDeTexto` PARA ESTO. Aquélla contesta «qué monedas nombra
+ * este texto», y en un texto con tres monedas eso no dice cuál es la del precio.
+ * Ésta contesta otra pregunta: «el primer número que aparece, ¿en qué está?». Se
+ * coge el primero porque es el que la fuente pone de titular —lo que viene detrás
+ * son suplementos, tasas y precios de última hora— y se busca su moneda saltando
+ * por encima del resto de SU rango, que es donde se escondía.
+ *
+ * El vocabulario de monedas no se duplica: lo pone `monedaDeTexto`, aplicado a la
+ * ventana de texto que rodea a ese número y no al texto entero.
+ */
+export function precioConMoneda(texto) {
+  const t = String(texto ?? '');
+
+  // El número entero, no un trozo suyo: sin los bordes, al descartar "40 PLN" el
+  // buscador se quedaba con el "0" de al lado y devolvía 4.
+  const m = /(?<![\d.,])(\d+(?:[.,]\d+)?)(?![\d.,])/.exec(t);
+  if (!m) return null;
+
+  const importe = importeDeTexto(m[1]);
+  if (importe == null || importe <= 0) return null;
+
+  // Se salta el resto del rango —"-30", "– 70", " a 44"— para llegar a la moneda.
+  const trasElRango = t
+    .slice(m.index + m[0].length)
+    .replace(/^\s*(?:[-–—]|a|al|to|hasta|y)?\s*\d+(?:[.,]\d+)?/, '');
+  // Un símbolo pegado por delante también cuenta: "$41", "€12".
+  const ventana = `${t.slice(Math.max(0, m.index - 2), m.index)} ${trasElRango.slice(0, 14)}`;
+
+  const moneda = monedaMasCercana(ventana);
+
+  // SIN MONEDA NO HAY NÚMERO. Un "45 - 70" pelado puede ser cualquier cosa, y
+  // adivinar cuál es justo lo que se está arreglando.
+  if (!moneda || !A_EURO[moneda]) return null;
+
+  return {
+    importe,
+    moneda,
+    // Lo que se compara y lo que se enseña, siempre en euros.
+    euros: moneda === 'EUR' ? importe : importe * A_EURO[moneda],
+    // Y si ha salido de la tabla, lo dice: quien lo pinte le pone el «≈».
+    aproximado: moneda !== 'EUR',
+    tasaDe: moneda === 'EUR' ? null : A_EURO_FECHA,
   };
 }
