@@ -194,6 +194,12 @@ import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-
 import { actualizarAhora, climaDelPais } from '../services/clima.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import { mapaDeViaje } from '../services/mapa-viaje.js';
+import {
+  traducirRegistro,
+  registroTraducidoDe,
+  cambiosAMano,
+  ESTADOS,
+} from '../services/registro-traducido.js';
 import { buscandoDatos } from '../services/datos-sitios.js';
 import {
   pedirBusqueda,
@@ -2674,6 +2680,34 @@ router.get('/viajes/:id/orquestador', cargarViaje, (req, res) => {
   });
 });
 
+/**
+ * LA VISTA TRADUCIDA: el registro contado en cristiano.
+ *
+ * ES LA PUERTA PRINCIPAL. «Cómo se montó este viaje» entra aquí, y el log crudo
+ * —que es esta misma ruta sin `/vista`— queda como la trampilla del técnico, con
+ * su botón en una esquina.
+ *
+ * NO TRADUCE AL ABRIR. Si no hay traducción guardada, la pantalla lo dice y
+ * ofrece el botón; traducir a escondidas en cada visita es exactamente lo que se
+ * decidió no hacer.
+ */
+router.get('/viajes/:id/orquestador/vista', cargarViaje, (req, res) => {
+  res.render('registro-traducido', {
+    viaje: req.viaje,
+    vista: registroTraducidoDe(req.viaje.id),
+    manual: cambiosAMano(req.viaje.id),
+    estados: ESTADOS,
+  });
+});
+
+/** Generar (o rehacer) la traducción a petición. Es la única forma de crearla
+ *  fuera del final del orquestador. */
+router.post('/viajes/:id/orquestador/vista', cargarViaje, async (req, res) => {
+  const r = await traducirRegistro(req.viaje.id);
+  if (r?.error) return res.status(502).json({ error: r.error });
+  res.json({ ok: true });
+});
+
 /** Sondeo de esa pantalla. Devuelve las seis fases con su estado y su log. */
 router.get('/viajes/:id/orquestador/estado', cargarViaje, (req, res) => {
   res.json(progresoDeViaje(req.viaje.id));
@@ -3744,6 +3778,26 @@ router.post('/api/itinerario', (req, res) => {
   res.json(lienzoDeViaje(viajeId, { etapaId: Number(req.body?.etapa) || null }));
 });
 
+/**
+ * «ESTO LO HE TOCADO YO», Y SE APUNTA AQUÍ Y NO EN EL SERVICIO.
+ *
+ * `mover` y `retocar` las usan LAS DOS PARTES: la persona arrastrando una
+ * tarjeta y el propio orquestador cuando recoloca algo en la revisión. Marcar
+ * dentro del servicio marcaría también los movimientos de la máquina, con dos
+ * consecuencias feas: la vista traducida atribuiría a la persona lo que hizo el
+ * orquestador, y las fases dejarían de tocar sus propias colocaciones.
+ *
+ * La frontera buena es ésta: una petición HTTP desde el navegador es una
+ * persona; una llamada de servicio desde una fase, no.
+ *
+ * La columna existe desde la migración del orquestador con este destino escrito
+ * —«el día que una fase empiece a escribir de verdad, no puede ser el día en que
+ * se descubre que no hay dónde apuntar lo que era tuyo»— y hasta ahora la leían
+ * tres sitios y no la escribía nadie.
+ */
+const marcarAMano = (id) =>
+  ejecutar('UPDATE itinerario SET tocado_a_mano = 1 WHERE id = ?', Number(id));
+
 /** Moverlo a otro día o a otra franja. */
 router.post('/api/itinerario/:id/mover', (req, res) => {
   const fila = mover(Number(req.params.id), {
@@ -3751,6 +3805,7 @@ router.post('/api/itinerario/:id/mover', (req, res) => {
     franja: req.body?.franja,
   });
   if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
+  marcarAMano(fila.id);
 
   res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.body?.etapa) || null }));
 });
@@ -3762,6 +3817,7 @@ router.post('/api/itinerario/:id/retocar', (req, res) => {
     duracionMin: 'duracionMin' in (req.body ?? {}) ? req.body.duracionMin : undefined,
   });
   if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
+  marcarAMano(fila.id);
 
   res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.body?.etapa) || null }));
 });
@@ -3771,6 +3827,7 @@ router.post('/api/itinerario/:id/mover-en-franja', (req, res) => {
   const direccion = req.body?.direccion === 'arriba' ? 'arriba' : 'abajo';
   const fila = moverEnFranja(Number(req.params.id), direccion);
   if (!fila) return res.status(404).json({ error: 'Eso ya no está en el lienzo.' });
+  marcarAMano(fila.id);
 
   res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.body?.etapa) || null }));
 });

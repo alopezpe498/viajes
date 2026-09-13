@@ -71,7 +71,10 @@ const { viaje } = ruta;
               no se vuelve a preguntar, porque el `viaje` de esta plantilla es el
               resumen que pinta la lista y no trae ese campo. %>
           <% if (typeof hayRegistro !== 'undefined' && hayRegistro) { %>
-            <a class="boton-discreto" href="/viajes/<%= viaje.id %>/orquestador">
+            <%# A LA VISTA TRADUCIDA, no al log crudo. Ésta es la memoria del
+                viaje y su entrada natural; el log en crudo tiene su botón
+                dentro, en una esquina, para cuando haga falta depurar. %>
+            <a class="boton-discreto" href="/viajes/<%= viaje.id %>/orquestador/vista">
               <i class="ti ti-notebook" aria-hidden="true"></i> Cómo se montó este viaje
             </a>
           <% } %>

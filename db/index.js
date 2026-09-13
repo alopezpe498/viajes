@@ -392,6 +392,7 @@ export function migrarEsquema() {
   migracionFase1NoAfirmaQueCabe();
   migracionTopePorTrabajo();
   migracionCosteDeTrasladosInternos();
+  migracionRegistroTraducido();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5421,6 +5422,98 @@ function migracionViajeros() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migración hecha.');
+  return true;
+}
+
+/**
+ * LA VISTA TRADUCIDA DEL REGISTRO.
+ *
+ * El log crudo es de maquina: doscientas lineas tecnicas por viaje. Dentro esta
+ * lo mas valioso del proyecto —POR QUE el viaje salio asi— y es infumable de
+ * leer. Esta tabla guarda esa misma historia contada en cristiano.
+ *
+ * SE GUARDA, NO SE TRADUCE AL VUELO. Una pasada de IA al terminar de orquestar y
+ * a dormir. Abrir la pantalla es instantaneo, el texto es el MISMO cada vez —una
+ * traduccion que cambiara entre lecturas no seria una memoria, seria un oraculo—
+ * y cuesta una llamada por viaje en lugar de una por apertura.
+ *
+ * UNA FILA POR VIAJE. Relanzar el orquestador la reescribe, que es lo correcto:
+ * la historia es la del viaje que hay, no la de todos los que hubo.
+ *
+ * `json` guarda la estructura entera —la ruta y luego cada ciudad con lo que
+ * entro y lo que no— y no un texto plano, porque la pantalla filtra por estado y
+ * busca por palabras, y eso sobre un parrafo no se puede hacer.
+ */
+function migracionRegistroTraducido() {
+  const CLAVE = '2026-09-registro-traducido';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS registro_traducido (
+      viaje_id    INTEGER PRIMARY KEY REFERENCES viajes(id) ON DELETE CASCADE,
+      json        TEXT NOT NULL,
+      modelo      TEXT,
+      -- Cuantas lineas de log resumia: si el registro crece despues, se nota que
+      -- la traduccion se quedo vieja sin tener que compararlas entera.
+      lineas      INTEGER,
+      generado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // EL PROMPT, EDITABLE COMO LOS DEMAS. Vive en la pantalla del orquestador con
+  // los de las seis fases, que es donde el usuario los ajusta sin desplegar.
+  const prompt = [
+    'Eres el cronista de un viaje. Te doy el REGISTRO TECNICO que dejo el',
+    'orquestador al montarlo y tienes que convertirlo en la memoria legible del',
+    'viaje: por que salio asi.',
+    '',
+    'REGLAS DEL TONO, y son la mitad del encargo:',
+    '',
+    '1. UNA LINEA POR DECISION. `que` es una linea corta —menos de 70',
+    '   caracteres— que dice QUE paso. Nada de parrafos.',
+    '2. EL PORQUE VA APARTE, en `porque`: una o dos frases con la razon REAL que',
+    '   da el registro. Es lo que se lee al desplegar la linea.',
+    '3. NO INVENTES NI UNA RAZON. Si el registro no dice por que, escribe',
+    '   `porque` en null. Un motivo inventado con cara de dato es peor que un',
+    '   hueco declarado: este proyecto prefiere el hueco.',
+    '4. Habla como quien le cuenta el viaje a un amigo, en segunda persona',
+    '   cuando toque, sin jerga tecnica y sin nombres de funciones ni de tablas.',
+    '',
+    'ESTADOS, y son los que filtran la pantalla:',
+    '  "elegido"    lo que entro en el viaje',
+    '  "descartado" lo que se penso y se quedo fuera (la mochila)',
+    '  "movido"     lo que se recoloco o cambio de dia',
+    '  "aviso"      lo que entro pero con una pega que hay que mirar',
+    '',
+    'ORDEN: primero la RUTA (que ciudades entran, cuales no y por que, que puerta',
+    'se eligio y el reparto de noches). Despues CADA CIUDAD en el orden del',
+    'viaje, y dentro de cada una lo que se coloco y lo que se descarto.',
+    '',
+    'UN DESCARTE ES DE SU CIUDAD. Majdanek se descarto en Cracovia y va en',
+    'Cracovia, junto a lo que si entro. No hagas una seccion de descartes.',
+    '',
+    'Devuelve SOLO este JSON:',
+    '{',
+    '  "titular": "una linea que resuma el viaje entero",',
+    '  "ruta": [ {"estado":"elegido|descartado|movido|aviso","que":"...","porque":"...|null"} ],',
+    '  "ciudades": [',
+    '    {"nombre":"...", "resumen":"3 noches, dias 1-3",',
+    '     "lineas":[ {"estado":"...","que":"...","porque":"...|null","cuando":"Dia 3 por la tarde|null"} ]}',
+    '  ]',
+    '}',
+    '',
+    'EL REGISTRO:',
+    '{{REGISTRO}}',
+  ].join('\n');
+
+  db.prepare(
+    `INSERT INTO prompts_orquestador (fase, prompt_actual, prompt_fabrica, actualizado_en)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT (fase) DO NOTHING`
+  ).run('registro_traducido', prompt, prompt);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: vista traducida del registro.');
   return true;
 }
 

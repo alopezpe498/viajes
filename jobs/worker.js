@@ -60,6 +60,7 @@ import { ejecutarFaseSitios } from '../services/orquestador-sitios.js';
 import { ejecutarFaseExcursiones } from '../services/orquestador-excursiones.js';
 import { ejecutarFaseLienzo } from '../services/orquestador-lienzo.js';
 import { asegurarEstimacion } from '../services/presupuesto.js';
+import { traducirRegistro } from '../services/registro-traducido.js';
 import {
   paradaPedida,
   limpiarParada,
@@ -1719,6 +1720,20 @@ async function ejecutarOrquestador(trabajo) {
   }
 
   await ejecutarPresupuesto({ id: trabajo.id, viajeId });
+
+  // LA VISTA TRADUCIDA, DE UNA PASADA Y AQUÍ.
+  //
+  // Es el único momento en que el registro está completo y quieto. Traducirlo al
+  // abrir la pantalla costaría una llamada de IA por visita y daría un texto
+  // distinto cada vez, que para una MEMORIA del viaje es lo contrario de lo que
+  // se quiere: se vuelve meses después justo para comprobar qué decía.
+  //
+  // Va con su propio paracaídas dentro —no lanza nunca— por lo mismo que el
+  // presupuesto: que falle el cronista no puede convertir un viaje bien montado
+  // en un viaje con error.
+  await traducirRegistro(viajeId, {
+    di: (t) => anotar(viajeId, FASES[FASES.length - 1].clave, t, ORIGENES.ia),
+  });
 
   // LO ÚLTIMO DE TODO: cuánto ha tardado, de principio a fin.
   anotar(

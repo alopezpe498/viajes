@@ -188,11 +188,15 @@
           const datos = await r.json();
           pintar(datos);
 
-          // Terminado: una recarga para que salga el resumen de huecos y el
-          // botón en primario, y a callar.
+          // TERMINADO: A LA HISTORIA DEL VIAJE.
+          //
+          // El log en vivo ha cumplido su función —ver cómo se monta, línea a
+          // línea— y en cuanto para, lo que uno quiere saber es POR QUÉ salió
+          // así. Esa respuesta está en la vista traducida, que el worker acaba
+          // de generar y guardar; el log crudo sigue a un clic desde allí.
           if (!datos.trabajando) {
             clearInterval(reloj);
-            location.reload();
+            location.assign(`/viajes/${viajeId}/orquestador/vista`);
           }
         } catch (err) {
           // Un fallo suelto de red no puede cortar el sondeo: el trabajo sigue

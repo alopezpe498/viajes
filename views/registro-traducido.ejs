@@ -1,0 +1,175 @@
+<%
+/**
+ * CÓMO SE MONTÓ ESTE VIAJE, contado en cristiano.
+ *
+ * Una sola narración de arriba abajo, en el orden en que se vive el viaje: la
+ * ruta primero —qué ciudades entraron, cuáles no, qué puerta y qué reparto— y
+ * después cada ciudad con lo que se colocó y lo que se quedó en la mochila.
+ *
+ * NADA DE PESTAÑAS, y es una decisión, no una simplificación. Un descarte es de
+ * SU ciudad: Majdanek se quedó fuera en Cracovia y se quiere leer ahí mismo,
+ * junto a lo que sí entró de Cracovia. En una pestaña de «descartes» pierde el
+ * contexto que es justo lo que explica la decisión.
+ *
+ * Espera: viaje, vista (o null), manual, estados.
+ */
+const pieExtra = '<script src="/js/registro-traducido.js"></script>';
+const cabezaExtra = '<link rel="stylesheet" href="/css/registro-traducido.css">';
+
+/** Cuántas líneas hay de cada estado, para que los chips digan su número. */
+const todasLasLineas = vista
+  ? [...(vista.ruta ?? []), ...(vista.ciudades ?? []).flatMap((c) => c.lineas ?? [])]
+  : [];
+const cuantas = (e) => todasLasLineas.filter((l) => l.estado === e).length;
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Cómo se montó · ${viaje.nombre}`,
+      extraCabeza: cabezaExtra
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido" data-viaje="<%= viaje.id %>">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a>
+      </p>
+      <div class="etapa-titular">
+        <h1 class="ruta-cabecera__titulo">Cómo se montó este viaje</h1>
+
+        <span class="etapa-acciones">
+          <%# LA TRAMPILLA DEL TÉCNICO. Siempre disponible y siempre en la
+              esquina: la vista traducida es la puerta principal, pero el log
+              crudo tiene que estar a un clic para depurar. %>
+          <a class="boton-discreto" href="/viajes/<%= viaje.id %>/orquestador">
+            <i class="ti ti-terminal-2" aria-hidden="true"></i> Ver el log en crudo
+          </a>
+        </span>
+      </div>
+      <% if (vista?.titular) { %>
+        <p class="rt-titular"><%= vista.titular %></p>
+      <% } %>
+    </header>
+
+    <% if (!vista) { %>
+      <%# ---------- SIN TRADUCCIÓN ---------- %>
+      <section class="tarjeta rt-vacio">
+        <h2>Este viaje todavía no tiene su historia contada</h2>
+        <p>
+          La traducción se hace una sola vez, al terminar de montar el viaje, y se
+          guarda. Este viaje es de antes de que existiera esta pantalla, o aquella
+          pasada falló.
+        </p>
+        <p class="rt-vacio__nota">
+          Cuesta una llamada a la IA y tarda unos segundos. El log en crudo sigue
+          entero mientras tanto.
+        </p>
+        <button class="boton" id="rt-generar" data-viaje="<%= viaje.id %>">
+          <i class="ti ti-wand" aria-hidden="true"></i> Generar la vista
+        </button>
+      </section>
+    <% } else { %>
+
+      <%# ---------- BUSCADOR Y CHIPS ---------- %>
+      <section class="rt-filtros">
+        <label class="rt-buscador">
+          <i class="ti ti-search" aria-hidden="true"></i>
+          <input type="search" id="rt-buscar" placeholder="Buscar en el viaje… (Wawel, Auschwitz, hotel)"
+                 autocomplete="off">
+        </label>
+        <div class="rt-chips" id="rt-chips">
+          <% for (const [clave, e] of Object.entries(estados)) { %>
+            <% if (!cuantas(clave)) continue; %>
+            <button class="rt-chip" data-estado="<%= clave %>"
+                    style="--cc: <%= e.color %>; --cf: <%= e.fondo %>">
+              <i class="ti <%= e.icono %>" aria-hidden="true"></i>
+              <%= e.etiqueta %> <span class="rt-chip__n"><%= cuantas(clave) %></span>
+            </button>
+          <% } %>
+        </div>
+        <p class="rt-sinresultados" id="rt-sinresultados" hidden>
+          Nada coincide con eso.
+        </p>
+      </section>
+
+      <% if (vista.vieja) { %>
+        <p class="rt-desfase">
+          <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+          El registro ha crecido desde que se escribió esta historia
+          (<%= vista.lineasTraducidas %> líneas entonces, <%= vista.lineasAhora %> ahora):
+          relanzaste alguna fase después.
+          <button class="rt-rehacer" id="rt-generar" data-viaje="<%= viaje.id %>">Rehacerla</button>
+        </p>
+      <% } %>
+
+      <%# ---------- 1) LA RUTA ---------- %>
+      <% if (vista.ruta?.length) { %>
+        <section class="rt-bloque">
+          <h2 class="rt-bloque__titulo">
+            <i class="ti ti-route" aria-hidden="true"></i> La ruta
+          </h2>
+          <p class="rt-bloque__pie">Qué ciudades entraron, cuáles no, y por dónde se entra y se sale.</p>
+          <ul class="rt-lineas">
+            <%- include('parciales/rt-lineas', { lineas: vista.ruta, estados }) %>
+          </ul>
+        </section>
+      <% } %>
+
+      <%# ---------- 2) CADA CIUDAD, EN ORDEN ---------- %>
+      <% for (const c of vista.ciudades ?? []) { %>
+        <section class="rt-bloque">
+          <h2 class="rt-bloque__titulo">
+            <i class="ti ti-map-pin" aria-hidden="true"></i> <%= c.nombre %>
+          </h2>
+          <% if (c.resumen) { %><p class="rt-bloque__pie"><%= c.resumen %></p><% } %>
+          <ul class="rt-lineas">
+            <%- include('parciales/rt-lineas', { lineas: c.lineas, estados }) %>
+          </ul>
+        </section>
+      <% } %>
+
+      <%# ---------- 3) LA SEGUNDA CAPA ---------- %>
+      <section class="rt-bloque rt-bloque--mio">
+        <h2 class="rt-bloque__titulo">
+          <i class="ti ti-hand-finger" aria-hidden="true"></i> Y esto lo cambiaste tú
+        </h2>
+        <p class="rt-bloque__pie">
+          Lo de arriba es lo que decidió el orquestador el día que montó el viaje, y
+          no se reescribe. Esto va encima.
+        </p>
+        <% if (!manual.length) { %>
+          <p class="rt-vacio__nota">
+            Todavía no has movido nada a mano en el lienzo. En cuanto lo hagas, aparece aquí.
+          </p>
+        <% } else { %>
+          <ul class="rt-lineas">
+            <% for (const m of manual) { %>
+              <li class="rt-linea rt-linea--mia" data-estado="movido"
+                  data-texto="<%= (m.que + ' ' + (m.ciudad ?? '')).toLowerCase() %>">
+                <span class="rt-linea__ic" style="--cc:#16688A;--cf:#D3E8F0">
+                  <i class="ti ti-hand-finger" aria-hidden="true"></i>
+                </span>
+                <span class="rt-linea__txt">
+                  <b><%= m.que %></b>
+                  <small><%= [m.ciudad, m.cuando].filter(Boolean).join(' · ') %></small>
+                </span>
+                <span class="rt-linea__quien">lo cambiaste tú</span>
+              </li>
+            <% } %>
+          </ul>
+        <% } %>
+      </section>
+
+      <p class="rt-firma">
+        Contado el <%= (vista.generadoEn ?? '').slice(0, 16).replace('T', ' ') %>
+        <% if (vista.modelo) { %>por <%= vista.modelo %><% } %>
+        · <%= vista.lineasTraducidas %> líneas de registro.
+      </p>
+    <% } %>
+
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

@@ -1,0 +1,50 @@
+<%
+/**
+ * UNA TANDA DE LÍNEAS DE LA HISTORIA.
+ *
+ * LA REGLA DE ORO DE ESTA PANTALLA: una línea es UNA LÍNEA. Dice qué pasó y se
+ * acaba. El porqué va dentro, plegado, y solo aparece cuando se toca.
+ *
+ * Por eso cada línea es un `<details>` de verdad y no un div con JavaScript: se
+ * pliega sin script, se puede buscar con el buscador del navegador y el lector
+ * de pantalla la anuncia como lo que es. Las que no tienen porqué —porque el
+ * registro no lo decía— salen como una línea a secas: un desplegable vacío
+ * prometería una explicación que no existe.
+ *
+ * `data-texto` y `data-estado` son para el filtro y el buscador de la pantalla.
+ *
+ * Espera: lineas, estados.
+ */
+%>
+<% for (const l of lineas ?? []) { %>
+  <% const e = estados[l.estado] ?? estados.elegido; %>
+  <% const busca = `${l.que} ${l.porque ?? ''} ${l.cuando ?? ''}`.toLowerCase(); %>
+
+  <% if (l.porque) { %>
+    <li class="rt-linea" data-estado="<%= l.estado %>" data-texto="<%= busca %>">
+      <details class="rt-det">
+        <summary>
+          <span class="rt-linea__ic" style="--cc:<%= e.color %>;--cf:<%= e.fondo %>">
+            <i class="ti <%= e.icono %>" aria-hidden="true"></i>
+          </span>
+          <span class="rt-linea__txt">
+            <b><%= l.que %></b>
+            <% if (l.cuando) { %><small><%= l.cuando %></small><% } %>
+          </span>
+          <i class="ti ti-chevron-down rt-linea__flecha" aria-hidden="true"></i>
+        </summary>
+        <p class="rt-porque"><%= l.porque %></p>
+      </details>
+    </li>
+  <% } else { %>
+    <li class="rt-linea rt-linea--muda" data-estado="<%= l.estado %>" data-texto="<%= busca %>">
+      <span class="rt-linea__ic" style="--cc:<%= e.color %>;--cf:<%= e.fondo %>">
+        <i class="ti <%= e.icono %>" aria-hidden="true"></i>
+      </span>
+      <span class="rt-linea__txt">
+        <b><%= l.que %></b>
+        <% if (l.cuando) { %><small><%= l.cuando %></small><% } %>
+      </span>
+    </li>
+  <% } %>
+<% } %>
