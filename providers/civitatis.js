@@ -156,11 +156,31 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
       .replace(/[^a-z0-9]+/g, '')
       .trim();
 
-  // 1) Lo que ya se sepa de esta ciudad, aunque lo que se sepa sea que no esta.
+  // 1) LO QUE YA SE SEPA. Y un SI de cualquiera vale para todas.
   for (const c of candidatos) {
     const fila = una('SELECT slug FROM civitatis_destinos WHERE nombre_norm = ?', normal(c));
-    if (fila) return fila.slug ?? null;
+    if (fila?.slug) return fila.slug;
   }
+
+  // UN «NO EXISTE» CACHEADO SOLO CUENTA SI LO SON TODOS.
+  //
+  // EL FALLO QUE ORIGINA ESTO, y se comio una isla entera. El bucle de arriba
+  // devolvia en el PRIMER candidato con fila, «aunque lo que se sepa sea que no
+  // esta». El primer candidato es siempre el nombre completo —«Creta
+  // (Heraclion)»—, que estaba cacheado como inexistente de un intento anterior,
+  // asi que se devolvia null sin mirar ni una de las variantes. Daba igual
+  // cuantas se añadieran detras: no se llegaba a probarlas NUNCA.
+  //
+  // Es una cache envenenada: el dia que se añade una variante nueva —«Creta»,
+  // que es justo la que funciona— las ciudades que ya fallaron una vez siguen
+  // fallando para siempre, y sin decir por que.
+  //
+  // Ahora, si alguna variante no se ha probado jamas, se va a probarla. Solo se
+  // da por perdida cuando todas tienen su «no existe» apuntado.
+  const sinProbar = candidatos.filter(
+    (c) => !una('SELECT 1 AS hay FROM civitatis_destinos WHERE nombre_norm = ?', normal(c))
+  );
+  if (!sinProbar.length) return null;
 
   const guardar = (queNombre, slug) =>
     ejecutar(

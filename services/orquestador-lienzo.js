@@ -420,17 +420,35 @@ export function esDiaDeViaje(lienzo, dia) {
 
   const minimo = parametro('minutos_utiles_dia_de_viaje', 240);
 
+  // UN SALTO ES UN EXTREMO, NO LOS DOS.
+  //
+  // EL FALLO QUE ORIGINA ESTO. Grecia, día 4: salto de Creta a Atenas con el
+  // vuelo a las 23:05. El salto se metía a la vez en las dos cuentas —su
+  // `horaFin` (23:59) como principio del día y su `hora` (19:50) como final— y
+  // salía una jornada de MENOS 249 minutos. Cualquier cosa por debajo del mínimo
+  // es «día de viaje», así que el día se declaraba muerto teniendo por delante
+  // de las siete de la mañana a las ocho de la tarde en Creta.
+  //
+  // Un salto solo puede ser una de las dos cosas, y lo dice de quién es el día:
+  //   · si el día es del DESTINO, el salto es la llegada y el día empieza al
+  //     bajarse del avión;
+  //   · si es del ORIGEN, el salto es la marcha y el día acaba al salir hacia el
+  //     aeropuerto.
+  // Nunca las dos. `services/lienzo.js` decide de quién es el día con esta misma
+  // cuenta, así que aquí basta con mirar el resultado.
+  const esDelDestino = salto ? salto.etapaId === lienzo.dias?.find((d) => d.n === dia)?.etapaId : false;
+
   // Desde cuándo se puede empezar: al salir del aeropuerto o del traslado.
   const empieza = Math.max(
     enMinutosDelDia(llegada?.horaFin ?? llegada?.hora) ?? 0,
-    enMinutosDelDia(salto?.horaFin) ?? 0,
+    (esDelDestino ? enMinutosDelDia(salto?.horaFin) : null) ?? 0,
     9 * 60
   );
 
   // Hasta cuándo: cuando arranca el bloque de la salida, si lo hay.
   const acaba = Math.min(
     enMinutosDelDia(salida?.hora) ?? 24 * 60,
-    enMinutosDelDia(salto?.hora) ?? 24 * 60,
+    (esDelDestino ? null : enMinutosDelDia(salto?.hora)) ?? 24 * 60,
     22 * 60
   );
 

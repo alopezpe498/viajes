@@ -247,6 +247,35 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
   // --- 4) Los bloques fijos de transporte ---------------------------------
   const fijos = bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa);
 
+  // --- 4b) DE QUIÉN ES EL DÍA DEL CAMBIO DE CIUDAD -------------------------
+  //
+  // EL FALLO QUE ORIGINA ESTO. En Grecia el día 4 era el salto de Creta a
+  // Atenas con un vuelo a las 23:05, y salió ENTERO en blanco: «llegada
+  // nocturna, solo traslado, nada que planificar». Y mientras, Creta expulsaba
+  // Rethymno y Spinalonga «por falta de días» teniendo esa jornada completa
+  // delante.
+  //
+  // El motivo es de una línea, y está arriba: el día se le da a la etapa cuyo
+  // rango lo contiene, y el fin es EXCLUSIVO, así que el día del cambio es
+  // siempre del DESTINO. Con un vuelo de mañana eso es correcto. Con uno de las
+  // once de la noche es justo al revés: ese día se vive entero en la ciudad que
+  // se abandona y en el destino solo se llega a dormir.
+  //
+  // La cuenta es la misma que ya se hace con el día de llegada, del otro lado
+  // del espejo: el día de llegada empieza cuando sales del aeropuerto; el día de
+  // salto ACABA cuando arrancas hacia él. Si delante de ese arranque queda una
+  // jornada de verdad, el día es de la ciudad de origen.
+  //
+  // Se hace aquí y no arriba porque la hora a la que hay que salir la calcula
+  // `bloquesDeTransporte` con sus márgenes, y duplicar esa cuenta sería tener
+  // dos sitios donde se decide lo mismo.
+  reasignarDiasDeTransito(dias, fijos, etapas);
+  diasDeEtapa.clear();
+  for (const d of dias) {
+    if (!diasDeEtapa.has(d.etapaId)) diasDeEtapa.set(d.etapaId, []);
+    diasDeEtapa.get(d.etapaId).push(d.n);
+  }
+
   // --- 5) Los avisos ------------------------------------------------------
   ordenarPorHora(colocados);
 
@@ -388,6 +417,47 @@ function ocupacionDelSalto(t) {
     minutos,
     fin: sumarMinutos(hora, minutos),
   };
+}
+
+/**
+ * EL DÍA DEL SALTO SE LO QUEDA QUIEN SE QUEDA LA JORNADA.
+ *
+ * Mira, para cada día que tiene un salto entre dos etapas, cuánto queda de día
+ * ÚTIL por delante del traslado. Si esa franja da para una jornada —el mismo
+ * umbral que usa `esDiaDeViaje`, para que las dos digan lo mismo— el día pasa a
+ * ser de la ciudad de origen, que es donde se va a pasar.
+ *
+ * No toca nada más: los bloques fijos se quedan donde estaban —el vuelo sigue
+ * siendo del día 4— y lo único que cambia es a qué parada pertenece ese día. Es
+ * lo que decide qué sitios se pueden colocar ahí y a quién se le cuentan los
+ * días útiles al repartir.
+ */
+function reasignarDiasDeTransito(dias, fijos, etapas) {
+  const minimo = parametro('minutos_utiles_dia_de_viaje', 240);
+  const INICIO = 9 * 60;
+
+  for (const d of dias) {
+    const salto = fijos.find((f) => f.dia === d.n && f.donde === 'salto');
+    if (!salto) continue;
+
+    // El bloque del salto viene con `etapaId` del DESTINO. Si el día ya no es
+    // suyo, alguien lo movió antes y aquí no hay nada que hacer.
+    if (d.etapaId !== salto.etapaId) continue;
+
+    const arranca = enMinutos(salto.hora);
+    if (arranca == null) continue;
+
+    // Lo que queda de día en la ciudad que se abandona, antes de salir hacia el
+    // aeropuerto o la estación.
+    if (arranca - INICIO < minimo) continue;
+
+    const origen = etapas.find((e) => e.id !== salto.etapaId && e.fecha_fin === d.fecha);
+    if (!origen) continue;
+
+    d.etapaId = origen.id;
+    d.ciudad = origen.nombre_ciudad;
+    d.primeroDeEtapa = false;
+  }
 }
 
 function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {

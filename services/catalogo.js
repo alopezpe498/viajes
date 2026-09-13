@@ -389,7 +389,20 @@ export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudad
   // español es Breslavia. Civitatis usa el nombre internacional o el local, casi
   // nunca la forma española, así que darlo por inexistente sin probar esas dos
   // variantes es dejar una ciudad entera sin excursiones por una tilde.
+  // Y LO DE DELANTE DEL PARÉNTESIS, QUE ES LA MÁS OBVIA Y FALTABA.
+  //
+  // La fase 1 llama a las paradas de isla «Creta (Heraclión)»: la isla y, entre
+  // paréntesis, la ciudad donde se duerme. Civitatis indexa las excursiones POR
+  // ISLA —«creta»—, no por su capital. Se probaron «Heraklion», «Ηράκλειο» y
+  // «Creta (Heraclion)», y la única que habría funcionado, «Creta» a secas, no
+  // se probó nunca. Creta se quedó sin una sola excursión en todo el viaje.
+  //
+  // Va la primera de la lista porque es la más barata de las tres —no hay que
+  // preguntarle nada a nadie— y la que más veces va a acertar.
+  const sinParentesis = ciudad.includes('(') ? ciudad.split('(')[0].trim() : null;
+
   const variantes = [
+    sinParentesis,
     ciudadBase,
     ...(await nombresAlternativos(ciudad, pais)),
     // Sin diacríticos: «Wrocław» → «Wroclaw», que es como va en las URLs.
