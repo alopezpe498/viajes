@@ -120,7 +120,11 @@ function normalizar(texto) {
  * Se mira el texto de en medio en vez de partir por comas porque los formatos
  * reales mezclan las dos cosas en la misma línea: «Lun-Vie, Sab» es un rango y
  * un día suelto, y «Lun, Mie, Vie» son tres sueltos.
+ *
+ * Y el rango DA LA VUELTA A LA SEMANA cuando hace falta: «Viernes a Lunes» es
+ * 5, 6, 0, 1 y no un recorrido hacia atrás. Está unas líneas más abajo.
  */
+
 /**
  * ¿ESE «MI» ES UN MIÉRCOLES O ES UN POSESIVO?
  *
@@ -220,6 +224,23 @@ function diasDelTramo(tramo) {
  * El paréntesis es una NOTA APARTE —una excepción a lo que dice la frase de
  * fuera— y tiene que ser su propio tramo. Se saca antes de partir por el resto
  * de separadores.
+ *
+ * Y VOLVIÓ, CON UN PUNTO EN VEZ DE UN PARÉNTESIS. En el viaje 40:
+ *
+ *     «Martes a Domingo: 10:00 - 18:00. Lunes cerrado.»
+ *     «Domingo a Viernes: 10:00 - 18:00. Sábados cerrado.»
+ *
+ * Exactamente la misma frase, exactamente el mismo destrozo: un solo tramo, la
+ * palabra «cerrado» dentro, y el rango entero —que estaba bien expandido, el
+ * rango nunca fue el problema— leído del revés. Con las dos cláusulas marcadas
+ * como cierre salen los SIETE días cerrados, y el Museo Nacional de Cracovia, la
+ * Sinagoga del Tempel y el Manggha se fueron del viaje por un horario que dice
+ * que abren seis días de siete.
+ *
+ * Se salvaban por casualidad los que traían además un paréntesis o un punto y
+ * coma en la misma frase —«Mar-Dom: 10:00-18:00 (Vie hasta 21:00). Lun: cerrado»
+ * partía por el paréntesis y colaba—. Los tres que no tenían más separador que
+ * el punto, no.
  */
 function tramosDe(t) {
   const notas = [];
@@ -229,7 +250,19 @@ function tramosDe(t) {
     return ' ; ';
   });
 
-  return [...sinParentesis.split(/[;|\n]+/), ...notas]
+  // Y EL PUNTO, QUE TAMBIÉN SEPARA FRASES. Es el mismo fallo del paréntesis, con
+  // el signo que se quedó fuera. Ver la cabecera de esta función.
+  //
+  // El punto que separa frases, NO el de las horas: «10.00 a 18.00» es una hora
+  // y partirla por ahí rompería los horarios que la escriben con punto en vez de
+  // con dos puntos.
+  //
+  // Lo que los distingue es lo que viene DETRÁS, no lo de delante. En «18:00.
+  // Lunes cerrado» el punto lleva un dígito pegado por la izquierda igual que en
+  // «10.00», así que mirar hacia atrás no separa nada —primer intento, y no
+  // cortaba—. Un punto decimal siempre tiene un dígito DESPUÉS; un punto de
+  // frase, no.
+  return [...sinParentesis.split(/[;|\n]+|\.(?!\d)/), ...notas]
     .map((x) => x.trim())
     .filter(Boolean);
 }
@@ -393,6 +426,22 @@ export function horarioPorDias(texto, mes = null) {
     // 3. Y si lo único que dice el texto son excepciones —«cerrado los
     //    lunes»—, el resto de la semana abre.
     if (huboCierre) porDia[d] = { estado: 'abierto', rangos: [] };
+  }
+
+  // LA REGLA DE ORO, TAMBIÉN AQUÍ. Antes vivía solo en `diasQueCierra`, que sí
+  // devolvía null al ver los siete cerrados… y el lienzo no usa esa función: usa
+  // esta. Así que la red estaba puesta donde nadie se caía.
+  //
+  // Ningún sitio publica un horario para decir que no abre nunca. Si sale eso, lo
+  // que está mal es la lectura, y lo honesto es decir que no se sabe: con
+  // «desconocido» el sitio se coloca igual y se avisa flojito, que es la regla de
+  // la casa. Marcarlo cerrado lo borra del viaje sin que nadie pueda discutirlo.
+  if (TODOS_LOS_DIAS.every((d) => porDia[d].estado === 'cerrado')) {
+    return {
+      porDia: TODOS_LOS_DIAS.map(() => ({ estado: 'desconocido', rangos: [] })),
+      fiable: false,
+      temporadaDudosa,
+    };
   }
 
   return { porDia, fiable: huboApertura || huboCierre || Boolean(porDefecto), temporadaDudosa };
