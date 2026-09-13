@@ -34,6 +34,8 @@ import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../servic
 import { lienzoDeViaje } from '../services/lienzo.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 import { porParada } from '../services/paralelo.js';
+import { direccionDe } from '../services/direcciones.js';
+import { distanciaKm } from '../services/distancias.js';
 import { fueraDeTemporada, mesesDelViaje } from '../services/temporadas.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
@@ -476,6 +478,31 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
             cubiertos.push(`${sitio.nombre} (lo cubre «${e.actividad.titulo}»)`);
           }
         }
+
+        // Y LO QUE LA IA NO DIJO PERO EL TÍTULO CANTA.
+        //
+        // EL FALLO QUE ORIGINA ESTO. En Santorini, el día 3, «Entrada al
+        // yacimiento arqueológico de Akrotiri» y «Akrotiri» se solaparon, y la
+        // excursión acabó expulsada «por ser de menor nivel». Son la MISMA
+        // visita: la entrada al yacimiento es visitar Akrotiri. El sistema las
+        // tenía como dos cosas y las hizo competir entre sí por un hueco.
+        //
+        // El mecanismo de tapar ya existía y es el de arriba, pero casa por
+        // IGUALDAD EXACTA de nombre: solo funciona si la IA acierta a devolver
+        // «Akrotiri» clavado en `cubre_sitios`. Cuando no lo pone —y aquí no lo
+        // puso— nadie más lo mira.
+        //
+        // Esto lo mira en código, que es donde va lo comprobable: si el nombre
+        // del sitio aparece ENTERO dentro del título de la excursión, es que la
+        // excursión va a ese sitio.
+        //
+        // CON SU SALVAGUARDA DE DISTANCIA, la misma que usa `contenidos.js`: si
+        // los dos tienen coordenadas y están a más de 200 m, no se fundan. Sin
+        // ella, «Akrotiri» se tragaría al «Faro de Akrotiri», que está a cuatro
+        // kilómetros y es otra visita. Ante la duda no se funde, como siempre.
+        if (candidato) {
+          cubrirSitiosQueNombraElTitulo(e.actividad, candidato, etapa, cubiertos);
+        }
       }
 
       // Cuentan las GUARDADAS, no las elegidas: el tope del viaje tiene que
@@ -598,3 +625,79 @@ export function seParecen(a, b) {
 }
 
 export default { ejecutarFaseExcursiones, duracionEnMinutos, esLarga };
+
+/**
+ * LOS SITIOS QUE LA EXCURSIÓN NOMBRA EN SU PROPIO TÍTULO.
+ *
+ * Complementa a `cubre_sitios`, que lo dice la IA y casa por igualdad exacta.
+ * Esto es determinista: el nombre del sitio tiene que aparecer entero —palabra a
+ * palabra y en orden— dentro del título de la excursión.
+ *
+ *   «Entrada al yacimiento arqueológico de Akrotiri»  ⊃  «Akrotiri»   → se funde
+ *   «Entrada al yacimiento arqueológico de Akrotiri»  ⊅  «Faro de Akrotiri»
+ *
+ * DOS CAUTELAS, y las dos hacen falta:
+ *
+ *   · La ciudad no cuenta. «Free tour por Fira» contiene «Fira», y si Fira fuera
+ *     un sitio del catálogo se taparía la ciudad entera con un free tour.
+ *   · Y si los dos tienen coordenadas, tienen que estar cerca. Es la misma
+ *     salvaguarda de 200 m de `services/contenidos.js`, y por el mismo motivo:
+ *     dos cosas con el nombre parecido a cuatro kilómetros no son la misma.
+ *
+ * Ante la duda no se funde: perder una visita por fundirla mal es peor que
+ * tenerla dos veces, que al menos se ve.
+ */
+function cubrirSitiosQueNombraElTitulo(actividad, candidato, etapa, cubiertos) {
+  if (!etapa?.punto_interes_id) return;
+
+  const METROS = 200;
+  const limpio = (t) =>
+    String(t ?? '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+
+  const titulo = limpio(actividad.titulo);
+  if (!titulo) return;
+
+  const ciudad = limpio(etapa.nombre_ciudad);
+
+  // DÓNDE ESTÁ LA EXCURSIÓN, SI ES QUE SE SABE.
+  //
+  // `catalogo_actividades` NO tiene lat/lon —Civitatis no las da— y preguntar por
+  // esas columnas revienta la consulta. El único sitio donde puede haber un punto
+  // de una excursión es `direcciones`, y lo pone la búsqueda por nombre en Places
+  // que monta el mapa del viaje.
+  //
+  // Casi siempre será null, y no pasa nada: la salvaguarda de distancia es un
+  // EXTRA que descarta falsos positivos cuando hay con qué. Sin ella queda la
+  // comprobación del nombre entero, que ya es exigente.
+  const dirAct = direccionDe('actividad', actividad.id);
+  const puntoActividad = dirAct?.situada
+    ? { lat: Number(dirAct.punto.lat), lon: Number(dirAct.punto.lng) }
+    : null;
+
+  const sitios = todas(
+    `SELECT id, nombre, lat, lon FROM sitios_lugar
+      WHERE punto_interes_id = ? AND cubierto_por IS NULL`,
+    etapa.punto_interes_id
+  );
+
+  for (const s of sitios) {
+    const nombre = limpio(s.nombre);
+    // Nombres de una sola letra o dos no identifican nada, y la ciudad tampoco.
+    if (nombre.length < 4 || nombre === ciudad) continue;
+    // Entero y con fronteras de palabra: «akrotiri» sí, el «oia» de «amoudi» no.
+    if (!new RegExp(`(^| )${nombre}( |$)`).test(titulo)) continue;
+
+    if (puntoActividad && Number.isFinite(Number(s.lat))) {
+      const km = distanciaKm(puntoActividad, { lat: Number(s.lat), lon: Number(s.lon) });
+      if (km * 1000 > METROS) continue;
+    }
+
+    ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, s.id);
+    cubiertos.push(`${s.nombre} (lo cubre «${actividad.titulo}», que lo lleva en el nombre)`);
+  }
+}

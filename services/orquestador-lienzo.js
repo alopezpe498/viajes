@@ -35,6 +35,7 @@
  *      comprueban al final y se cuentan en el log en vez de dejarlos ahí.
  */
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
+import { direccionDe } from '../services/direcciones.js';
 import { distanciaKm } from '../services/distancias.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import {
@@ -1213,9 +1214,19 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
     viajeId
   );
 
+  /**
+   * A CUÁNTO DEJA DE SER «AL LADO DEL HOTEL».
+   *
+   * Kilómetro y medio y no uno: la unidad que se mide aquí es un PUEBLO o un
+   * barrio, no una esquina. En Santorini el hotel está en Oia Caldera y el bloque
+   * «Oia» —el centro del pueblo— cae a 1.073 m: con el kilómetro pelado el aviso
+   * saltaba diciendo que el plan no pisa Oia mientras el plan estaba en Oia.
+   */
+  const KM = 1.5;
+
   for (const etapa of etapas) {
     const hotel = una(
-      "SELECT titulo, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
+      "SELECT id, titulo, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
       etapa.id
     );
     if (!hotel) continue;
@@ -1227,8 +1238,8 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
       extra = {};
     }
 
-    // La localidad: lo primero de la zona de Booking, que es donde viene («Oia,
-    // Santorini» → «Oia»). Sin zona no hay nada que comprobar.
+    // La localidad: lo primero de la zona de Booking («Oia Caldera, Oia» → «Oia
+    // Caldera»). Sin zona no hay nada que contar en el aviso.
     const zona = String(extra.zona ?? '').split(',')[0].trim();
     if (!zona || normalizarNombre(zona) === normalizarNombre(etapa.nombre_ciudad)) continue;
     if (esEtiquetaDeCentro(zona)) continue;
@@ -1237,26 +1248,55 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
     const delaParada = lienzo.colocados.filter((c) => dias.includes(c.dia));
     if (!delaParada.length) continue;
 
-    // ¿La nombra algún bloque del plan?
-    const laPisa = delaParada.some((c) =>
-      normalizarNombre(`${c.nombre ?? ''}`).includes(normalizarNombre(zona))
-    );
-    if (laPisa) continue;
+    // DÓNDE ESTÁ EL HOTEL, DE LA TABLA DE DIRECCIONES Y NO DE `datos_extra`.
+    //
+    // Booking no guarda lat/lon en `datos_extra` y nunca las ha guardado, así que
+    // la salvaguarda del kilómetro leía dos `undefined` y devolvía false SIEMPRE.
+    // El aviso se decidía entero por la comparación de nombres de abajo.
+    //
+    // Las coordenadas sí existen: las pone la geocodificación que monta el mapa
+    // del viaje, en la tabla `direcciones`, que es donde viven todas.
+    const suya = direccionDe('hotel', hotel.id);
+    const punto = suya?.situada ? { lat: Number(suya.punto.lat), lon: Number(suya.punto.lng) } : null;
 
-    // O ¿hay algo colocado a menos de un kilómetro del hotel?
-    const cerca = (() => {
-      const lat = Number(extra.lat);
-      const lon = Number(extra.lon);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-      return delaParada.some((c) => {
-        const quien = deQuienEs(c);
-        if (quien?.de !== 'sitio' || !quien.deId) return false;
-        const sitio = una('SELECT lat, lon FROM sitios_lugar WHERE id = ?', quien.deId);
-        if (!Number.isFinite(Number(sitio?.lat))) return false;
-        return distanciaKm({ lat, lon }, { lat: Number(sitio.lat), lon: Number(sitio.lon) }) <= 1;
-      });
-    })();
+    // SI NO SE PUEDE COMPROBAR, SE CALLA.
+    //
+    // Es la mitad del arreglo. Sin las coordenadas del hotel esto no sabe si el
+    // plan pisa la zona o no, y soltar el aviso «por si acaso» es lo que lo
+    // convirtió en ruido: saltó en Santorini con el hotel en Oia y Oia en el
+    // plan, y en Polonia con el hotel en Śródmieście y el casco antiguo de
+    // Varsovia justo ahí. Un aviso que salta siempre se deja de leer, y entonces
+    // no sirve ninguno. Mejor callar que avisar mal.
+    if (!punto) continue;
+
+    // ¿HAY ALGO DEL PLAN AL LADO DEL HOTEL? Por distancia, que es la pregunta de
+    // verdad. Antes mandaba el nombre —«¿aparece "Oia Caldera" en el título de
+    // algún bloque?»— y por nombre no casa ni el sitio que está a doscientos
+    // metros: el bloque se llama «Camini de Oia a Amoudi», no «Oia Caldera».
+    const cerca = delaParada.some((c) => {
+      const p = puntoDeLoColocado(c);
+      return p ? distanciaKm(punto, p) <= KM : false;
+    });
     if (cerca) continue;
+
+    // El nombre se sigue mirando, pero AHORA como red de apoyo y en los dos
+    // sentidos: un bloque llamado «Oia» y una zona «Oia Caldera» hablan del
+    // mismo sitio aunque ninguno contenga al otro entero.
+    // El nombre se sigue mirando, pero AHORA como red de apoyo y POR PALABRAS.
+    //
+    // La versión vieja preguntaba si el título del bloque CONTENÍA la zona
+    // entera, y así no casa nada: la zona es «Oia Caldera» y el bloque se llama
+    // «Oia» o «Camini de Oia a Amoudi». Comparando palabra a palabra sí casan, y
+    // por palabras completas —no por trozos— para que «oia» no se cuele dentro
+    // de «Troia».
+    const palabras = (t) =>
+      new Set(normalizarNombre(`${t ?? ''}`).split(' ').filter((p) => p.length >= 3));
+    const suyas = palabras(zona);
+    const laNombra = delaParada.some((c) => {
+      const n = palabras(c.nombre);
+      return [...suyas].some((p) => n.has(p));
+    });
+    if (laNombra) continue;
 
     di(
       `   Duermes en ${zona} («${hotel.titulo}») pero el plan de ${etapa.nombre_ciudad} no la pisa: ` +
@@ -1269,6 +1309,29 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
       `${etapa.nombre_ciudad}: duermes en ${zona} y el plan no pasa por allí.`
     );
   }
+}
+
+/**
+ * DÓNDE ESTÁ UNA COSA COLOCADA EN EL LIENZO.
+ *
+ * Un bloque del plan puede ser un sitio de Google —que trae lat/lon de serie— o
+ * una excursión, que las tiene en `direcciones` desde que el mapa las sitúa por
+ * su nombre. Las dos valen para medir; una comida que solo es una zona, no, y
+ * devuelve null sin más.
+ */
+function puntoDeLoColocado(colocado) {
+  const quien = deQuienEs(colocado);
+  if (!quien?.deId) return null;
+
+  if (quien.de === 'sitio' || quien.de === 'punto') {
+    const tabla = quien.de === 'punto' ? 'puntos_interes' : 'sitios_lugar';
+    const f = una(`SELECT lat, lon FROM ${tabla} WHERE id = ?`, quien.deId);
+    if (Number.isFinite(Number(f?.lat))) return { lat: Number(f.lat), lon: Number(f.lon) };
+  }
+
+  const d = direccionDe(quien.de, quien.deId);
+  if (d?.situada) return { lat: Number(d.punto.lat), lon: Number(d.punto.lng) };
+  return null;
 }
 
 /**

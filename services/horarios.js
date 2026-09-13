@@ -92,9 +92,31 @@ const GRUPOS = [
 ];
 
 /** Lo que significa «siempre». */
+/**
+ * LO QUE SIGNIFICA «SIEMPRE».
+ *
+ * EL FALLO QUE ORIGINA LA SEGUNDA MITAD DE ESTA LISTA. En Santorini, Oia, Pyrgos,
+ * el Faro de Akrotiri y la Camini de Oia a Amoudi salieron los cuatro con «no he
+ * podido leer su horario con seguridad»… y su horario decía «Abierto 24h». Aquí
+ * estaba «24 h» CON ESPACIO y no «24h», así que no casaba ninguno.
+ *
+ * Y ES UN FALLO DE LOS QUE ENSUCIAN DOS VECES: un pueblo, un faro, un sendero y
+ * un mirador no tienen horario porque no cierran, y acababan los cuatro en la
+ * lista de avisos sin resolver, tapando los avisos de verdad. Un aviso que salta
+ * siempre se deja de leer, y entonces no sirve ninguno.
+ *
+ * TRES ESTADOS Y NO DOS, que es lo que hacía falta: «tengo horario y lo leo»,
+ * «está siempre abierto» y «no pude leerlo». El de en medio es el que faltaba, y
+ * no genera aviso porque no hay nada que avisar.
+ */
 const SIEMPRE = [
   'todos los dias', 'todos los d as', 'a diario', 'diariamente', 'todo el ano',
   'every day', 'everyday', 'daily', 'open daily', '24/7', '24 h', 'abierto siempre',
+  // Las formas que de verdad escriben Google y la traducción de horarios para un
+  // sitio al aire libre.
+  '24h', '24 horas', '24hs', 'las 24 horas', 'abierto 24',
+  'open 24', 'always open', 'siempre abierto', 'sin horario', 'sin horarios',
+  'acceso libre', 'entrada libre', 'al aire libre', 'no cierra', 'nunca cierra',
 ];
 
 /** Las palabras que dan la vuelta al sentido de un tramo. */
