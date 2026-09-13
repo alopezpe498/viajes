@@ -97,6 +97,7 @@ import {
   leerDosier,
   zipDelViaje,
   estadoDelDosier,
+  borrarDosierDelViaje,
 } from '../services/dosier.js';
 import {
   comerDeEtapa,
@@ -3893,6 +3894,14 @@ router.delete('/api/viajes/:id', async (req, res) => {
   // Las filas de `adjuntos` se van solas por la cascada; los archivos del disco
   // no tienen quien se los lleve, así que se borran aquí.
   await borrarAdjuntosDelViaje(viajeId);
+
+  // Y EL DOSIER, QUE SE HABÍA QUEDADO FUERA DE ESTA MISMA LIMPIEZA.
+  //
+  // El razonamiento de arriba vale igual para él y nadie lo aplicó: el HTML y el
+  // ZIP se escriben en `dosieres/` y no hay ninguna fila que los nombre, así que
+  // al borrar el viaje se quedaban en disco para siempre. Había cuatro de dos
+  // viajes que ya no existen, y la cuenta solo sube.
+  borrarDosierDelViaje(viajeId);
 
   console.log(
     `[rutas] Borrado el viaje «${r.nombre}»: ` +

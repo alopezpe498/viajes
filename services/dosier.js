@@ -25,7 +25,7 @@
  */
 
 import fs from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ejs from 'ejs';
@@ -922,4 +922,29 @@ export async function zipDelViaje(viajeId) {
   } catch {
     return null;
   }
+}
+
+/**
+ * BORRA EL DOSIER GENERADO DE UN VIAJE, si lo hubiera.
+ *
+ * El HTML y el ZIP se escriben en disco y nadie los vuelve a mirar desde la
+ * base, asi que al borrar el viaje se quedaban ahi para siempre. Habia cuatro
+ * —`viaje-2` y `viaje-19`, de viajes que ya no existen— y la cuenta solo sube.
+ *
+ * Como el de adjuntos: no lanza. El viaje ya no esta en la base cuando esto
+ * corre, y que falle un `rm` no puede deshacerlo.
+ */
+export function borrarDosierDelViaje(viajeId) {
+  let borrados = 0;
+  for (const ruta of [rutaDelArchivo(viajeId), rutaDelZip(viajeId)]) {
+    try {
+      if (!existsSync(ruta)) continue;
+      rmSync(ruta, { force: true });
+      borrados += 1;
+    } catch (err) {
+      console.warn(`[dosier] no pude borrar ${ruta} (${err.message}).`);
+    }
+  }
+  if (borrados) console.log(`[dosier] borrado(s) ${borrados} archivo(s) del viaje ${viajeId}.`);
+  return borrados;
 }
