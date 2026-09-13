@@ -775,7 +775,21 @@ export async function investigarTramo(ciudadA, ciudadB) {
  * no evaluable, que ahora será la excepción y no la norma.
  */
 async function preciosDelWidget(ciudadA, ciudadB) {
-  const vacio = { porOperador: new Map(), minimoDe: () => null, operadores: [] };
+  // EL VACÍO ES EL PROPIO LECTOR LEYENDO NADA, NO UN OBJETO ESCRITO A MANO.
+  //
+  // EL FALLO QUE ORIGINA ESTO. Polonia: «Sin widget de transporte para Cracovia
+  // → Gdansk» y, acto seguido, «No pude mirar por tierra: delWidget.precioDe is
+  // not a function». El objeto de respaldo se escribió a mano con tres de los
+  // siete campos que devuelve el lector, y le faltaba justo el que usa
+  // `investigarTramo`. Resultado: cuando Google no pinta widget no es que falte
+  // el precio —es que revienta la investigación por tierra ENTERA. El mismo
+  // salto dio 7 opciones (PKP, FlixBus, coche, traslado privado) el día que hubo
+  // widget y 3 el día que no, todas de Kayak, y PKP desapareció del viaje.
+  //
+  // Copiar la forma a mano vuelve a romperse el día que el lector devuelva un
+  // campo más. Leer la cadena vacía no: sale el mismo objeto, con todos sus
+  // campos, diciendo «no sé nada de esta ruta», que es la verdad.
+  const vacio = leerWidgetDeTransporte('');
 
   let bloque;
   try {

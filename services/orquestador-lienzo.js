@@ -1087,10 +1087,20 @@ function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = [
  * bloques, y un bloque que no cabe en su propio horario no es un conflicto con
  * nadie, es un error de colocación. Arreglarlo antes le quita a la revisión un
  * problema que no es suyo y que resolvía tirando la tarjeta.
+ *
+ * DEVUELVE LO QUE NO HA SABIDO ARREGLAR, y eso es la mitad del sentido de esta
+ * función. En Polonia dejó tres —Kazimierz, la Fábrica de Schindler y el
+ * restaurante de la última noche— cada uno con su «lo dejo para la revisión»…
+ * y cuatro líneas después la fase anunciaba «el lienzo queda limpio». No lo
+ * estaba. El «lo dejo para la revisión» era además una promesa imposible: esto
+ * corre DESPUÉS de las dos revisiones, así que no había ninguna detrás que fuera
+ * a recogerlos. Se quedaban en el registro y no llegaban ni a los avisos del
+ * viaje ni al «lo que te dejo para repasar».
  */
 function enderezarLoQueNoCabeEnSuHorario(viajeId, lienzo, di) {
   let tocado = false;
   let tablero = lienzo;
+  const sinResolver = [];
 
   for (const c of lienzo.colocados) {
     if (esComida(c)) continue;
@@ -1119,13 +1129,34 @@ function enderezarLoQueNoCabeEnSuHorario(viajeId, lienzo, di) {
       tablero = lienzoDeViaje(viajeId);
       tocado = true;
     } else {
-      // No se expulsa aquí: se deja como está y que la revisión lo trate con su
-      // jerarquía, que es quien sabe a quién apartar para hacerle sitio.
-      di(`   ${c.nombre}: ${comoEs}, y no encontré hueco. Lo dejo para la revisión.`);
+      // No se expulsa aquí: echarlo sería peor que dejarlo mal puesto, porque se
+      // pierde el sitio sin que nadie lo haya decidido. Se queda donde está, con
+      // su hora mala, y se DICE: sale en el registro, sale en los avisos del
+      // viaje y sale en el repaso final.
+      di(`   ${c.nombre}: ${comoEs}, y no encontré hueco. Lo dejo puesto y te lo digo.`);
+      sinResolver.push({ dia: c.dia, nombre: c.nombre, comoEs });
     }
   }
 
-  return tocado ? lienzoDeViaje(viajeId) : lienzo;
+  return { lienzo: tocado ? lienzoDeViaje(viajeId) : lienzo, sinResolver };
+}
+
+/**
+ * ¿ESA «ZONA» ES UN BARRIO CON NOMBRE O ES «EL CENTRO»?
+ *
+ * Las que Booking escribe como etiqueta genérica —centro, casco viejo, casco
+ * antiguo, ciudad vieja y sus versiones en inglés— no identifican un sitio al
+ * que el plan pueda ir o dejar de ir. Un barrio con nombre propio (Oia,
+ * Kazimierz, Trastevere) sí.
+ */
+function esEtiquetaDeCentro(zona) {
+  const z = normalizarNombre(zona);
+  return [
+    'centro', 'centro historico', 'centro ciudad', 'centro urbano', 'el centro',
+    'casco viejo', 'casco antiguo', 'casco historico', 'ciudad vieja', 'ciudad antigua',
+    'old town', 'city centre', 'city center', 'historic centre', 'historic center',
+    'old city', 'downtown', 'altstadt', 'stare miasto', 'centre ville', 'centro storico',
+  ].includes(z);
 }
 
 /**
@@ -1139,6 +1170,24 @@ function enderezarLoQueNoCabeEnSuHorario(viajeId, lienzo, di) {
  * hotel es criterio, y el criterio va en el reparto. Aquí solo se comprueba lo
  * que se puede comprobar —si la localidad del hotel aparece en algún bloque del
  * día o hay algo a menos de un kilómetro— y se dice cuando no.
+ *
+ * EL FALSO POSITIVO QUE HUBO QUE QUITAR. En Gdansk saltó «duermes en Centro
+ * histórico y el plan no pasa por allí» con un plan que es Casco Viejo, Paseo de
+ * Motlawa, Puerta de la Grúa e Iglesia de Santa María: el casco viejo entero.
+ *
+ * Dos motivos, y los dos importan. El primero es que Booking NO DA
+ * COORDENADAS —mira `providers/booking.js`: guarda zona, dirección y distancia
+ * al centro, nunca lat/lon—, así que la salvaguarda del kilómetro de aquí abajo
+ * no se ha ejecutado nunca para un hotel de verdad y solo queda la comparación
+ * de nombres. Se deja puesta porque el día que haya coordenadas es la buena, pero
+ * no se puede contar con ella.
+ *
+ * Y el segundo es que «Centro histórico» no es un sitio, es una ETIQUETA. Ningún
+ * bloque del plan se va a llamar así —se llaman Casco Viejo, Plaza Mayor,
+ * Rynek—, así que por nombre no puede casar nunca y el aviso salta siempre.
+ * Además da igual: este aviso existe para el que paga por dormir en Oia y luego
+ * no pisa Oia, y dormir en el centro no es esa historia. Cuando la zona es una
+ * etiqueta de centro, no hay nada que avisar.
  */
 function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
   const etapas = todas(
@@ -1164,6 +1213,7 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
     // Santorini» → «Oia»). Sin zona no hay nada que comprobar.
     const zona = String(extra.zona ?? '').split(',')[0].trim();
     if (!zona || normalizarNombre(zona) === normalizarNombre(etapa.nombre_ciudad)) continue;
+    if (esEtiquetaDeCentro(zona)) continue;
 
     const dias = lienzo.dias.filter((d) => d.etapaId === etapa.id).map((d) => d.n);
     const delaParada = lienzo.colocados.filter((c) => dias.includes(c.dia));
@@ -2383,7 +2433,9 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // 17:00. La hora de INICIO era válida —el sitio estaba abierto— y nadie miró
   // que la visita entera no cabía. La revisión lo heredó ya roto y acabó
   // echándolo del viaje.
-  final = enderezarLoQueNoCabeEnSuHorario(viajeId, final, di);
+  const enderezado = enderezarLoQueNoCabeEnSuHorario(viajeId, final, di);
+  final = enderezado.lienzo;
+  const fueraDeHorario = enderezado.sinResolver;
 
   avisarSiElHotelNoSePisa(viajeId, final, di);
 
@@ -2410,6 +2462,23 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // que no cupo o que se perdió por el camino. Va a los avisos del viaje.
   avisarDeExcursionesSinColocar(viaje, motivosDeFuera, di);
 
+  // LO QUE SE QUEDÓ FUERA DE SU HORARIO CUENTA COMO PENDIENTE, igual que un
+  // solape. Es un bloque puesto a una hora a la que el sitio está cerrado: si no
+  // entra aquí, la fase se declara limpia teniéndolo dentro.
+  if (fueraDeHorario.length) {
+    di(
+      `${fueraDeHorario.length} bloque(s) se quedan a una hora en la que el sitio ` +
+        'está cerrado y no encontré dónde moverlos:'
+    );
+    for (const f of fueraDeHorario) di(`   · Día ${f.dia}: ${f.nombre} — ${f.comoEs}.`);
+    apuntarHueco(
+      viajeId,
+      FASE,
+      `${fueraDeHorario.length} visita(s) puestas fuera del horario del sitio: ` +
+        `${fueraDeHorario.map((f) => `${f.nombre} (día ${f.dia})`).join(', ')}.`
+    );
+  }
+
   if (final.avisos.length) {
     di(
       `Queda${final.avisos.length === 1 ? '' : 'n'} ${final.avisos.length} aviso(s) ` +
@@ -2421,7 +2490,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
       FASE,
       `El lienzo queda con ${final.avisos.length} aviso(s) sin resolver; revísalos en la pantalla.`
     );
-  } else {
+  } else if (!fueraDeHorario.length) {
     di('Revisado con los avisos de la propia pantalla: el lienzo queda limpio.');
   }
 

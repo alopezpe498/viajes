@@ -5229,7 +5229,7 @@ function migracionTopePorTrabajo() {
  * El ranking de puertas puntua horas utiles, que es lo que se le pidio, y del
  * dinero nadie se enteraba hasta la fase de traslados — con los vuelos ya
  * comprados. En Grecia la puerta ganadora obligaba a dos vuelos internos y en
- * Polonia a uno de 176 EUR por persona.
+ * Polonia a uno.
  *
  * Los dos primeros numeros son ordenes de magnitud, no precios: en fase 1 no se
  * ha buscado nada todavia. El tercero es cuando merece la pena decirlo.
@@ -5246,10 +5246,14 @@ function migracionCosteDeTrasladosInternos() {
   const nuevo = (clave, valor, descripcion, unidad) =>
     meter.run(clave, valor, valor, descripcion, unidad, ++orden);
 
-  // 160 y no 120: el unico vuelo interno del que hay dato real —Cracovia →
-  // Gdansk en la ultima Polonia— costo 176 EUR por persona. Con 120 un vuelo
-  // suelto no llegaba al umbral de 150 y el aviso no saltaba justo en el caso
-  // que lo motivo, que es la forma mas tonta de tener un aviso.
+  // 160 y no 120 PORQUE SE LEYO MAL EL DATO, y queda escrito para que no se
+  // vuelva a usar de referencia. El unico vuelo interno con dato real —Cracovia
+  // → Gdansk— se apunto como "176 EUR por persona" y son los DOS billetes:
+  // Kayak da el total de la reserva. Por cabeza fueron 88. Asi que 160 esta
+  // puesto al doble de lo unico que sabemos, y con el un solo vuelo interno pasa
+  // el umbral de 150 el solo. El parametro es editable en la pantalla del
+  // orquestador y esta pendiente de revisar con mas viajes reales; la migracion
+  // ya corrio y cambiar este numero aqui no cambia nada en una base existente.
   nuevo('coste_estimado_vuelo_interno', '160',
     'Lo que se supone que cuesta por persona un vuelo entre dos paradas del viaje (estimacion gruesa)', 'euros');
   nuevo('coste_estimado_ferry_interno', '60',

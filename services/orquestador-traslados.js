@@ -417,6 +417,50 @@ function ambitoDeLaOpcion(opcion) {
   return ficha?.precio_ambito ?? ambitoDeTramo({ medio: opcion.modo, nombre: opcion.nombre });
 }
 
+/**
+ * EL PRECIO DE CADA UNO, QUE ES EL ÚNICO QUE SE PUEDE COMPARAR.
+ *
+ * EL FALLO QUE ORIGINA ESTO, y estuvo delante de los ojos toda una ejecución sin
+ * que nadie lo viera. En Cracovia → Gdansk el mismo autobús salió DOS VECES en la
+ * misma lista de opciones:
+ *
+ *     FlixBus [10h 20min puerta a puerta, 22 €]        ← del catálogo, por persona
+ *     FlixBus KRK→GDN [11h 25min puerta a puerta, 43 €] ← de Kayak, del grupo
+ *
+ * Exactamente el doble, porque el viaje era de dos. Y las dos cifras competían
+ * entre sí y contra las demás como si fueran la misma clase de número. La regla
+ * del ahorro grande comparó el Ryanair de 193 € (los dos billetes) contra el
+ * FlixBus de 22 € (uno) y cantó «8,8 veces más barata» cuando son 4,4: casi el
+ * doble de ahorro del que hay, en el número que decide si se recomienda cambiar
+ * de medio.
+ *
+ * El ámbito ya se guarda con cada precio —para eso está `precio_ambito`—; lo que
+ * faltaba era USARLO antes de comparar. Aquí se traduce todo a euros por cabeza
+ * una sola vez, y de ahí para abajo ya no hay dos clases de euro.
+ *
+ * El precio original NO se toca: es el que se guarda en el candidato con su
+ * ámbito, y el presupuesto lo necesita tal cual para no contar un taxi dos veces.
+ */
+export function precioPorPersona(precio, ambito, personas) {
+  const n = Number(precio);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return ambito === POR_GRUPO ? n / Math.max(1, personas) : n;
+}
+
+/**
+ * CÓMO SE ESCRIBE UN PRECIO PARA QUE NADIE TENGA QUE ADIVINAR DE QUIÉN ES.
+ *
+ * «176 €» a secas es justo lo que hizo falta desenredar a mano con la base de
+ * datos delante para saber si el aviso de traslados caros tenía que haber
+ * saltado. Con «88 €/persona (176 € los dos)» no hace falta.
+ */
+function comoPrecio(o, personas) {
+  if (o.precioPersona == null) return 'precio no encontrado';
+  const cada = Math.round(o.precioPersona);
+  if (personas <= 1) return `${cada} €`;
+  return `${cada} €/persona (${Math.round(o.precioPersona * personas)} € los ${personas})`;
+}
+
 function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
   const previo = (() => {
     try {
@@ -590,18 +634,19 @@ export function reglaDelAhorroGrande(medidas, params) {
   // pregunta ya no es cuánto se ahorra sino cuánto cuesta, y eso lo decide el
   // precio. Las demás se enumeran igualmente para que la decisión se tome con
   // todas delante.
-  const elegida = [...cumplen].sort((a, b) => a.barata.precio - b.barata.precio)[0];
+  const elegida = [...cumplen].sort((a, b) => a.barata.precioPersona - b.barata.precioPersona)[0];
   const otras = cumplen.filter((x) => x.barata.id !== elegida.barata.id);
+  const euros = (o) => `${Math.round(o.precioPersona)} €/persona`;
 
   return (
     `Se cumple la regla del ahorro grande frente a «${elegida.ganadora.nombre}» ` +
-    `(${elegida.ganadora.precio} €): «${elegida.barata.nombre}» cuesta ${elegida.barata.precio} € ` +
+    `(${euros(elegida.ganadora)}): «${elegida.barata.nombre}» cuesta ${euros(elegida.barata)} ` +
     `(${elegida.veces.toFixed(1)} veces menos) y solo pierde ${comoTexto(Math.max(0, elegida.pierde))}.` +
     (otras.length
       ? ` También cumplen: ${otras
           .map(
             (o) =>
-              `${o.barata.nombre} (${o.barata.precio} €, ${o.veces.toFixed(1)}x, ` +
+              `${o.barata.nombre} (${euros(o.barata)}, ${o.veces.toFixed(1)}x, ` +
               `+${comoTexto(Math.max(0, o.pierde))})`
           )
           .join('; ')}.`
@@ -625,7 +670,9 @@ export function reglaDelAhorroGrande(medidas, params) {
  * delante a la IA.
  */
 export function ahorrosQueCumplen(medidas, params) {
-  const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
+  // SIEMPRE `precioPersona`. Comparar `precio` a secas es mezclar el billete de
+  // uno con la reserva de los dos (ver `precioPorPersona`).
+  const conPrecio = medidas.filter((o) => o.precioPersona != null && o.precioPersona > 0);
   if (conPrecio.length < 2) return [];
 
   // La candidata a ganar: la más rápida DE LAS QUE TIENEN PRECIO. Sin precio no
@@ -638,7 +685,7 @@ export function ahorrosQueCumplen(medidas, params) {
     .map((barata) => ({
       ganadora,
       barata,
-      veces: ganadora.precio / barata.precio,
+      veces: ganadora.precioPersona / barata.precioPersona,
       pierde: barata.bloque.total - ganadora.bloque.total,
     }))
     .filter((x) => x.veces >= params.factorAhorro && x.pierde <= params.maxExtraAhorro)
@@ -646,7 +693,7 @@ export function ahorrosQueCumplen(medidas, params) {
 }
 
 export function porQueNoHayAhorroGrande(medidas, params) {
-  const conPrecio = medidas.filter((o) => o.precio != null && o.precio > 0);
+  const conPrecio = medidas.filter((o) => o.precioPersona != null && o.precioPersona > 0);
   if (conPrecio.length < 2) {
     return `Ahorro grande no evaluable: solo ${conPrecio.length} opción(es) con precio.`;
   }
@@ -661,15 +708,15 @@ export function porQueNoHayAhorroGrande(medidas, params) {
   const cerca = resto
     .map((o) => ({
       nombre: o.nombre,
-      precio: o.precio,
-      veces: ganadora.precio / o.precio,
+      precio: o.precioPersona,
+      veces: ganadora.precioPersona / o.precioPersona,
       pierde: o.bloque.total - ganadora.bloque.total,
     }))
     .sort((a, b) => b.veces - a.veces)[0];
 
   return (
     `Ahorro grande no llega con ${resto.length === 1 ? 'la única alternativa' : `ninguna de las ${resto.length} alternativas`} a ` +
-    `«${ganadora.nombre}» (${ganadora.precio} €). La más cerca: «${cerca.nombre}» ` +
+    `«${ganadora.nombre}» (${Math.round(ganadora.precioPersona)} €/persona). La más cerca: «${cerca.nombre}» ` +
     `(${cerca.veces.toFixed(1)} veces más barata, hacen falta ${params.factorAhorro}; ` +
     `pierde ${comoTexto(Math.max(0, cerca.pierde))}, el tope son ${comoTexto(params.maxExtraAhorro)}).`
   );
@@ -823,15 +870,28 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       continue;
     }
 
+    // CUÁNTOS SON, QUE ES LO QUE CONVIERTE UN PRECIO DE GRUPO EN UNO COMPARABLE.
+    const personas = (() => {
+      const { adultos, edadesNinos } = ocupacionDe(viaje);
+      return Math.max(1, (Number(adultos) || 0) + edadesNinos.length);
+    })();
+
     // --- Puerta a puerta, que es lo que compite --------------------------
     //
     // Las terrestres ya vienen medidas de arriba —con ese número se decidió si
     // mirar vuelos—, así que aquí solo les falta el bloque a las de avión.
-    const medidas = opciones.map((o, n) => ({
-      ...o,
-      id: `op${n + 1}`,
-      bloque: o.bloque ?? puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0),
-    }));
+    const medidas = opciones.map((o, n) => {
+      const ambito = o.precio == null ? null : ambitoDeLaOpcion(o);
+      return {
+        ...o,
+        id: `op${n + 1}`,
+        bloque: o.bloque ?? puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0),
+        // El ámbito viaja con la opción y el precio por cabeza va calculado: de
+        // aquí para abajo se compara y se enseña SIEMPRE `precioPersona`.
+        ambito,
+        precioPersona: precioPorPersona(o.precio, ambito, personas),
+      };
+    });
     medidas.sort((a, b) => a.bloque.total - b.bloque.total);
 
     // Duraciones y precios salen del catálogo de tramos, que se llenó con el
@@ -844,7 +904,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
             (o) =>
               `${o.nombre} [${comoTexto(o.bloque.total)} puerta a puerta` +
               `${o.bloque.posicion ? `, ${comoTexto(o.bloque.posicion)} de ellos solo en llegar al aeropuerto` : ''}` +
-              `${o.precio != null ? `, ${o.precio} €` : ', precio no encontrado'}]`
+              `, ${comoPrecio(o, personas)}]`
           )
           .join(' · '),
       ORIGENES.busqueda
@@ -856,7 +916,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     // una regla con números, y las reglas con números no se delegan a quien no
     // sabe sumar.
     const rapida = medidas[0];
-    const barata = [...medidas].sort((a, b) => (a.precio ?? 1e9) - (b.precio ?? 1e9))[0];
+    const barata = [...medidas].sort((a, b) => (a.precioPersona ?? 1e9) - (b.precioPersona ?? 1e9))[0];
     let reglaDelEmpate = null;
 
     // SIN LOS DOS PRECIOS NO HAY REGLA, Y SE DICE.
@@ -869,7 +929,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     // Se mira sobre TODAS las opciones y no solo sobre la rápida y la barata: si
     // no hay ningún precio, la «barata» acaba siendo la propia rápida y el aviso
     // no llegaba a saltar justo en el caso en que menos se sabe.
-    const sinPrecio = medidas.filter((o) => o.precio == null);
+    const sinPrecio = medidas.filter((o) => o.precioPersona == null);
     if (medidas.length > 1 && sinPrecio.length) {
       di(
         `   Empate por precio no aplicable: falta el precio de ` +
@@ -881,12 +941,12 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
 
     if (
       barata.id !== rapida.id &&
-      rapida.precio != null &&
-      barata.precio != null &&
-      barata.precio > 0
+      rapida.precioPersona != null &&
+      barata.precioPersona != null &&
+      barata.precioPersona > 0
     ) {
       const diferencia = rapida.bloque.total - barata.bloque.total;
-      const cuantasVeces = rapida.precio / barata.precio;
+      const cuantasVeces = rapida.precioPersona / barata.precioPersona;
       if (Math.abs(diferencia) < params.umbral && cuantasVeces > params.factorPrecio) {
         reglaDelEmpate =
           `«${barata.nombre}» solo tarda ${Math.abs(diferencia)} min más (por debajo del umbral de ` +
@@ -923,7 +983,9 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
             `- ${o.id} · ${o.nombre} (${o.modo})\n` +
             `  puerta a puerta: ${comoTexto(o.bloque.total)} = ${o.bloque.acceso} ir + ` +
             `${o.bloque.antelacion} de antelación + ${o.bloque.trayecto} de trayecto + ${o.bloque.salida} al llegar\n` +
-            `  precio: ${o.precio != null ? `${o.precio} €` : 'precio no encontrado'}` +
+            // POR PERSONA Y DICHO. La IA escribió «precio razonable (176€)» de un
+            // billete que eran los dos: sin el «/persona» no puede juzgar nada.
+            `  precio: ${comoPrecio(o, personas)}` +
             `${o.horario ? `\n  horarios: ${o.horario}` : ''}` +
             `${o.nota ? `\n  nota: ${o.nota}` : ''}`
         )
@@ -1073,13 +1135,19 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
  * LO QUE CUESTAN DE VERDAD LOS SALTOS DE DENTRO, CUANDO YA SE SABE.
  *
  * EL FALLO QUE ORIGINA ESTO. Polonia salió con un vuelo de LOT de Cracovia a
- * Gdansk a 176 € por persona y el aviso de traslados internos no apareció por
- * ningún lado. No estaba sin implementar: `avisarDeTrasladosCaros` existe en la
- * fase 1 y funciona. Lo que pasa es que suma con el `modo` de la matriz de
- * tiempos de ESA fase, que para Cracovia → Gdansk dice tren —porque hay tren, y
- * lo hay— así que sumaba 0 €, no llegaba al umbral y no podía dispararse nunca.
- * El vuelo aparece después, aquí, cuando esta fase mira las opciones reales y
- * elige.
+ * Gdansk y el aviso de traslados internos no apareció por ningún lado. No estaba
+ * sin implementar: `avisarDeTrasladosCaros` existe en la fase 1 y funciona. Lo
+ * que pasa es que suma con el `modo` de la matriz de tiempos de ESA fase, que
+ * para Cracovia → Gdansk dice tren —porque hay tren, y lo hay— así que sumaba
+ * 0 €, no llegaba al umbral y no podía dispararse nunca. El vuelo aparece
+ * después, aquí, cuando esta fase mira las opciones reales y elige.
+ *
+ * OJO CON EL 176 DE AQUEL VIAJE, que se persiguió dos veces como si fuera un
+ * fallo y no lo era. Kayak da el TOTAL DE LA RESERVA: 176 € eran los dos
+ * billetes, o sea 88 € por cabeza, por debajo del umbral de 150. Este aviso hizo
+ * bien en callarse. Lo que estaba mal era enseñar «176 €» a secas —y comparar
+ * ese número con los del catálogo, que son por persona—, y eso se arregla en
+ * `precioPorPersona`, no aquí.
  *
  * Son dos avisos distintos y los dos hacen falta. El de la fase 1 es una
  * ESTIMACIÓN GRUESA por tipo de salto, y sirve para lo suyo: comparar puertas
@@ -1090,8 +1158,8 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
  *
  * NO INVENTA EL QUE FALTA. Si un salto se quedó sin precio, no se estima: se
  * suma lo que hay y se dice cuántos faltan, que es distinto de decir que la ruta
- * cuesta eso. Y por eso también se avisa aunque falten precios: 176 € de uno
- * solo ya pasan el umbral, y que el otro no se sepa no lo hace más barato.
+ * cuesta eso. Y por eso también se avisa aunque falten precios: si lo que ya se
+ * sabe pasa el umbral, que el resto no se sepa no lo hace más barato.
  *
  * Exportada para poder probarla contra un viaje real sin arrancar la fase
  * entera, que es la única forma de saber si el número que saca es el bueno.

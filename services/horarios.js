@@ -50,6 +50,35 @@ const DIAS = [
   ['sabados', 6], ['sabado', 6], ['saturdays', 6], ['saturday', 6], ['sab', 6], ['sat', 6],
 ];
 
+/**
+ * LAS ABREVIATURAS DE DOS LETRAS, QUE VAN APARTE Y CON CUIDADO.
+ *
+ * EL FALLO QUE ORIGINA ESTO. El Museo de la Segunda Guerra Mundial —el
+ * imprescindible número uno de Gdansk— se fue del viaje con el motivo «cierra
+ * los sábados», leyendo esto:
+ *
+ *     «Mi-Dom: 10:00 - 18:00, Mar: 10:00 - 16:00 (Lunes cerrado)»
+ *
+ * Arriba están «miercoles», «mierc» y «mie», pero no «mi». Así que del rango
+ * solo se veía el «Dom» del final: abría domingo y martes, y los otros cinco
+ * días —el sábado del viaje entre ellos— quedaban cerrados. El texto lo escribe
+ * la IA en el paso de traducir horarios, o sea que abrevia como le da la gana y
+ * el lector tiene que entenderla.
+ *
+ * NO SE PUEDEN METER ARRIBA SIN MÁS. Con dos letras, media lista son palabras
+ * corrientes: «su» y «tu» son posesivos, «mi» lo es en español y día en inglés,
+ * «we» es un pronombre y «do» un verbo. Un «consulta su web» convertido en
+ * domingo cierra un sitio que abre, que es exactamente el fallo que se está
+ * arreglando, pero al revés.
+ *
+ * Por eso solo cuentan cuando el texto las usa COMO DÍA: pegadas a un guion, a
+ * una «a», a una coma, a dos puntos o a una hora. «Mi-Dom» sí; «mi horario» no.
+ */
+const DIAS_CORTOS = [
+  ['lu', 1], ['ma', 2], ['mi', 3], ['ju', 4], ['vi', 5], ['sa', 6], ['do', 0],
+  ['mo', 1], ['tu', 2], ['we', 3], ['th', 4], ['fr', 5], ['su', 0],
+];
+
 /** Grupos que valen por varios días de golpe. */
 const GRUPOS = [
   ['fines de semana', [6, 0]],
@@ -92,6 +121,25 @@ function normalizar(texto) {
  * reales mezclan las dos cosas en la misma línea: «Lun-Vie, Sab» es un rango y
  * un día suelto, y «Lun, Mie, Vie» son tres sueltos.
  */
+/**
+ * ¿ESE «MI» ES UN MIÉRCOLES O ES UN POSESIVO?
+ *
+ * Lo decide lo que tiene pegado. Un día abreviado va siempre con la compañía de
+ * un horario: un guion de rango, una «a», una coma o un punto y coma de lista,
+ * los dos puntos de la hora, o la hora misma. Un pronombre va con una palabra
+ * detrás. Se mira a los dos lados porque el día puede ir al principio del rango
+ * («Mi-Dom») o al final («Lun a Mi»).
+ */
+function pareceUnDia(tramo, desde, hasta) {
+  const antes = tramo.slice(Math.max(0, desde - 10), desde);
+  const despues = tramo.slice(hasta, hasta + 10);
+
+  const detras = /^\s*(?:[-,;:/.]|\d|(?:a|al|to|hasta|y)\s)/.test(despues);
+  const delante = /(?:[-,;:/]|\d)\s*$/.test(antes) || /\b(?:a|al|to|hasta|y)\s+$/.test(antes);
+
+  return detras || delante;
+}
+
 function diasDelTramo(tramo) {
   const encontrados = [];
 
@@ -106,6 +154,22 @@ function diasDelTramo(tramo) {
       const hasta = desde + palabra.length;
       // Si este hueco ya lo ocupa un nombre más largo, no es otro día.
       if (yaVisto.some((v) => desde < v.hasta && hasta > v.desde)) continue;
+      yaVisto.push({ desde, hasta });
+      encontrados.push({ dia: n, desde, hasta });
+    }
+  }
+
+  // Y ahora las de dos letras, que solo valen si están puestas como día. Van
+  // después a propósito: así «mie» y «miercoles» ya han ocupado su hueco y el
+  // «mi» de dentro no se cuenta dos veces.
+  for (const [palabra, n] of DIAS_CORTOS) {
+    const re = new RegExp(`\\b${palabra}\\b`, 'g');
+    let m;
+    while ((m = re.exec(tramo)) !== null) {
+      const desde = m.index;
+      const hasta = desde + palabra.length;
+      if (yaVisto.some((v) => desde < v.hasta && hasta > v.desde)) continue;
+      if (!pareceUnDia(tramo, desde, hasta)) continue;
       yaVisto.push({ desde, hasta });
       encontrados.push({ dia: n, desde, hasta });
     }
