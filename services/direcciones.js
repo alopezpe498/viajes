@@ -27,6 +27,7 @@
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
 import { geocodificarConGoogle, googleDisponible, contadorDeAverias, situarLugarConGoogle } from '../lib/google.js';
+import { distanciaKm } from './distancias.js';
 
 /**
  * De qué puede tener dirección algo, y en qué tabla vive su id.
@@ -583,4 +584,125 @@ export async function situarLosSitios(punto) {
 
   console.log(`[direcciones] ${situados} de ${sitios.length} sitios de ${ciudad} situados con Places.`);
   return { situados, total: sitios.length };
+}
+
+// =============================================================================
+// SITUAR UNA EXCURSIÓN
+// =============================================================================
+/**
+ * LOS TIPOS QUE SON UN SITIO Y LOS QUE SON UNA ZONA.
+ *
+ * Google devuelve con cada resultado qué clase de cosa es, y ahí está la línea
+ * entre pintar un pin honrado y pintar uno a ojo:
+ *
+ *   · `tourist_attraction`, `museum`, `church`, `park`, `establishment`… son
+ *     PUNTOS. Tienen una puerta por la que se entra y su coordenada significa
+ *     algo.
+ *   · `locality`, `neighborhood`, `sublocality`, `route`, `postal_code`… son
+ *     ÁREAS. Su coordenada es un centroide, y clavar ahí un pin es exactamente
+ *     la «coordenada del centro para disimular» que no se quiere.
+ *
+ * Si lo único que Google sabe devolver es un área, la excursión se queda sin
+ * ubicar. Es lo mismo que ya se hace con una comida que solo tiene zona.
+ */
+const TIPOS_DE_AREA = new Set([
+  'locality', 'sublocality', 'sublocality_level_1', 'neighborhood', 'political',
+  'administrative_area_level_1', 'administrative_area_level_2',
+  'administrative_area_level_3', 'country', 'postal_code', 'route', 'street_address',
+]);
+
+/** Hasta dónde puede estar razonablemente la excursión de un día de su ciudad. */
+const KM_MAXIMOS_DE_EXCURSION = 300;
+
+/**
+ * SITÚA UNA EXCURSIÓN POR SU NOMBRE, UNA VEZ EN LA VIDA.
+ *
+ * EL AGUJERO QUE TAPA. Civitatis no da coordenadas —ni dirección: la ficha del
+ * catálogo trae título, precio, duración y poco más, con `punto_encuentro` vacío—
+ * así que TODAS las excursiones salían del mapa con «sin ubicar». Cinco de
+ * veinticinco elementos del viaje 41, incluida Auschwitz, que es el motivo por el
+ * que medio mundo va a Cracovia.
+ *
+ * NO SE GEOCODIFICA UNA DIRECCIÓN: SE BUSCA UN SITIO. Son dos APIs distintas y
+ * la diferencia importa. El geocodificador quiere una calle y un número y con
+ * «Excursión a Auschwitz-Birkenau con guía» no sabe qué hacer. Places busca
+ * LUGARES por su nombre, y a eso contesta «Campo de concentración de Auschwitz,
+ * Oświęcim», que es la respuesta correcta.
+ *
+ * LOS DOS GUARDIANES, Y POR QUÉ NO SON LOS DE SIEMPRE:
+ *
+ *   1. El resultado tiene que ser un SITIO y no un ÁREA (ver arriba).
+ *   2. Y tiene que caer a una distancia de día de excursión de su ciudad.
+ *
+ * El segundo NO es el «¿está en la misma ciudad?» que usan los sitios, y es a
+ * propósito: una excursión que sale de la ciudad es lo normal —Auschwitz está a
+ * 70 km de Cracovia— y ese guardián habría tirado justo el caso que se quería
+ * arreglar. Lo que se descarta aquí es el homónimo grosero: el «Wawel» de
+ * Wisconsin, no el viaje de un día.
+ *
+ * LO QUE NO CASA NO SE INVENTA: se guarda `sin_resultado` con su motivo, la
+ * excursión se queda con su etiqueta de «sin ubicar en el mapa», y no se vuelve a
+ * preguntar. Un hueco declarado y barato.
+ *
+ * Devuelve true solo si acabó situada.
+ */
+export async function situarActividadConPlaces(actividadId, { cerca = null } = {}) {
+  const ficha = una('SELECT id, titulo, ciudad FROM catalogo_actividades WHERE id = ?', actividadId);
+  if (!ficha) return false;
+
+  // UNA VEZ EN LA VIDA. Si ya hay fila —situada o fallida— no se vuelve a
+  // preguntar: la segunda apertura del mapa no puede costar otra llamada.
+  const previa = direccionDe('actividad', actividadId);
+  if (previa) return Boolean(previa.situada);
+
+  const hallado = await situarLugarConGoogle(ficha.titulo, ficha.ciudad);
+
+  const guardarFallo = (motivo) => {
+    ejecutar(
+      `INSERT INTO direcciones (tipo_elemento, elemento_id, direccion, estado, fuente, mensaje, buscada_en)
+       VALUES ('actividad', ?, ?, 'sin_resultado', 'google-places', ?, datetime('now'))
+       ON CONFLICT (tipo_elemento, elemento_id) DO UPDATE SET
+         estado = 'sin_resultado', mensaje = excluded.mensaje, buscada_en = excluded.buscada_en`,
+      actividadId,
+      ficha.titulo,
+      motivo
+    );
+    console.log(`[direcciones] excursión «${ficha.titulo}»: sin ubicar (${motivo}).`);
+    return false;
+  };
+
+  if (!hallado?.lat) return guardarFallo('Google no encontró ningún sitio con ese nombre');
+
+  const tipos = hallado.tipos ?? [];
+  const esSitio = tipos.some((t) => !TIPOS_DE_AREA.has(t));
+  if (!esSitio) {
+    return guardarFallo(`lo único que devolvió es una zona (${tipos.join(', ')}), no un sitio`);
+  }
+
+  if (cerca?.lat != null) {
+    const km = distanciaKm({ lat: cerca.lat, lon: cerca.lon }, { lat: hallado.lat, lon: hallado.lng });
+    if (km > KM_MAXIMOS_DE_EXCURSION) {
+      return guardarFallo(`el resultado cae a ${Math.round(km)} km de ${ficha.ciudad}: no es esto`);
+    }
+  }
+
+  ejecutar(
+    `INSERT INTO direcciones (tipo_elemento, elemento_id, direccion, lat, lng, estado, fuente, mensaje, buscada_en)
+     VALUES ('actividad', ?, ?, ?, ?, 'ok', 'google-places', ?, datetime('now'))
+     ON CONFLICT (tipo_elemento, elemento_id) DO UPDATE SET
+       direccion = excluded.direccion, lat = excluded.lat, lng = excluded.lng,
+       estado = 'ok', fuente = excluded.fuente, mensaje = excluded.mensaje,
+       buscada_en = excluded.buscada_en`,
+    actividadId,
+    hallado.direccion ?? ficha.titulo,
+    hallado.lat,
+    hallado.lng,
+    // QUÉ SE HA DADO POR BUENO, guardado y enseñado. «Excursión a
+    // Auschwitz-Birkenau con guía» se pinta en el Campo de concentración de
+    // Auschwitz, y quien mire el mapa tiene derecho a saber que es eso lo que se
+    // ha casado y no otra cosa.
+    `Situada como «${hallado.nombre}»`
+  );
+  console.log(`[direcciones] excursión «${ficha.titulo}» → ${hallado.nombre} (${hallado.direccion}).`);
+  return true;
 }

@@ -45,6 +45,7 @@ import {
   volcarDireccionDeHotel,
   geocodificarFila,
   direccionDe,
+  situarActividadConPlaces,
   TIPOS_CON_DIRECCION,
 } from './direcciones.js';
 
@@ -277,6 +278,24 @@ export async function mapaDeViaje(viajeId) {
     });
   }
 
+  // --- 3b) LAS EXCURSIONES, QUE TAMPOCO TRAEN COORDENADAS -----------------
+  //
+  // Civitatis no las da —ni dirección: `punto_encuentro` viene vacío—, así que
+  // sin esto TODAS salían del mapa con «sin ubicar», Auschwitz incluida, que es
+  // el motivo por el que media Europa va a Cracovia. Se buscan por su nombre en
+  // Places, una vez en la vida de cada una, con los dos guardianes que hay en
+  // `situarActividadConPlaces`: tiene que ser un sitio y no una zona, y tiene que
+  // caer a distancia de excursión. Lo que no case se queda sin ubicar.
+  const porSituar = crudos.filter(
+    (c) => c.dir?.tipo === 'actividad' && !direccionDe('actividad', c.dir.id)
+  );
+  for (const c of porSituar) {
+    const ciudad = ciudades.find((x) => x.id === c.ciudadId);
+    await situarActividadConPlaces(c.dir.id, {
+      cerca: ciudad?.lat != null ? { lat: ciudad.lat, lon: ciudad.lon } : null,
+    });
+  }
+
   // --- 4) RESOLVER EL PUNTO DE CADA UNO -----------------------------------
   // Las direcciones se piden de golpe por tipo: una consulta por tipo en vez de
   // una por elemento, que con un viaje de cuarenta bloques se nota.
@@ -316,6 +335,11 @@ export async function mapaDeViaje(viajeId) {
       // que se le invente una posición.
       sinUbicar: !(punto && Number.isFinite(punto.lat) && Number.isFinite(punto.lon)),
       direccion: d?.direccion ?? null,
+      // CON QUÉ SE HA CASADO, cuando no es evidente. Una excursión situada por
+      // su nombre se pinta en el sitio que Google entendió —«Campo de
+      // concentración de Auschwitz»— y quien mire el mapa tiene derecho a saber
+      // cuál es ese sitio, porque el nombre del pin dice otra cosa.
+      situadaComo: d?.mensaje ?? null,
     });
   }
 

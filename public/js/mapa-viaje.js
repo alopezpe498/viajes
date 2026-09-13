@@ -266,7 +266,10 @@
 
         L.marker([i.lat, i.lon], { icon: iconoPin(i, numero) })
           .addTo(capa)
-          .bindTooltip(`<b>${esc(i.nombre)}</b>${i.hora ? ` · ${esc(i.hora)}` : ''}`)
+          .bindTooltip(
+            `<b>${esc(i.nombre)}</b>${i.hora ? ` · ${esc(i.hora)}` : ''}` +
+              (i.situadaComo ? `<br><small>${esc(i.situadaComo)}</small>` : '')
+          )
           .on('click', () => seleccionar(i.id, true));
         puntos.push([i.lat, i.lon]);
       }
@@ -397,7 +400,11 @@
       icono: `<i class="ti ${iconoTipo(i.tipo)}"></i>`,
       color: colorTipo(i.tipo),
       titulo: i.nombre,
-      detalle: i.detalle,
+      // CON QUÉ SE HA CASADO, cuando el pin no está donde dice el nombre. Una
+      // excursión se sitúa buscando su nombre en Google, y «Excursión a
+      // Auschwitz-Birkenau con guía» acaba clavada en el Campo de concentración
+      // de Auschwitz: es el sitio correcto, pero hay que decir cuál es.
+      detalle: [i.detalle, i.situadaComo].filter(Boolean).join(' · '),
       hora: i.hora,
       sinUbicar: i.sinUbicar,
     });
