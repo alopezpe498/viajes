@@ -630,15 +630,54 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   // junta: se le dan a la IA las combinaciones con vuelos reales, los pesos de
   // las candidatas y la matriz de tiempos que ella misma estimó, y elige la que
   // dé menos tiempo TOTAL —aire más carretera—.
+  // Las ciudades que siguen VIVAS después de los descartes. Todo lo que se le
+  // enseñe al modelo en este paso —y todo lo que se le pase al generador de
+  // repartos— tiene que estar en esta lista.
+  //
+  // La definición se perdió al reescribir este bloque para que la puerta la
+  // eligiera el ranking: los tres usos se quedaron y el `const` no. Vuelve aquí,
+  // antes del primero — que ahora es el propio ranking, porque puntuar una puerta
+  // exige saber cómo reparte las noches.
+  const vivas = new Set(candidatas.map((c) => normalizarNombre(c.nombre)));
+  const tiemposVivos = (tiempos ?? []).filter(
+    (t) => vivas.has(normalizarNombre(t.desde ?? '')) && vivas.has(normalizarNombre(t.hasta ?? ''))
+  );
+
   const combinaciones = [];
   for (const [, ida] of idas) {
     for (const [, vuelta] of vueltas) {
+      // EL REPARTO DE CADA PUERTA SE CALCULA AQUÍ, ANTES DE PUNTUAR.
+      //
+      // Antes esto se hacía después de ordenar, en un bucle que paraba en la
+      // primera puerta con reparto legal. Ahora se necesita para la cuenta, así
+      // que se genera para todas: son cinco ciudades como mucho y combinatoria
+      // pura, no cuesta nada.
+      const suyos = repartosLegales({
+        entrada: ida.ciudad,
+        salida: vuelta.ciudad,
+        candidatas,
+        noches,
+        tiempos: tiemposVivos,
+        minimoNoches,
+      });
+
+      // Se puntúa con el que de verdad se va a usar con esta puerta, que es el
+      // primero: `repartosLegales` los devuelve ordenados y ese es el que coge
+      // el paso 3 cuando la IA no acierta con ninguno.
+      const mejor = suyos[0] ?? null;
+      const deLosExtremos = horasUtilesDeLaPuerta(ida, vuelta, puertas);
+      const deLasNoches = horasUtilesDelReparto(mejor?.reparto);
+
       combinaciones.push({
         id: `c${combinaciones.length + 1}`,
         entrada: ida,
         salida: vuelta,
         total: ida.minutos + vuelta.minutos,
-        util: horasUtilesDeLaPuerta(ida, vuelta, puertas),
+        util: deLosExtremos,
+        repartos: suyos,
+        mejorReparto: mejor,
+        nochesUtil: deLasNoches,
+        puntos: deLosExtremos + deLasNoches,
         misma: ida.ciudad === vuelta.ciudad,
       });
     }
@@ -653,18 +692,45 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   //
   // Los minutos quedan de desempate, que es el papel que les corresponde: entre
   // dos combinaciones que dejan el mismo día, mejor la que vuela menos.
-  combinaciones.sort((a, b) => b.util - a.util || a.total - b.total);
+  // Y LAS NOCHES PESAN EN LA MISMA CUENTA, QUE ES EL ARREGLO.
+  //
+  // EL FALLO QUE ORIGINA ESTO. En Polonia ganó c3 (Cracovia → Wrocław) por 47,7 h
+  // contra las 47,3 de c2: 24 minutos de aeropuerto. Y con esa puerta el único
+  // reparto posible era 2n+2n+2n, o sea que Cracovia —peso 5, rango 2-3n— se
+  // quedaba en su mínimo. El día 1 era de llegada y el día 2 se iba en Auschwitz,
+  // así que Wawel, la Plaza Mayor y Wieliczka se cayeron del viaje con dos avisos
+  // graves. Se cambiaron 24 minutos por una noche entera de la ciudad de más
+  // peso, y el ranking ni se enteró: puntuaba las horas de los dos extremos y era
+  // CIEGO a lo que la puerta le hace al reparto.
+  //
+  // Ahora las noches entran en la misma unidad. Una noche de más en una ciudad es
+  // un día de más allí, y un día son las mismas 13 horas útiles que usa la cuenta
+  // de los extremos, ponderadas por el peso de esa ciudad. Así una noche movida
+  // de una ciudad de peso 4 a una de peso 5 vale 13 h y le gana de calle a 0,4 h
+  // de vuelo — que es exactamente lo que tenía que pasar. Entre dos puertas cuyo
+  // mejor reparto es igual de bueno, deciden las horas de los vuelos como
+  // siempre, que para eso funcionaban bien.
+  //
+  // Los minutos de avión siguen de último desempate, su papel de siempre.
+  combinaciones.sort((a, b) => b.puntos - a.puntos || b.util - a.util || a.total - b.total);
 
-  // Y la cuenta de arriba, escrita para poder leerla en el registro.
+  // Y la cuenta de arriba, escrita para poder leerla en el registro. Va SIEMPRE
+  // con el reparto que la sostiene: una puntuación sin el reparto al lado es
+  // justo lo que no se pudo auditar cuando esto salió mal.
   for (const c of combinaciones.slice(0, 6)) {
+    const conQue = c.mejorReparto
+      ? c.mejorReparto.reparto.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ')
+      : 'ningún reparto legal con esta puerta';
     anotar(
       viajeId,
       'ciudades_y_noches',
       `   ${c.id}: entra por ${c.entrada.ciudad}, sale por ${c.salida.ciudad} · ` +
-        `${c.util.toFixed(1)} h útiles ponderadas · ${comoTexto(c.total)} de vuelo` +
+        `${c.puntos.toFixed(1)} h útiles ponderadas ` +
+        `(${c.util.toFixed(1)} de los vuelos + ${c.nochesUtil.toFixed(1)} de las noches) · ` +
+        `${comoTexto(c.total)} de vuelo · reparto: ${conQue}` +
         // UN CERO SIEMPRE VIENE CON SU MOTIVO. Sin esto parece un fallo del
         // programa y no lo es: son dos días de extremo que no dan de sí.
-        (c.util < 0.05 ? ` — 0 h porque ${porQueEsaPuntuacion(c.entrada, c.salida) || 'no tengo las horas de los vuelos'}` : ''),
+        (c.util < 0.05 ? ` — 0 h de vuelos porque ${porQueEsaPuntuacion(c.entrada, c.salida) || 'no tengo las horas de los vuelos'}` : ''),
       ORIGENES.ninguno
     );
   }
@@ -737,18 +803,6 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     };
   };
 
-  // Las ciudades que siguen VIVAS después de los descartes. Todo lo que se le
-  // enseñe al modelo en este paso —y todo lo que se le pase al generador de
-  // repartos— tiene que estar en esta lista.
-  //
-  // La definición se perdió al reescribir este bloque para que la puerta la
-  // eligiera el ranking: los tres usos se quedaron y el `const` no. Vuelve aquí,
-  // antes del primero.
-  const vivas = new Set(candidatas.map((c) => normalizarNombre(c.nombre)));
-  const tiemposVivos = (tiempos ?? []).filter(
-    (t) => vivas.has(normalizarNombre(t.desde ?? '')) && vivas.has(normalizarNombre(t.hasta ?? ''))
-  );
-
   // LA PUERTA LA ELIGE EL RANKING, NO LA IA.
   //
   // El código ya calculaba las horas útiles ponderadas de cada combinación y las
@@ -768,16 +822,12 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   let rutaPrevista = null;
   let repartos = [];
 
+  // Los repartos ya están calculados arriba, porque son parte de la puntuación.
+  // Aquí solo queda coger la primera del ranking que tenga alguno y decir por qué
+  // se caen las demás. Ya NO se corta en la primera legal sin haber mirado el
+  // resto: todas están puntuadas con su reparto y ordenadas por esa cuenta.
   for (const c of combinaciones) {
-    const suyos = repartosLegales({
-      entrada: c.entrada.ciudad,
-      salida: c.salida.ciudad,
-      candidatas,
-      noches,
-      tiempos: tiemposVivos,
-      minimoNoches,
-    });
-    if (!suyos.length) {
+    if (!c.repartos.length) {
       anotar(
         viajeId,
         'ciudades_y_noches',
@@ -788,7 +838,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       continue;
     }
     elegida = c;
-    repartos = suyos;
+    repartos = c.repartos;
     break;
   }
 
@@ -809,9 +859,11 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   anotar(
     viajeId,
     'ciudades_y_noches',
-    `Puerta elegida por ranking: ${elegida.id} (${elegida.util.toFixed(1)} h útiles ponderadas) · ` +
+    `Puerta elegida por ranking: ${elegida.id} (${elegida.puntos.toFixed(1)} h útiles ponderadas: ` +
+      `${elegida.util.toFixed(1)} de los vuelos + ${elegida.nochesUtil.toFixed(1)} de las noches) · ` +
       `entra por ${elegida.entrada.ciudad}, sale por ${elegida.salida.ciudad} · ` +
-      `${repartos.length} reparto(s) legal(es).`,
+      `${repartos.length} reparto(s) legal(es), puntuada con ` +
+      `«${elegida.mejorReparto.reparto.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ')}».`,
     ORIGENES.ninguno
   );
 
@@ -843,13 +895,22 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
             COMBINACIONES:
               `LA PUERTA YA ESTÁ DECIDIDA POR EL RANKING DE HORAS ÚTILES: ${elegida.id}, ` +
               `entrando por ${elegida.entrada.ciudad} y saliendo por ${elegida.salida.ciudad} ` +
-              `(${elegida.util.toFixed(1)} h útiles ponderadas). NO la discutas ni propongas otra: ` +
+              `(${elegida.puntos.toFixed(1)} h útiles ponderadas). NO la discutas ni propongas otra: ` +
               `devuelve "elegida": "${elegida.id}" y explica por qué es buena.\n\n` +
+              // Y EL REPARTO CON EL QUE SE PUNTUÓ, que es sobre lo que tiene que
+              // redactar. Sin esto se inventaba un recorrido de cinco ciudades
+              // para justificar una puerta cuyo reparto era de tres.
+              `EL REPARTO DE NOCHES CON ESA PUERTA YA ESTÁ CALCULADO Y ES ESTE: ` +
+              `${elegida.mejorReparto.reparto.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ')}. ` +
+              `Habla SOLO de esas ciudades: no metas ninguna que no esté en esa lista.\n\n` +
               combinaciones
                 .map(
                   (c) =>
                     `- ${c.id}: ${c.entrada.ciudad} → ${c.salida.ciudad} · ` +
-                    `${c.util.toFixed(1)} h útiles · ${comoTexto(c.total)} de vuelo`
+                    `${c.puntos.toFixed(1)} h útiles · ${comoTexto(c.total)} de vuelo` +
+                    (c.mejorReparto
+                      ? ` · reparto: ${c.mejorReparto.reparto.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ')}`
+                      : ' · sin reparto legal')
                 )
                 .join('\n'),
           }),
@@ -869,8 +930,16 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
 
         if (typeof r?.por_que === 'string' && r.por_que.trim()) porQue = r.por_que.trim();
 
-        // LA RUTA CON LA QUE HA HECHO LA CUENTA. Se guarda para dársela al paso
-        // 3: la puerta y los vuelos se han decidido sobre ESE recorrido.
+        // LA RUTA QUE LA IA IMAGINÓ AL REDACTAR. Y se llama así a propósito.
+        //
+        // Se llamaba «Ruta con la que ha echado la cuenta» y era mentira: la
+        // cuenta la echa el código con las horas de los vuelos y el reparto de
+        // noches, y esto se pide DESPUÉS, con la puerta ya fijada. En Polonia la
+        // IA escribió aquí un recorrido de cinco ciudades y el nombre de la línea
+        // hizo creer que la puerta se había elegido sobre él. No se eligió sobre
+        // él; no se elige sobre ninguna ruta. Se guarda porque el paso 3 la
+        // compara con los repartos legales, pero que nadie vuelva a leerla como
+        // la base de nada.
         rutaPrevista = saneaRutaPrevista(r?.ruta_prevista, candidatas, elegida, (t) =>
           anotar(viajeId, 'ciudades_y_noches', t)
         );
@@ -878,7 +947,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
           anotar(
             viajeId,
             'ciudades_y_noches',
-            `   Ruta con la que ha echado la cuenta: ${rutaPrevista.join(' → ')}`,
+            `   Ruta que la IA imaginó al redactar (no es la cuenta): ${rutaPrevista.join(' → ')}`,
             ORIGENES.ia
           );
         }
@@ -1169,7 +1238,11 @@ function avisarDeTrasladosCaros(viajeId, elegida, combinaciones, candidatas, tie
 
   /** Lo que cuesta por persona moverse dentro de esta combinación. */
   const costeDe = (c) => {
-    const suyos = repartosLegales({
+    // Los repartos ya vienen con la combinación desde que el ranking los usa
+    // para puntuar. Se reutilizan en vez de recalcularlos: además de ahorrarse
+    // el trabajo, garantiza que este aviso habla del MISMO reparto con el que se
+    // puntuó la puerta y no de otro que salga de una segunda pasada.
+    const suyos = c.repartos ?? repartosLegales({
       entrada: c.entrada.ciudad,
       salida: c.salida.ciudad,
       candidatas,
@@ -2174,6 +2247,38 @@ export function horasUtilesDeLaPuerta(ida, vuelta, puertas) {
   const utilUltimo = sale == null ? 2 : Math.max(0, sale - 2.5 - INICIO_DEL_DIA);
 
   return utilPrimero * pesoDe(ida?.ciudad) + utilUltimo * pesoDe(vuelta?.ciudad);
+}
+
+/**
+ * LO QUE VALEN LAS NOCHES DE UN REPARTO, EN LAS MISMAS HORAS QUE LOS VUELOS.
+ *
+ * La otra mitad del ranking, y la que faltaba. `horasUtilesDeLaPuerta` mide los
+ * dos días de los extremos —lo que te deja el avión— y era lo único que se
+ * puntuaba. Pero una puerta no solo decide a qué hora aterrizas: decide qué
+ * repartos de noches son posibles, y ahí se juega el viaje entero.
+ *
+ * LA CUENTA. Una noche de más en una ciudad es un día de más EN esa ciudad, y un
+ * día útil son las mismas 13 horas (de 9:00 a 22:00) que usa la cuenta de los
+ * extremos. Ponderadas por el peso de la ciudad, igual que allí. Así las dos
+ * mitades hablan la misma unidad y se pueden sumar sin inventarse factores.
+ *
+ * Y sale la proporción que tenía que salir: mover una noche de una ciudad de peso
+ * 4 a una de peso 5 vale 13 h, y ninguna diferencia de horarios de vuelo entre
+ * dos puertas razonables se acerca a eso. Que es justo lo que no pasaba cuando
+ * 24 minutos de aeropuerto le costaron a Cracovia una noche.
+ *
+ * Como el total de noches es fijo, esto no premia a nadie por tener más noches:
+ * solo por repartirlas en las ciudades que más pesan.
+ */
+export function horasUtilesDelReparto(reparto) {
+  // Las mismas 9:00 y 22:00 que `horasUtilesDeLaPuerta`.
+  const HORAS_DEL_DIA_UTIL = 22 - 9;
+  return (
+    (reparto ?? []).reduce(
+      (a, x) => a + (Number(x.noches) || 0) * (Number(x.peso) || 3),
+      0
+    ) * HORAS_DEL_DIA_UTIL
+  );
 }
 
 /**
