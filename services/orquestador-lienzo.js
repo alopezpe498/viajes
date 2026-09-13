@@ -462,6 +462,97 @@ function esComida(colocado) {
 }
 
 /**
+ * DOS COMIDAS EL MISMO DÍA SON UNA DE MÁS.
+ *
+ * EL FALLO QUE ORIGINA ESTO. El día 4 de Atenas quedó así:
+ *
+ *     14:00  Comer · Barrio de Plaka                 (la comida de zona)
+ *     14:00  Taverna tradicional en Anafiotika       (un restaurante concreto)
+ *
+ * Los dos a la misma hora, peleándose por la misma franja. La resolución de
+ * solapes no supo qué hacer —son dos bloques legítimos— y el día se quedó con un
+ * aviso sin resolver y la Taverna a una hora que parecía imposible.
+ *
+ * SON DOS FORMAS DE RESOLVER LA MISMA COMIDA, no dos planes. Si el día tiene un
+ * restaurante concreto a la hora de comer, ESE es el almuerzo: el bloque de «come
+ * por la zona» sobra, y encima es el flexible de los dos. Se quita el de zona y
+ * el día conserva una comida, que es lo que tiene un día.
+ *
+ * CÓMO SE SABE QUE UN SITIO ES UN RESTAURANTE, sin adivinar por el nombre: la
+ * ficha lo dice. `sitios_lugar.categoria` vale «gastronomía» para la Taverna y
+ * «monumentos», «museos» o «barrios y paseos» para lo demás. Es el dato que ya
+ * pone la fase de qué ver.
+ *
+ * Y SI EL RESTAURANTE NO CABE EN SU HORARIO, EL QUE SE VA ES ÉL. La comida de
+ * zona es flexible y un restaurante cerrado no da de comer: se quita el
+ * restaurante con su motivo y se deja la zona. Nunca al revés, y nunca dejando
+ * una visita puesta a una hora en que el sitio está cerrado.
+ */
+function unaSolaComidaAlDia(viajeId, lienzo, di) {
+  const ALMUERZO = [12 * 60, 17 * 60];
+  let tocado = false;
+
+  for (const d of lienzo.dias ?? []) {
+    const delDia = lienzo.colocados.filter((c) => c.dia === d.n);
+
+    const zona = delDia.find((c) => esComida(c));
+    if (!zona) continue;
+
+    // Los restaurantes del día, a la hora de comer.
+    const restaurantes = delDia.filter((c) => {
+      if (esComida(c)) return false;
+      const quien = deQuienEs(c);
+      if (quien?.de !== 'sitio' || !quien.deId) return false;
+      const f = una('SELECT categoria, horarios FROM sitios_lugar WHERE id = ?', quien.deId);
+      if (!/gastronom/i.test(String(f?.categoria ?? ''))) return false;
+      const h = enMinutos(c.hora);
+      return h != null && h >= ALMUERZO[0] && h <= ALMUERZO[1];
+    });
+    if (!restaurantes.length) continue;
+
+    // ¿Cabe alguno en su horario? Si sí, ese es la comida y la zona sobra.
+    const cabe = restaurantes.find((c) => {
+      const abre = aperturaDe(c, d.fecha);
+      const cierra = cierreDe(c);
+      const empieza = enMinutos(c.hora);
+      const dura = Number(c.duracionMin) || 0;
+      if (empieza == null) return false;
+      if (abre != null && empieza < abre) return false;
+      if (cierra != null && empieza + dura > cierra) return false;
+      return true;
+    });
+
+    if (cabe) {
+      quitar(zona.id);
+      di(
+        `   Día ${d.n}: «${cabe.nombre}» es la comida de ese día, así que quito ` +
+          `«${zona.nombre}»: no hacen falta las dos.`
+      );
+      tocado = true;
+      continue;
+    }
+
+    // Ninguno cabe: se van ellos y se queda la zona, que siempre cabe.
+    for (const c of restaurantes) {
+      quitar(c.id);
+      di(
+        `   Día ${d.n}: fuera «${c.nombre}» — a las ${c.hora} está cerrado y no da de ` +
+          `comer. Se queda «${zona.nombre}», que es flexible.`
+      );
+      apuntarHueco(
+        viajeId,
+        FASE,
+        `${d.ciudad}: «${c.nombre}» no abre a la hora de comer del día ${d.n}; ` +
+          'la comida se queda en la zona.'
+      );
+      tocado = true;
+    }
+  }
+
+  return tocado ? lienzoDeViaje(viajeId) : lienzo;
+}
+
+/**
  * A QUÉ HORA ABRE ESTE SITIO ESE DÍA, en minutos. Null si no se sabe.
  *
  * EL FALLO QUE ORIGINA ESTO. La Barbacana de Cracovia acabó recolocada a las
@@ -2517,6 +2608,10 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   const enderezado = enderezarLoQueNoCabeEnSuHorario(viajeId, final, di);
   final = enderezado.lienzo;
   const fueraDeHorario = enderezado.sinResolver;
+
+  // UNA COMIDA AL DÍA, NO DOS. Va antes de los avisos: lo que se quite aquí no
+  // tiene que salir después como un solape sin resolver.
+  final = unaSolaComidaAlDia(viajeId, final, di);
 
   avisarSiElHotelNoSePisa(viajeId, final, di);
 

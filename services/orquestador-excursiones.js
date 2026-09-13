@@ -34,7 +34,7 @@ import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../servic
 import { lienzoDeViaje } from '../services/lienzo.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 import { porParada } from '../services/paralelo.js';
-import { direccionDe } from '../services/direcciones.js';
+import { direccionDe, situarActividadConPlaces } from '../services/direcciones.js';
 import { distanciaKm } from '../services/distancias.js';
 import { fueraDeTemporada, mesesDelViaje } from '../services/temporadas.js';
 import { enFase } from '../services/fase-actual.js';
@@ -501,7 +501,7 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         // ella, «Akrotiri» se tragaría al «Faro de Akrotiri», que está a cuatro
         // kilómetros y es otra visita. Ante la duda no se funde, como siempre.
         if (candidato) {
-          cubrirSitiosQueNombraElTitulo(e.actividad, candidato, etapa, cubiertos);
+          await cubrirSitiosQueSonElMismoLugar(e.actividad, candidato, etapa, cubiertos);
         }
       }
 
@@ -627,77 +627,109 @@ export function seParecen(a, b) {
 export default { ejecutarFaseExcursiones, duracionEnMinutos, esLarga };
 
 /**
- * LOS SITIOS QUE LA EXCURSIÓN NOMBRA EN SU PROPIO TÍTULO.
+ * LOS SITIOS QUE SON EL MISMO LUGAR QUE LA EXCURSIÓN.
  *
  * Complementa a `cubre_sitios`, que lo dice la IA y casa por igualdad exacta.
- * Esto es determinista: el nombre del sitio tiene que aparecer entero —palabra a
- * palabra y en orden— dentro del título de la excursión.
  *
- *   «Entrada al yacimiento arqueológico de Akrotiri»  ⊃  «Akrotiri»   → se funde
- *   «Entrada al yacimiento arqueológico de Akrotiri»  ⊅  «Faro de Akrotiri»
+ * POR QUÉ LA VERSIÓN ANTERIOR NO LLEGÓ A AKROTIRI. Pedía que el nombre del sitio
+ * apareciera ENTERO dentro del título de la excursión, y en Santorini los dos se
+ * llaman así:
  *
- * DOS CAUTELAS, y las dos hacen falta:
+ *     excursión: «Entrada al yacimiento arqueológico de Akrotiri»
+ *     sitio:     «Acrópolis de Akrotiri»
  *
- *   · La ciudad no cuenta. «Free tour por Fira» contiene «Fira», y si Fira fuera
- *     un sitio del catálogo se taparía la ciudad entera con un free tour.
- *   · Y si los dos tienen coordenadas, tienen que estar cerca. Es la misma
- *     salvaguarda de 200 m de `services/contenidos.js`, y por el mismo motivo:
- *     dos cosas con el nombre parecido a cuatro kilómetros no son la misma.
+ * Ninguno contiene al otro. Solo comparten la palabra «akrotiri», y fundir por
+ * una palabra suelta es como se acaba tapando el Museo de Atenas con un tour por
+ * Atenas. Por nombre, este caso no se puede resolver sin abrir la puerta a
+ * errores peores.
  *
- * Ante la duda no se funde: perder una visita por fundirla mal es peor que
- * tenerla dos veces, que al menos se ve.
+ * SE RESUELVE POR COORDENADA, QUE ES UN HECHO Y NO UN PARECIDO. Se busca la
+ * excursión por su nombre en Places —lo mismo que hace el mapa del viaje, la
+ * misma función y la misma caché, una vez en la vida de cada excursión— y se
+ * compara dónde cae:
+ *
+ *     «Entrada al yacimiento arqueológico de Akrotiri»  →  36.3518, 25.4034
+ *     «Acrópolis de Akrotiri»                           →  36.3518, 25.4034
+ *
+ * El mismo punto. Y la de al lado, «Excursión a Akrotiri, playa Roja y Oia»,
+ * cae a cinco kilómetros: comparte la palabra pero NO es el mismo sitio, y por
+ * coordenada se distingue sola. Eso es exactamente lo que hacía falta.
+ *
+ * SE CONSERVA LA EXCURSIÓN Y SE TAPA EL SITIO, que es lo que ya significa
+ * `cubierto_por`: la excursión trae guía y entrada, el sitio no. Y el sitio no se
+ * borra: queda marcado, con su motivo, y el lienzo ya sabe saltárselo.
+ *
+ * ANTE LA DUDA NO SE FUNDE. Si la excursión no se puede situar, queda la
+ * comprobación del nombre entero, que es exigente. Perder una visita por fundirla
+ * mal es peor que tenerla dos veces, que al menos se ve.
  */
-function cubrirSitiosQueNombraElTitulo(actividad, candidato, etapa, cubiertos) {
+async function cubrirSitiosQueSonElMismoLugar(actividad, candidato, etapa, cubiertos) {
   if (!etapa?.punto_interes_id) return;
 
-  const METROS = 200;
+  /** A cuánto dejan de ser el mismo sitio. */
+  const METROS = 300;
+
   const limpio = (t) =>
     String(t ?? '')
       .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
+      .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
 
   const titulo = limpio(actividad.titulo);
   if (!titulo) return;
-
   const ciudad = limpio(etapa.nombre_ciudad);
-
-  // DÓNDE ESTÁ LA EXCURSIÓN, SI ES QUE SE SABE.
-  //
-  // `catalogo_actividades` NO tiene lat/lon —Civitatis no las da— y preguntar por
-  // esas columnas revienta la consulta. El único sitio donde puede haber un punto
-  // de una excursión es `direcciones`, y lo pone la búsqueda por nombre en Places
-  // que monta el mapa del viaje.
-  //
-  // Casi siempre será null, y no pasa nada: la salvaguarda de distancia es un
-  // EXTRA que descarta falsos positivos cuando hay con qué. Sin ella queda la
-  // comprobación del nombre entero, que ya es exigente.
-  const dirAct = direccionDe('actividad', actividad.id);
-  const puntoActividad = dirAct?.situada
-    ? { lat: Number(dirAct.punto.lat), lon: Number(dirAct.punto.lng) }
-    : null;
 
   const sitios = todas(
     `SELECT id, nombre, lat, lon FROM sitios_lugar
       WHERE punto_interes_id = ? AND cubierto_por IS NULL`,
     etapa.punto_interes_id
   );
+  if (!sitios.length) return;
+
+  // SITUARLA, UNA VEZ EN LA VIDA. Si ya tiene fila —situada o fallida— esto no
+  // llama a nadie: `situarActividadConPlaces` lo comprueba antes que nada.
+  const dondeLaCiudad = una('SELECT lat, lon FROM puntos_interes WHERE id = ?', etapa.punto_interes_id);
+  try {
+    await situarActividadConPlaces(actividad.id, {
+      cerca: Number.isFinite(Number(dondeLaCiudad?.lat))
+        ? { lat: Number(dondeLaCiudad.lat), lon: Number(dondeLaCiudad.lon) }
+        : null,
+    });
+  } catch (err) {
+    console.warn(`[excursiones] no pude situar «${actividad.titulo}» (${err.message}).`);
+  }
+
+  const d = direccionDe('actividad', actividad.id);
+  const punto = d?.situada ? { lat: Number(d.punto.lat), lon: Number(d.punto.lng) } : null;
 
   for (const s of sitios) {
     const nombre = limpio(s.nombre);
-    // Nombres de una sola letra o dos no identifican nada, y la ciudad tampoco.
+    // Nombres muy cortos no identifican nada, y la ciudad tampoco: un free tour
+    // por Atenas no puede tapar «Atenas».
     if (nombre.length < 4 || nombre === ciudad) continue;
-    // Entero y con fronteras de palabra: «akrotiri» sí, el «oia» de «amoudi» no.
-    if (!new RegExp(`(^| )${nombre}( |$)`).test(titulo)) continue;
 
-    if (puntoActividad && Number.isFinite(Number(s.lat))) {
-      const km = distanciaKm(puntoActividad, { lat: Number(s.lat), lon: Number(s.lon) });
-      if (km * 1000 > METROS) continue;
-    }
+    const tienePunto = Number.isFinite(Number(s.lat));
+    const metros =
+      punto && tienePunto
+        ? distanciaKm(punto, { lat: Number(s.lat), lon: Number(s.lon) }) * 1000
+        : null;
+
+    // Dos caminos para decir «es el mismo sitio», y el de la coordenada manda.
+    const mismaCoordenada = metros != null && metros <= METROS;
+    const nombreEntero = new RegExp(`(^| )${nombre}( |$)`).test(titulo);
+
+    if (!mismaCoordenada && !nombreEntero) continue;
+    // Si el nombre casa pero las coordenadas dicen que están lejos, gana la
+    // coordenada: es el «no los fundo» de siempre.
+    if (nombreEntero && metros != null && metros > METROS) continue;
 
     ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, s.id);
-    cubiertos.push(`${s.nombre} (lo cubre «${actividad.titulo}», que lo lleva en el nombre)`);
+    cubiertos.push(
+      `${s.nombre} (es el mismo lugar que «${actividad.titulo}»` +
+        (mismaCoordenada ? `, a ${Math.round(metros)} m` : ', que lo lleva en el nombre') +
+        ')'
+    );
   }
 }

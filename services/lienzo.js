@@ -1785,6 +1785,28 @@ const CIERRE_POR_CATEGORIA = {
 };
 
 export function cierraALasMinutos(sitio) {
+  // PRIMERO SE LE PREGUNTA AL LECTOR DE HORARIOS, QUE ES QUIEN SABE.
+  //
+  // EL FALLO QUE ORIGINA ESTO. La «Taverna tradicional en Anafiotika» abre
+  // «Generalmente 12:00 a 00:00» y esto contestaba que cierra a las 12:00: coge
+  // todas las horas del texto, tira las anteriores a mediodía —el 00:00 de la
+  // medianoche entre ellas— y se queda con la menor de las que sobran, que
+  // resultaba ser la de APERTURA. De ahí salió una comida a las 14:00 marcada
+  // como imposible en un sitio que a esa hora lleva dos horas abierto.
+  //
+  // El apaño de abajo es de cuando `horarios.js` no sabía leer rangos. Ahora sí
+  // —y desde hoy también los que cruzan la medianoche— así que se le pregunta a
+  // él y esto se queda solo para lo que él no sepa leer.
+  //
+  // Se coge el cierre MÁS TEMPRANO de la semana, que es la respuesta prudente
+  // para «¿me cabe esta visita?» sin saber de qué día se habla; y se topa en la
+  // medianoche, porque un cierre a las 02:00 no alarga el día de hoy.
+  const finales = horarioPorDias(sitio?.horarios).porDia
+    .flatMap((d) => d.rangos)
+    .map(([, fin]) => Math.min(fin, 24 * 60));
+  if (finales.length) return Math.min(...finales);
+
+  // Lo de siempre para los textos sin rangos legibles: horas sueltas del texto.
   const horas = [...String(sitio?.horarios ?? '').matchAll(/(\d{1,2}):(\d{2})/g)]
     .map((m) => Number(m[1]) * 60 + Number(m[2]))
     // Una hora de cierre no es de madrugada: lo que salga antes de las 12 es la

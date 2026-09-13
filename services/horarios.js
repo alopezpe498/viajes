@@ -306,8 +306,26 @@ function rangosDelTramo(tramo) {
       return hora * 60 + mm;
     };
     const desde = enMinutos(m[1], m[2], m[3]);
-    const hasta = enMinutos(m[4], m[5], m[6] ?? m[3]);
-    if (desde == null || hasta == null || hasta <= desde) continue;
+    let hasta = enMinutos(m[4], m[5], m[6] ?? m[3]);
+    if (desde == null || hasta == null) continue;
+
+    // UN HORARIO PUEDE CRUZAR LA MEDIANOCHE, Y LOS DE COMER LO HACEN SIEMPRE.
+    //
+    // EL FALLO QUE ORIGINA ESTO. La «Taverna tradicional en Anafiotika» abre
+    // «Generalmente 12:00 a 00:00» y el lector la daba por ilegible: el final
+    // (0 min) es menor que el principio (720), así que el rango se tiraba y el
+    // sitio se quedaba sin horario. De ahí salió el «cierra a las 12:00» que
+    // dejó una comida puesta a una hora supuestamente imposible… en un sitio que
+    // a las dos de la tarde está abierto de par en par.
+    //
+    // Le pasa a media hostelería: «18:00 a 02:00», «20:00 - 01:00». Un final
+    // menor que el principio no es un dato roto, es la madrugada siguiente.
+    if (hasta <= desde) {
+      // Salvo que sea exactamente el mismo minuto, que sí es un dato roto.
+      if (hasta === desde) continue;
+      hasta += 24 * 60;
+    }
+
     rangos.push([desde, hasta]);
   }
   return rangos;
@@ -412,7 +430,16 @@ export function horarioPorDias(texto, mes = null) {
     const rangos = rangosDelTramo(tramo);
 
     if (!esDeCierre && SIEMPRE.some((p2) => tramo.includes(p2))) {
-      for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'abierto', rangos };
+      // «SIEMPRE» ES UN HORARIO, NO UN HUECO.
+      //
+      // Si el tramo no da horas —«Abierto 24h», «Acceso libre»— el día se
+      // quedaba abierto pero SIN RANGOS, y `abiertoA` contesta null a todo lo
+      // que no tiene rangos: «abre, pero no sabemos entre qué horas». Para un
+      // faro o un sendero sí lo sabemos: a cualquiera. Sin esto, la mitad del
+      // arreglo de los sitios al aire libre se quedaba a medias — el día salía
+      // bien y la hora seguía siendo un «compruébalo».
+      const deVerdad = rangos.length ? rangos : [[0, 24 * 60]];
+      for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'abierto', rangos: deVerdad };
       huboApertura = true;
       continue;
     }
