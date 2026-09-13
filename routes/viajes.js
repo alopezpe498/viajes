@@ -193,6 +193,7 @@ import {
 import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-pais.js';
 import { actualizarAhora, climaDelPais } from '../services/clima.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
+import { mapaDeViaje } from '../services/mapa-viaje.js';
 import { buscandoDatos } from '../services/datos-sitios.js';
 import {
   pedirBusqueda,
@@ -3415,6 +3416,29 @@ router.get('/viaje/:viajeId/presupuesto', (req, res) => {
     return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
   }
   res.render('presupuesto', { viaje: presupuesto.viaje, presupuesto });
+});
+
+/**
+ * EL MAPA MAESTRO: el viaje entero en un mapa, con sus cuatro vistas.
+ *
+ * Ruta propia y no una pestaña de Mi ruta, a propósito: así se puede volver
+ * atrás sin perder la pantalla de origen, que es lo que uno hace todo el rato
+ * —mirar el mapa, volver a la ruta, volver al mapa—.
+ *
+ * Es `async` por una sola cosa: la primera vez que se abre puede haber un hotel
+ * de Booking sin coordenadas (Booking no las da) y se geocodifica ahí mismo, una
+ * vez, con la clave de servidor. A partir de la segunda carga no hay espera.
+ */
+router.get('/viaje/:viajeId/mapa', async (req, res) => {
+  const mapa = await mapaDeViaje(Number(req.params.viajeId));
+  if (!mapa) {
+    return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
+  }
+  res.render('mapa-viaje', {
+    mapa,
+    viaje: mapa.viaje,
+    claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
+  });
 });
 
 /** El importe diario que escribe el usuario. A partir de aquí es suyo. */

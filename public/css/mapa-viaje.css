@@ -1,0 +1,260 @@
+/**
+ * public/css/mapa-viaje.css
+ * -----------------------------------------------------------------------------
+ * EL MAPA MAESTRO: mapa a pantalla completa y todo lo demás flotando encima.
+ *
+ * La disposición es la de la maqueta `mapa-B-flotante.html` —barra de vistas
+ * centrada arriba, panel translúcido a la izquierda, leyenda discreta abajo—
+ * pero los colores y la tipografía salen de `estilo.css`, no de la maqueta: esta
+ * pantalla tiene que parecer de esta aplicación y no de otra.
+ *
+ * TODO LO FLOTANTE COMPARTE `.mm-flota`: el mismo vidrio, el mismo borde y la
+ * misma sombra. Cuando hay cuatro cajas sobre un mapa, que se parezcan entre
+ * ellas es lo que las hace leerse como una sola capa y no como cuatro parches.
+ */
+
+.mapa-maestro {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--fondo);
+}
+html:has(.mapa-maestro) { height: 100%; }
+
+#mapa-maestro { position: fixed; inset: 0; }
+
+/* El tipo de letra de la app también dentro de Leaflet (tooltips incluidos). */
+.leaflet-container { font: inherit; }
+
+/* ============================================================================
+   EL VIDRIO COMÚN
+   ========================================================================== */
+.mm-flota {
+  position: fixed;
+  z-index: 800;
+  background: rgba(255, 255, 255, .86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--borde);
+  box-shadow: 0 8px 30px rgba(18, 48, 62, .16);
+  color: var(--texto);
+}
+
+/* ============================================================================
+   TÍTULO Y VUELTA ATRÁS
+   ========================================================================== */
+.mm-titulo {
+  top: 14px; left: 14px;
+  border-radius: var(--radio-sm);
+  padding: 8px 14px 8px 8px;
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(46vw, 380px);
+}
+.mm-volver {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  background: var(--tinte); color: var(--acento);
+  text-decoration: none; font-size: 17px;
+}
+.mm-volver:hover { background: var(--acento); color: #fff; }
+.mm-titulo__texto { min-width: 0; }
+.mm-titulo__texto b { font-size: 14px; display: block; line-height: 1.25; }
+.mm-titulo__texto small {
+  font-size: 12px; color: var(--texto-2); font-weight: 500;
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   LA BARRA DE LAS CUATRO VISTAS
+   ========================================================================== */
+.mm-barra {
+  top: 14px; left: 50%; transform: translateX(-50%);
+  border-radius: 999px; padding: 5px;
+  display: flex; gap: 2px;
+}
+.mm-barra button {
+  border: 0; background: transparent; font: inherit;
+  font-size: 13px; font-weight: 600; color: var(--texto-2);
+  padding: 8px 16px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+}
+.mm-barra button:hover { color: var(--texto); }
+.mm-barra button.on { background: var(--acento); color: #fff; font-weight: 700; }
+.mm-barra button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* ============================================================================
+   EL PANEL
+   ========================================================================== */
+.mm-panel {
+  top: 76px; left: 14px; bottom: 14px;
+  width: 320px;
+  border-radius: var(--radio);
+  display: flex; flex-direction: column; overflow: hidden;
+  transition: transform .25s ease, opacity .25s ease;
+}
+.mm-panel.oculto { transform: translateX(-120%); opacity: 0; pointer-events: none; }
+
+.mm-cerrar {
+  position: absolute; top: 9px; right: 9px;
+  width: 26px; height: 26px; border-radius: 8px;
+  border: 0; background: transparent; color: var(--texto-2);
+  font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.mm-cerrar:hover { background: var(--tinte); color: var(--texto); }
+
+.mm-plegar {
+  top: 76px; left: 14px;
+  width: 40px; height: 40px; border-radius: 12px;
+  font-size: 18px; cursor: pointer; color: var(--texto);
+  display: none; align-items: center; justify-content: center;
+}
+.mm-plegar.visible { display: flex; }
+
+.mm-panel__cab { padding: 12px 38px 10px 14px; border-bottom: 1px solid var(--borde); }
+.mm-selector { display: flex; gap: 6px; flex-wrap: wrap; }
+.mm-selector button {
+  border: 1px solid var(--borde-fuerte); background: rgba(255, 255, 255, .7);
+  font: inherit; font-size: 12px; font-weight: 600; color: var(--texto);
+  border-radius: 9px; padding: 5px 10px; cursor: pointer;
+}
+.mm-selector button:hover { border-color: var(--acento); }
+.mm-selector button.on { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 700; }
+.mm-selector__nota { font-size: 12px; color: var(--texto-2); font-weight: 600; }
+
+/* --- Los checks ----------------------------------------------------------- */
+.mm-capas { padding: 10px 14px; border-bottom: 1px solid var(--borde); }
+.mm-capas h3 {
+  font-size: 11.5px; font-weight: 700; color: var(--texto-2);
+  margin: 0 0 6px; text-transform: none; letter-spacing: .01em;
+}
+.mm-capas__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 10px; }
+.mm-capa {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0; cursor: pointer; user-select: none;
+  font-size: 12.5px; font-weight: 600; color: var(--texto);
+}
+.mm-capa.off { color: var(--texto-3); }
+/* Casillas de verdad, no divs: se pueden tabular y el lector de pantalla las
+   anuncia. Solo se les cambia la piel. */
+.mm-capa input {
+  appearance: none; -webkit-appearance: none;
+  width: 17px; height: 17px; margin: 0; flex: 0 0 auto;
+  border: 1.5px solid var(--borde-fuerte); border-radius: 5px;
+  background: rgba(255, 255, 255, .9); position: relative; cursor: pointer;
+}
+.mm-capa input:checked { background: var(--cc, var(--acento)); border-color: var(--cc, var(--acento)); }
+.mm-capa input:checked::after {
+  content: '\2713'; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 11px; font-weight: 800;
+}
+.mm-capa input:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* --- La lista ------------------------------------------------------------- */
+.mm-lista { flex: 1; overflow: auto; padding: 6px; }
+.mm-grupo {
+  margin: 10px 6px 3px; font-size: 11.5px; font-weight: 700;
+  color: var(--texto-2); letter-spacing: .02em;
+}
+/* `flex-wrap` para que la etiqueta de «sin ubicar» se vaya a su propia línea en
+   vez de estrangular el nombre: sin esto, «Tour por la catedral de Cracovia +
+   Colina de Wawel» salía en cuatro líneas de tres palabras. */
+.mm-item {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 9px; border-radius: 12px; cursor: pointer;
+  border: 0; background: transparent; width: 100%; text-align: left; font: inherit;
+}
+.mm-item:hover { background: rgba(255, 255, 255, .95); }
+.mm-item.sel { background: #fff; box-shadow: inset 0 0 0 2px var(--acento); }
+.mm-item:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+.mm-item__ic {
+  width: 28px; height: 28px; border-radius: 9px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 14px; font-weight: 800;
+}
+/* `min-width: 0` para que el nombre se encoja en vez de saltar debajo del
+   icono: el icono y el texto van SIEMPRE en la misma línea. */
+.mm-item__txt { flex: 1 1 0; min-width: 0; }
+.mm-item__txt b { font-size: 13px; font-weight: 600; display: block; }
+.mm-item__txt small { font-size: 11.5px; color: var(--texto-2); display: block; }
+.mm-item__hora {
+  margin-left: auto; font-size: 11.5px; font-weight: 700;
+  color: var(--acento-hover); white-space: nowrap;
+}
+/* Lo que no se pudo situar. Se ve, se lee y se dice por qué; simplemente no
+   tiene pin en el mapa. */
+.mm-item--sinubicar { opacity: .72; cursor: default; }
+.mm-item--sinubicar:hover { background: transparent; }
+/* Siempre en su propia línea y alineada con el nombre, no con el icono. Al lado
+   del texto solo cabía estrangulándolo, y el nombre importa más que el aviso. */
+.mm-item__aviso {
+  flex: 1 0 100%;
+  margin: 2px 0 0 38px;
+  font-size: 11px; font-weight: 700; color: var(--prec-tx);
+  background: var(--prec-bg); border-radius: 6px; padding: 1px 6px;
+  align-self: flex-start; width: fit-content;
+}
+
+/* ============================================================================
+   LOS MARCADORES
+   ========================================================================== */
+.mm-pin {
+  display: flex; align-items: center; justify-content: center;
+  width: 29px; height: 29px; border-radius: 10px;
+  color: #fff; font-size: 14px;
+  border: 2px solid #fff; box-shadow: 0 3px 10px rgba(18, 48, 62, .3);
+}
+.mm-pin--num { border-radius: 50%; font-weight: 800; font-size: 12.5px; }
+.mm-pin--sel { outline: 3px solid var(--texto); outline-offset: 1.5px; }
+
+.mm-pin-ciudad {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 50px; height: 50px; border-radius: 16px;
+  background: var(--acento-hover); color: #fff;
+  border: 2.5px solid #fff; box-shadow: 0 4px 14px rgba(22, 104, 138, .4);
+  font-weight: 800; line-height: 1.1;
+}
+.mm-pin-ciudad small { font-size: 9px; font-weight: 600; opacity: .85; }
+.mm-pin-ciudad.mm-pin--sel { outline: 3px solid var(--texto); outline-offset: 2px; }
+
+.mm-etq {
+  background: var(--texto); color: #fff;
+  border-radius: 999px; padding: 4px 11px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(18, 48, 62, .35);
+}
+
+/* ============================================================================
+   LEYENDA
+   ========================================================================== */
+.mm-leyenda {
+  right: 14px; bottom: 14px;
+  border-radius: 12px; padding: 8px 11px;
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  max-width: 46vw;
+}
+.mm-leyenda span {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 600; color: var(--texto-2);
+}
+.mm-leyenda i.punto {
+  width: 11px; height: 11px; border-radius: 4px; display: block; flex: 0 0 auto;
+}
+
+/* ============================================================================
+   MÓVIL
+   ----------------------------------------------------------------------------
+   Es una PWA y se usa andando por la calle: el panel arranca plegado para que
+   el mapa se vea entero, y la barra de vistas baja al pulgar.
+   ========================================================================== */
+@media (max-width: 720px) {
+  .mm-barra {
+    top: auto; bottom: max(14px, env(safe-area-inset-bottom));
+    max-width: 94vw; overflow: auto;
+  }
+  .mm-panel { top: 70px; width: min(86vw, 320px); bottom: 78px; }
+  .mm-plegar { top: 70px; }
+  .mm-titulo { max-width: calc(100vw - 28px); }
+  .mm-leyenda { bottom: 74px; max-width: calc(100vw - 28px); }
+}

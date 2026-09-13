@@ -76,6 +76,14 @@ const { viaje } = ruta;
             </a>
           <% } %>
 
+          <%# EL MAPA DEL VIAJE: todo junto, que es la pregunta que una lista de
+              paradas no contesta. Va antes de reservas y presupuesto porque es
+              de la misma familia que "Cómo se montó": sirve para MIRAR el viaje,
+              no para cerrarlo. %>
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/mapa">
+            <i class="ti ti-map-2" aria-hidden="true"></i> Mapa del viaje
+          </a>
+
           <%# MIS RESERVAS: lo que ya está cerrado y lo que falta por cerrar.
               Va aquí y no dentro de una etapa porque una reserva es del viaje:
               el vuelo no es de ninguna parada y el orden que importa es el de

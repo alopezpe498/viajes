@@ -1,0 +1,85 @@
+<%
+/**
+ * EL MAPA MAESTRO DEL VIAJE.
+ *
+ * Pantalla a pantalla completa: el mapa ocupa todo y lo demás flota encima. Es
+ * la maqueta `mapa-B-flotante.html` llevada a la casa — misma disposición, mismo
+ * panel, mismos checks — pero con Leaflet sobre teselas de Google (que es lo que
+ * usan los otros dos mapas) y con los colores y la tipografía de la app, no con
+ * los de la maqueta.
+ *
+ * NO LLEVA LA CABECERA NORMAL. Una barra de navegación de 60 píxeles encima de
+ * un mapa a pantalla completa se come justo lo que se ha venido a ver. La vuelta
+ * atrás está en la tarjeta del título, arriba a la izquierda.
+ *
+ * Espera: mapa (lo que devuelve mapaDeViaje()), viaje, claveMapas.
+ */
+const LEAFLET = '1.9.4';
+const MUTANT = '0.14.1';
+%><!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mapa del viaje · <%= viaje.nombre %></title>
+
+  <%# Lo mismo que pone `parciales/cabecera`. No se incluye esa parcial porque
+      trae la barra de navegación, y una barra de 60 px encima de un mapa a
+      pantalla completa se come justo lo que se ha venido a ver. %>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1B7FA6">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icono-192.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Viajes">
+  <script src="/js/pwa.js" defer></script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/<%= LEAFLET %>/leaflet.min.css">
+  <link rel="stylesheet" href="/css/estilo.css">
+  <link rel="stylesheet" href="/css/mapa-viaje.css">
+</head>
+<body class="mapa-maestro">
+
+  <div id="mapa-maestro"
+       data-mapa="<%= encodeURIComponent(JSON.stringify(mapa)) %>"
+       data-clave-mapas="<%= claveMapas %>"
+       data-viaje="<%= viaje.id %>"></div>
+
+  <%# --- El título, que además es la vuelta atrás --- %>
+  <div class="mm-flota mm-titulo">
+    <a class="mm-volver" href="/viaje/<%= viaje.id %>/ruta" title="Volver a Mi ruta">
+      <i class="ti ti-arrow-left" aria-hidden="true"></i>
+    </a>
+    <span class="mm-titulo__texto">
+      <b><%= viaje.destino || viaje.nombre %> · <%= mapa.dias.length %> días</b>
+      <small><%= mapa.ciudades.map((c) => `${c.nombre} ${c.noches}n`).join(' → ') %></small>
+    </span>
+  </div>
+
+  <%# --- Las cuatro vistas --- %>
+  <nav class="mm-flota mm-barra" id="mm-vistas" aria-label="Vistas del mapa"></nav>
+
+  <button class="mm-flota mm-plegar" id="mm-abrir" title="Abrir el panel" aria-label="Abrir el panel">
+    <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true"></i>
+  </button>
+
+  <%# --- El panel --- %>
+  <section class="mm-flota mm-panel" id="mm-panel">
+    <button class="mm-cerrar" id="mm-cerrar" title="Plegar el panel" aria-label="Plegar el panel">
+      <i class="ti ti-x" aria-hidden="true"></i>
+    </button>
+    <div class="mm-panel__cab"><div class="mm-selector" id="mm-selector"></div></div>
+    <div class="mm-capas" id="mm-capas"></div>
+    <div class="mm-lista" id="mm-lista"></div>
+  </section>
+
+  <%# --- La leyenda, discreta --- %>
+  <div class="mm-flota mm-leyenda" id="mm-leyenda"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/<%= LEAFLET %>/leaflet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@<%= MUTANT %>/dist/Leaflet.GoogleMutant.min.js"></script>
+  <script src="/js/mapa-teselas.js"></script>
+  <script src="/js/mapa-viaje.js"></script>
+</body>
+</html>
