@@ -53,12 +53,44 @@ const estadoValido = (v) => (Object.hasOwn(ESTADOS, String(v ?? '')) ? String(v)
 // LEER
 // =============================================================================
 /**
+ * CUÁNTAS VECES HA CORRIDO CADA FASE DE ESTE VIAJE.
+ *
+ * La huella con la que se sabe si la historia se ha quedado vieja. Relanzar una
+ * fase escribe una PASADA nueva en su registro, y eso —y solo eso— es lo que
+ * significa «esto ya no cuenta el viaje que hay».
+ */
+function huellaDePasadas(viajeId) {
+  const filas = todas(
+    `SELECT fase, MAX(pasada) AS n FROM orquestador_registro
+      WHERE viaje_id = ? GROUP BY fase`,
+    viajeId
+  );
+  return Object.fromEntries(filas.map((f) => [f.fase, Number(f.n) || 1]));
+}
+
+/**
  * La traducción guardada de un viaje, o null.
  *
- * Devuelve además si se ha quedado VIEJA: si el registro tiene más líneas que
- * las que se tradujeron, es que se relanzó una fase después. No se regenera sola
- * —eso sería traducir al vuelo por la puerta de atrás— pero se dice, y el botón
- * de generar sigue ahí.
+ * Devuelve además si se ha quedado VIEJA. No se regenera sola —eso sería
+ * traducir al vuelo por la puerta de atrás— pero se dice, y el botón de generar
+ * sigue ahí.
+ *
+ * SE MIRAN LAS PASADAS, NO LAS LÍNEAS, Y ESTO COSTÓ UN FALSO POSITIVO EN CADA
+ * VIAJE. La primera versión guardaba cuántas líneas tenía el registro al
+ * traducir y comparaba con las de ahora. Pero después de contar se escriben DOS
+ * LÍNEAS MÁS, y las escribe esta misma función: «Vista traducida del registro:
+ * 4 ciudad(es) contadas» y, detrás, el «Orquestador terminado» del worker. Así
+ * que toda historia recién hecha nacía declarándose obsoleta —«214 líneas
+ * entonces, 216 ahora: relanzaste alguna fase después»— sin que nadie hubiera
+ * relanzado nada.
+ *
+ * Y no se arregla contando dos líneas menos: el número de líneas no significa
+ * nada por sí mismo. Lo que la pregunta quiere saber es si alguna fase ha vuelto
+ * a correr, y eso lo dice su PASADA, que es un dato exacto y no un proxy.
+ *
+ * SIN HUELLA GUARDADA NO SE AVISA. Las traducciones de antes de este arreglo no
+ * la tienen, y no hay forma de saber si están al día. Callar es mejor que soltar
+ * un aviso que puede ser mentira: la misma regla que el aviso del hotel.
  */
 export function registroTraducidoDe(viajeId) {
   const fila = una('SELECT * FROM registro_traducido WHERE viaje_id = ?', viajeId);
@@ -71,18 +103,29 @@ export function registroTraducidoDe(viajeId) {
     return null;
   }
 
-  const ahora = una(
-    'SELECT COUNT(*) AS n FROM orquestador_registro WHERE viaje_id = ?',
-    viajeId
-  ).n;
+  let entonces = null;
+  try {
+    entonces = fila.pasadas ? JSON.parse(fila.pasadas) : null;
+  } catch {
+    entonces = null;
+  }
+
+  const ahora = huellaDePasadas(viajeId);
+
+  // Vieja solo si alguna fase ha vuelto a correr desde que se escribió. Una fase
+  // NUEVA que antes no existía también cuenta: es una parte del viaje que la
+  // historia no llegó a ver.
+  const relanzadas = entonces
+    ? Object.keys(ahora).filter((f) => (ahora[f] ?? 0) > (entonces[f] ?? 0))
+    : [];
 
   return {
     ...datos,
     generadoEn: fila.generado_en,
     modelo: fila.modelo,
     lineasTraducidas: fila.lineas,
-    lineasAhora: ahora,
-    vieja: Number(ahora) > Number(fila.lineas ?? 0),
+    vieja: relanzadas.length > 0,
+    relanzadas,
   };
 }
 
@@ -209,15 +252,17 @@ export async function traducirRegistro(viajeId, { di = null } = {}) {
     ).n;
 
     ejecutar(
-      `INSERT INTO registro_traducido (viaje_id, json, modelo, lineas, generado_en)
-       VALUES (?, ?, ?, ?, datetime('now'))
+      `INSERT INTO registro_traducido (viaje_id, json, modelo, lineas, pasadas, generado_en)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))
        ON CONFLICT (viaje_id) DO UPDATE SET
          json = excluded.json, modelo = excluded.modelo,
-         lineas = excluded.lineas, generado_en = excluded.generado_en`,
+         lineas = excluded.lineas, pasadas = excluded.pasadas,
+         generado_en = excluded.generado_en`,
       viajeId,
       JSON.stringify(limpio),
       modeloCriterio(),
-      cuantas
+      cuantas,
+      JSON.stringify(huellaDePasadas(viajeId))
     );
 
     di?.(`Vista traducida del registro: ${limpio.ciudades.length} ciudad(es) contadas.`);

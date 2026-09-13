@@ -388,6 +388,10 @@ export function migrarEsquema() {
   migracionDosModelosYParalelo();
   migracionScrapingEnFila();
   anadirColumnaSiFalta('sitios_lugar', 'horario_json', 'TEXT');
+  // LA HUELLA DE PASADAS DE LA VISTA TRADUCIDA. Va aqui, fuera de su migracion,
+  // porque esa ya corrio en las bases que existen: es la forma de añadirla sin
+  // inventarse una migracion nueva para una columna.
+  anadirColumnaSiFalta('registro_traducido', 'pasadas', 'TEXT');
   migracionUnNavegadorPorDominio();
   migracionFase1NoAfirmaQueCabe();
   migracionTopePorTrabajo();

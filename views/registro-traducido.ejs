@@ -95,11 +95,14 @@ const cuantas = (e) => todasLasLineas.filter((l) => l.estado === e).length;
       </section>
 
       <% if (vista.vieja) { %>
+        <%# Se nombra la fase o fases que han vuelto a correr. «El registro ha
+            crecido» no decía nada accionable y encima era mentira cuando lo
+            único que había crecido eran las dos líneas del propio epílogo. %>
         <p class="rt-desfase">
           <i class="ti ti-alert-triangle" aria-hidden="true"></i>
-          El registro ha crecido desde que se escribió esta historia
-          (<%= vista.lineasTraducidas %> líneas entonces, <%= vista.lineasAhora %> ahora):
-          relanzaste alguna fase después.
+          Esta historia es de antes de que volvieras a lanzar
+          <%= vista.relanzadas.length === 1 ? 'la fase' : 'las fases' %>
+          <b><%= vista.relanzadas.join(', ') %></b>, así que no cuenta lo que se decidió entonces.
           <button class="rt-rehacer" id="rt-generar" data-viaje="<%= viaje.id %>">Rehacerla</button>
         </p>
       <% } %>
