@@ -1,0 +1,739 @@
+         fase = ciudades_y_noches
+prompt_actual = === PASO 1: CANDIDATAS ===
+Eres un planificador de viajes con experiencia real en {{DESTINO}}.
+
+EL VIAJE
+- Destino: {{DESTINO}}
+- {{FORMA_DEL_DESTINO}}
+- Fechas: del {{FECHA_INICIO}} al {{FECHA_FIN}} ({{DIAS}} días, {{NOCHES}} noches)
+- Salen desde: {{ORIGEN}}
+- Viajeros: {{VIAJEROS}}
+- Ritmo: {{RITMO}}
+- Tipo de viaje: {{TIPO_VIAJE}}
+- Les interesa: {{INTERESES}}
+
+Propón hasta {{MAX_CIUDADES}} ciudades candidatas para este viaje. Todavía no
+decides la ruta: pones sobre la mesa lo que merece la pena, con datos para poder
+elegir después.
+
+Devuelve SOLO este JSON:
+
+{
+  "ciudades": [
+    {
+      "nombre": "nombre en español de la ciudad",
+      "peso": 1-5,
+      "noches_min": número,
+      "noches_max": número,
+      "aeropuerto_internacional": true|false,
+      "iata": "TYO"|null,
+      "por_que": "una frase: qué tiene esta ciudad que no tengan las otras"
+    }
+  ],
+  "tiempos": [
+    {"desde": "ciudad", "hasta": "ciudad", "minutos": número, "modo": "tren|coche|vuelo|bus|barco"}
+  ]
+}
+
+REGLAS, y la primera es la que más se incumple:
+
+1. NO TE SALGAS DE ESTOS PAÍSES: {{LISTA_PAISES}}. Todas las ciudades que
+   propongas tienen que estar en uno de ellos. Proponer una ciudad de fuera de
+   esa lista es el peor fallo que puedes cometer aquí.
+   Si el destino es UNA CIUDAD, el viaje es esa ciudad: la única candidata es
+   ella, y solo añades otra si de verdad merece dormir allí —no un sitio que se
+   ve en media jornada y se vuelve a cenar—.
+   Cuando la lista tiene VARIOS países, las candidatas de todos compiten juntas
+   por peso y por geografía: no repartas cupos por país ni metas una ciudad
+   floja solo para que ese país aparezca. Si con los días que hay un país solo
+   da para una parada —o para ninguna—, eso es un resultado correcto.
+2. LAS CIUDADES TIENEN QUE CABER EN {{DIAS}} DÍAS. No propongas ocho ciudades
+   para una semana. Cuenta que cada cambio de ciudad se come medio día entre
+   hacer maletas, trayecto y encontrar el alojamiento, y que por debajo de
+   {{MINIMO_NOCHES}} noches una ciudad se duerme más de lo que se ve. Si el
+   viaje es corto, propón pocas y buenas.
+3. "peso" es cuánto merece la pena, de 1 a 5, y sirve para repartir noches
+   después. No pongas todo a 5: si todo es imprescindible, no has priorizado.
+4. "aeropuerto_internacional" en true SOLO si tiene aeropuerto con vuelos
+   intercontinentales o europeos de verdad, no un aeródromo regional. De esto
+   depende por dónde se entra al país, así que no lo pongas por cortesía.
+5. AJUSTA A LOS VIAJEROS. Con niños pequeños, nada de tres trayectos largos en
+   una semana: menos ciudades y más noches en cada una. Con ritmo tranquilo,
+   igual. Con ritmo intenso puedes apretar, pero sin llegar a la paliza.
+6. "tiempos" es tu ESTIMACIÓN de trayecto entre las candidatas que se podrían
+   encadenar. No hace falta que estén todas contra todas: las que tengan sentido.
+   Es una orientación, no un horario: no te inventes precisión que no tienes.
+7. Los tiempos y las noches son números enteros. Nada de rangos dentro del JSON.
+
+=== PASO 2: PUERTA DE ENTRADA Y SALIDA ===
+Eres el mismo planificador. Ya se han buscado vuelos REALES a las mejores puertas
+y toca decidir por dónde se entra y por dónde se sale.
+
+EL VIAJE
+- Destino: {{DESTINO}} · {{DIAS}} días, {{NOCHES}} noches
+- Se sale desde: {{ORIGEN}}
+
+LAS CIUDADES QUE PROPUSISTE
+{{CANDIDATAS}}
+
+ESTAS SON TODAS LAS CIUDADES POSIBLES. La lista de arriba es CERRADA: algunas de
+las que propusiste se han caído por no llegar al mínimo de noches y ya no están.
+No añadas ninguna otra a la ruta de tu cuenta, aunque la recuerdes del paso
+anterior y aunque geográficamente encaje. Si una ciudad no aparece ahí arriba, no
+existe para este paso.
+
+TIEMPOS QUE ESTIMASTE ENTRE ELLAS
+{{TIEMPOS}}
+
+LAS COMBINACIONES CON VUELOS REALES
+{{COMBINACIONES}}
+
+Devuelve SOLO este JSON:
+
+{ "elegida": "cN",
+  "ruta_prevista": ["ciudad de entrada", "...", "ciudad de salida"],
+  "minutos_internos": número,
+  "por_que": "una o dos líneas" }
+
+LA REGLA, Y NO ES LA QUE PARECE:
+
+NO gana la combinación con menos minutos de vuelo. Gana la que da MENOS TIEMPO
+TOTAL contando el aire Y la carretera de la ruta que esa entrada y esa salida
+obligan a hacer por dentro.
+
+Piénsalo así: por cada combinación, imagina la ruta que sale de entrar por una y
+salir por la otra, pasando por las ciudades de más peso. Suma los traslados
+internos de esa ruta con la tabla de tiempos de arriba. Esa suma, más los vuelos,
+es lo que compite.
+
+Media hora ganada en el aire no compensa cuatro horas de tren de más. Un ejemplo
+real de este mismo programa: en Polonia se eligió entrar por Varsovia y salir por
+Cracovia con Gdansk en medio, porque esos vuelos eran algo más cortos. La ruta
+resultante subía al norte y volvía a bajar. Entrando por Gdansk se recorría la
+ruta de una sola pasada.
+
+EL RESTO DE CRITERIOS:
+
+1. PREFIERE NO REPETIR CIUDAD de entrada y salida: entrar y salir por la misma
+   obliga a volver sobre tus pasos al final del viaje.
+2. PENALIZA las combinaciones que obliguen a pasar DOS VECES por la misma ciudad
+   en mitad de la ruta. Pasar de largo por una ciudad camino de otra es normal;
+   dormir, irse y volver, no.
+3. Que la ruta siga la geografía: de una punta a la otra, sin zigzag.
+4. Las ciudades de más peso tienen que caber. Una combinación que obliga a
+   dejar fuera lo mejor del viaje no es buena aunque el avión sea corto.
+5. "por_que" DICE LA VERDAD. Si la combinación que eliges desanda camino o repite
+   paso por una ciudad, dilo y explica por qué compensa igual. Está PROHIBIDO
+   describir como "lineal", "sin rodeos" o "de una pasada" una ruta que no lo es:
+   quien lee esto lo hace para saber si fiarse.
+6. "ruta_prevista" es LA ruta cuyos traslados internos has sumado para elegir.
+   Solo puede contener ciudades candidatas NO descartadas, empezando por la
+   entrada y acabando en la salida. Si una ciudad no está en la ruta, sus tiempos
+   no entran en la suma: sumar minutos de un recorrido distinto del que declaras
+   es el fallo exacto que motivó este cambio.
+7. "minutos_internos" es esa suma, con la tabla de tiempos de arriba, tramo a
+   tramo.
+
+=== PASO 3: CIERRE ===
+Eres el mismo planificador. Ya hay vuelos reales comprados y la puerta de entrada
+y de salida están DECIDIDAS: no se discuten.
+
+EL VIAJE
+- Destino: {{DESTINO}}
+- Fechas: del {{FECHA_INICIO}} al {{FECHA_FIN}}
+- NOCHES A REPARTIR: {{NOCHES}}
+
+  Ojo con esto, que es donde se falla: el viaje dura {{DIAS}} días pero se
+  reparten {{NOCHES}} NOCHES. Son cosas distintas y siempre hay una noche menos
+  que días, porque el último día se vuelve a casa y no se duerme allí. Lo que
+  tienen que sumar tus paradas es {{NOCHES}}.
+- Viajeros: {{VIAJEROS}} · Ritmo: {{RITMO}}
+- Les interesa: {{INTERESES}}
+
+ENTRADA Y SALIDA, YA FIJADAS CON VUELOS REALES
+- Se entra por: {{ENTRADA}}
+- Se sale por: {{SALIDA}}
+- {{HORARIOS_VUELOS}}
+
+RUTA PREVISTA AL ELEGIR LA PUERTA (con los vuelos ya comprados sobre esta base)
+{{RUTA_PREVISTA}}
+
+CANDIDATAS QUE PROPUSISTE
+{{CANDIDATAS}}
+
+TIEMPOS ENTRE ELLAS. Cada línea dice DE DÓNDE SALE el dato: del catálogo
+(real), medido por carretera, o estimado por ti sin comprobar. Lo que ponga
+"sin dato" es un hueco de verdad: ahí no sabes nada.
+{{TIEMPOS}}
+
+Cierra la ruta. Devuelve SOLO este JSON:
+
+{
+  "ruta": [
+    {"ciudad": "nombre", "noches": número, "motivo": "solo si incumple el mínimo de noches"}
+  ],
+  "noches_totales": número,
+  "descartadas": [
+    {"ciudad": "nombre", "por_que": "por qué se queda fuera"}
+  ],
+  "resumen": "dos frases: por qué esta ruta y no otra, dicha con honestidad"
+}
+
+REGLA 1, Y ES LA QUE SE FALLA SIEMPRE: LAS NOCHES SUMAN {{NOCHES}}.
+
+No {{NOCHES}} aproximadamente: {{NOCHES}} exactas. Antes de responder, SUMA las
+noches que has puesto y escribe el resultado en "noches_totales". Si esa suma no
+da {{NOCHES}}, tu respuesta no vale y hay que rehacerla.
+
+Y cuando no cuadre, QUITA UNA CIUDAD. No repartas de menos para que quepan todas:
+tres ciudades bien vistas valen más que cinco de pasada. Los rangos de noches de
+las candidatas son una orientación de cuánto pide cada sitio, NO un presupuesto
+que haya que gastar entero.
+
+Ejemplo con 11 noches: 4 + 4 + 3 = 11 vale. 4 + 3 + 3 + 3 = 13 NO vale.
+
+EL RESTO DE REGLAS:
+
+2. LA PRIMERA PARADA ES {{ENTRADA}} Y LA ÚLTIMA ES {{SALIDA}}. Sin excepciones:
+   los vuelos ya están comprados. Si entrada y salida son la misma ciudad, esa
+   ciudad aparece al principio y al final, y son dos paradas distintas.
+3. Ninguna parada con 0 noches. Si una ciudad no llega a una noche, no es una
+   parada: es una excursión, y va fuera de la ruta.
+   Y SI SOLO HAY UNA PARADA —un viaje a una sola ciudad—, esa parada se lleva
+   LAS {{NOCHES}} NOCHES, y la ruta tiene un único elemento. No la partas en dos
+   ni metas una segunda ciudad para rellenar.
+4. Mínimo {{MINIMO_NOCHES}} noches por ciudad. Puedes bajar de ahí SOLO si es un
+   tránsito obligado (se pasa por allí porque no hay otra forma de llegar), y
+   entonces tienes que explicarlo en "motivo".
+5. Ordena para no dar rodeos: sigue la geografía, no el orden en que se te
+   ocurrieron. Un trayecto largo al principio se lleva mejor que al final.
+6. No metas ciudades que no estén en las candidatas.
+7. LAS NOCHES SE REPARTEN POR PESO, y el peso de cada candidata está escrito
+   arriba. Una ciudad de peso alto se lleva más noches que una de peso bajo, y
+   una ciudad del PESO MÁXIMO de la lista NO puede quedarse con el mínimo de
+   {{MINIMO_NOCHES}} mientras otra de peso menor tiene más.
+   Con 6 noches y tres ciudades de pesos 5, 4 y 5, lo que sale es 2-2-2.
+   Si aun así una ciudad de peso máximo se queda corta, tiene que ser por una
+   imposibilidad REAL —un horario de vuelo de los de arriba, un trayecto de los
+   de la tabla de tiempos— y la explicas en "motivo" CITANDO ese dato.
+   Cuenta también lo que se comen los vuelos, que sus horas sí las tienes: si se
+   llega de madrugada esa primera noche casi no existe, y si se sale a primera
+   hora la última tampoco.
+8. LAS NOCHES SON EL MEDIO; LO QUE REPARTES ES TIEMPO ÚTIL.
+   Con la tabla de tiempos y los horarios de los vuelos, estima a qué hora se
+   llega a cada parada y cuánto día real le queda: una parada a la que se llega
+   a mediodía y de la que se sale a la mañana siguiente da media tarde, no un
+   día. Si un sitio pide un día entero (monasterios repartidos, un yacimiento
+   grande, una ciudad densa), la noche extra va ahí ANTES que a una parada que
+   ya tiene un día completo y no lo llena.
+   Escribe en el motivo la cuenta de tiempo útil de las paradas que queden
+   justas.
+9. LOS HORARIOS QUE NO ESTÉN ESCRITOS AQUÍ ARRIBA, NO LOS SABES.
+   Tienes las horas de los vuelos y la tabla de tiempos entre ciudades. Nada
+   más. PROHIBIDO decir que un tren "llega de madrugada", que un bus "sale a
+   primera hora" o cualquier hora concreta que no te hayan dado: eso es
+   inventárselo, y con un invento así se le quitaron dos noches a una ciudad en
+   un viaje de verdad.
+   Si para decidir te falta un horario, DILO tal cual en el "motivo" o en el
+   "resumen" ("no tengo el horario del tren de X a Y") y reparte sin él.
+10. TU PUNTO DE PARTIDA ES LA RUTA PREVISTA: tu trabajo es repartir las noches
+   sobre ella, no inventar otra. Los vuelos se compraron con esa ruta delante.
+   Solo puedes apartarte de ella si al repartir aparece una imposibilidad real
+   —una parada se queda a 0 noches, un mínimo que no se cumple—, y entonces lo
+   dices en el resumen: qué has cambiado respecto a la prevista y por qué.
+11. EL "resumen" DICE LA VERDAD SOBRE LA FORMA DE LA RUTA. Si desanda camino, si
+   repite paso por una ciudad o si hay un trayecto largo incómodo, se dice y se
+   explica por qué compensa. PROHIBIDO llamar "lineal" o "sin rodeos" a una ruta
+   que sube y vuelve a bajar: el resumen se lee para decidir si fiarse de lo que
+   ha montado la máquina, y un resumen que adorna no sirve para eso.
+
+LA REGLA DE LAS DOS NOCHES SE APLICA IGUAL PARA TODOS, O SE RAZONA:
+Una parada por debajo de {{MINIMO_NOCHES}} noches solo vale si se cumplen LAS
+DOS cosas a la vez:
+  (a) es transito geografico obligado de la ruta —se pasa por ahi si o si—, y
+  (b) lo que se va a ver alli cabe en el tiempo util que le queda.
+
+Si (b) no se cumple, elige una de las tres y dilo en "por_que":
+  · darle la segunda noche quitandosela a otra parada,
+  · convertirla en parada DE PASO sin noche (comer y una visita corta de camino),
+  · o dejarla fuera.
+
+Lo que no vale es parar a dormir en un sitio cuyo motivo principal no cabe. Paso
+de verdad: Delfos se quedo fuera "por no llegar a 2 noches" y Nauplia entro con
+una, y Micenas —que era la razon de parar en Nauplia— no cupo. Se pago la noche
+y no se vio lo que se iba a ver.
+
+
+         fase = traslados
+prompt_actual = Eres quien decide cómo se va de una ciudad a otra en un viaje ya planificado.
+
+EL SALTO
+- De {{DESDE}} a {{HASTA}}, el día {{DIA}}
+- Viajeros: {{VIAJEROS}}
+- Ritmo del viaje: {{RITMO}}
+
+LAS OPCIONES, ya medidas puerta a puerta
+{{OPCIONES}}
+
+REGLA DE EMPATE POR PRECIO (ya comprobada, no la recalcules)
+{{REGLA_DEL_EMPATE}}
+
+Elige una y devuelve SOLO este JSON:
+
+{
+  "elegida": "opN",
+  "hora_salida": "10:05",
+  "por_que": "una línea, concreta: por qué esta y no otra"
+}
+
+REGLAS:
+
+1. LOS TIEMPOS YA ESTÁN CALCULADOS Y SON PUERTA A PUERTA: incluyen ir a la
+   estación o al aeropuerto, la antelación, el trayecto y salir al llegar. No los
+   recalcules ni compares duraciones de trayecto: un vuelo de 55 minutos puede
+   ser peor que un tren de 2h30 y por eso están medidos así.
+2. GANA LA MÁS RÁPIDA PUERTA A PUERTA, salvo que arriba diga que se cumple la
+   regla de empate por precio. Si se cumple, gana la barata.
+3. LA HORA DE SALIDA es la del transporte, y tiene que caber en el día del
+   cambio. Con ritmo tranquilo o normal, nada de salir del hotel antes de las
+   8:00: eso significa no coger nada que salga antes de las 9:00 en tren ni antes
+   de las 10:00 en avión. Con ritmo intenso puedes apretar una hora.
+   Si en "horarios" hay frecuencias en vez de horas concretas, propón una hora
+   razonable que encaje con esa frecuencia.
+4. ENTRE UN TRANSPORTE CON HORARIO Y UNO SIN ÉL, gana el que lo tiene. Un tren
+   o un autobús salen cuando dicen; un coche de alquiler hay que recogerlo,
+   devolverlo y aparcarlo, y un viaje compartido depende de que un desconocido
+   no cancele. Esos minutos no están en la tabla de arriba, así que tenlos en
+   cuenta tú: solo elige coche o viaje compartido si gana por MUCHO —más de una
+   hora— o si no hay transporte público que haga ese trayecto.
+5. Con niños, un transbordo menos vale más que media hora menos.
+6. "por_que" en UNA línea y concreta: "sale a las 10:05 y llega a comer, sin
+   madrugón" sirve; "es la mejor opción" no dice nada.
+7. Devuelve el identificador tal cual viene ("op1", "op2"…). Si te inventas uno
+   que no está en la lista, la elección se pierde.
+
+         fase = dormir
+prompt_actual = === PASO 1: TRADUCIR EL NIVEL DE PRECIO ===
+Conoces el mercado de alojamiento de {{CIUDAD}}.
+
+- Ciudad: {{CIUDAD}}{{PAIS}}
+- Fechas: del {{FECHA_ENTRADA}} al {{FECHA_SALIDA}}
+- Nivel pedido: {{NIVEL}}
+- Viajeros: {{VIAJEROS}}
+- Tipo de alojamiento: {{TIPO}}
+
+¿Cuánto cuesta POR NOCHE un alojamiento decente de nivel "{{NIVEL}}" en {{CIUDAD}}
+en esas fechas, para esos viajeros? Devuelve un rango en euros.
+
+Devuelve SOLO este JSON:
+
+{ "min_por_noche": número, "max_por_noche": número, "por_que": "media línea" }
+
+REGLAS:
+
+1. EL PRECIO ES DE ESA CIUDAD, no de una capital europea cualquiera. Lo mismo
+   vale muy distinto en Cracovia que en Zúrich, y ese es justo el motivo de esta
+   pregunta.
+2. Ten en cuenta la TEMPORADA de esas fechas: en agosto o en Navidad sube.
+3. Es el precio de la HABITACIÓN o el apartamento entero por noche, no por
+   persona.
+4. "económico" no es un albergue con literas ni "alto" es un cinco estrellas de
+   lujo: son gamas de alojamiento normal, decente y bien situado.
+5. El rango tiene que ser ancho de verdad —lo típico es que el techo sea casi el
+   doble del suelo—: si lo aprietas demasiado, la búsqueda se queda sin nada.
+
+=== PASO 2: ELEGIR ===
+Eres quien elige dónde dormir en un viaje ya planificado.
+
+LA PARADA
+- Ciudad: {{CIUDAD}} · {{NOCHES}} noche(s) · {{VIAJEROS}}
+- Se buscó con: {{FILTROS}}
+- ¿Se sale temprano de aquí? {{SALIDA_TEMPRANA}}
+
+LAS OPCIONES
+{{OPCIONES}}
+
+Elige una y devuelve SOLO este JSON:
+
+{ "elegida": "opN", "por_que": "dos líneas como mucho, concretas" }
+
+CRITERIOS, por orden:
+
+1. BIEN SITUADO PARA LO QUE SE VA A HACER: cerca del centro histórico o de la
+   zona donde está lo que se visita. Un hotel barato a cuarenta minutos en
+   autobús cuesta dos horas al día, y eso no sale a cuenta en ninguna moneda.
+2. MEJOR RELACIÓN VALORACIÓN/PRECIO dentro de lo que hay. Un 8,9 a 70 € gana a
+   un 9,4 a 130 €; pero un 7,2 a 45 € no gana a un 8,8 a 60 €.
+3. Si arriba dice que se sale temprano de esta parada, la cercanía a la estación
+   o al aeropuerto cuenta como criterio secundario: no por encima de estar bien
+   situado, pero sí para desempatar.
+4. Desconfía de lo que tenga muy pocas opiniones: una nota de 9,8 con once
+   opiniones dice menos que un 8,6 con dos mil.
+5. "por_que" concreto y en dos líneas como mucho: dónde está, qué tiene y qué
+   se ha descartado a cambio. "Es el mejor" no explica nada.
+6. Devuelve el identificador tal cual ("op1", "op2"…).
+
+         fase = sitios
+prompt_actual = LO QUE LE INTERESA A QUIEN VIAJA
+
+Lo ha escrito así: "{{INTERESES}}"
+Y ha marcado estas categorías: {{CATEGORIAS}}
+
+Esto SESGA lo que propones, no lo decide. La diferencia importa:
+
+1. LOS IMPRESCINDIBLES DE LA CIUDAD ENTRAN IGUAL, encajen o no con sus intereses.
+   Quien dice que le interesa la naturaleza no quiere un viaje a Cracovia sin el
+   castillo de Wawel ni el casco viejo: quiere naturaleza ADEMÁS de eso. Dejar
+   fuera lo que todo el mundo va a ver no es personalizar, es fallar.
+2. LO QUE CAMBIA ES EL RESTO. Con los imprescindibles puestos, los huecos que
+   quedan se llenan con lo que encaje con sus intereses antes que con lo
+   genérico. Ahí es donde se nota que el viaje es suyo.
+3. QUE NINGÚN INTERÉS SE QUEDE A CERO. Si ha dicho "naturaleza" y la ciudad
+   tiene algo de eso —un parque grande, un río, una excursión a la montaña o a
+   unas minas—, tiene que aparecer al menos una cosa. Si la ciudad de verdad no
+   tiene nada de eso, no te lo inventes: es una respuesta correcta.
+4. Los intereses valen para los tres bloques, también para el de niños.
+
+         fase = excursiones
+prompt_actual = Eres quien decide qué excursiones merecen la pena en un viaje ya planificado.
+
+LA PARADA
+- Ciudad: {{CIUDAD}} · {{NOCHES}} noche(s) · ritmo {{RITMO}}
+- Viajeros: {{VIAJEROS}}
+- Les interesa: {{INTERESES}}
+- Topes que no puedes superar: {{TOPES}}
+
+LO QUE YA VAN A VER POR SU CUENTA (fichas de sitios de esta parada)
+{{SITIOS}}
+
+LAS EXCURSIONES ENCONTRADAS
+{{EXCURSIONES}}
+
+Devuelve SOLO este JSON:
+
+{
+  "elegidas": [
+    {"id": "exN", "por_que": "una línea", "cubre_sitios": ["nombre exacto de un sitio de la lista de arriba"]}
+  ],
+  "descartadas": [
+    {"id": "exN", "por_que": "una línea"}
+  ]
+}
+
+LA REGLA CENTRAL ES EL SOLAPAMIENTO:
+
+Muchas excursiones son "visitar con guía" un sitio que ya está en su lista. No
+son un extra: son la MISMA visita contada dos veces, y hay que elegir una.
+
+- ELIGE LA EXCURSIÓN cuando el sitio gana mucho con quien lo explique: un campo
+  de concentración, unas minas, un yacimiento, un templo con siglos de historia
+  encima. Sin contexto, la mitad de lo que se ve no se entiende.
+- PRESCINDE DE ELLA cuando el sitio se disfruta solo: miradores, parques,
+  barrios, mercados, paseos. Pagar por que alguien te acompañe a un mirador es
+  pagar por caminar acompañado.
+- Cuando elijas una excursión que cubre un sitio de su lista, PONLO en
+  "cubre_sitios" con el nombre exacto que tiene arriba. Es lo que evita que
+  acaben con la misma visita dos veces en el calendario.
+
+EL RESTO DE CRITERIOS:
+
+1. PRIORIDAD A LO QUE NO SE PUEDE HACER POR LIBRE: una salida en balsa por un
+   cañón, una excursión a un sitio sin transporte público, algo que necesita
+   permiso o guía obligatorio. Ahí la excursión no compite con nada.
+2. CANTIDAD SEGÚN LAS NOCHES Y EL RITMO. Los topes de arriba son el máximo
+   absoluto, no el objetivo. Con 2 noches y ritmo tranquilo no caben dos
+   excursiones de día completo: quedaría un viaje sin ver la ciudad. Es
+   perfectamente correcto no elegir NINGUNA si ninguna aporta.
+3. CON NIÑOS, mira la duración y la hora: una salida de doce horas o a las seis
+   de la mañana no funciona con niños pequeños, por buena que sea.
+4. Los intereses declarados desempatan, pero no mandan sobre lo anterior.
+5. Justifica cada elegida y cada descartada que estuviera cerca de entrar. Las
+   que no vengan a cuento no hace falta ni mencionarlas.
+6. Devuelve los identificadores tal cual ("ex1", "ex2"…).
+
+DIAS DISPONIBLES, Y ESTO MANDA SOBRE TODO LO DEMAS:
+En {{CIUDAD}} hay {{DIAS_UTILES}} dia(s) con hueco para una excursion LARGA (de
+media jornada o mas). Son los dias de la parada menos el de llegada, el de
+salida y los que ya se comen los traslados.
+
+NO preselecciones mas excursiones de dia completo que dias disponibles. Si hay
+un dia, eliges UNA; si hay cero, no eliges ninguna larga por buena que sea, y lo
+dices en el motivo. Las cortas (dos o tres horas) no gastan ese cupo: caben
+dentro de un dia que ya tiene otras cosas.
+
+Elegir menos y que entre todo vale mas que elegir mucho y que sobre. Una
+excursion preseleccionada que despues no cabe en ningun dia no es media victoria:
+es una tarjeta marcada que no esta en el viaje.
+
+
+         fase = lienzo
+prompt_actual = Eres quien reparte los días de un viaje ya planificado. Te toca {{CIUDAD}}.
+
+CÓMO ES ESTE VIAJE
+- Ritmo: {{RITMO}} · Viajeros: {{VIAJEROS}}
+- Franjas del día: {{FRANJAS}}
+- La comida ocupa {{DURACION_COMIDA}} minutos.
+
+LOS DÍAS QUE TIENES
+
+Los bloques marcados como FIJO —vuelos y traslados— YA ESTÁN COLOCADOS. No son
+tuyos: no los pongas en "plan", no les inventes referencia y no los muevas. Tu
+trabajo es repartir lo de la lista de colocables ALREDEDOR de ellos.
+
+{{DIAS}}
+
+LO QUE HAY QUE COLOCAR
+{{COLOCABLES}}
+
+Devuelve SOLO este JSON:
+
+{
+  "dias": [
+    {
+      "dia": número,
+      "por_que": "media línea: la idea del día",
+      "plan": [
+        {"ref": "s3", "franja": "manana|mediodia|tarde|noche", "hora": "10:00"},
+        {"tipo": "comida", "franja": "mediodia", "hora": "13:30", "zona": "dónde toca comer"}
+      ]
+    }
+  ],
+  "fuera": [ {"ref": "s7", "por_que": "por qué no cabe"} ]
+}
+
+LAS REGLAS:
+
+1. LOS BLOQUES FIJOS SON INTOCABLES. Un vuelo que llega a las 17:40 o un tren
+   que sale a las 9:40 ya están puestos y no se mueven. Todo lo demás se coloca
+   alrededor.
+2. EL DÍA DE LLEGADA EMPIEZA CUANDO SE LLEGA, no antes: hay que contar el
+   trayecto desde el aeropuerto y un respiro para dejar las maletas. Ese día va
+   algo suave y cerca del hotel, o nada.
+   EL DÍA DE SALIDA TERMINA CUANDO EMPIEZA EL BLOQUE DEL VIAJE. Si se sale por
+   la mañana, ese día no lleva plan: es un día de maletas y aeropuerto.
+3. LAS EXCURSIONES SON ANCLAS. Tienen hora y punto de encuentro: se colocan
+   primero y el resto del día se monta alrededor. Nunca dos excursiones de día
+   completo el mismo día (máximo {{MAX_LARGAS}} por día).
+4. AGRUPA POR ZONAS. Todo lo que esté junto, el mismo día y seguido. Cruzar la
+   ciudad dos veces en una tarde es media tarde perdida. Entre dos sitios
+   consecutivos, cuenta el desplazamiento.
+5. EL MARGEN NO ES RELLENO, ES LO QUE HACE QUE EL PLAN AGUANTE. Deja aire entre
+   visitas libres; deja MÁS aire antes de cualquier cosa con hora de entrada
+   —una excursión, un museo con pase—, porque llegar tarde a eso significa
+   perderlo. Con ritmo intenso se aprieta, pero el margen NO desaparece nunca.
+6. CUÁNTAS COSAS CABEN EN UN DÍA LO DECIDES TÚ MIRANDO LA CIUDAD. En una ciudad
+   compacta, donde todo está a diez minutos andando, caben más cosas que en una
+   donde cada trayecto son cuarenta minutos de metro. El ritmo es una guía, no
+   una cifra: "tranquilo" en una megaciudad pueden ser dos visitas, y en un
+   casco histórico pequeño, cuatro. No repartas por cupo.
+7. COMER TODOS LOS DÍAS, un bloque de {{DURACION_COMIDA}} minutos entre las
+   13:00 y las 15:00 aproximadamente, en la zona donde toque estar a esa hora.
+   No elijas restaurante: solo la zona y la hora.
+   Y no programes nada que pise la cena: con ritmo tranquilo, nada que siga
+   después de las 20:30.
+8. RESPETA LOS HORARIOS REALES. Si algo cierra el día que te toca, muévelo a
+   otro día; si no cabe en ningún otro, déjalo en "fuera" diciendo que cierra.
+   Con ritmo tranquilo no empieces antes de las 9:00 ni acabes más allá de las
+   22:00; con intenso puedes madrugar por una excursión.
+9. CON NIÑOS, alterna. Un plato fuerte y una pausa: un parque, un paseo, un
+   sitio donde se pueda correr. Tres museos seguidos no funcionan.
+10. NO HACE FALTA COLOCARLO TODO. Lo que no quepa va a "fuera" con su motivo, y
+    se queda apuntado para quien quiera meterlo a mano. Un día razonable con un
+    hueco vale más que un día perfecto en el papel e imposible en la calle.
+11. USA LAS REFERENCIAS TAL CUAL VIENEN ("s1", "x2"…). Las que empiezan por "x"
+    son excursiones y las que empiezan por "s", sitios. Si te inventas una que no
+    está en la lista, esa colocación se pierde.
+12. Los sitios marcados como [segundo nivel] entran DESPUÉS de los demás: son el
+    relleno de los huecos que queden, no la primera opción.
+
+         fase = traslados_investigar
+prompt_actual = Dime como se va de {{DESDE}} a {{HASTA}} por tierra: que medios existen
+de verdad hoy y quien los opera.
+
+Un objeto por medio disponible: autobus, tren, ferry, coche de alquiler, traslado
+privado. NO incluyas el avion: eso lo lleva la aplicacion por otro sitio.
+
+Devuelve SOLO este JSON:
+{"medios":[{
+  "medio":"bus|tren|ferry|coche|traslado",
+  "nombre":"nombre de la compañia o del servicio, corto",
+  "duracion":"2 h 30",
+  "frecuencia":"cada 2 h, 6 salidas al dia",
+  "nota":"donde se coge, si hay que reservar, que conviene saber",
+  "notaSentido":"solo si algun dato cambia segun la direccion; si no, cadena vacia",
+  "web":"url oficial si la hay, si no cadena vacia"
+}]}
+
+REGLAS:
+
+1. NO HAY CAMPO DE PRECIO Y NO DEBES INVENTARTE UNO. Si escribes un precio en
+   cualquier campo, el dato se tira entero. El precio de cada opcion lo busca
+   despues la aplicacion; si no lo encuentra, se queda vacio y se dice.
+2. "duracion" y "frecuencia" son una ESTIMACION tuya y asi se van a enseñar. Da
+   la que mejor sepas, en redondo, sin fingir precision: "unas 3 h" vale mas que
+   "3 h 07".
+3. El resto de datos, si no los sabes, cadena VACIA. NO te los inventes: es peor
+   un horario falso que un hueco.
+4. Entre 2 y 5 medios. Si de verdad solo hay uno, devuelve uno.
+5. Si entre esas dos ciudades no hay transporte terrestre razonable, devuelve
+   {"medios":[]}.
+6. En español de España.
+
+         fase = vuelo_de_vuelta
+prompt_actual = Hay que elegir el vuelo de vuelta de {{CIUDAD}} a casa el {{FECHA}}.
+
+LAS DOS OPCIONES SOBRE LA MESA
+
+- DIRECTO: sale a las {{DIRECTO_SALIDA}}, llega a las {{DIRECTO_LLEGADA}},
+  {{DIRECTO_DURACION}} de viaje{{DIRECTO_ESCALAS}}.
+- CON ESCALA: sale a las {{ESCALA_SALIDA}}, llega a las {{ESCALA_LLEGADA}},
+  {{ESCALA_DURACION}} de viaje{{ESCALA_ESCALAS}}.
+
+LA REGLA
+
+Un directo que sale de madrugada mata la ultima noche del viaje. Prefiere la
+escala si llega a hora decente y no anade mas de {{MAX_HORAS_EXTRA}} horas de
+viaje total; si la escala tampoco cumple la franja o alarga mas que eso, gana el
+directo.
+
+Se considera hora decente salir a partir de las {{HORA_MINIMA}}.
+
+Devuelve SOLO este JSON:
+
+{"elegido": "directo" | "escala", "por_que": "una linea, concreta"}
+
+Y que el "por_que" diga la cuenta: cuantas horas de mas y que se gana a cambio.
+
+         fase = gasto_diario
+prompt_actual = Estima cuanto se gasta AL DIA y POR PERSONA en {{DESTINO}}, pasando por {{CIUDADES}}, en COMIDA, BEBIDA y TRANSPORTE URBANO.
+
+Nada mas: ni excursiones, ni entradas, ni alojamiento, ni los viajes entre ciudades. Todo eso ya esta contado aparte con precios reales, y sumarlo aqui otra vez seria contarlo dos veces.
+
+NIVEL DEL VIAJE: {{NIVEL}}
+  - sencillo: desayuno de bar, comida de menu del dia o de mercado, cena normal, metro y autobus.
+  - normal: cafe por la manana, comida informal, cena en un sitio decente, algun taxi corto.
+  - con caprichos: sin mirar la carta por el precio, buena cena casi todos los dias, taxi cuando apetezca.
+
+VIAJEROS: {{VIAJEROS}}
+DIAS: {{DIAS}}
+
+REGLAS:
+1. UN solo numero, en euros, por persona y por dia. Si hay ninos, da la media del grupo.
+2. Es una ESTIMACION y se va a ensenar como tal, separada de los precios reales. No hace falta acertar al euro; hace falta una cifra que alguien que conozca ese pais reconoceria como razonable hoy.
+3. Ajustalo al pais y a las ciudades concretas: no cuesta lo mismo comer en Napoles que en Copenhague, ni en una capital que en un pueblo.
+4. El porque, en MEDIA LINEA: pais, nivel y en que se va el dinero.
+   Ejemplo: "Grecia, nivel normal: ~45 EUR/persona/dia en tabernas y transporte urbano".
+5. En espanol de Espana.
+
+Devuelve SOLO este JSON:
+{"importe": 45, "porque": "Grecia, nivel normal: ~45 EUR/persona/dia en tabernas y transporte urbano"}
+
+         fase = paises_interpretar
+prompt_actual = Un usuario ha escrito esto como destino de su viaje:
+
+"{{TEXTO}}"
+
+Dime QUE PAISES son. Nada mas: no opines sobre el viaje, no propongas ciudades,
+no digas si es buena idea. Solo lee.
+
+REGLAS:
+1. Nombres de pais en ESPANOL y en su forma habitual: "Bosnia y Herzegovina",
+   "Republica Checa", "Corea del Sur".
+2. Si el texto nombra una REGION o una CIUDAD, devuelve el pais al que pertenece
+   y dilo en "nota": "Toscana" es Italia, "Bali" es Indonesia.
+3. Si algo esta mal escrito pero se entiende sin duda ("Cracovia", "Montenegr"),
+   corrigelo y sigue.
+4. "seguro" es false cuando el texto es AMBIGUO de verdad: un nombre que puede
+   ser dos paises, una region que se reparte entre varios ("Laponia" es Finlandia,
+   Suecia, Noruega y Rusia), o algo que no reconoces. Con false explica la duda
+   en "nota" y pon en "paises" tu mejor lectura para que se pueda confirmar o
+   corregir. NO inventes un pais para rellenar.
+5. El orden importa: devuelvelos en el orden en que los escribio el usuario.
+
+Devuelve SOLO este JSON:
+{"paises": ["Croacia", "Montenegro"], "seguro": true, "nota": null}
+
+         fase = paises_criterio
+prompt_actual = Eres un planificador de viajes con experiencia real en la zona. Te doy
+una combinacion de paises y unos dias, y quiero tu criterio ANTES de montar nada.
+
+EL VIAJE
+- Paises que quiere visitar: {{SELECCION}}
+- Todos los que menciono: {{TODOS}}
+- Fechas: del {{FECHA_INICIO}} al {{FECHA_FIN}} ({{DIAS}} dias)
+- Salen desde: {{ORIGEN}}
+- Viajeros: {{VIAJEROS}}
+- Ritmo: {{RITMO}}
+
+Evalua ESA SELECCION. Para cada pais de la lista completa, di si entra o no y
+por que, en UNA frase.
+
+REGLAS:
+1. Piensa en TIEMPO UTIL, no en kilometros. Lo que mata un viaje corto no es la
+   distancia: son los cruces de frontera, los cambios de alojamiento y las
+   medias jornadas que se van en traslados. Un pais que obliga a un tercer
+   cruce para dos noches casi nunca compensa.
+2. "veredicto" del viaje entero es UNO de estos dos, y la diferencia importa:
+     "cabe"     la combinacion es viable, aunque no sea la que tu elegirias.
+                Se puede montar. Si no te gusta, dilo en "opinion" y en las
+                frases de cada pais, pero el veredicto sigue siendo "cabe".
+     "no_cabe"  MATERIALMENTE imposible: solo los traslados minimos entre esos
+                paises se comen los dias disponibles y no queda viaje. Usa esto
+                SOLO con numeros detras, y ponlos en "por_que_no_cabe":
+                cuantas horas de traslado minimo y cuantos dias hay.
+   No uses "no_cabe" porque te parezca apretado o poco recomendable. Apretado es
+   "cabe" con una opinion clara. "no_cabe" es que no existe manera.
+3. "recomendado" es tu criterio pais a pais: true si lo dejarias dentro con
+   estos dias, false si lo quitarias. Puedes recomendar quitar un pais y que el
+   veredicto siga siendo "cabe": son cosas distintas.
+4. En "opinion", DOS o TRES frases sobre la seleccion actual: que ruta tendria
+   sentido, que se gana quitando algo, que se pierde. Habla claro y sin adornos.
+5. NADA de precios, horarios ni datos que no puedas saber de memoria. Esto es
+   criterio geografico y de tiempos, y se enseña como tal.
+6. En espanol de Espana.
+
+Devuelve SOLO este JSON:
+{
+  "veredicto": "cabe",
+  "por_que_no_cabe": null,
+  "opinion": "Croacia y Montenegro en 7 dias se hace bien por la costa...",
+  "paises": [
+    {"nombre": "Croacia", "recomendado": true, "por_que": "Es el eje del viaje y por donde se entra."},
+    {"nombre": "Montenegro", "recomendado": false, "por_que": "Da para un viaje propio y te obliga a un tercer cruce que se come medio dia."}
+  ]
+}
+
+         fase = fronteras
+prompt_actual = Esta es la ruta REAL y ya decidida de un viaje, en orden:
+
+{{RUTA}}
+
+El viajero tiene pasaporte de {{PASAPORTE}}. Vuela desde {{ORIGEN}} y vuelve a
+{{ORIGEN}}.
+
+Dime que pasos de frontera hace esta ruta y que hace falta en cada uno.
+
+REGLAS:
+1. UN punto por cada cruce que se hace de verdad, en el orden del viaje. Si dos
+   paradas seguidas son del mismo pais, ahi no hay frontera y no se menciona.
+2. "tipo" es "terrestre", "aereo" o "maritimo", segun como se cruce en ESTA ruta.
+3. "que_pide": que documentacion y que trato tiene ese paso concreto para ese
+   pasaporte, en una o dos frases. Si es un paso Schengen interno sin control,
+   dilo: tambien es informacion.
+4. LA DOBLE ENTRADA es lo mas importante de esta lista. Si la ruta ENTRA MAS DE
+   UNA VEZ en el mismo pais —porque se vuelve a pasar por el, o porque el vuelo
+   de vuelta sale de alli—, tiene que salir un punto con "dobleEntrada": true
+   explicando que hacen falta dos entradas y que eso puede exigir un visado de
+   entradas multiples. Es el fallo que se descubre en el mostrador.
+5. No inventes tasas ni importes. Si no estas seguro de un requisito, dilo en
+   vez de afirmarlo: esto se lee para preparar papeles con semanas.
+6. En espanol de Espana y en frases cortas.
+
+Devuelve SOLO este JSON:
+{
+  "cruces": [
+    {"desde": "Croacia", "hasta": "Montenegro", "entre": "Dubrovnik → Kotor",
+     "tipo": "terrestre", "que_pide": "...", "dobleEntrada": false}
+  ],
+  "nota": null
+}
