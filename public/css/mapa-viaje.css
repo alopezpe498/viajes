@@ -224,6 +224,17 @@ html:has(.mapa-maestro) { height: 100%; }
   font-size: 11.5px; font-weight: 700; white-space: nowrap;
   box-shadow: 0 3px 10px rgba(18, 48, 62, .35);
 }
+/* La del paseo hotel↔parada: más discreta que la del traslado entre ciudades.
+   Un vuelo de 176 € es una decisión; 800 metros andando es un dato de apoyo, y
+   si las dos gritan igual el mapa se convierte en un tablón de anuncios. */
+.mm-etq--suave {
+  background: rgba(255, 255, 255, .92);
+  color: var(--texto-2);
+  border: 1px solid var(--borde);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(18, 48, 62, .16);
+}
+.mm-etq--suave .ti { color: var(--acento); }
 
 /* ============================================================================
    LEYENDA

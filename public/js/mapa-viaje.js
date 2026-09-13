@@ -184,6 +184,58 @@
     });
   }
 
+  /**
+   * CUÁNTO HAY DE UN PUNTO A OTRO, EN LÍNEA RECTA.
+   *
+   * Haversine, cuatro líneas y ninguna llamada a nadie. No es la distancia
+   * andando —esa depende de las calles y de si hay un río en medio— y por eso
+   * todo lo que sale de aquí se enseña diciendo «en línea recta». Pedirle a
+   * Google la de verdad serían dos peticiones por día de viaje cada vez que se
+   * abre el mapa, y esta pantalla es de lectura.
+   */
+  function km(a, b) {
+    const R = 6371;
+    const rad = (g) => (g * Math.PI) / 180;
+    const dLat = rad(b.lat - a.lat);
+    const dLon = rad(b.lon - a.lon);
+    const s =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  /** 0.85 -> «850 m»; 3.2 -> «3,2 km». Lo que uno diría en voz alta. */
+  const comoKm = (n) =>
+    n < 1 ? `${Math.round(n * 1000)} m` : `${n.toFixed(1).replace('.', ',')} km`;
+
+  /** La etiqueta de un tramo a pie entre el hotel y una parada. */
+  function etiquetaDeTramo(desde, hasta, rotulo) {
+    if (!desde || !hasta) return;
+    const d = km(desde, hasta);
+    // Dos bloques en el mismo sitio —el hotel y la cena de al lado— darían una
+    // etiqueta de «0 m» que solo estorba.
+    if (d < 0.05) return;
+
+    // A UN TERCIO DEL CAMINO, NO EN EL MEDIO.
+    //
+    // Cuando el día empieza y acaba en el mismo sitio —Wawel por la mañana y el
+    // tour de Wawel por la noche— la ida y la vuelta son el MISMO segmento, y en
+    // el punto medio las dos etiquetas se pisaban una encima de otra. A un
+    // tercio desde su propio origen cada una cae en un sitio distinto de la
+    // misma línea, y además se lee de dónde sale cada una.
+    const t = 0.34;
+    L.marker([desde.lat + (hasta.lat - desde.lat) * t, desde.lon + (hasta.lon - desde.lon) * t], {
+      icon: L.divIcon({
+        html:
+          `<div class="mm-etq mm-etq--suave"><i class="ti ti-walk"></i> ` +
+          `${esc(rotulo)} · ${esc(comoKm(d))} en línea recta</div>`,
+        className: '',
+        iconSize: null,
+      }),
+      interactive: false,
+    }).addTo(capa);
+  }
+
   /** La etiqueta de una línea de traslado: modo, duración y €/persona. */
   function textoDelTraslado(t) {
     const partes = [t.duracion, t.precio != null ? `${t.precio} €/persona` : null].filter(Boolean);
@@ -253,10 +305,35 @@
       const delDia = vis.filter((i) => i.hora).sort(porCrono);
       const deLaEtapa = vis.filter((i) => i.dia).sort(porCrono);
 
-      if (vista === 'dia' && capas.recorrido && delDia.length > 1) {
-        L.polyline(delDia.map((i) => [i.lat, i.lon]), {
-          color: '#12303E', weight: 2, dashArray: '2 7', opacity: 0.6,
-        }).addTo(capa);
+      // EL DÍA EMPIEZA Y ACABA EN EL HOTEL, porque es lo que pasa de verdad.
+      //
+      // El recorrido iba de la primera parada a la última y se dejaba fuera los
+      // dos tramos que más se preguntan: cuánto hay desde el hotel hasta lo
+      // primero de la mañana, y cuánto queda de vuelta al final del día. Son la
+      // primera y la última caminata de la jornada, y saber si son cuatrocientos
+      // metros o tres kilómetros cambia el plan.
+      //
+      // Solo si el hotel se está viendo: una línea hacia un punto sin pin es una
+      // línea que no lleva a ninguna parte.
+      if (vista === 'dia' && capas.recorrido && delDia.length) {
+        const hotel = vis.find((i) => i.tipo === 'hotel');
+        const cadena = hotel ? [hotel, ...delDia, hotel] : delDia;
+
+        if (cadena.length > 1) {
+          L.polyline(cadena.map((i) => [i.lat, i.lon]), {
+            color: '#12303E', weight: 2, dashArray: '2 7', opacity: 0.6,
+          }).addTo(capa);
+        }
+
+        // Y CON SU DISTANCIA. En línea recta y DICIÉNDOLO: la de verdad depende
+        // de las calles y de si hay un río en medio, y eso no se sabe sin
+        // preguntárselo a Google. Este mapa es de lectura y no gasta una llamada
+        // por tramo; un número honesto y etiquetado vale más que uno exacto que
+        // cuesta dinero cada vez que se abre la pantalla.
+        if (hotel) {
+          etiquetaDeTramo(hotel, delDia[0], 'Salida');
+          etiquetaDeTramo(delDia.at(-1), hotel, 'Vuelta');
+        }
       }
 
       for (const i of vis) {
