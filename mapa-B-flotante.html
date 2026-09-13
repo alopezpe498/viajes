@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa maestro — B · Mapa total</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --azul:#0e6ba8; --azul-osc:#08507e; --tinta:#16303f; --gris:#5f7684;
+    --vidrio:rgba(255,255,255,.82); --borde:rgba(22,48,63,.10);
+    --c-sitio:#0e6ba8; --c-comida:#d8862b; --c-excursion:#7458c8; --c-hotel:#159a72; --c-ciudad:#08507e;
+  }
+  *{box-sizing:border-box; margin:0}
+  html,body,#mapa{height:100%}
+  body{font-family:'Inter',system-ui,sans-serif; color:var(--tinta); overflow:hidden}
+  #mapa{position:fixed; inset:0}
+
+  .flot{position:fixed; z-index:800; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+        background:var(--vidrio); border:1px solid var(--borde); box-shadow:0 8px 30px rgba(8,80,126,.16)}
+
+  .barra{top:14px; left:50%; transform:translateX(-50%); border-radius:999px; padding:5px; display:flex; gap:2px}
+  .barra button{border:0; background:transparent; font:inherit; font-size:13px; font-weight:600; color:var(--gris);
+        padding:8px 16px; border-radius:999px; cursor:pointer; white-space:nowrap}
+  .barra button.on{background:var(--tinta); color:#fff; font-weight:700}
+  .barra button:focus-visible{outline:2px solid var(--azul); outline-offset:2px}
+
+  .titulo{top:14px; left:14px; border-radius:14px; padding:10px 14px}
+  .titulo b{font-size:14px; display:block}
+  .titulo small{font-size:12px; color:var(--gris); font-weight:500}
+
+  .panel{top:76px; left:14px; bottom:14px; width:308px; border-radius:18px; display:flex; flex-direction:column; overflow:hidden; transition:transform .25s ease, opacity .25s ease}
+  .panel.oculto{transform:translateX(-120%); opacity:0; pointer-events:none}
+  .panel .cab{padding:12px 14px 10px; border-bottom:1px solid var(--borde)}
+  .selector{display:flex; gap:6px; flex-wrap:wrap}
+  .selector button{border:1px solid var(--borde); background:rgba(255,255,255,.7); font:inherit; font-size:12px; font-weight:600; border-radius:9px; padding:5px 10px; cursor:pointer; color:var(--tinta)}
+  .selector button.on{background:var(--azul); border-color:var(--azul); color:#fff; font-weight:700}
+  .capas{padding:10px 14px; border-bottom:1px solid var(--borde)}
+  .capas h3{font-size:11.5px; font-weight:700; color:var(--gris); margin:0 0 6px}
+  .capas .grid{display:grid; grid-template-columns:1fr 1fr; gap:1px 10px}
+  .capa{display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; user-select:none; font-size:12.5px; font-weight:600; color:var(--tinta)}
+  .capa input{appearance:none; -webkit-appearance:none; width:17px; height:17px; border:1.5px solid rgba(22,48,63,.28); border-radius:5px; cursor:pointer; position:relative; flex:0 0 auto; background:rgba(255,255,255,.85); margin:0}
+  .capa input:checked{background:var(--cc); border-color:var(--cc)}
+  .capa input:checked::after{content:'✓'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:800}
+  .capa input:focus-visible{outline:2px solid var(--azul); outline-offset:2px}
+  .capa.off{color:var(--gris)}
+  .lista{flex:1; overflow:auto; padding:6px}
+  .grupo{margin:8px 6px 3px; font-size:11.5px; font-weight:700; color:var(--gris); letter-spacing:.02em}
+  .item{display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:12px; cursor:pointer}
+  .item:hover{background:rgba(255,255,255,.95)}
+  .item.sel{background:#fff; box-shadow:inset 0 0 0 2px var(--azul)}
+  .item .ic{width:28px; height:28px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:14px; color:#fff; flex:0 0 auto}
+  .item b{font-size:13px; display:block; font-weight:600}
+  .item small{font-size:11.5px; color:var(--gris)}
+  .item .hora{margin-left:auto; font-size:11.5px; font-weight:700; color:var(--azul-osc); white-space:nowrap}
+
+  .plegar{top:76px; left:14px; width:40px; height:40px; border-radius:12px; border:1px solid var(--borde); background:var(--vidrio); font-size:17px; cursor:pointer; display:none; align-items:center; justify-content:center; color:var(--tinta)}
+  .plegar.visible{display:flex}
+  .panel .cerrar{position:absolute; top:9px; right:9px; width:26px; height:26px; border-radius:8px; border:0; background:transparent; font-size:14px; cursor:pointer; color:var(--gris)}
+
+  .pin{display:flex; align-items:center; justify-content:center; border-radius:10px; color:#fff; font-size:13.5px; box-shadow:0 3px 10px rgba(22,48,63,.3); border:2px solid #fff}
+  .pin.num{font-weight:800; font-size:12.5px; border-radius:50%}
+  .pin.sel{outline:3px solid var(--tinta); outline-offset:1.5px}
+  .pin-ciudad{display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff; background:var(--c-ciudad); border-radius:16px; border:2.5px solid #fff; box-shadow:0 4px 14px rgba(8,80,126,.4); font-weight:800; line-height:1.1}
+  .pin-ciudad small{font-size:9px; font-weight:600; opacity:.85}
+  .etq-linea{background:var(--tinta); color:#fff; border-radius:999px; padding:4px 11px; font-size:11.5px; font-weight:700; white-space:nowrap; box-shadow:0 3px 10px rgba(22,48,63,.35)}
+  .leaflet-container{font:inherit}
+
+  @media (max-width:720px){
+    .barra{top:auto; bottom:14px; max-width:94vw; overflow:auto}
+    .panel{top:64px; width:min(86vw,308px); bottom:78px}
+    .plegar{top:64px}
+    .titulo{left:14px; right:auto}
+  }
+</style>
+</head>
+<body>
+<div id="mapa"></div>
+
+<div class="flot titulo"><b>Polonia · 7 días</b><small>Cracovia 4n → Gdansk 2n</small></div>
+<nav class="flot barra" id="vistas"></nav>
+<button class="flot plegar" id="abrir" title="Abrir panel">☰</button>
+
+<section class="flot panel" id="panel">
+  <button class="cerrar" id="cerrar" title="Plegar panel">✕</button>
+  <div class="cab"><div class="selector" id="selector"></div></div>
+  <div class="capas" id="capas"></div>
+  <div class="lista" id="lista"></div>
+</section>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const CIUDADES = [
+  {id:'krk', nombre:'Cracovia', lat:50.0619, lon:19.9369, noches:4, dias:[1,2,3,4]},
+  {id:'gdn', nombre:'Gdansk',   lat:54.3521, lon:18.6464, noches:2, dias:[5,6]}
+];
+const TRASLADOS = [ {de:'krk', a:'gdn', modo:'✈', texto:'Vuelo · 1 h 05 · 176 € grupo', dia:5} ];
+const ITEMS = [
+  {id:'h1', ciudad:'krk', tipo:'hotel', nombre:'Hotel · Casco Antiguo', det:'4 noches', lat:50.0640, lon:19.9400},
+  {id:'s1', ciudad:'krk', tipo:'sitio', nombre:'Casco Antiguo y Rynek', det:'Día 1', dia:1, hora:'16:00', lat:50.0617, lon:19.9373},
+  {id:'c1', ciudad:'krk', tipo:'comida', nombre:'Pod Wawelem', det:'Día 1 · cena', dia:1, hora:'20:00', lat:50.0553, lon:19.9330},
+  {id:'s2', ciudad:'krk', tipo:'sitio', nombre:'Castillo de Wawel', det:'Día 2 · 3 h', dia:2, hora:'10:00', lat:50.0541, lon:19.9352},
+  {id:'c2', ciudad:'krk', tipo:'comida', nombre:'Linaria', det:'Día 2 · comida', dia:2, hora:'14:00', lat:50.0568, lon:19.9401},
+  {id:'s3', ciudad:'krk', tipo:'sitio', nombre:'Barbacana y murallas', det:'Día 2', dia:2, hora:'16:30', lat:50.0655, lon:19.9416},
+  {id:'s4', ciudad:'krk', tipo:'sitio', nombre:'Fábrica de Schindler', det:'Día 3 · 2 h', dia:3, hora:'10:00', lat:50.0475, lon:19.9645},
+  {id:'s5', ciudad:'krk', tipo:'sitio', nombre:'Kazimierz, barrio judío', det:'Día 3 · tarde', dia:3, hora:'16:00', lat:50.0512, lon:19.9445},
+  {id:'e1', ciudad:'krk', tipo:'excursion', nombre:'Auschwitz-Birkenau', det:'Día 4 · completo', dia:4, hora:'08:00', lat:50.0266, lon:19.2033},
+  {id:'h2', ciudad:'gdn', tipo:'hotel', nombre:'BLACK BEAR Apartments', det:'2 noches', lat:54.3510, lon:18.6480},
+  {id:'s6', ciudad:'gdn', tipo:'sitio', nombre:'Casco Viejo y Długi Targ', det:'Día 5', dia:5, hora:'17:00', lat:54.3489, lon:18.6531},
+  {id:'s7', ciudad:'gdn', tipo:'sitio', nombre:'Grúa medieval (Żuraw)', det:'Día 5', dia:5, hora:'18:45', lat:54.3505, lon:18.6577},
+  {id:'s8', ciudad:'gdn', tipo:'sitio', nombre:'Museo de la II Guerra Mundial', det:'Día 6 · 3 h', dia:6, hora:'10:00', lat:54.3560, lon:18.6603},
+  {id:'c3', ciudad:'gdn', tipo:'comida', nombre:'Restauracja Gdańska', det:'Día 6 · comida', dia:6, hora:'14:00', lat:54.3495, lon:18.6520}
+];
+const ICONO={sitio:'🏛',comida:'🍽',excursion:'🚌',hotel:'🛏'};
+const COLOR={sitio:'#0e6ba8',comida:'#d8862b',excursion:'#7458c8',hotel:'#159a72'};
+const VISTAS={
+  dia:{titulo:'Día', capas:['sitio','comida','excursion','hotel','recorrido']},
+  etapa:{titulo:'Etapa', capas:['sitio','comida','excursion','hotel','orden']},
+  ruta:{titulo:'Ruta', capas:['linea','datos']},
+  expandida:{titulo:'Ruta expandida', capas:['sitio','comida','excursion','hotel','linea','datos']}
+};
+const NOMBRE={sitio:'Sitios',comida:'Comidas',excursion:'Excursiones',hotel:'Hoteles',recorrido:'Recorrido del día',orden:'Orden de visita',linea:'Líneas de traslado',datos:'Tiempo y precio'};
+const CCOLOR={sitio:'#0e6ba8',comida:'#d8862b',excursion:'#7458c8',hotel:'#159a72',recorrido:'#16303f',orden:'#16303f',linea:'#08507e',datos:'#08507e'};
+
+let vista='expandida', diaSel=2, etapaSel='krk', seleccion=null;
+const capasOn={}; Object.keys(NOMBRE).forEach(c=>capasOn[c]=true);
+
+const mapa=L.map('mapa',{zoomControl:false});
+L.control.zoom({position:'bottomright'}).addTo(mapa);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  {attribution:'© OpenStreetMap · © CARTO', maxZoom:19}).addTo(mapa);
+let grupo=L.layerGroup().addTo(mapa);
+
+function pin(item,num){
+  const sel=seleccion===item.id?' sel':'';
+  return L.divIcon({html:`<div class="pin${num?' num':''}${sel}" style="width:29px;height:29px;background:${COLOR[item.tipo]}">${num??ICONO[item.tipo]}</div>`, className:'', iconSize:[29,29], iconAnchor:[15,15]});
+}
+function pinCiudad(c,num){
+  return L.divIcon({html:`<div class="pin-ciudad" style="width:50px;height:50px"><span>${num}</span><small>${c.noches} noches</small></div>`, className:'', iconSize:[50,50], iconAnchor:[25,25]});
+}
+function etiqueta(latlng,texto){
+  L.marker(latlng,{icon:L.divIcon({html:`<div class="etq-linea">${texto}</div>`,className:'',iconSize:null}),interactive:false}).addTo(grupo);
+}
+function itemsVisibles(){
+  if(vista==='dia') return ITEMS.filter(i=>(i.dia===diaSel||(i.tipo==='hotel'&&CIUDADES.find(c=>c.id===i.ciudad).dias.includes(diaSel)))&&capasOn[i.tipo]);
+  if(vista==='etapa') return ITEMS.filter(i=>i.ciudad===etapaSel&&capasOn[i.tipo]);
+  if(vista==='expandida') return ITEMS.filter(i=>capasOn[i.tipo]);
+  return [];
+}
+function pintar(){
+  grupo.remove(); grupo=L.layerGroup().addTo(mapa);
+  const bounds=[];
+  if(vista==='ruta'){
+    CIUDADES.forEach((c,ix)=>{
+      L.marker([c.lat,c.lon],{icon:pinCiudad(c,ix+1)}).addTo(grupo).on('click',()=>seleccionar(c.id,true));
+      bounds.push([c.lat,c.lon]);
+    });
+    TRASLADOS.forEach(t=>{
+      const a=CIUDADES.find(c=>c.id===t.de), b=CIUDADES.find(c=>c.id===t.a);
+      if(capasOn.linea) L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:'#08507e',weight:3,dashArray:'7 9'}).addTo(grupo);
+      if(capasOn.datos) etiqueta([(a.lat+b.lat)/2,(a.lon+b.lon)/2], t.modo+' '+t.texto);
+    });
+  } else {
+    if(vista==='expandida'){
+      CIUDADES.forEach((c,ix)=>L.marker([c.lat,c.lon],{icon:pinCiudad(c,ix+1),zIndexOffset:-100}).addTo(grupo));
+      TRASLADOS.forEach(t=>{
+        const a=CIUDADES.find(c=>c.id===t.de), b=CIUDADES.find(c=>c.id===t.a);
+        if(capasOn.linea) L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:'#08507e',weight:2.5,dashArray:'7 9',opacity:.7}).addTo(grupo);
+        if(capasOn.datos) etiqueta([(a.lat+b.lat)/2,(a.lon+b.lon)/2], t.modo+' '+t.texto);
+      });
+    }
+    const vis=itemsVisibles();
+    const conHora=vis.filter(i=>i.hora).sort((x,y)=>x.hora.localeCompare(y.hora));
+    const crono=vis.filter(i=>i.dia).sort((x,y)=>(x.dia-y.dia)||((x.hora||'').localeCompare(y.hora||'')));
+    if(vista==='dia'&&capasOn.recorrido&&conHora.length>1)
+      L.polyline(conHora.map(i=>[i.lat,i.lon]),{color:'#16303f',weight:2,dashArray:'2 7',opacity:.6}).addTo(grupo);
+    vis.forEach(i=>{
+      let num=null;
+      if(vista==='dia'&&i.hora) num=conHora.indexOf(i)+1;
+      else if(vista==='etapa'&&capasOn.orden&&i.dia) num=crono.indexOf(i)+1;
+      L.marker([i.lat,i.lon],{icon:pin(i,num)}).addTo(grupo)
+        .bindTooltip(`<b>${i.nombre}</b>${i.hora?' · '+i.hora:''}`)
+        .on('click',()=>seleccionar(i.id,true));
+      bounds.push([i.lat,i.lon]);
+    });
+  }
+  if(bounds.length) mapa.fitBounds(bounds,{padding:[70,70], maxZoom:vista==='dia'?15:13});
+}
+function pintarVistas(){
+  const n=document.getElementById('vistas'); n.innerHTML='';
+  Object.entries(VISTAS).forEach(([k,v])=>{
+    const b=document.createElement('button'); b.textContent=v.titulo; b.className=vista===k?'on':'';
+    b.onclick=()=>{vista=k; seleccion=null; refrescar();};
+    n.appendChild(b);
+  });
+}
+function pintarSelector(){
+  const n=document.getElementById('selector'); n.innerHTML='';
+  if(vista==='dia'){
+    for(let d=1;d<=6;d++){const b=document.createElement('button');b.textContent='Día '+d;b.className=d===diaSel?'on':'';b.onclick=()=>{diaSel=d;seleccion=null;refrescar();};n.appendChild(b);}
+  } else if(vista==='etapa'){
+    CIUDADES.forEach(c=>{const b=document.createElement('button');b.textContent=c.nombre;b.className=c.id===etapaSel?'on':'';b.onclick=()=>{etapaSel=c.id;seleccion=null;refrescar();};n.appendChild(b);});
+  } else n.innerHTML='<span style="font-size:12px;color:var(--gris);font-weight:600">Viaje completo · 7 días</span>';
+}
+function pintarCapas(){
+  const n=document.getElementById('capas');
+  n.innerHTML='<h3>Qué ver en el mapa</h3>';
+  const g=document.createElement('div'); g.className='grid'; n.appendChild(g);
+  VISTAS[vista].capas.forEach(c=>{
+    const l=document.createElement('label');
+    l.className='capa'+(capasOn[c]?'':' off'); l.style.setProperty('--cc',CCOLOR[c]);
+    l.innerHTML=`<input type="checkbox" ${capasOn[c]?'checked':''}>${NOMBRE[c]}`;
+    l.querySelector('input').onchange=e=>{capasOn[c]=e.target.checked; refrescar();};
+    g.appendChild(l);
+  });
+}
+function pintarLista(){
+  const n=document.getElementById('lista'); n.innerHTML='';
+  if(vista==='ruta'){
+    CIUDADES.forEach((c,ix)=>n.appendChild(fila({id:c.id,tipo:'ciudad',nombre:(ix+1)+'. '+c.nombre,det:c.noches+' noches · días '+c.dias.join(', ')},String(ix+1))));
+    TRASLADOS.forEach(t=>{const d=document.createElement('div');d.className='grupo';d.textContent='Traslado · '+t.texto;n.appendChild(d);});
+    return;
+  }
+  const vis=itemsVisibles();
+  if(vista==='expandida'){
+    CIUDADES.forEach(c=>{
+      const g=document.createElement('div');g.className='grupo';g.textContent=c.nombre+' · '+c.noches+' noches';n.appendChild(g);
+      vis.filter(i=>i.ciudad===c.id).forEach(i=>n.appendChild(fila(i)));
+    });
+  } else {
+    vis.slice().sort((a,b)=>((a.dia||0)-(b.dia||0))||((a.hora||'00').localeCompare(b.hora||'00'))).forEach(i=>n.appendChild(fila(i)));
+  }
+  if(!vis.length){const d=document.createElement('div');d.className='grupo';d.textContent='Nada que mostrar con estas capas.';n.appendChild(d);}
+}
+function fila(i,num){
+  const d=document.createElement('div');
+  d.className='item'+(seleccion===i.id?' sel':''); d.dataset.id=i.id;
+  const bg=i.tipo==='ciudad'?'#08507e':COLOR[i.tipo];
+  const ic=i.tipo==='ciudad'?num:ICONO[i.tipo];
+  d.innerHTML=`<span class="ic" style="background:${bg}">${ic}</span><span><b>${i.nombre}</b><small>${i.det||''}</small></span>${i.hora?`<span class="hora">${i.hora}</span>`:''}`;
+  d.onclick=()=>seleccionar(i.id,false);
+  return d;
+}
+function seleccionar(id,desdeMapa){
+  seleccion=(seleccion===id)?null:id;
+  pintar(); pintarLista();
+  const obj=ITEMS.find(i=>i.id===id)||CIUDADES.find(c=>c.id===id);
+  if(seleccion&&obj) mapa.panTo([obj.lat,obj.lon]);
+  if(seleccion&&desdeMapa){const f=document.querySelector(`.item[data-id="${id}"]`); if(f) f.scrollIntoView({block:'nearest',behavior:'smooth'});}
+}
+function refrescar(){pintarVistas();pintarSelector();pintarCapas();pintarLista();pintar();}
+
+document.getElementById('cerrar').onclick=()=>{document.getElementById('panel').classList.add('oculto');document.getElementById('abrir').classList.add('visible');};
+document.getElementById('abrir').onclick=()=>{document.getElementById('panel').classList.remove('oculto');document.getElementById('abrir').classList.remove('visible');};
+refrescar();
+</script>
+</body>
+</html>
