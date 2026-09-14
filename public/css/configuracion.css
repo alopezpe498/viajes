@@ -183,76 +183,140 @@
 }
 
 /* ====== Plantillas ======
-   La tarjeta de arriba: cargar unos ajustes guardados y guardar los de ahora.
-   Es una herramienta, no un campo del viaje, así que se pinta más discreta que
-   el resto: sin peso visual propio, para que el ojo siga yendo a las fechas. */
+   -----------------------------------------------------------------------------
+   TODO CON EL VOCABULARIO DE ESTA PANTALLA, y esto no es una preferencia: la
+   cabecera de este fichero avisa de que `.config` está aislada a propósito. La
+   primera versión de esta tarjeta usó las clases globales —`boton`,
+   `boton-discreto`, `nota`— y salió con la ropa de otra pantalla: botones
+   cuadrados entre controles de píldora, y las notas centradas, porque la `.nota`
+   global es un flex centrado y aquí solo se corrige dentro de `.campo`.
+
+   Así que píldoras de 999px, `--acento` para lo que actúa, `--borde` y
+   `--superficie` para lo que espera, y 13.5px como el resto de controles. */
 .config .plantillas__fila {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-.config .plantillas__fila + .plantillas__fila { margin-top: 14px; }
+.config .plantillas__fila + .plantillas__fila { margin-top: 16px; }
 
-.config .plantillas select {
-  flex: 1;
-  min-width: 220px;
-  border: 1px solid var(--borde);
-  border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 13.5px;
-  font-family: inherit;
-  color: var(--texto-acento);
-  background: var(--superficie);
-  outline: none;
-}
-.config .plantillas select:focus { border-color: var(--acento); }
-
+/* El desplegable y el campo del nombre, con la misma cara que el presupuesto:
+   son los dos únicos sitios de esta pantalla donde se escribe o se elige texto. */
+.config .plantillas select,
 .config .plantillas input[type="text"] {
   flex: 1;
   min-width: 200px;
   border: 1px solid var(--borde);
   border-radius: 999px;
   padding: 10px 18px;
-  font-size: 14px;
+  font-size: 13.5px;
   font-family: inherit;
-  outline: none;
   color: var(--texto-acento);
   background: var(--superficie);
+  outline: none;
+  appearance: none;
 }
+.config .plantillas select:focus,
 .config .plantillas input[type="text"]:focus { border-color: var(--acento); }
+
+/* La flechita del desplegable, dibujada: `appearance:none` se lleva la del
+   sistema, que era lo único que rompía la píldora. */
+.config .plantillas select {
+  padding-right: 42px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235E7A87' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
+
+/* Los botones de la tarjeta. El de cargar actúa —va en acento, como el de
+   guardar de la barra—; el de borrar espera, y por eso es solo un contorno. */
+.config .btn-plantilla {
+  flex: none;
+  border: 1px solid var(--acento);
+  background: var(--acento);
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.config .btn-plantilla:hover:not(:disabled) { background: var(--acento-hover); border-color: var(--acento-hover); }
+.config .btn-plantilla:disabled { background: #B6CBD5; border-color: #B6CBD5; cursor: not-allowed; }
+
+/* El de borrar: redondo y del tamaño del control, como el de volver de la
+   cabecera. Un icono solo, sin texto, porque se explica con el `title`. */
+.config .btn-plantilla--icono {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  background: var(--superficie);
+  border-color: var(--borde);
+  color: var(--secundario);
+}
+.config .btn-plantilla--icono:hover:not(:disabled) {
+  background: var(--tinte);
+  border-color: var(--borde);
+  color: var(--acento);
+}
+.config .btn-plantilla--icono:disabled { background: var(--superficie); border-color: var(--borde); color: #C3D2DA; }
 
 /* La etiqueta del guardado va en línea con el campo: es una frase, no un título
    de bloque, y partirla en dos renglones la convertía en otra sección. */
 .config .plantillas__etiqueta {
   font-size: 13.5px;
   font-weight: 600;
-  margin: 0;
   flex: none;
 }
 
-.config .plantillas__vacio,
-.config .plantillas__aviso {
-  margin: 0 0 12px;
+/* La pista de debajo. Clase propia y no `.nota`, que es la piedra con la que ya
+   se tropezó una vez: la global es un flex centrado. */
+.config .plantillas__pista {
+  font-size: 12px;
+  color: var(--secundario);
+  margin-top: 8px;
+  line-height: 1.45;
+}
+.config .plantillas__pista strong { color: var(--texto-acento); font-weight: 600; }
+
+.config .plantillas__vacio {
   font-size: 13px;
   color: var(--secundario);
+  padding: 2px 0 2px;
 }
+
+/* El aviso de «plantilla cargada», con el tinte de la casa. */
 .config .plantillas__aviso {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border-radius: var(--radio-sm, 14px);
+  gap: 9px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
   background: var(--tinte);
-  color: var(--tinte-texto);
+  color: var(--texto-acento);
+  font-size: 13px;
 }
+.config .plantillas__aviso svg { flex: none; color: var(--acento); }
 
-.config .plantillas .nota { font-size: 12px; color: var(--secundario); margin-top: 8px; }
-.config .plantillas [disabled] { opacity: .5; cursor: not-allowed; }
+/* La separación entre cargar y guardar: una línea, como la que ya separa el
+   interruptor de la revisión del reparto. */
+.config .plantillas__fila--guardar {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borde);
+}
 
 @media (max-width: 640px) {
   .config .plantillas__fila { flex-direction: column; align-items: stretch; }
-  .config .plantillas__etiqueta { margin-bottom: 2px; }
+  .config .btn-plantilla { justify-content: center; }
+  .config .btn-plantilla--icono { width: 100%; height: 40px; }
 }
 
 /* ====== Barra final ====== */

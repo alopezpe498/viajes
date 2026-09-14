@@ -103,7 +103,10 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
         <div class="cuerpo">
 
           <% if (avisoPlantilla) { %>
-            <p class="plantillas__aviso"><i class="ti ti-info-circle" aria-hidden="true"></i> <%= avisoPlantilla %></p>
+            <p class="plantillas__aviso">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12.01" y2="8"/><polyline points="11 12 12 12 12 16 13 16"/></svg>
+              <%= avisoPlantilla %>
+            </p>
           <% } %>
 
           <%# --- Cargar una --------------------------------------------- %>
@@ -121,20 +124,21 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
               <%# Con ruta ya montada no se carga: cambiar los viajeros invalidaría
                   los vuelos y hoteles ya buscados, y esa limpieza la hace el
                   guardado del paso 1, no esta ruta. %>
-              <button type="submit" class="boton boton--secundario" form="form-plantillas"
+              <button type="submit" class="btn-plantilla" form="form-plantillas"
                       data-cargar <%= tieneRuta ? 'disabled' : '' %>>
-                <i class="ti ti-download" aria-hidden="true"></i> Cargar
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="7 11 12 16 17 11"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
+                Cargar
               </button>
 
-              <button type="submit" class="boton-discreto" form="form-plantillas"
+              <button type="submit" class="btn-plantilla btn-plantilla--icono" form="form-plantillas"
                       formaction="/viajes/<%= viaje.id %>/plantillas/borrar"
-                      data-borrar title="Borrar la plantilla elegida">
-                <i class="ti ti-trash" aria-hidden="true"></i>
+                      data-borrar title="Borrar la plantilla elegida" aria-label="Borrar la plantilla elegida">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><path d="M10 11v6M14 11v6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>
               </button>
             </div>
 
             <% if (tieneRuta) { %>
-              <div class="nota">
+              <div class="plantillas__pista">
                 Este viaje ya tiene ruta, así que no se puede cargar una plantilla encima:
                 cambiaría los viajeros y descuadraría los vuelos y hoteles ya buscados.
               </div>
@@ -152,7 +156,7 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
                    autocomplete="off" placeholder="En pareja"
                    value="<%= typeof nombrePlantilla !== 'undefined' ? nombrePlantilla : (plantillaCargada ? (plantillas.find(p => p.id === plantillaCargada)?.nombre ?? '') : '') %>">
           </div>
-          <div class="nota">
+          <div class="plantillas__pista">
             Se guarda al darle a <strong>Guardar</strong> abajo, junto con la configuración.
             Si el nombre ya existe, esa plantilla se actualiza.
           </div>
