@@ -1428,23 +1428,62 @@ function avisosDeTiempo(dias, colocados) {
       // trayecto para llegar al trayecto no tiene sentido.
       if (a.tipo === 'traslado' || b.tipo === 'traslado') continue;
 
-      // COMER DURANTE UNA EXCURSIÓN DE JORNADA NO ES UN SOLAPE.
+      // Fin de lo primero: su hora más lo que dure. Sin duración tecleada se
+      // toma la hora de inicio, que es lo más prudente.
+      const acabaA = empiezaA + (Number(a.duracionMin) || 0);
+
+      // COMER DURANTE UNA EXCURSIÓN DE JORNADA NO ES UN SOLAPE… SI SE COME
+      // DENTRO.
       //
       // En una excursión de nueve horas se come: la propia IA la coloca y
       // escribe «Comer · Lublin (incluida en excursión)». Con las excursiones
       // ocupando ya su bloque de verdad, eso empezó a salir como conflicto, y
       // no lo es: es lo que pasa en una excursión larga.
       //
-      // La excepción es SOLO en ese sentido. Un museo dentro del bloque del
-      // crucero sigue siendo imposible —que es el fallo que se está
-      // arreglando—, y una comida sigue ocupando frente a cualquier visita.
+      // PERO LA EXENCIÓN SE APLICABA SIN MIRAR LA HORA, y ahí estaba el fallo.
+      // Peor: se decidía ANTES de calcular `acabaA`, así que ni siquiera existía
+      // el dato de cuándo termina la excursión. Con Auschwitz —7h30, de 08:00 a
+      // 15:30— y la comida a las 15:00, la comida se sale por una hora entera
+      // del final de la jornada y no salía ni un aviso.
+      //
+      // Ahora se perdona solo lo que de verdad cae DENTRO:
+      //
+      //     08:00 ─────── excursión ─────── 16:00
+      //                13:30 comida 15:00              dentro  → se calla
+      //     08:00 ─── excursión ─── 15:30
+      //                       15:00 comida 16:30       se sale → avisa
+      //
+      // NO SE MIRA EL NOMBRE, y es a propósito. Un «incluida en la excursión»
+      // es una declaración, y cuando una declaración contradice al reloj manda
+      // el reloj: si el bloque dice que va dentro y sobresale una hora, el plan
+      // se contradice a sí mismo y eso merece el aviso, no el perdón. Fiarse de
+      // la etiqueta seria reabrir este mismo agujero con una palabra que el
+      // modelo escribe libremente.
+      //
+      // Y no puede generar avisos falsos por falta de datos: una excursión sin
+      // duración da `acabaA = empiezaA`, y como el día va ordenado por hora eso
+      // nunca llega a `acabaA > empiezaB`. Sin solape no hay nada que perdonar.
+      //
+      // La excepción sigue siendo SOLO en ese sentido. Un museo dentro del
+      // bloque del crucero sigue siendo imposible, y una comida sigue ocupando
+      // frente a cualquier visita.
       if (esComer(a) !== esComer(b) && (a.tipo === 'actividad' || b.tipo === 'actividad')) {
-        continue;
-      }
+        const comida = esComer(a) ? a : b;
+        const excursion = esComer(a) ? b : a;
 
-      // Fin de lo primero: su hora más lo que dure. Sin duración tecleada se
-      // toma la hora de inicio, que es lo más prudente.
-      const acabaA = empiezaA + (Number(a.duracionMin) || 0);
+        const empiezaExc = enMinutos(excursion.hora);
+        const acabaExc = (empiezaExc ?? 0) + (Number(excursion.duracionMin) || 0);
+        const empiezaCom = enMinutos(comida.hora);
+        const acabaCom = (empiezaCom ?? 0) + (Number(comida.duracionMin) || 0);
+
+        const seComeDentro =
+          empiezaExc != null &&
+          empiezaCom != null &&
+          empiezaCom >= empiezaExc &&
+          acabaCom <= acabaExc;
+
+        if (seComeDentro) continue;
+      }
 
       // EL SOLAPE, ANTES QUE EL TRAYECTO.
       //
