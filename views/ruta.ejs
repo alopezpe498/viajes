@@ -37,88 +37,123 @@ const { viaje } = ruta;
 
     <%# ---------------------- Cabecera ---------------------- %>
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> / <a href="/viajes/<%= viaje.id %>"><%= viaje.nombre %></a>
-      </p>
+      <%- include('parciales/migas', { viaje }) %>
       <div class="etapa-titular">
         <h1 class="ruta-cabecera__titulo">
           Mi ruta
           <% if (viaje.ambito) { %><span class="chip-ambito"><%= viaje.ambito %></span><% } %>
         </h1>
-
-        <span class="etapa-acciones">
-          <%# El dosier, en una línea. El mismo control que en el lienzo: el
-              viaje se cierra desde donde se esté mirando. %>
-          <%- include('parciales/panel-dosier', { viajeId: viaje.id, dosier }) %>
-
-          <%# Volver al mapa a por más ciudades. Solo sale si el destino del
-              viaje es un país o una región: en un viaje a Sevilla no hay nada
-              más que explorar allí, y el botón sería una puerta a ninguna parte. %>
-          <% if (typeof urlExplorar !== 'undefined' && urlExplorar) { %>
-            <a class="boton-discreto" href="<%= urlExplorar %>">
-              <i class="ti ti-compass" aria-hidden="true"></i> Elegir más ciudades
-            </a>
-          <% } %>
-
-          <%# CÓMO SE MONTÓ ESTE VIAJE.
-              Solo en los viajes que montó el orquestador y solo si dejó algo
-              escrito. El registro de las seis fases —qué eligió, con qué datos y
-              de dónde salieron— es lo que permite revisar un viaje automático,
-              y hasta ahora solo se veía mientras se estaba montando. Un viaje
-              hecho a mano no tiene nada que contar aquí. %>
-          <%# `hayRegistro` ya viene en falso para los viajes hechos a mano: lo
-              decide la ruta, que es quien sabe si el viaje es automático. Aquí
-              no se vuelve a preguntar, porque el `viaje` de esta plantilla es el
-              resumen que pinta la lista y no trae ese campo. %>
-          <% if (typeof hayRegistro !== 'undefined' && hayRegistro) { %>
-            <%# A LA VISTA TRADUCIDA, no al log crudo. Ésta es la memoria del
-                viaje y su entrada natural; el log en crudo tiene su botón
-                dentro, en una esquina, para cuando haga falta depurar. %>
-            <a class="boton-discreto" href="/viajes/<%= viaje.id %>/orquestador/vista">
-              <i class="ti ti-notebook" aria-hidden="true"></i> Cómo se montó este viaje
-            </a>
-          <% } %>
-
-          <%# EL MAPA DEL VIAJE: todo junto, que es la pregunta que una lista de
-              paradas no contesta. Va antes de reservas y presupuesto porque es
-              de la misma familia que "Cómo se montó": sirve para MIRAR el viaje,
-              no para cerrarlo. %>
-          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/mapa">
-            <i class="ti ti-map-2" aria-hidden="true"></i> Mapa del viaje
-          </a>
-
-          <%# MIS RESERVAS: lo que ya está cerrado y lo que falta por cerrar.
-              Va aquí y no dentro de una etapa porque una reserva es del viaje:
-              el vuelo no es de ninguna parada y el orden que importa es el de
-              las fechas, no el de las ciudades. %>
-          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/reservas">
-            <i class="ti ti-bookmark" aria-hidden="true"></i> Mis reservas
-          </a>
-
-          <%# DOCUMENTOS: los papeles que ya se han subido, todos juntos. Va justo
-              detrás de las reservas porque es la pregunta de después: primero se
-              reserva, luego llegan los billetes y las confirmaciones, y el día
-              antes de salir lo que uno quiere es verlos sin abrir siete
-              pestañas. Aquí no se sube nada: cada papel se sube en su sitio. %>
-          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/documentos">
-            <i class="ti ti-files" aria-hidden="true"></i> Documentos
-          </a>
-
-          <%# PRESUPUESTO: lo que costaría el viaje tal y como está montado.
-              Va al lado de las reservas porque es la pregunta de justo antes:
-              primero se mira si sale a cuenta y después se reserva. %>
-          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/presupuesto">
-            <i class="ti ti-wallet" aria-hidden="true"></i> Presupuesto
-          </a>
-
-          <%# Entrar al viaje ya no pasa por el configurador, así que las fechas y
-              los viajeros se cambian desde aquí. %>
-          <a class="boton-discreto" href="/viajes/<%= viaje.id %>/paso/1?volverA=/viaje/<%= viaje.id %>/ruta">
-            <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> Configuración
-          </a>
-        </span>
       </div>
     </header>
+
+    <%# ---------------------- Los dos accesos de mirar ----------------------
+        EL LIENZO SUBE AQUÍ DESDE EL FINAL DE LA PÁGINA.
+
+        Estaba abajo del todo, detrás de la lista de paradas, cuando es lo que
+        más se abre: es EL viaje. Y al lado, el mapa, que contesta la otra
+        pregunta que una lista de paradas no contesta —dónde está todo—.
+
+        Son tarjetas y no dos píldoras más porque lo que las hace útiles es el
+        subtítulo: «El lienzo» a secas no dice qué hay dentro. Pero con la ropa
+        de la app, no con la de la maqueta: fondo de superficie y borde, no un
+        bloque de color. Destacan por ir arriba, ser dos y tener subtítulo. %>
+    <div class="ruta-destacados">
+      <a class="destacado" href="/viaje/<%= viaje.id %>/lienzo">
+        <span class="destacado__icono" aria-hidden="true"><i class="ti ti-layout-board"></i></span>
+        <span class="destacado__texto">
+          <span class="destacado__titulo">El lienzo</span>
+          <span class="destacado__sub">Tu itinerario, día a día</span>
+        </span>
+      </a>
+
+      <a class="destacado" href="/viaje/<%= viaje.id %>/mapa">
+        <span class="destacado__icono" aria-hidden="true"><i class="ti ti-map-2"></i></span>
+        <span class="destacado__texto">
+          <span class="destacado__titulo">Mapa del viaje</span>
+          <span class="destacado__sub">Todo situado sobre el mapa</span>
+        </span>
+      </a>
+    </div>
+
+    <%# ---------------------- Lo demás, plegado ----------------------
+        CERRADO POR DEFECTO, y con `<details>`, que es lo que ya usa la app en
+        media docena de sitios: sin JavaScript, con teclado, y sin el truco del
+        checkbox escondido de la maqueta.
+
+        «Viaje listo» entra aquí como uno más, pegado al Dosier —son el mismo
+        control: el interruptor manda sobre el botón— en vez de en una franja de
+        estado propia. La franja gastaba cincuenta píxeles en algo que se toca
+        una vez y al final del viaje. %>
+    <details class="ruta-mas">
+      <summary class="ruta-mas__boton">
+        <i class="ti ti-chevron-down ruta-mas__flecha" aria-hidden="true"></i>
+        Más opciones
+      </summary>
+
+      <div class="ruta-mas__cuerpo">
+        <%# El dosier, en una línea. El mismo control que en el lienzo: el
+            viaje se cierra desde donde se esté mirando. %>
+        <%- include('parciales/panel-dosier', { viajeId: viaje.id, dosier }) %>
+
+        <%# MIS RESERVAS: lo que ya está cerrado y lo que falta por cerrar.
+            Va aquí y no dentro de una etapa porque una reserva es del viaje:
+            el vuelo no es de ninguna parada y el orden que importa es el de
+            las fechas, no el de las ciudades. %>
+        <a class="boton-discreto" href="/viaje/<%= viaje.id %>/reservas">
+          <i class="ti ti-bookmark" aria-hidden="true"></i> Mis reservas
+        </a>
+
+        <%# DOCUMENTOS: los papeles que ya se han subido, todos juntos. Va justo
+            detrás de las reservas porque es la pregunta de después: primero se
+            reserva, luego llegan los billetes y las confirmaciones, y el día
+            antes de salir lo que uno quiere es verlos sin abrir siete
+            pestañas. Aquí no se sube nada: cada papel se sube en su sitio. %>
+        <a class="boton-discreto" href="/viaje/<%= viaje.id %>/documentos">
+          <i class="ti ti-files" aria-hidden="true"></i> Documentos
+        </a>
+
+        <%# PRESUPUESTO: lo que costaría el viaje tal y como está montado.
+            Va al lado de las reservas porque es la pregunta de justo antes:
+            primero se mira si sale a cuenta y después se reserva. %>
+        <a class="boton-discreto" href="/viaje/<%= viaje.id %>/presupuesto">
+          <i class="ti ti-wallet" aria-hidden="true"></i> Presupuesto
+        </a>
+
+        <%# Volver al mapa a por más ciudades. Solo sale si el destino del
+            viaje es un país o una región: en un viaje a Sevilla no hay nada
+            más que explorar allí, y el botón sería una puerta a ninguna parte. %>
+        <% if (typeof urlExplorar !== 'undefined' && urlExplorar) { %>
+          <a class="boton-discreto" href="<%= urlExplorar %>">
+            <i class="ti ti-compass" aria-hidden="true"></i> Elegir más ciudades
+          </a>
+        <% } %>
+
+        <%# CÓMO SE MONTÓ ESTE VIAJE.
+            Solo en los viajes que montó el orquestador y solo si dejó algo
+            escrito. El registro de las seis fases —qué eligió, con qué datos y
+            de dónde salieron— es lo que permite revisar un viaje automático,
+            y hasta ahora solo se veía mientras se estaba montando. Un viaje
+            hecho a mano no tiene nada que contar aquí. %>
+        <%# `hayRegistro` ya viene en falso para los viajes hechos a mano: lo
+            decide la ruta, que es quien sabe si el viaje es automático. Aquí
+            no se vuelve a preguntar, porque el `viaje` de esta plantilla es el
+            resumen que pinta la lista y no trae ese campo. %>
+        <% if (typeof hayRegistro !== 'undefined' && hayRegistro) { %>
+          <%# A LA VISTA TRADUCIDA, no al log crudo. Ésta es la memoria del
+              viaje y su entrada natural; el log en crudo tiene su botón
+              dentro, en una esquina, para cuando haga falta depurar. %>
+          <a class="boton-discreto" href="/viajes/<%= viaje.id %>/orquestador/vista">
+            <i class="ti ti-notebook" aria-hidden="true"></i> Cómo se montó este viaje
+          </a>
+        <% } %>
+
+        <%# Entrar al viaje ya no pasa por el configurador, así que las fechas y
+            los viajeros se cambian desde aquí. %>
+        <a class="boton-discreto" href="/viajes/<%= viaje.id %>/paso/1?volverA=/viaje/<%= viaje.id %>/ruta">
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> Configuración
+        </a>
+      </div>
+    </details>
 
     <%# ---------------------- Antes de viajar ----------------------
         SIEMPRE VISIBLE, y con cara de aviso.
@@ -185,12 +220,9 @@ const { viaje } = ruta;
       <% } %>
     <% } %>
 
-    <%# ---------------------- Pie ---------------------- %>
-    <div class="ruta-pie">
-      <a class="boton-lienzo" href="/viaje/<%= viaje.id %>/lienzo">
-        <i class="ti ti-layout-board" aria-hidden="true"></i> Ver el lienzo del viaje
-      </a>
-    </div>
+    <%# El botón del lienzo que había aquí, al final de la página, se ha subido
+        arriba con el mapa. Bajar hasta el pie para abrir lo que más se abre era
+        el camino largo, y tenerlo dos veces sería gastar sitio en repetirse. %>
   </div>
 </main>
 

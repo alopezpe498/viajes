@@ -1,0 +1,32 @@
+<%
+/**
+ * LAS MIGAS DE PAN DE UN VIAJE, EN UN SOLO SITIO.
+ *
+ * Antes cada pantalla se escribía las suyas a mano, y en diez pantallas habían
+ * salido CINCO variantes distintas: unas decían «Mi ruta» en el medio y otras el
+ * nombre del viaje, unas llegaban al tercer nivel y otras se quedaban en dos, y
+ * el lienzo y el mapa no tenían ninguna. Eso no es un detalle estético: es que
+ * la misma posición del viaje se llama de tres maneras según por dónde entres.
+ *
+ * EL MEDIO SIEMPRE DICE «MI RUTA», nunca el nombre del viaje. El nombre ya está
+ * en el título y en el chip de ámbito de al lado; repetirlo en las migas gasta
+ * la única línea que sirve para saber DÓNDE estás, no EN QUÉ viaje.
+ *
+ * Espera:
+ *   viaje  — con `id`. Sin él no hay migas que pintar.
+ *   aqui   — el nombre de esta pantalla («Lienzo», «Presupuesto», «Heraclión»).
+ *            Sin él, la pantalla actual ES «Mi ruta» y se pinta sin enlace.
+ */
+const dondeEstoy = typeof aqui !== 'undefined' && aqui ? String(aqui) : null;
+%>
+<p class="ruta-cabecera__miga">
+  <a href="/">Mis viajes</a>
+  <span class="miga__sep" aria-hidden="true">/</span>
+  <% if (dondeEstoy) { %>
+    <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a>
+    <span class="miga__sep" aria-hidden="true">/</span>
+    <span class="miga__actual" aria-current="page"><%= dondeEstoy %></span>
+  <% } else { %>
+    <span class="miga__actual" aria-current="page">Mi ruta</span>
+  <% } %>
+</p>

@@ -1977,6 +1977,13 @@ a  { color: var(--acento); }
 .ruta-cabecera__miga a { color: inherit; text-decoration: none; }
 .ruta-cabecera__miga a:hover { color: var(--acento); text-decoration: underline; }
 
+/* Las dos piezas del parcial `migas`: el separador, que se despinta para que no
+   compita con los nombres, y el sitio donde estás, que sí se marca. Sin esto,
+   una miga de tres tramos se lee como tres enlaces iguales y no dice dónde
+   estás, que es lo único que tiene que decir. */
+.ruta-cabecera__miga .miga__sep { margin: 0 5px; opacity: .45; }
+.ruta-cabecera__miga .miga__actual { color: var(--texto-2); font-weight: 600; }
+
 .ruta-cabecera__titulo {
   margin: 0;
   font-size: 26px;
@@ -2239,6 +2246,89 @@ a  { color: var(--acento); }
 }
 .etapa__quitar i { font-size: 17px; }
 .etapa__quitar:hover { color: #C0563B; background: var(--fondo); }
+
+/* --- Los dos accesos destacados de "Mi ruta" ------------------------------- */
+/*
+   El lienzo y el mapa, arriba y en dos columnas. Antes el lienzo estaba en el
+   pie de la página, detrás de toda la lista de paradas, y es lo que más se abre.
+
+   CON LA ROPA DE LA APP, y esto va contra la maqueta a propósito: allí son dos
+   bloques de color macizo con sombra fuerte. Aquí son tarjetas como las demás
+   —superficie, borde, radio— y destacan por lo que de verdad las destaca: ir
+   arriba, ser solo dos y llevar subtítulo. Dos slabs de color en una pantalla
+   que ya tiene un chip por ciudad pesarían más de lo que aportan.
+*/
+.ruta-destacados {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0 14px;
+}
+.destacado {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  text-decoration: none;
+  color: var(--texto);
+}
+.destacado:hover { border-color: var(--acento); }
+.destacado__icono {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--tinte);
+  color: var(--acento);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+}
+.destacado__texto { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.destacado__titulo { font-size: 14.5px; font-weight: 600; }
+.destacado__sub { font-size: 12px; color: var(--texto-2); }
+.destacado:hover .destacado__titulo { color: var(--acento); }
+
+/* --- "Más opciones": lo secundario, plegado ------------------------------- */
+/*
+   `<details>` y no el checkbox escondido de la maqueta: es lo que ya usa media
+   docena de pantallas de esta casa, va con teclado y no necesita una línea de
+   JavaScript. Cerrado de fábrica, que es el objetivo —que esta pantalla ocupe
+   menos que antes, no más—.
+*/
+.ruta-mas { margin-bottom: 18px; }
+.ruta-mas__boton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--acento);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+/* El triangulito de fábrica sobra: ya hay una flecha propia que además gira. */
+.ruta-mas__boton::-webkit-details-marker { display: none; }
+.ruta-mas__boton::marker { content: ''; }
+.ruta-mas__flecha { transition: transform .15s; font-size: 15px; }
+.ruta-mas[open] .ruta-mas__flecha { transform: rotate(180deg); }
+
+.ruta-mas__cuerpo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .ruta-destacados { grid-template-columns: 1fr; }
+}
 
 /* --- Pie ------------------------------------------------------------------ */
 .ruta-pie {
@@ -2660,6 +2750,13 @@ a  { color: var(--acento); }
 .lienzo-pantalla--esperando { opacity: .65; pointer-events: none; }
 
 /* --- Cabecera ------------------------------------------------------------- */
+/* Las migas del lienzo van en su propia línea encima de la cabecera: la cabecera
+   es una fila de controles y meter ahí un texto de navegación la desordenaría.
+   Se le quita altura a la cabecera para que las migas no añadan renglón: la
+   pantalla tiene que seguir ocupando lo mismo. */
+.lienzo-migas { padding: 10px 18px 0; flex-shrink: 0; }
+.lienzo-migas + .lienzo-cabecera { padding-top: 4px; }
+
 .lienzo-cabecera {
   padding: 14px 18px 10px;
   display: flex;

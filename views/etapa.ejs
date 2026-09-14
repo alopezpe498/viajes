@@ -87,11 +87,7 @@ const ICONO_TIPO = {
 
     <%# ======================= CABECERA ======================= %>
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> /
-        <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a> /
-        <%= etapa.nombre_ciudad %>
-      </p>
+      <%- include('parciales/migas', { viaje, aqui: etapa.nombre_ciudad }) %>
 
       <div class="etapa-titular">
         <h1 class="ruta-cabecera__titulo">

@@ -50,9 +50,7 @@ const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
   <div class="contenido" data-viaje="<%= viaje.id %>">
 
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta"><%= viaje.nombre %></a>
-      </p>
+      <%- include('parciales/migas', { viaje, aqui: 'Presupuesto' }) %>
       <div class="etapa-titular">
         <h1 class="ruta-cabecera__titulo">Presupuesto</h1>
         <span class="etapa-acciones">

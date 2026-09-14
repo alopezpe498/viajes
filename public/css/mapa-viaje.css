@@ -59,6 +59,25 @@ html:has(.mapa-maestro) { height: 100%; }
 }
 .mm-volver:hover { background: var(--acento); color: #fff; }
 .mm-titulo__texto { min-width: 0; }
+
+/* Las migas, encima del nombre del viaje y más pequeñas: son navegación, no
+   contenido. Mismos colores que las del resto de la app —`--texto-3` de fondo,
+   `--acento` al pasar— para que se lean como lo mismo aunque aquí floten. */
+.mm-migas {
+  display: block;
+  font-size: 11.5px;
+  color: var(--texto-3);
+  line-height: 1.3;
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mm-migas a { color: inherit; text-decoration: none; }
+.mm-migas a:hover { color: var(--acento); text-decoration: underline; }
+.mm-migas__sep { margin: 0 4px; opacity: .45; }
+.mm-migas__actual { color: var(--texto-2); font-weight: 600; }
+
 .mm-titulo__texto b { font-size: 14px; display: block; line-height: 1.25; }
 .mm-titulo__texto small {
   font-size: 12px; color: var(--texto-2); font-weight: 500;

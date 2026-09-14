@@ -33,9 +33,7 @@ const cuantas = (e) => todasLasLineas.filter((l) => l.estado === e).length;
   <div class="contenido" data-viaje="<%= viaje.id %>">
 
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a>
-      </p>
+      <%- include('parciales/migas', { viaje, aqui: 'Cómo se montó' }) %>
       <div class="etapa-titular">
         <h1 class="ruta-cabecera__titulo">Cómo se montó este viaje</h1>
 

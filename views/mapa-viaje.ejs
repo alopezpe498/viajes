@@ -52,6 +52,19 @@ const MUTANT = '0.14.1';
       <i class="ti ti-arrow-left" aria-hidden="true"></i>
     </a>
     <span class="mm-titulo__texto">
+      <%# LAS MIGAS, PERO FLOTANDO.
+          Esta pantalla no lleva la barra de navegación a propósito —una barra de
+          60 px encima de un mapa a pantalla completa se come justo lo que se ha
+          venido a ver—, así que las migas no pueden ir donde van en las demás.
+          Van aquí dentro, en la caja de cristal que ya existía: dicen lo mismo
+          que en el resto del viaje y no le quitan ni un píxel al mapa. %>
+      <span class="mm-migas">
+        <a href="/">Mis viajes</a>
+        <span class="mm-migas__sep" aria-hidden="true">/</span>
+        <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a>
+        <span class="mm-migas__sep" aria-hidden="true">/</span>
+        <span class="mm-migas__actual" aria-current="page">Mapa</span>
+      </span>
       <b><%= viaje.destino || viaje.nombre %> · <%= mapa.dias.length %> días</b>
       <small><%= mapa.ciudades.map((c) => `${c.nombre} ${c.noches}n`).join(' → ') %></small>
     </span>

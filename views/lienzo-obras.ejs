@@ -11,10 +11,7 @@
 <main class="envoltorio envoltorio--simple">
   <div class="contenido">
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> /
-        <a href="/viaje/<%= viaje.id %>/ruta">Mi ruta</a>
-      </p>
+      <%- include('parciales/migas', { viaje, aqui: 'Lienzo' }) %>
       <h1 class="ruta-cabecera__titulo">El lienzo del viaje</h1>
     </header>
 

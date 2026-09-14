@@ -39,6 +39,15 @@ const volver = etapaAbierta
 
 <div class="lienzo-pantalla" data-viaje="<%= viaje.id %>" data-pensando="<%= pensando ? '1' : '' %>">
 
+  <%# LAS MIGAS, COMO EN EL RESTO DEL VIAJE.
+      Esta pantalla no las tenía: solo la píldora de volver. Y la píldora SE
+      QUEDA, que no es repetirse: dice «← Heraclión» cuando se entra desde una
+      parada, y ese atajo se perdería. Migas para saber dónde estás, píldora para
+      volver por donde viniste. %>
+  <div class="lienzo-migas">
+    <%- include('parciales/migas', { viaje, aqui: 'Lienzo' }) %>
+  </div>
+
   <%# ======================= CABECERA ======================= %>
   <header class="lienzo-cabecera">
     <%# Con el nombre a la vista, no solo la flecha: una flecha sola no dice a
@@ -51,6 +60,13 @@ const volver = etapaAbierta
     <h1 class="lienzo-cabecera__titulo">Lienzo del viaje</h1>
 
     <div class="lienzo-filtros" id="filtros-ciudad"></div>
+
+    <%# AL MAPA SIN PASAR POR «Mi ruta». Son las dos formas de mirar el mismo
+        viaje —el cuándo y el dónde— y hasta ahora ir de una a la otra obligaba a
+        subir a la ruta y volver a bajar. %>
+    <a class="boton-discreto" href="/viaje/<%= viaje.id %>/mapa">
+      <i class="ti ti-map-2" aria-hidden="true"></i> Mapa del viaje
+    </a>
 
     <%# El mismo control del dosier que en "Mi ruta", en una línea. %>
     <%- include('parciales/panel-dosier', { viajeId: viaje.id, dosier }) %>

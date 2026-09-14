@@ -19,10 +19,7 @@ const rango = etapa.fecha_inicio ? `${dia(etapa.fecha_inicio)} → ${dia(etapa.f
 <main class="envoltorio envoltorio--simple">
   <div class="contenido">
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> /
-        <a href="/viaje/<%= etapa.viaje_id %>/ruta">Mi ruta</a>
-      </p>
+      <%- include('parciales/migas', { viaje: { id: etapa.viaje_id }, aqui: etapa.nombre_ciudad }) %>
       <h1 class="ruta-cabecera__titulo">
         <%= etapa.nombre_ciudad %>
         <span class="chip-ambito"><%= etapa.noches %> <%= etapa.noches === 1 ? 'noche' : 'noches' %></span>

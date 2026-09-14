@@ -29,9 +29,7 @@ const pieExtra = '<script src="/js/documentos.js" defer></script>';
   <div class="contenido">
 
     <header class="ruta-cabecera">
-      <p class="ruta-cabecera__miga">
-        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta"><%= viaje.nombre %></a>
-      </p>
+      <%- include('parciales/migas', { viaje, aqui: 'Documentos' }) %>
       <div class="etapa-titular">
         <div>
           <h1 class="ruta-cabecera__titulo">Documentos del viaje</h1>
