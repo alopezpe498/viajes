@@ -24,6 +24,7 @@ import { todas, una, ejecutar, db, nochesEntre } from '../db/index.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { resumenDeTramo } from './etapa.js';
 import { distanciaGuardada, comoEtiqueta } from './distancias-ciudades.js';
+import { lienzoDeViaje } from './lienzo.js';
 
 // Se reexporta para no romper a quien ya la importaba de aquí.
 export { ciudadDeCasa };
@@ -39,6 +40,57 @@ export function recalcularRuta(viajeId) {
   renumerar(viajeId);
   recalcularFechas(viajeId);
   sincronizarTransportes(viajeId);
+  contarLasQueCambiaronDeCiudad(viajeId);
+}
+
+/**
+ * DEJA DICHO QUÉ TARJETAS SE HAN QUEDADO EN UN DÍA DE OTRA CIUDAD.
+ *
+ * El arreglo en sí vive en `lienzoDeViaje`, junto al rescate gemelo de las que
+ * se salen del rango del viaje: la fila no se borra, la tarjeta sale del día y
+ * aparece en la mochila. Esto de aquí no arregla nada, solo lo cuenta — porque
+ * un viaje al que le desaparecen cuatro tarjetas de un día sin que nadie diga
+ * por qué es exactamente el tipo de arreglo mudo que este proyecto no quiere.
+ *
+ * SE MIRA AQUÍ porque este es el único momento en que el daño se produce: las
+ * fechas acaban de recalcularse en cascada y el mapa día→ciudad es otro. En la
+ * pantalla no se puede escribir esta línea, que se repinta cada dos por tres.
+ *
+ * Y SE PREGUNTA SOLO SI HAY ITINERARIO. No es una optimización: `lienzoDeViaje`
+ * encola trabajos de interpretación de horarios, y la fase 1 llama aquí al crear
+ * la ruta. Allí el itinerario ya no existe —el `DELETE FROM etapas` de la fase
+ * se lo lleva por cascada antes— así que con esta guarda la generación normal no
+ * se entera de que esto existe.
+ */
+function contarLasQueCambiaronDeCiudad(viajeId) {
+  if (!una('SELECT 1 AS hay FROM itinerario WHERE viaje_id = ? LIMIT 1', viajeId)) return [];
+
+  const { descolocados = [] } = lienzoDeViaje(viajeId) ?? {};
+  if (!descolocados.length) return [];
+
+  const TOPE = 6;
+  const comoTexto = (c) => `«${c.nombre}» (de ${c.ciudad ?? 'otra parada'}, en el día ${c.dia})`;
+  const lista =
+    descolocados.slice(0, TOPE).map(comoTexto).join(', ') +
+    (descolocados.length > TOPE ? `, y ${descolocados.length - TOPE} más` : '');
+
+  // Las de texto suelto —las comidas que pone el lienzo— no tienen candidato al
+  // que volver, así que dejan de verse y ya está. Es lo mismo que hace desde
+  // siempre el rescate de las que se salen de rango, y se dice aparte para no
+  // prometer una mochila que no las va a recibir. No se pierden: la fila sigue
+  // en su sitio y deshacer el cambio de noches las devuelve a su día.
+  const sinVuelta = descolocados.filter((c) => c.candidatoId == null).length;
+
+  console.log(
+    `[ruta] Viaje #${viajeId}: al recalcular las fechas, ${descolocados.length} tarjeta(s) ` +
+      `quedaron en un día de otra ciudad y salen de ahí: ${lista}.` +
+      (sinVuelta
+        ? ` ${sinVuelta === 1 ? 'Una es' : `${sinVuelta} son`} texto suelto, sin candidato al que ` +
+          'volver: deja de verse hasta que se deshaga el cambio.'
+        : '')
+  );
+
+  return descolocados;
 }
 
 /** El orden de las confirmadas pasa a ser 1, 2, 3… sin saltos. */

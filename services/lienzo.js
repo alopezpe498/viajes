@@ -276,6 +276,57 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
     diasDeEtapa.get(d.etapaId).push(d.n);
   }
 
+  // --- 4c) LO QUE SE QUEDÓ EN UN DÍA DE OTRA CIUDAD ------------------------
+  //
+  // EL FALLO QUE ORIGINA ESTO, y llevaba ahí desde siempre.
+  //
+  // Las fechas de las etapas son DERIVADAS: se recalculan en cascada cada vez
+  // que se cambian las noches de una parada, y de esas fechas sale de quién es
+  // cada día. Pero `itinerario` no guarda la fecha: guarda el NÚMERO de día. Así
+  // que al darle una noche más a la primera ciudad, el día 3 deja de ser de
+  // Nafplio y pasa a ser de Heraclión —y las tres tarjetas de Nafplio se quedan
+  // puestas en el día 3—. Medido en Grecia: siete tarjetas en la ciudad
+  // equivocada, el castillo de Nafplio en un día de Creta.
+  //
+  // Y NO SALTABA NADA. El rescate de más arriba solo mira si el día se sale del
+  // viaje (`dia < 1 || dia > totalDias`), y mover una noche de una ciudad a otra
+  // no cambia el total de días. El viaje quedaba con buena pinta y mal, que es
+  // la peor forma de estar roto.
+  //
+  // VA AQUÍ Y NO ARRIBA, junto al otro rescate, por una razón concreta: el mapa
+  // día→ciudad todavía no era el bueno. `reasignarDiasDeTransito`, cuatro líneas
+  // más arriba, le devuelve a la ciudad de ORIGEN el día de un salto nocturno.
+  // Comparando antes de eso, un día de tránsito bien montado saldría marcado
+  // como descolocado entero.
+  //
+  // SE TRATAN COMO LAS DE FUERA DE RANGO, que es el caso gemelo: no se borra
+  // nada. La fila sigue ahí, la tarjeta sale del día y aparece en la mochila
+  // para que se recoloque a mano. Reasignarla sola al día «que le toca» sería
+  // adivinar: la etapa puede tener ahora menos días, el hueco puede estar
+  // ocupado, la hora se eligió para otro día y el sitio puede cerrar justo ese.
+  // Ante la duda, a la mochila, como siempre en esta casa.
+  const etapaDelDia = new Map(dias.map((d) => [d.n, d.etapaId]));
+  const enCiudadAjena = (c) =>
+    c.etapaId != null && etapaDelDia.has(c.dia) && etapaDelDia.get(c.dia) !== c.etapaId;
+
+  const descolocados = colocados.filter(enCiudadAjena);
+  for (const c of descolocados) colocados.splice(colocados.indexOf(c), 1);
+
+  for (const c of descolocados) {
+    if (c.candidatoId == null) continue; // los manuales no tienen a dónde volver
+    enMochila.push({
+      id: c.candidatoId,
+      tipo: c.tipo,
+      nombre: c.nombre,
+      precio: c.precio,
+      moneda: c.moneda,
+      duracion: c.duracionCatalogo,
+      etapaId: c.etapaId,
+      ciudad: c.ciudad,
+      recolocar: true,
+    });
+  }
+
   // --- 5) Los avisos ------------------------------------------------------
   ordenarPorHora(colocados);
 
@@ -307,7 +358,13 @@ export function lienzoDeViaje(viajeId, { etapaId = null } = {}) {
     mochila: filtrar(enMochila),
     fijos: fijos.filter((f) => visibles.has(f.dia)),
     avisos: avisos.filter((a) => visibles.has(a.dia)),
-    porRecolocar: fueraDeRango.length,
+    porRecolocar: fueraDeRango.length + descolocados.length,
+    // LAS QUE SE QUEDARON EN UN DÍA DE OTRA CIUDAD, SIN FILTRAR POR ETAPA.
+    //
+    // Van enteras y no por la vista porque quien las quiere no es la pantalla
+    // —ahí ya se ven, en la mochila— sino `recalcularRuta`, que escribe la línea
+    // del registro justo después de mover las noches y necesita nombrarlas todas.
+    descolocados,
     // Solo se enseñan los chips de tipo que de verdad hay algo.
     tiposPresentes: TIPOS_MOCHILA.filter((t) => enMochila.some((m) => m.tipo === t.clave)),
     franjas: FRANJAS,
