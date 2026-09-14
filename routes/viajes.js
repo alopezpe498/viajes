@@ -197,6 +197,12 @@ import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import { mapaDeViaje } from '../services/mapa-viaje.js';
 import { documentosDelViaje, contenidoDe } from '../services/documentos.js';
 import {
+  plantillas as plantillasGuardadas,
+  guardarPlantilla,
+  borrarPlantilla,
+  cargarPlantillaEn,
+} from '../services/plantillas.js';
+import {
   traducirRegistro,
   registroTraducidoDe,
   cambiosAMano,
@@ -212,6 +218,8 @@ import {
 import {
   OPCIONES_AUTO,
   VIAJEROS_PARA_FAMILIAR,
+  TIPOS_VIAJE,
+  RITMOS,
   configAuto,
   validarConfigAuto,
   lanzarOrquestador,
@@ -235,17 +243,9 @@ export const router = express.Router();
 /** Cuántos pasos tiene el wizard. Si cambia, cambia también en la cabecera. */
 const TOTAL_PASOS = 7;
 
-/** Chips de tipo de viaje (ahora viven en la pantalla 1). */
-const TIPOS_VIAJE = [
-  { valor: 'cultural',     etiqueta: 'Cultural' },
-  { valor: 'gastronomico', etiqueta: 'Gastronómico' },
-  { valor: 'naturaleza',   etiqueta: 'Naturaleza' },
-  { valor: 'relax',        etiqueta: 'Relax' },
-  { valor: 'mixto',        etiqueta: 'Mixto' },
-];
-
-/** Ritmos posibles (plegado "Más opciones" de la pantalla 1). */
-const RITMOS = ['tranquilo', 'normal', 'intenso'];
+// Los chips de tipo de viaje y los ritmos viven en `services/orquestador.js`
+// desde que existen las plantillas: allí los puede validar el servicio que las
+// carga, que es lo que evita que una plantilla vieja cuele un valor retirado.
 
 /** Carga el viaje o corta con un 404 legible. */
 function cargarViaje(req, res, next) {
@@ -469,6 +469,16 @@ router.get('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
         categorias: CATEGORIAS_SITIO,
         viajerosTotales: (viaje.adultos ?? 2) + (viaje.ninos ?? 0),
         viajerosParaFamiliar: VIAJEROS_PARA_FAMILIAR,
+        // LAS PLANTILLAS. `plantillaCargada` viene en la URL al volver de
+        // cargar una: es lo que permite que el selector la deje marcada y que el
+        // campo del nombre salga con el suyo puesto, para que «guardar» sobre
+        // ese nombre sea actualizarla. Sin columna nueva y sin sesión.
+        plantillas: plantillasGuardadas(),
+        plantillaCargada: Number(req.query.plantilla) || null,
+        // Cargar sobre un viaje que ya tiene ruta descuadraría lo buscado, así
+        // que el botón sale apagado y se dice por qué.
+        tieneRuta: Boolean(una('SELECT 1 AS hay FROM etapas WHERE viaje_id = ?', viaje.id)),
+        avisoPlantilla: req.query.plantillaAviso ? String(req.query.plantillaAviso).slice(0, 200) : null,
         error: null,
       });
     }
@@ -546,6 +556,38 @@ router.get('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
   }
 });
 
+// =============================================================================
+// PLANTILLAS DE CONFIGURACIÓN — cargar y borrar
+// =============================================================================
+/**
+ * Las dos que no caben dentro del formulario del paso 1, porque son otro POST:
+ * el selector de plantillas vive en su propio `<form>`. Guardar sí va dentro del
+ * formulario grande, que es lo que hace que la foto salga de la fila ya escrita.
+ *
+ * Las dos vuelven al paso 1 y cuentan lo que ha pasado por la URL: sin sesión ni
+ * mensajes flash, que esta aplicación no tiene.
+ */
+// La plantilla viaja en el CUERPO y no en la URL porque las dos acciones
+// comparten un `<select>`: el id lo pone el desplegable al enviar, y así los dos
+// botones son el mismo formulario con distinto `formaction`, sin una línea de JS.
+router.post('/viajes/:id/plantillas/cargar', cargarViaje, (req, res) => {
+  const r = cargarPlantillaEn(req.viaje.id, Number(req.body?.plantilla_id));
+  const paso1 = `/viajes/${req.viaje.id}/paso/1`;
+
+  if (r.error) {
+    return res.redirect(`${paso1}?plantillaAviso=${encodeURIComponent(r.error)}`);
+  }
+  res.redirect(
+    `${paso1}?plantilla=${r.id}&plantillaAviso=${encodeURIComponent(`Plantilla «${r.nombre}» cargada.`)}`
+  );
+});
+
+router.post('/viajes/:id/plantillas/borrar', cargarViaje, (req, res) => {
+  const ok = borrarPlantilla(Number(req.body?.plantilla_id));
+  const aviso = ok ? 'Plantilla borrada.' : 'Esa plantilla ya no estaba.';
+  res.redirect(`/viajes/${req.viaje.id}/paso/1?plantillaAviso=${encodeURIComponent(aviso)}`);
+});
+
 /** Solo los pasos con formulario (1 y 2) mandan POST. */
 router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
   const viaje = req.viaje;
@@ -593,6 +635,14 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
         categorias: CATEGORIAS_SITIO,
         viajerosTotales: (Number(req.body.adultos) || viaje.adultos || 2) + (Number(req.body.ninos) || 0),
         viajerosParaFamiliar: VIAJEROS_PARA_FAMILIAR,
+        // La tarjeta de plantillas tiene que seguir ahí cuando la pantalla
+        // vuelve con un error, y con el nombre que se estaba escribiendo: si no,
+        // corregir una fecha te haría teclear el nombre otra vez.
+        plantillas: plantillasGuardadas(),
+        plantillaCargada: Number(req.body.plantilla_cargada) || null,
+        tieneRuta: Boolean(una('SELECT 1 AS hay FROM etapas WHERE viaje_id = ?', viaje.id)),
+        avisoPlantilla: null,
+        nombrePlantilla: String(req.body.nombre_plantilla ?? ''),
         error: { mensaje, campo },
       });
 
@@ -675,6 +725,20 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       quiereRevision ? 1 : 0,
       viaje.id
     );
+
+    // --- GUARDAR ESTO COMO PLANTILLA, SI SE HA PEDIDO ----------------------
+    //
+    // Va DESPUÉS del UPDATE y no antes, y no es un detalle de orden: así la
+    // plantilla fotografía la fila ya guardada. Dos cosas salen gratis de ahí:
+    // no puede capturar un estado a medias —si el formulario no valida, no se
+    // llega hasta aquí—, y los filtros de hotel y de vuelo, que se editan en los
+    // pasos 5 y 6 y no viajan en este formulario, entran porque están en sus
+    // columnas.
+    const nombrePlantilla = String(req.body.nombre_plantilla ?? '').trim();
+    if (nombrePlantilla) {
+      const r = guardarPlantilla(viaje.id, nombrePlantilla);
+      if (r.error) return conError(r.error, 'nombre_plantilla');
+    }
 
     // Vuelos y hoteles se buscaron para OTROS viajeros: fuera los no marcados,
     // para que se vuelvan a buscar con la ocupación nueva.

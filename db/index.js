@@ -399,6 +399,7 @@ export function migrarEsquema() {
   migracionRegistroTraducido();
   migracionAliasDeCivitatis();
   migracionRevisionDelReparto();
+  migracionPlantillasConfig();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5592,6 +5593,46 @@ function migracionRevisionDelReparto() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: revision final del reparto de noches.');
+  return true;
+}
+
+/**
+ * PLANTILLAS DE CONFIGURACION.
+ *
+ * Si uno siempre viaja en pareja, con ritmo normal y saliendo de Barcelona,
+ * teclear lo mismo en cada viaje es trabajo que la aplicacion puede ahorrarse.
+ * Una plantilla guarda esos valores con un nombre y el paso 1 los carga.
+ *
+ * SIN `viaje_id`: una plantilla no cuelga de ningun viaje, es de la instalacion.
+ * Y NO guarda destino ni fechas a proposito: son lo unico que cambia de verdad
+ * de un viaje a otro, y copiarlas convertiria la plantilla en un viaje clonado,
+ * que es otra cosa.
+ *
+ * `ajustes` es UN SOLO JSON y no doce columnas porque tres de los valores que
+ * copia —`config_auto`, `filtros_hoteles`, `filtros_vuelos`— ya son JSON en la
+ * tabla `viajes`. Partir los otros dejaria la tabla mitad columnas mitad JSON, y
+ * cada campo nuevo del paso 1 pediria otra migracion. Asi, ninguna.
+ *
+ * `nombre_norm` unico para que no convivan «En pareja» y «en  pareja»: guardar
+ * con un nombre que ya existe SOBREESCRIBE, que es lo que uno espera.
+ */
+function migracionPlantillasConfig() {
+  const CLAVE = '2026-09-plantillas-config';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS plantillas_config (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre      TEXT NOT NULL,
+      nombre_norm TEXT NOT NULL UNIQUE,
+      ajustes     TEXT NOT NULL,
+      creado_en   TEXT NOT NULL DEFAULT (datetime('now')),
+      usado_en    TEXT
+    );
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: plantillas de configuracion de viaje.');
   return true;
 }
 

@@ -115,6 +115,28 @@ export const NOMBRE_DE_ESTADO = {
  * configuración obligaría a acertarla ciudad por ciudad. El nivel lo traduce
  * cada fase con lo que ve en el mercado de esa parada.
  */
+/**
+ * EL VOCABULARIO DE LA CONFIGURACIÓN: los tipos de viaje y los ritmos.
+ *
+ * Vivían sueltos en `routes/viajes.js`, que era su único lector. Se mudan aquí
+ * al aparecer las plantillas, que necesitan validar contra LA MISMA lista: una
+ * plantilla guardada hace meses puede traer un ritmo que ya no existe, y la
+ * comprobación tiene que ser la de verdad, no una copia que se quede vieja.
+ *
+ * Una ruta puede importar de un servicio; un servicio no puede importar de una
+ * ruta sin montar un círculo. Por eso se mueven al servicio y no al revés.
+ */
+export const TIPOS_VIAJE = [
+  { valor: 'cultural',     etiqueta: 'Cultural' },
+  { valor: 'gastronomico', etiqueta: 'Gastronómico' },
+  { valor: 'naturaleza',   etiqueta: 'Naturaleza' },
+  { valor: 'relax',        etiqueta: 'Relax' },
+  { valor: 'mixto',        etiqueta: 'Mixto' },
+];
+
+/** Ritmos posibles (bloque «Ajustes opcionales» de la pantalla 1). */
+export const RITMOS = ['tranquilo', 'normal', 'intenso'];
+
 export const OPCIONES_AUTO = {
   nivelPrecio: [
     { valor: 'economico', etiqueta: 'Económico' },

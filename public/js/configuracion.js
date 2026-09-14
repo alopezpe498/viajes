@@ -391,6 +391,63 @@
   }
 
   // ===========================================================================
+  // PLANTILLAS
+  // ===========================================================================
+  /**
+   * Lo mínimo, y a propósito: cargar y guardar los hace el servidor con
+   * formularios normales. Aquí solo van las tres cosas que un formulario no
+   * puede decir por sí mismo.
+   */
+  (() => {
+    const caja = document.querySelector('[data-plantillas]');
+    if (!caja) return;
+
+    const selector = caja.querySelector('#plantilla-elegida');
+    const nombre = caja.querySelector('#nombre_plantilla');
+    const cargar = caja.querySelector('[data-cargar]');
+    const borrar = caja.querySelector('[data-borrar]');
+
+    // 1. Sin plantilla elegida no hay nada que cargar ni que borrar. El botón
+    //    de cargar puede venir ya apagado desde el servidor —viaje con ruta— y
+    //    eso manda sobre esto.
+    const bloqueadoDesdeElServidor = cargar?.disabled ?? false;
+    const repintaBotones = () => {
+      const hay = Boolean(selector?.value);
+      if (cargar && !bloqueadoDesdeElServidor) cargar.disabled = !hay;
+      if (borrar) borrar.disabled = !hay;
+    };
+    selector?.addEventListener('change', repintaBotones);
+    repintaBotones();
+
+    // 2. Borrar no se deshace, así que se pregunta. Con el nombre delante: un
+    //    «¿seguro?» a secas no dice qué se va a llevar por delante.
+    borrar?.addEventListener('click', (e) => {
+      const como = selector?.selectedOptions?.[0]?.dataset?.nombre ?? 'esta plantilla';
+      if (!confirm(`¿Borrar la plantilla «${como}»? No se puede deshacer.`)) e.preventDefault();
+    });
+
+    // 3. Guardar con un nombre que ya existe SOBREESCRIBE, y eso hay que
+    //    decirlo antes y no después. La comparación es la misma que hace el
+    //    servidor de forma tosca —sin acentos, sin mayúsculas, sin espacios de
+    //    más—: no tiene que ser exacta, solo tiene que avisar cuando toca.
+    const comoClave = (t) =>
+      String(t ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+    const existentes = new Map(
+      [...(selector?.options ?? [])]
+        .filter((o) => o.value)
+        .map((o) => [comoClave(o.dataset.nombre), o.dataset.nombre])
+    );
+
+    document.getElementById('form-configuracion')?.addEventListener('submit', (e) => {
+      const puesto = comoClave(nombre?.value);
+      if (!puesto || !existentes.has(puesto)) return;
+      if (!confirm(`Ya tienes una plantilla «${existentes.get(puesto)}». ¿La actualizo con esta configuración?`)) {
+        e.preventDefault();
+      }
+    });
+  })();
+
+  // ===========================================================================
   // ARRANQUE
   // ===========================================================================
   pintaViajeros();
