@@ -170,6 +170,18 @@
 }
 .config .campo .nota { font-size: 12px; color: var(--secundario); margin-top: 8px; }
 
+/* El interruptor de la revisión final cuelga DEBAJO de la rejilla de dos
+   columnas, no dentro: es un sí/no y en una columna quedaba como medio campo.
+   Se separa con la misma línea que usa el resto de la pantalla para que no
+   parezca pegado al presupuesto. El interruptor en sí no se estiliza aquí: usa
+   `.auto-interruptor` de la hoja del orquestador, el mismo del viaje
+   automático, porque son el mismo objeto y en esta pantalla se ven los dos. */
+.config .opcionales + .auto-interruptor {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--borde);
+}
+
 /* ====== Barra final ====== */
 .config .barra-final {
   position: fixed; left: 0; right: 0; bottom: 0;

@@ -255,21 +255,28 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
 
             Va fuera de la rejilla de dos columnas a propósito: es un sí/no, no un
             campo con valor, y en la rejilla quedaba como un hueco a medias.
+
+            Y SE VISTE CON `auto-interruptor`, el del viaje automático, no con
+            estilos propios. Son el mismo objeto —una casilla con su título y su
+            explicación debajo— y en esta pantalla hay dos: verlos distintos
+            sería raro. La primera versión iba con `.campo` y `.nota`, y las dos
+            estaban mal: `.campo label` fuerza `font-weight:600` sobre todo el
+            bloque, y la `.nota` global es un flex centrado con `flex:0 0 auto`,
+            así que dentro de una etiqueta flexible el texto no encogía y se
+            salía por la derecha. De eso ya avisa un comentario en
+            `orquestador.css`, junto a `.auto-nota`.
           %>
-          <div class="campo" style="margin-top:14px">
-            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-weight:400">
-              <input type="checkbox" name="revision_reparto" value="1"
-                     style="margin-top:3px;flex:0 0 auto"
-                     <%= viaje.revision_reparto ? 'checked' : '' %>>
-              <span>
-                <strong>Revisión final del reparto</strong>
-                <span class="nota" style="display:block;margin-top:2px">
-                  Al terminar, comprueba si alguna ciudad se quedó corta de días o si
-                  otra iba holgada, y lo dice en los avisos. No cambia nada del viaje.
-                </span>
+          <label class="auto-interruptor">
+            <input type="checkbox" name="revision_reparto" value="1"
+                   <%= viaje.revision_reparto ? 'checked' : '' %>>
+            <span class="auto-interruptor__texto">
+              <strong>Revisión final del reparto</strong>
+              <span class="auto-nota">
+                Al terminar, comprueba si alguna ciudad se quedó corta de días o si
+                otra iba holgada, y lo dice en los avisos. No cambia nada del viaje.
               </span>
-            </label>
-          </div>
+            </span>
+          </label>
         </div>
       </div>
 
