@@ -122,6 +122,28 @@ const SIEMPRE = [
 /** Las palabras que dan la vuelta al sentido de un tramo. */
 const CIERRE = ['cerrado', 'cierra', 'cierre', 'closed', 'except', 'excepto', 'salvo'];
 
+/**
+ * LO QUE AVISA DE QUE ESTE TEXTO NO ES UNA LISTA CERRADA DE DÍAS.
+ *
+ * Un horario que empieza por «Variable» o que dice «consultar» no está
+ * enumerando los días que abre: está avisando de que no se compromete. Si además
+ * nombra un día —«Variable (Vie. hasta las 22:00 en verano)»— ese día es una
+ * EXCEPCIÓN citada de pasada, no la lista completa.
+ *
+ * La diferencia importa porque la regla 2 de `horarioPorDias` cierra todo lo que
+ * no se nombre, y aplicada a una nota cierra seis días que el texto no ha
+ * mencionado siquiera.
+ *
+ * Ojo con lo que NO está en esta lista: «varía según época» sí aparece en
+ * horarios buenos —«Lun-Dom: 08:00-20:00 (Varía según época)»— y ahí no estorba,
+ * porque un texto que nombra los siete días no deja ninguno sin decidir y la
+ * regla 2 ni llega a correr.
+ */
+const NO_ES_UNA_LISTA = [
+  'variable', 'consultar', 'a confirmar', 'sin confirmar',
+  'depende de', 'sujeto a', 'orientativo', 'aproximado', 'puede variar',
+];
+
 /** Sin acentos, en minúsculas y con los guiones raros vueltos guion normal. */
 function normalizar(texto) {
   return String(texto ?? '')
@@ -421,8 +443,26 @@ export function horarioPorDias(texto, mes = null) {
     }
   }
 
-  const exclusivo =
-    /\b(solo|unicamente|only|exclusivamente)\b/.test(t) || /\babre\s+(de|los|el)\b/.test(t);
+  // ¿ESTO ENUMERA LOS DÍAS QUE ABRE, O ES UNA NOTA SOBRE UNA EXCEPCIÓN?
+  //
+  // EL FALLO QUE ORIGINA ESTO. El Museo de la Acrópolis dice «Variable (Vie.
+  // hasta las 22:00 en verano)» y salía CERRADO de lunes a jueves y el fin de
+  // semana, con `fiable` en true. Un cierre inventado y afirmado con plena
+  // confianza, que es lo que expulsa un imprescindible sin que nadie se entere:
+  // el mismo pecado del «Mi-Dom».
+  //
+  // El viernes de ese texto no sale de una enumeración: sale de una NOTA sobre
+  // cuándo se alarga el horario en verano. La regla 2 de más abajo —«la lista es
+  // la lista: lo que no está, cierra»— vale para «Mié-Dom: 10:00-18:00», donde
+  // nombrar días SÍ es enumerar los que abre. Aquí no, y nadie lo distinguía.
+  //
+  // AQUÍ ESTABA LA PUERTA, SIN ENCHUFAR. En su sitio vivía un `exclusivo` que
+  // se calculaba y no se usaba en ninguna línea del fichero: alguien penso esto
+  // mismo y se quedó a medias. No servía tal cual —exigía un «solo» o un «abre
+  // de» que un horario normal no lleva, así que «Mié-Dom» habría dejado de
+  // cerrar lunes— porque la pregunta buena es la contraria: no «¿es una lista
+  // exclusiva?» sino «¿se declara este texto incompleto?».
+  const esUnaNota = NO_ES_UNA_LISTA.some((p2) => t.includes(p2));
 
   for (const tramo of tramos) {
     const esDeCierre = CIERRE.some((p2) => tramo.includes(p2));
@@ -468,7 +508,12 @@ export function horarioPorDias(texto, mes = null) {
     }
     // 2. Si el texto ENUMERA días abiertos, la lista es la lista: lo que no
     //    está, cierra. Es como se leen «Vie a Dom» y «Mié-Dom: 10:00-18:00».
-    if (huboApertura) {
+    //
+    //    SALVO QUE EL TEXTO SE HAYA DECLARADO INCOMPLETO. Entonces el día que
+    //    nombra es una excepción y no una lista, y los demás se quedan en
+    //    DESCONOCIDO — que es lo que de verdad se sabe de ellos: nada. El sitio
+    //    se coloca igual y se avisa flojito; lo que no se hace es cerrarlo.
+    if (huboApertura && !esUnaNota) {
       porDia[d] = { estado: 'cerrado', rangos: [] };
       continue;
     }
