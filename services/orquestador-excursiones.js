@@ -33,7 +33,7 @@ import { ocupacionDe } from '../services/proveedores.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
 import { lienzoDeViaje } from '../services/lienzo.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
-import { porParada } from '../services/paralelo.js';
+import { porParada, esperarAviso, avisoDeSitios } from '../services/paralelo.js';
 import { direccionDe, situarActividadConPlaces } from '../services/direcciones.js';
 import { distanciaKm } from '../services/distancias.js';
 import { fueraDeTemporada, mesesDelViaje } from '../services/temporadas.js';
@@ -109,6 +109,20 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
   const { adultos, edadesNinos } = ocupacionDe(viaje);
   const maxLargasPorDia = parametro('max_excursiones_largas_por_dia', 1);
   const maxPorViaje = parametro('max_excursiones_por_viaje', 0); // 0 = sin límite
+
+  // CUÁNTO SE ESPERA A LOS SITIOS DE UNA CIUDAD ANTES DE SEGUIR SIN ELLOS.
+  //
+  // El número sale de lo medido, no de la intuición: en el viaje 60 los sitios
+  // de una ciudad tuvieron nombres y coordenadas a los 45 s (Atenas) y 53 s
+  // (Santorini) de arrancar la fase, y la ciudad entera tardó 1m 35s. Cuatro
+  // minutos son 4,5 veces lo primero y 2,5 veces lo segundo.
+  //
+  // El margen de sobra es para los viajes de muchas paradas, donde una ciudad de
+  // la tercera tanda empieza tarde. Aun así no se descontrola: una parada de
+  // esta fase esperando ocupa su plaza, así que esta fase no puede adelantarse a
+  // la de sitios más de una tanda. Y cuando el aviso llega, esperar no cuesta
+  // nada, así que pasarse por arriba es más barato que quedarse corto.
+  const esperaSitiosSeg = parametro('espera_sitios_excursiones_seg', 240);
 
   const etapas = todas(
     "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden, id",
@@ -230,6 +244,50 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
       }
 
       // --- 2) Preseleccionar -----------------------------------------------
+
+      // ANTES DE PREGUNTARLE A LA IA, ESPERAR A QUE ESTA CIUDAD TENGA SUS SITIOS.
+      //
+      // EL FALLO QUE ORIGINA ESTO. Esta fase y la de «Qué ver» arrancan en el
+      // mismo segundo. En Santorini, la lista de sitios se leyó VACÍA porque la
+      // otra fase la escribió un segundo después, y con ella vacía la IA eligió
+      // las excursiones a ciegas: sin saber que Akrotiri ya estaba entre lo que
+      // el viaje iba a ver, eligió la entrada al yacimiento como si fuera un
+      // extra. Todo lo que vino detrás —la fusión que no fundió nada, el
+      // `cubre_sitios` vacío, la excursión expulsada en el lienzo por solaparse
+      // consigo misma— sale de esta lista. En Atenas la carrera se ganó por
+      // cuatro segundos, que es peor todavía: el fallo aparece o no según quién
+      // llegue antes.
+      //
+      // LA ESPERA VA AQUÍ Y NO EN LA FUSIÓN. Poniéndola solo al fundir se
+      // arreglaría el síntoma pequeño y la IA seguiría eligiendo a ciegas, que
+      // es el daño grande. El solapamiento es LA regla que justifica esta fase
+      // entera: sin la lista delante no se está aplicando.
+      //
+      // Y ESPERA SOLO ESTA CIUDAD. No se ponen las fases en fila —medido, cuesta
+      // 1m 23s—: se espera el aviso de ESTE punto de interés. Las otras paradas
+      // y la fase de dormir siguen corriendo. Y como el aviso se da en cuanto
+      // los sitios tienen nombre y coordenada, sin esperar a sus precios y
+      // horarios, la espera cae dentro del tiempo que la otra fase iba a gastar
+      // igualmente.
+      if (etapa.punto_interes_id) {
+        const desde = Date.now();
+        const como = await esperarAviso(avisoDeSitios(viajeId, etapa.punto_interes_id), {
+          segundos: esperaSitiosSeg,
+        });
+        const seg = Math.round((Date.now() - desde) / 1000);
+        if (como === 'aviso') {
+          di(`   ${ciudad}: esperé ${seg}s a que sus sitios estuvieran listos. Ya los tengo.`, ORIGENES.ninguno);
+        } else if (como === 'plazo') {
+          // NO SE CONGELA, PERO SE DICE. Si los sitios de esta ciudad no llegan,
+          // se sigue con lo que haya —que es como se trabajaba hasta ahora— y
+          // queda escrito que la elección se hizo sin ellos.
+          di(
+            `   ${ciudad}: los sitios de esta parada no llegaron en ${esperaSitiosSeg}s. ` +
+              'Sigo sin ellos: la elección de excursiones no podrá mirar el solapamiento.'
+          );
+        }
+      }
+
       const sitios = etapa.punto_interes_id
         ? todas(
             `SELECT nombre, categoria, bloque FROM sitios_lugar
@@ -476,6 +534,17 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
           if (sitio && candidato) {
             ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, sitio.id);
             cubiertos.push(`${sitio.nombre} (lo cubre «${e.actividad.titulo}»)`);
+          } else {
+            // ESTO NO PUEDE SEGUIR SIENDO MUDO. Este casado es por igualdad
+            // exacta de nombre, así que falla en cuanto la IA escribe «Acrópolis
+            // de Atenas» donde la ficha dice «Acrópolis». Fallar es aceptable;
+            // fallar sin dejar rastro es lo que hizo falta dos diagnósticos para
+            // ver que aquí no pasaba nada de nada.
+            di(
+              `   «${e.actividad.titulo}» dice cubrir «${String(nombre).trim()}», ` +
+                'pero no hay ningún sitio con ese nombre en esta parada.',
+              ORIGENES.ninguno
+            );
           }
         }
 
@@ -686,7 +755,23 @@ async function cubrirSitiosQueSonElMismoLugar(actividad, candidato, etapa, cubie
       WHERE punto_interes_id = ? AND cubierto_por IS NULL`,
     etapa.punto_interes_id
   );
-  if (!sitios.length) return;
+  if (!sitios.length) {
+    // RENDIRSE EN SILENCIO ES LO QUE ESCONDIÓ ESTE FALLO.
+    //
+    // Esta salida se tomó en Santorini con la tabla vacía por la carrera entre
+    // fases: sin comparar, sin situar la excursión y sin una sola línea en el
+    // registro. Con la espera de arriba ya no debería darse por ese motivo, pero
+    // si vuelve a pasar —una ciudad sin ficha, todos los sitios ya cubiertos—
+    // tiene que verse. La otra rama sí escribe cuando funde.
+    anotar(
+      etapa.viaje_id,
+      FASE,
+      `   No había sitios sin cubrir con los que comparar «${actividad.titulo}»: ` +
+        'no puedo saber si es la misma visita que algo que ya se iba a ver.',
+      ORIGENES.ninguno
+    );
+    return;
+  }
 
   // SITUARLA, UNA VEZ EN LA VIDA. Si ya tiene fila —situada o fallida— esto no
   // llama a nadie: `situarActividadConPlaces` lo comprueba antes que nada.

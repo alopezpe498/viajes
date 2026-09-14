@@ -102,6 +102,104 @@ export async function porParada(
   return { resultados, parado };
 }
 
+// =============================================================================
+// LA PIZARRA DE AVISOS: UNA FASE LE DICE A OTRA QUE YA PUEDE
+// =============================================================================
+
+/**
+ * UN AVISO CON NOMBRE, PARA QUE DOS FASES QUE CORREN A LA VEZ SE ENTIENDAN.
+ *
+ * EL FALLO QUE ORIGINA ESTO. «Sitios» y «excursiones» arrancan en el mismo
+ * segundo y no se conocen de nada. En Santorini, excursiones le preguntó a la IA
+ * qué merecía la pena CON LA TABLA DE SITIOS VACÍA —la otra fase la escribió un
+ * segundo después—, así que la IA eligió sin saber que Akrotiri ya estaba en la
+ * lista de lo que se iba a ver. Luego la fusión se rindió muda y el lienzo hizo
+ * competir a la excursión contra el sitio. En Atenas, la misma carrera se ganó
+ * por CUATRO SEGUNDOS. Un fallo que depende de quién llegue antes no se
+ * reproduce a voluntad, que es lo peor que le puede pasar a un fallo.
+ *
+ * LO QUE NO SE HACE: poner las fases en fila. Medido en el viaje 60, serializar
+ * el bloque cuesta 1m 23s y escala con el tamaño de la fase entera. Lo que se
+ * espera aquí es UNA CIUDAD por SU ciudad; las demás y la fase de dormir siguen
+ * corriendo.
+ *
+ * DOS REGLAS:
+ *
+ *   1. EL QUE LLEGA TARDE NO SE QUEDA COLGADO. Si el aviso ya se dio, esperarlo
+ *      devuelve al momento. Una pizarra que solo despierta a los que ya estaban
+ *      mirando es una carrera igual que la que viene a matar.
+ *
+ *   2. NADIE ESPERA PARA SIEMPRE. Todo aviso se pide con plazo: si la otra fase
+ *      se cayó y nunca va a avisar, el que espera sigue con lo que tenga y lo
+ *      dice. Un viaje peor es algo que se repasa; un viaje congelado no es nada.
+ */
+
+/** clave → { avisada, esperando[], cuando } */
+const pizarra = new Map();
+
+/** Un rato largo después de que a nadie le importe ya, el apunte se tira. */
+const CADUCA_MS = 60 * 60 * 1000;
+
+function apunte(clave) {
+  const ahora = Date.now();
+  for (const [k, a] of pizarra) {
+    if (!a.esperando.length && ahora - a.cuando > CADUCA_MS) pizarra.delete(k);
+  }
+  let a = pizarra.get(clave);
+  if (!a) {
+    a = { avisada: false, esperando: [], cuando: ahora };
+    pizarra.set(clave, a);
+  }
+  return a;
+}
+
+/**
+ * LA CLAVE LA CONSTRUYE ESTA CASA, no cada fase por su cuenta.
+ *
+ * Si una fase escribe `sitios:60:481` y la otra `sitios-60-481`, el aviso no
+ * llega nunca y lo único que se ve es un timeout raro. El viaje entra en la
+ * clave porque los sitios de un punto sobreviven al viaje que los pidió: sin él,
+ * el aviso de un viaje de ayer daría vía libre al de hoy.
+ */
+export const avisoDeSitios = (viajeId, puntoInteresId) => `sitios:${viajeId}:${puntoInteresId}`;
+
+/** Levanta la bandera. Hacerlo dos veces no hace nada. */
+export function avisar(clave) {
+  const a = apunte(clave);
+  if (a.avisada) return;
+  a.avisada = true;
+  a.cuando = Date.now();
+  for (const soltar of a.esperando.splice(0)) soltar('aviso');
+}
+
+/**
+ * Espera la bandera como mucho `segundos`.
+ *
+ * Devuelve `'ya'` si estaba puesta y no hubo que esperar, `'aviso'` si llegó
+ * mientras esperaba, y `'plazo'` si se agotó el tiempo. Quien llama decide qué
+ * hacer con cada caso; aquí no se escribe en ningún registro.
+ */
+export function esperarAviso(clave, { segundos = 240 } = {}) {
+  const a = apunte(clave);
+  if (a.avisada) return Promise.resolve('ya');
+
+  return new Promise((listo) => {
+    let reloj = null;
+    const soltar = (como) => {
+      if (reloj) clearTimeout(reloj);
+      listo(como);
+    };
+    reloj = setTimeout(() => {
+      const i = a.esperando.indexOf(soltar);
+      if (i >= 0) a.esperando.splice(i, 1);
+      listo('plazo');
+    }, Math.max(1, Number(segundos) || 1) * 1000);
+    // Un aviso pendiente no es motivo para que el proceso no pueda cerrarse.
+    if (typeof reloj.unref === 'function') reloj.unref();
+    a.esperando.push(soltar);
+  });
+}
+
 /**
  * UN SEMÁFORO DE N PLAZAS, que se coge y se suelta a mano.
  *

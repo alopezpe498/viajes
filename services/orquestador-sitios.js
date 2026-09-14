@@ -44,7 +44,7 @@ import { destinoPorNombre } from '../services/catalogo.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { anotar, apuntarHueco, configAuto, parametro, ORIGENES } from '../services/orquestador.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
-import { porParada } from '../services/paralelo.js';
+import { porParada, avisar, avisoDeSitios } from '../services/paralelo.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
 import { fundirSitiosContenidos } from '../services/contenidos.js';
@@ -124,6 +124,25 @@ export async function ejecutarFaseSitios(viaje, prompt) {
   //
   // El scraping que haya dentro sigue haciendo cola solo: el semáforo de
   // `abrirNavegador` se encarga, porque el perfil de Chrome es uno.
+  // LA BANDERA SE LEVANTA SALGA LA CIUDAD POR DONDE SALGA.
+  //
+  // El sitio bueno para avisar es en cuanto están las filas Y las coordenadas
+  // —justo después de `situarLosSitios`—, y ahí se avisa expresamente. Pero de
+  // esta tarea se sale por cuatro puertas más: sin ficha en el catálogo, con los
+  // sitios ya generados de antes, con la generación caída, o por un error que no
+  // se esperaba. Si por alguna de esas no se avisara, la fase de excursiones de
+  // esa ciudad se comería el plazo entero esperando algo que ya no va a llegar
+  // —y la de «ya existían» es justo la que más se pisa al regenerar un viaje—.
+  // Así que el aviso va también en un `finally`. Avisar dos veces no hace nada.
+  const avisandoAlTerminar = (tarea) => async (etapa, ciudad) => {
+    const aviso = etapa.punto_interes_id ? avisoDeSitios(viajeId, etapa.punto_interes_id) : null;
+    try {
+      return await tarea(etapa, ciudad);
+    } finally {
+      if (aviso) avisar(aviso);
+    }
+  };
+
   const { resultados } = await porParada(
     etapas,
     {
@@ -134,7 +153,7 @@ export async function ejecutarFaseSitios(viaje, prompt) {
       enParada,
       di: (t) => di(t, ORIGENES.ninguno),
     },
-    async (etapa, ciudad) => {
+    avisandoAlTerminar(async (etapa, ciudad) => {
 
       const punto = etapa.punto_interes_id
         ? una('SELECT * FROM puntos_interes WHERE id = ?', etapa.punto_interes_id)
@@ -216,6 +235,18 @@ export async function ejecutarFaseSitios(viaje, prompt) {
         di(`   ${ciudad}: no pude situar los sitios (${err.message}).`);
       }
 
+      // AQUÍ, Y NO AL FINAL DE LA CIUDAD, ES CUANDO EXCURSIONES PUEDE SEGUIR.
+      //
+      // Lo que esa fase necesita de aquí es la lista de nombres —para que la IA
+      // sepa qué se va a ver ya— y la coordenada —para la salvaguarda de los
+      // metros al fundir—. Las dos cosas están puestas en esta línea.
+      //
+      // Lo que viene después, los precios y horarios de Google, no le hace
+      // ninguna falta y tarda lo suyo: en el viaje 60 fueron 41 s entre este
+      // punto y el final de la ciudad. Avisar aquí es lo que hace que esperar
+      // salga gratis; avisar al final costaría esos 41 s por nada.
+      avisar(avisoDeSitios(viajeId, punto.id));
+
       // --- 4) Los datos duros, una sola búsqueda ----------------------------
       //
       // Se ESPERA a que termine en vez de encolarla. En el flujo manual se encola
@@ -280,8 +311,20 @@ export async function ejecutarFaseSitios(viaje, prompt) {
               : `datos de Google pendientes en ${sinDatos} sitio(s).`)
       );
       return { hecha: true };
-    }
+    })
   );
+
+  // Y SI ALGUNA CIUDAD NI SE LLEGÓ A EMPEZAR, SE AVISA IGUAL.
+  //
+  // El `finally` de arriba cubre las que entraron en la tarea, pero una parada
+  // pedida a media lista hace que las siguientes se salten SIN ejecutarla: esas
+  // no avisarían nunca y la fase de excursiones se quedaría esperando a alguien
+  // que ya se ha ido. Nadie debe esperar a una fase que ya ha terminado, así que
+  // al cerrar se levantan todas las banderas que falten. El plazo de espera es
+  // para los cuelgues de verdad, no para esto.
+  for (const e of etapas) {
+    if (e.punto_interes_id) avisar(avisoDeSitios(viajeId, e.punto_interes_id));
+  }
 
   // UN FALLO EN UNA CIUDAD NO SE TRAGA NI SE LLEVA A LAS DEMÁS.
   for (const [k, r] of resultados.entries()) {
