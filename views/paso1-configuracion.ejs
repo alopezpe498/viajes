@@ -244,6 +244,32 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
               <div class="nota">Total del viaje, para orientar propuestas</div>
             </div>
           </div>
+
+          <%#
+            LA REVISIÓN FINAL DEL REPARTO.
+
+            Al terminar de generar, mira ciudad por ciudad si las noches que le
+            tocaron dieron de sí y lo deja escrito en los avisos. Solo avisa: no
+            mueve ninguna noche ni rehace nada. Nace encendida porque cuesta unos
+            milisegundos y apagada no la vería nadie.
+
+            Va fuera de la rejilla de dos columnas a propósito: es un sí/no, no un
+            campo con valor, y en la rejilla quedaba como un hueco a medias.
+          %>
+          <div class="campo" style="margin-top:14px">
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-weight:400">
+              <input type="checkbox" name="revision_reparto" value="1"
+                     style="margin-top:3px;flex:0 0 auto"
+                     <%= viaje.revision_reparto ? 'checked' : '' %>>
+              <span>
+                <strong>Revisión final del reparto</strong>
+                <span class="nota" style="display:block;margin-top:2px">
+                  Al terminar, comprueba si alguna ciudad se quedó corta de días o si
+                  otra iba holgada, y lo dice en los avisos. No cambia nada del viaje.
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
 

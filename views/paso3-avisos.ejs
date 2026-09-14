@@ -9,13 +9,23 @@ const ICONOS = {
   alerta: 'ti-alert-octagon',
 };
 
-// Los avisos llegan de tres fuentes distintas y se muestran agrupados por
-// categoría: así se ve de un vistazo qué es clima y qué es papeleo.
-// El orden es el mismo en el que uno se los pregunta al planear el viaje.
+// Los avisos se muestran agrupados por categoría: así se ve de un vistazo qué es
+// clima y qué es papeleo. El orden es el mismo en el que uno se los pregunta al
+// planear el viaje, y lo del reparto va al final porque es lo último que se sabe.
+//
+// LAS TRES ÚLTIMAS LLEVABAN TIEMPO ESCRIBIÉNDOSE Y NO LAS LEÍA NADIE.
+//
+// El orquestador guarda en esta misma tabla que en Meteora se duerme sin ver los
+// monasterios, o que una excursión elegida no cupo en ningún día. Estaban en la
+// base y esta pantalla solo pintaba las tres de arriba, así que no salían aquí,
+// ni en el dosier, ni en la portada: se escribían para nadie.
 const CATEGORIAS = [
-  { clave: 'clima',     titulo: 'El tiempo',      icono: 'ti-cloud' },
-  { clave: 'seguridad', titulo: 'Seguridad',      icono: 'ti-shield' },
-  { clave: 'festivos',  titulo: 'Días festivos',  icono: 'ti-calendar-star' },
+  { clave: 'clima',        titulo: 'El tiempo',           icono: 'ti-cloud' },
+  { clave: 'seguridad',    titulo: 'Seguridad',           icono: 'ti-shield' },
+  { clave: 'festivos',     titulo: 'Días festivos',       icono: 'ti-calendar-star' },
+  { clave: 'reparto',      titulo: 'El reparto de noches', icono: 'ti-calendar-stats' },
+  { clave: 'parada-corta', titulo: 'Paradas que no caben', icono: 'ti-clock-exclamation' },
+  { clave: 'joya-en-ruta', titulo: 'Lo que te perderías', icono: 'ti-diamond' },
 ];
 
 const porCategoria = (clave) => avisos.filter((a) => a.categoria === clave);
@@ -84,9 +94,17 @@ const porCategoria = (clave) => avisos.filter((a) => a.categoria === clave);
         </form>
         <a class="boton boton--secundario" href="/viajes/<%= viaje.id %>/paso/2">Cambiar el destino</a>
       </div>
+    <% } %>
 
-    <% } else { %>
-      <%# ---------- Hecho: los avisos reales, agrupados por categoría ---------- %>
+    <%#
+      Y LOS AVISOS QUE YA HAY SE PINTAN IGUAL, aunque la consulta del destino
+      haya fallado. Los del orquestador —el reparto de noches, las paradas que no
+      caben— están escritos desde que se generó el viaje y no dependen de que
+      Open-Meteo conteste. Escondérselos a alguien porque el tiempo no se pudo
+      mirar sería tirar un aviso bueno por culpa de otra cosa.
+    %>
+    <% if (estado === 'hecho' || (estado === 'error' && avisos.length)) { %>
+      <%# ---------- Los avisos reales, agrupados por categoría ---------- %>
       <div class="aireado">
         <% CATEGORIAS.forEach(cat => { const delGrupo = porCategoria(cat.clave); %>
           <% if (delGrupo.length) { %>

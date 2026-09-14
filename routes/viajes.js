@@ -626,6 +626,11 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
     // --- Más opciones ---
     const ritmoLimpio = RITMOS.includes(ritmo) ? ritmo : 'normal';
 
+    // LA REVISIÓN FINAL DEL REPARTO. Una casilla, y las casillas no viajan en el
+    // formulario cuando están desmarcadas: ausente significa apagada, no «deja
+    // lo que había». Es lo mismo que hace la del modo automático aquí abajo.
+    const quiereRevision = Boolean(req.body.revision_reparto);
+
     // --- El modo automático ---
     //
     // Se valida ANTES de guardar nada: si falta un campo, la pantalla vuelve con
@@ -651,7 +656,7 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       `UPDATE viajes
           SET fecha_inicio = ?, fecha_fin = ?, presupuesto = ?, tipo_viaje = ?,
               adultos = ?, ninos = ?, edades_ninos = ?, ritmo = ?, ciudad_origen = ?,
-              automatico = ?, config_auto = ?
+              automatico = ?, config_auto = ?, revision_reparto = ?
         WHERE id = ?`,
       fecha_inicio,
       fecha_fin,
@@ -666,6 +671,7 @@ router.post('/viajes/:id/paso/:n', cargarViaje, async (req, res) => {
       // Al apagar el check no se borra lo contestado: si vuelve a encenderlo,
       // se encuentra sus respuestas puestas en vez de la pantalla en blanco.
       datosAuto ? JSON.stringify(datosAuto) : (viaje.config_auto ?? null),
+      quiereRevision ? 1 : 0,
       viaje.id
     );
 

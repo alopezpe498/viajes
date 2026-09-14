@@ -32,7 +32,7 @@
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { parametro } from './orquestador.js';
-import { minutosDeVisita, cierraALasMinutos, lienzoDeViaje } from './lienzo.js';
+import { minutosDeVisita, cierraALasMinutos, lienzoDeViaje, horaLibreEn, FRANJAS } from './lienzo.js';
 
 /** "07:45" -> 465. */
 function enMinutos(hora) {
@@ -51,6 +51,9 @@ const comoRato = (min) => {
   const m = Math.round(Math.max(0, min) % 60);
   return h ? `${h}h${m ? ` ${m}min` : ''}` : `${m}min`;
 };
+
+/** "1 noche" / "3 noches". Desde que se miran todas las paradas, el plural importa. */
+const noches = (etapa) => `${etapa.noches} noche${etapa.noches === 1 ? '' : 's'}`;
 
 /**
  * EL TIEMPO ÚTIL DE VERDAD DE UNA PARADA.
@@ -205,22 +208,28 @@ export function cabenLosImprescindibles(viajeId, etapa) {
 /**
  * AVISA DE LAS PARADAS DONDE SE DUERME SIN VER EL MOTIVO.
  *
- * Solo mira las paradas cortas —por debajo del mínimo de noches—, que son las
- * que la regla dejó pasar con una promesa. Las de tres noches se sostienen
- * solas.
+ * ANTES SOLO MIRABA LAS PARADAS CORTAS —por debajo del mínimo de noches—, con el
+ * argumento de que las de tres noches se sostienen solas. No es verdad, y lo
+ * enseñó Grecia: Santorini y Atenas tuvieron las MISMAS tres noches y una tuvo
+ * 1.700 minutos útiles y la otra 2.520. Ochocientos veinte minutos de diferencia
+ * —casi catorce horas— según dónde caigan los traslados. Una parada de tres
+ * noches con un día de llegada a las ocho de la tarde y una salida a mediodía
+ * puede quedarse más corta que una de dos noches bien puestas.
+ *
+ * Así que se miran TODAS las confirmadas. No hace falta ninguna otra puerta: la
+ * cuenta se autolimita sola —sin imprescindibles no hay nada que comparar, y
+ * solo se escribe cuando NO cabe—.
  *
  * Se rehace entero en cada pasada y en su propia categoría, como el resto.
  */
 export function avisarDeParadasQueNoCaben(viaje, di = () => {}) {
   ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'parada-corta'", viaje.id);
 
-  const minimo = parametro('minimo_noches_por_ciudad', 2);
   const cortas = todas(
     `SELECT * FROM etapas
-      WHERE viaje_id = ? AND estado = 'confirmada' AND noches < ?
+      WHERE viaje_id = ? AND estado = 'confirmada'
       ORDER BY orden`,
-    viaje.id,
-    minimo
+    viaje.id
   );
 
   let avisadas = 0;
@@ -231,7 +240,7 @@ export function avisarDeParadasQueNoCaben(viaje, di = () => {}) {
 
     if (r.cabe) {
       di(
-        `   ${etapa.nombre_ciudad} (${etapa.noches} noche): sus imprescindibles piden ` +
+        `   ${etapa.nombre_ciudad} (${noches(etapa)}): sus imprescindibles piden ` +
           `${r.necesarioTexto} y hay ${r.disponibleTexto} útiles. Cabe.`
       );
       continue;
@@ -279,7 +288,17 @@ export function avisarDeParadasQueNoCaben(viaje, di = () => {}) {
 export function avisarDeParadasSinSusImprescindibles(viaje, di = () => {}) {
   ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'joya-en-ruta'", viaje.id);
 
-  const pesoMinimo = parametro('peso_minimo_aviso_candidata', 4);
+  // LA PUERTA DEL PESO SE HA QUITADO, y no por ampliar: porque dejaba la función
+  // MUERTA en medio viaje.
+  //
+  // El peso solo existe si lo escribió la fase 1 en `ciudades_candidatas`. Un
+  // viaje montado a mano no tiene ninguno, así que todas las paradas valían 0,
+  // ninguna llegaba al mínimo de 4 y esta comprobación no miraba nada en
+  // absoluto. Y aun dentro de un viaje orquestado, «peso bajo» no significa
+  // «da igual no ver nada de esa ciudad»: significa que no era el motivo del
+  // viaje. Se paga la noche igual.
+  //
+  // El peso se sigue leyendo, pero solo para CONTARLO en el aviso cuando lo hay.
 
   // El peso de cada parada, tal y como lo dejó la fase 1 en las candidatas.
   let pesos = new Map();
@@ -301,7 +320,9 @@ export function avisarDeParadasSinSusImprescindibles(viaje, di = () => {}) {
 
   for (const etapa of etapas) {
     const peso = pesos.get(String(etapa.nombre_ciudad).toLowerCase()) ?? 0;
-    if (peso < pesoMinimo) continue;
+    // Solo se enseña el peso si la fase 1 lo puso: un «(peso 0)» escrito a fuego
+    // en un viaje hecho a mano no informa de nada, confunde.
+    const conPeso = peso ? ` (peso ${peso})` : '';
 
     const suyos = imprescindiblesDeParada(etapa);
     if (!suyos.length) continue;
@@ -356,8 +377,8 @@ export function avisarDeParadasSinSusImprescindibles(viaje, di = () => {}) {
        VALUES (?, 'joya-en-ruta', 'alerta', ?, ?)`,
       viaje.id,
       colocados === 0
-        ? `${etapa.nombre_ciudad} (peso ${peso}): duermes allí y no ves ninguno de sus imprescindibles`
-        : `${etapa.nombre_ciudad} (peso ${peso}): una excursión se lleva el día y te deja sin lo esencial`,
+        ? `${etapa.nombre_ciudad}${conPeso}: duermes allí y no ves ninguno de sus imprescindibles`
+        : `${etapa.nombre_ciudad}${conPeso}: una excursión se lleva el día y te deja sin lo esencial`,
       colocados === 0
         ? `Ninguno de sus ${suyos.length} imprescindibles ha entrado en el lienzo ` +
           `(${suyos.map((x) => x.nombre).join(', ')}). Se paga la noche y no se ve el motivo ` +
@@ -374,7 +395,7 @@ export function avisarDeParadasSinSusImprescindibles(viaje, di = () => {}) {
     // de 3» habiendo uno puesto es justo el tipo de número que hace que nadie se
     // fíe del resto de la línea.
     di(
-      `   AVISO GRAVE · ${etapa.nombre_ciudad} (peso ${peso}): ${colocados} de ${suyos.length} ` +
+      `   AVISO GRAVE · ${etapa.nombre_ciudad}${conPeso}: ${colocados} de ${suyos.length} ` +
         `imprescindibles colocados` +
         (faltan.length ? `; falta(n) ${faltan.map((x) => x.nombre).join(', ')}` : '') +
         (diasComidos.length
@@ -387,10 +408,284 @@ export function avisarDeParadasSinSusImprescindibles(viaje, di = () => {}) {
   return avisadas;
 }
 
+// =============================================================================
+// LA REVISIÓN FINAL DEL REPARTO
+// =============================================================================
+/**
+ * ¿TUVO SENTIDO EL REPARTO DE NOCHES? SE PREGUNTA AL FINAL, QUE ES CUANDO SE SABE.
+ *
+ * La fase 1 reparte las noches ANTES de saber qué hay en cada ciudad —los sitios
+ * se buscan tres fases más tarde— y antes de saber a qué hora se llega y se sale
+ * —eso lo deciden los traslados—. O sea que reparte a ciegas, y no puede hacer
+ * otra cosa. Al terminar el viaje ya no hay nada que adivinar: el lienzo ha
+ * colocado lo que cupo y ha apartado lo que no.
+ *
+ * ESTO SOLO MIRA Y AVISA. No mueve noches, no regenera nada, no toca el lienzo.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * POR QUÉ NO SE MIDE EN PORCENTAJE DE OCUPACIÓN. Esto es lo importante de aquí.
+ *
+ * La tentación es «minutos ocupados / minutos útiles» y está MAL. Medido en
+ * Grecia: Atenas acabó al 73 % con 690 minutos libres, y aun así el Museo
+ * Arqueológico Nacional se quedó fuera. Por la regla del porcentaje el informe
+ * habría dicho «a Atenas le sobra una noche», y es falso: esos 690 minutos
+ * estaban en trozos de 135, 240, 90 y 225, y el museo pide 180 seguidos en un
+ * sitio donde además cierre después. Preguntado hueco a hueco, en los cuatro
+ * días de Atenas solo cabía a las 17:00 del día que ya se come entero la
+ * excursión a Delfos.
+ *
+ * La media miente porque suma trozos que no se pueden usar juntos. Así que la
+ * pregunta no es CUÁNTO queda libre, sino, por cada imprescindible que no llegó,
+ * si existía UN HUECO DE VERDAD donde habría cabido. Eso lo contesta
+ * `horaLibreEn`, que ya sabe de bloques fijos, de la hora a la que se aterriza,
+ * del tope de la noche y de la hora de cierre del sitio.
+ *
+ * LO QUE `horaLibreEn` NO MIRA ES EL DÍA DE LA SEMANA. Respeta la hora de cierre
+ * (`cierraA`) pero no `cierra_dias`: un sitio que cerraba justo ese lunes puede
+ * dar «sí había hueco» y hacer que la ciudad caiga en «ajustada» en vez de en
+ * «corta». Es a propósito, y es el error prudente: se deja de gritar en algún
+ * caso, que es mucho mejor que gritar «esta ciudad se quedó corta» sin que sea
+ * verdad. Un aviso en el que no se puede confiar no sirve para nada.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+
+/** ¿Acabó este sitio en algún día del lienzo? Por identidad, como todo aquí. */
+function estaColocado(viajeId, sitioId) {
+  return Boolean(
+    una(
+      `SELECT 1 FROM itinerario i
+         JOIN candidatos c ON c.id = i.candidato_id
+        WHERE i.viaje_id = ? AND c.tipo = 'sitio' AND c.datos_extra LIKE ?`,
+      viajeId,
+      `%"deId":${sitioId}%`
+    )
+  );
+}
+
+/**
+ * ¿HAY UN HUECO DE VERDAD PARA ALGO QUE DURA `duracion` EN ESTOS DÍAS?
+ *
+ * Prueba día por día y franja por franja, y en cuanto encuentra uno para. No
+ * devuelve un sí/no: devuelve DÓNDE, porque un aviso que dice «cabría el día 5
+ * por la tarde» se puede comprobar y uno que dice «cabría» no.
+ */
+function huecoDeVerdad(lienzo, dias, duracion, cierraA = null, franjas = FRANJAS) {
+  for (const dia of dias) {
+    for (const f of franjas) {
+      const hora = horaLibreEn(lienzo, { dia, franja: f.clave, duracion, cierraA });
+      if (hora) return { dia, franja: f.clave, etiqueta: f.etiqueta, hora };
+    }
+  }
+  return null;
+}
+
+/**
+ * PARA DECIR «AQUÍ CABRÍA ALGO MÁS», LA NOCHE NO CUENTA.
+ *
+ * Un hueco libre a las ocho y media de la tarde es una cena sin reservar, no
+ * capacidad de sobra: a esa hora los museos, los yacimientos y las bodegas están
+ * cerrados, y decir que a una ciudad le sobra una noche porque tiene la velada
+ * libre es justo el consejo que esta revisión no puede dar. Para juzgar si
+ * FALTABA sitio sí se miran las cuatro, porque ahí la pregunta es la contraria:
+ * si no cabía ni de noche, desde luego no cabía.
+ */
+const FRANJAS_DE_VISITA = FRANJAS.filter((f) => f.clave !== 'noche');
+
+/**
+ * El veredicto de cada ciudad, y los avisos de las que no salen «ajustadas».
+ *
+ * Devuelve la lista de veredictos para poder probarla sin arrancar un viaje.
+ */
+export function revisarElReparto(viaje, di = () => {}) {
+  ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'reparto'", viaje.id);
+
+  const lienzo = lienzoDeViaje(viaje.id);
+  if (!lienzo?.dias?.length) {
+    di('El viaje no tiene días montados: no hay reparto que juzgar.');
+    return [];
+  }
+
+  const etapas = todas(
+    "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden",
+    viaje.id
+  );
+
+  // Lo que tiene que caber para decir que «aún cabría algo más»: una visita
+  // normal, no cinco minutos. El mismo número que usa el lienzo cuando no sabe
+  // cuánto dura algo.
+  const tipica = parametro('visita_por_defecto_min', 90);
+
+  const veredictos = [];
+
+  for (const etapa of etapas) {
+    // LOS DÍAS SE SACAN DEL LIENZO, NO DE `itinerario.etapa_id`.
+    //
+    // Esa columna puede venir vacía —en Grecia, las dos cosas del último día la
+    // tenían a null— y fiarse de ella daba «0 minutos ocupados» en un día que
+    // estaba lleno. El lienzo sabe de qué ciudad es cada día y eso nunca falta.
+    const dias = lienzo.dias.filter((d) => d.etapaId === etapa.id).map((d) => d.n);
+    const suyos = imprescindiblesDeParada(etapa);
+
+    // Sin ficha de sitios o sin días no hay juicio posible, y decir «ajustada»
+    // sería inventárselo. Se cuenta como lo que es: no se sabe.
+    if (!dias.length || !suyos.length) {
+      di(`   ${etapa.nombre_ciudad}: sin datos para juzgar el reparto (no la cuento).`);
+      veredictos.push({ etapa, que: 'sin-datos', dias, suyos: [], noLlegaron: [] });
+      continue;
+    }
+
+    // CADA UNO DE LOS QUE FALTAN SE PREGUNTA DOS VECES, Y LAS DOS HACEN FALTA.
+    //
+    // 1) ¿Cabía tal cual, con su hora de cierre? Si sí, el reparto de noches no
+    //    tiene nada que ver: el lienzo eligió otra cosa. No es cosa de aquí.
+    //
+    // 2) Si no cabía, ¿cabría suponiendo el sitio abierto todo el día? Esta
+    //    segunda es la que separa las dos razones de no caber, y sin ella el
+    //    aviso miente. El caso real: el Museo Arqueológico de Atenas pide tres
+    //    horas y `cierraALasMinutos` le da las 15:30 —el cierre más temprano de
+    //    todos sus tramos, que es la respuesta prudente—. Con ese tope no cabe
+    //    en ningún día; ignorándolo, cabe de sobra el día 6 a las 17:00. O sea
+    //    que a Atenas NO le falta tiempo: le falta mañana. Decirle a alguien
+    //    «dale otra noche a Atenas» por un horario de cierre es exactamente el
+    //    consejo falso que esta revisión existe para no dar.
+    //
+    // CORTA es, entonces, «hay algo que no cabe NI CON EL SITIO ABIERTO TODO EL
+    // DÍA». Eso ya solo lo puede arreglar más tiempo.
+    const noLlegaron = suyos
+      .filter((x) => !estaColocado(viaje.id, x.id))
+      .map((x) => {
+        const donde = huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA);
+        const sinSuHorario = donde ? null : huecoDeVerdad(lienzo, dias, x.minutos);
+        return {
+          ...x,
+          donde,
+          // Las tres razones posibles de que no esté, y son distintas:
+          por: donde ? 'el lienzo eligió otra cosa' : sinSuHorario ? 'su horario' : 'falta de tiempo',
+        };
+      });
+
+    const porTiempo = noLlegaron.filter((x) => x.por === 'falta de tiempo');
+    const porHorario = noLlegaron.filter((x) => x.por === 'su horario');
+    const conHueco = noLlegaron.filter((x) => x.donde);
+
+    // Y al revés: ¿queda sitio para una visita más? Solo importa si no falta
+    // nada, porque una ciudad a la que le sobra tiempo Y le faltan cosas es una
+    // contradicción que significa otra cosa (ver arriba).
+    const sobra = noLlegaron.length ? null : huecoDeVerdad(lienzo, dias, tipica, null, FRANJAS_DE_VISITA);
+
+    const que = porTiempo.length ? 'corta' : !noLlegaron.length && sobra ? 'holgada' : 'ajustada';
+
+    veredictos.push({ etapa, que, dias, suyos, noLlegaron, porTiempo, porHorario, conHueco, sobra });
+  }
+
+  // --- El registro se lleva TODAS, salgan como salgan --------------------
+  //
+  // Los avisos son para lo que hay que mirar; el registro es la foto completa.
+  // Una ciudad «ajustada» no merece un aviso, pero sí merece que quede escrito
+  // que se miró y salió bien.
+  const juzgadas = veredictos.filter((v) => v.que !== 'sin-datos');
+  const NOMBRE = { corta: 'se quedó CORTA', holgada: 'iba HOLGADA', ajustada: 'ajustada' };
+
+  for (const v of juzgadas) {
+    di(
+      `   ${v.etapa.nombre_ciudad} (${noches(v.etapa)}, ${v.dias.length} día(s)): ${NOMBRE[v.que]} — ` +
+        `${v.suyos.length - v.noLlegaron.length} de ${v.suyos.length} imprescindibles colocados` +
+        (v.que === 'corta'
+          ? `. No cabe${v.porTiempo.length === 1 ? '' : 'n'} en ningún hueco, ni con el sitio abierto ` +
+            `todo el día: ${v.porTiempo.map((x) => `${x.nombre} (${x.minutos} min)`).join(', ')}.`
+          : v.que === 'holgada'
+            ? `, y aún cabría otra visita de ${tipica} min (día ${v.sobra.dia}, ${v.sobra.etiqueta.toLowerCase()}).`
+            : '.')
+    );
+
+    // Y lo que falta POR OTRAS RAZONES se dice igual, aunque no cambie el
+    // veredicto: es la diferencia entre «no cabía» y «no lo pusieron».
+    //
+    // CON TOPE, porque si no el registro se vuelve ilegible justo cuando más
+    // hay que mirarlo: una ciudad cuyo lienzo se quedó vacío tiene las veinte
+    // fichas sin colocar y las veinte con hueco, y veinte líneas seguidas
+    // diciendo lo mismo no se lee ninguna. Se enseñan tres y se cuenta el resto.
+    const TOPE = 3;
+    const conRecorte = (lista, linea) => {
+      for (const x of lista.slice(0, TOPE)) di(linea(x));
+      if (lista.length > TOPE) di(`      · …y ${lista.length - TOPE} más.`);
+    };
+
+    conRecorte(
+      v.porHorario,
+      (x) => `      · ${x.nombre} no entró por su horario (cierra pronto), no por falta de tiempo.`
+    );
+    conRecorte(
+      v.conHueco,
+      (x) =>
+        `      · ${x.nombre} tenía hueco libre (día ${x.donde.dia}, ${x.donde.etiqueta.toLowerCase()}, ` +
+        `${x.donde.hora}) y aun así no se colocó: eso no es cosa del reparto.`
+    );
+  }
+
+  // --- Y los avisos, solo de lo que no es «ajustada» ---------------------
+  const cortas = juzgadas.filter((v) => v.que === 'corta');
+  const holgadas = juzgadas.filter((v) => v.que === 'holgada');
+
+  const meter = (severidad, titulo, texto) =>
+    ejecutar(
+      `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+       VALUES (?, 'reparto', ?, ?, ?)`,
+      viaje.id,
+      severidad,
+      titulo,
+      texto
+    );
+
+  for (const v of cortas) {
+    const faltan = v.porTiempo.map((x) => `${x.nombre} (${x.minutos} min)`).join(', ');
+    // DE DÓNDE SALDRÍA LA NOCHE. Es la frase que convierte un diagnóstico en algo
+    // que se puede hacer. Y no se hace: se dice.
+    const deDonde = holgadas.length
+      ? ` En cambio ${holgadas.map((h) => h.etapa.nombre_ciudad).join(' y ')} ` +
+        `${holgadas.length === 1 ? 'iba holgada' : 'iban holgadas'}: si mueves una noche de ` +
+        `${holgadas[0].etapa.nombre_ciudad} a ${v.etapa.nombre_ciudad}, es probable que quepa.`
+      : ' Ninguna otra parada va holgada, así que la noche tendría que salir de alargar el viaje.';
+
+    meter(
+      'alerta',
+      `${v.etapa.nombre_ciudad} (${noches(v.etapa)}): se quedó corta`,
+      `No ha entrado ${v.porTiempo.length === 1 ? 'un imprescindible' : `${v.porTiempo.length} imprescindibles`} ` +
+        `de esta parada y no es cuestión de horarios: ${faltan} no cabe${v.porTiempo.length === 1 ? '' : 'n'} ` +
+        `en NINGÚN hueco de los ${v.dias.length} día(s) que tuvo, ni suponiendo el sitio abierto de la ` +
+        `mañana a la noche. Eso solo lo arregla más tiempo.${deDonde} ` +
+        'Esto solo avisa: no se ha cambiado nada del viaje.'
+    );
+  }
+
+  for (const v of holgadas) {
+    meter(
+      'info',
+      `${v.etapa.nombre_ciudad} (${noches(v.etapa)}): iba holgada`,
+      `Sus ${v.suyos.length} imprescindibles han entrado todos y todavía queda un hueco real para ` +
+        `otra visita de ${tipica} minutos (día ${v.sobra.dia}, ${v.sobra.etiqueta.toLowerCase()}, ` +
+        `a partir de las ${v.sobra.hora}).` +
+        (cortas.length
+          ? ` Y ${cortas.map((c) => c.etapa.nombre_ciudad).join(' y ')} se quedó corta: la noche que ` +
+            'sobra aquí es la que allí falta.'
+          : ' Puedes añadir algo de la mochila, o dedicar ese rato a no hacer nada, que también cuenta.')
+    );
+  }
+
+  const resumen = juzgadas.length
+    ? `Revisión del reparto: ${cortas.length} parada(s) corta(s), ${holgadas.length} holgada(s), ` +
+      `${juzgadas.length - cortas.length - holgadas.length} ajustada(s).`
+    : 'Revisión del reparto: no había ninguna parada con datos suficientes para juzgarla.';
+  di(resumen);
+
+  return veredictos;
+}
+
 export default {
   tiempoUtilDeParada,
   avisarDeParadasSinSusImprescindibles,
   imprescindiblesDeParada,
   cabenLosImprescindibles,
   avisarDeParadasQueNoCaben,
+  revisarElReparto,
 };

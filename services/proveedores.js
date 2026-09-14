@@ -700,18 +700,36 @@ export async function obtenerAvisos(viaje) {
     viaje.id
   );
 
-  if (guardados.length) return { estado: 'hecho', avisos: guardados, trabajo: null };
+  // «YA ESTÁ HECHO» TIENE QUE MIRAR SOLO LO QUE ESTA BÚSQUEDA TRAE.
+  //
+  // Esta tabla la comparten dos escritores: esta consulta —clima, seguridad y
+  // festivos— y el orquestador, que deja aquí lo suyo al generar el viaje (el
+  // reparto de noches, las paradas que no caben, el coste de los traslados).
+  //
+  // Mirando si había CUALQUIER fila, un viaje generado antes de pasar por esta
+  // pantalla se encontraba con que ya «estaba hecho» por un aviso del
+  // orquestador, y el clima no se buscaba nunca: la pantalla enseñaba el aviso
+  // del reparto y ni una palabra del tiempo. Con 'traslado' ya podía pasar; con
+  // el del reparto, que se escribe en todos los viajes, pasaría siempre.
+  const MIAS = ['clima', 'seguridad', 'festivos'];
+  if (guardados.some((a) => MIAS.includes(a.categoria))) {
+    return { estado: 'hecho', avisos: guardados, trabajo: null };
+  }
 
+  // Y LO QUE YA HAY VIAJA EN LOS TRES CASOS, aunque esta busqueda este a medias
+  // o haya fallado. Devolver la lista vacia mientras se mira el tiempo escondia
+  // el aviso del reparto, y si el clima fallaba de verdad lo escondia para
+  // siempre. Un aviso ya escrito no depende de que otra consulta salga bien.
   const activo = trabajoActivo(viaje.id, 'avisos');
-  if (activo) return { estado: 'buscando', avisos: [], trabajo: activo };
+  if (activo) return { estado: 'buscando', avisos: guardados, trabajo: activo };
 
   const ultimo = ultimoTrabajo(viaje.id, 'avisos');
-  if (ultimo?.estado === 'error') return { estado: 'error', avisos: [], trabajo: ultimo };
+  if (ultimo?.estado === 'error') return { estado: 'error', avisos: guardados, trabajo: ultimo };
 
   // Aqui SI encolamos solos: llegar a la pantalla 3 es justo el momento de
   // tener los avisos, y no hay nada que configurar antes.
   const nuevo = encolar(viaje.id, 'avisos');
-  return { estado: 'buscando', avisos: [], trabajo: nuevo };
+  return { estado: 'buscando', avisos: guardados, trabajo: nuevo };
 }
 
 /** Vuelve a consultar las tres fuentes. Los avisos no se marcan: se rehacen. */

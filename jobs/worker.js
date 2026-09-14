@@ -61,6 +61,7 @@ import { ejecutarFaseExcursiones } from '../services/orquestador-excursiones.js'
 import { ejecutarFaseLienzo } from '../services/orquestador-lienzo.js';
 import { asegurarEstimacion } from '../services/presupuesto.js';
 import { traducirRegistro } from '../services/registro-traducido.js';
+import { revisarElReparto } from '../services/orquestador-paradas-cortas.js';
 import {
   paradaPedida,
   limpiarParada,
@@ -1167,11 +1168,25 @@ async function ejecutarAvisos(trabajo) {
   try {
     // Los de este viaje se rehacen enteros: son una foto, no una selección.
     //
-    // Menos los de categoría 'vuelo', que no los pone esta búsqueda sino el
-    // orquestador al elegir los billetes —«la vuelta sale a las 4:10 y se come
-    // la última noche»—. Borrarlos aquí sería tirar un aviso que nadie va a
-    // volver a generar.
-    db.prepare("DELETE FROM avisos WHERE viaje_id = ? AND categoria <> 'vuelo'").run(viaje.id);
+    // PERO SOLO LOS SUYOS. Esta búsqueda pregunta por el clima, la seguridad y
+    // los festivos del destino; todo lo demás que hay en esta tabla lo escribe
+    // el orquestador UNA VEZ, al generar el viaje, y nadie lo vuelve a generar.
+    //
+    // Antes esto era `categoria <> 'vuelo'`, y el botón «Actualizar datos» de la
+    // pantalla de avisos se llevaba por delante el aviso de que la vuelta sale a
+    // las 4:10, el de que en Meteora se duerme sin ver los monasterios y el del
+    // reparto de noches. Se recuperaban regenerando el viaje entero, que es un
+    // precio absurdo por mirar el tiempo.
+    //
+    // Lista blanca y no lista negra a propósito: si mañana aparece una categoría
+    // nueva de esta búsqueda, lo peor que pasa es que no se limpie: se ve y se
+    // añade. Al revés, un aviso del orquestador desaparecería en silencio.
+    db.prepare(
+      `DELETE FROM avisos
+        WHERE viaje_id = ?
+          AND categoria NOT IN ('vuelo', 'reparto', 'parada-corta', 'joya-en-ruta',
+                                'traslado', 'excursion', 'reserva-sitio')`
+    ).run(viaje.id);
     for (const a of avisos) {
       insertar.run(viaje.id, a.categoria, a.severidad, a.titulo, a.texto ?? null, a.url ?? null);
     }
@@ -1721,6 +1736,18 @@ async function ejecutarOrquestador(trabajo) {
 
   await ejecutarPresupuesto({ id: trabajo.id, viajeId });
 
+  // --- LA REVISIÓN FINAL DEL REPARTO --------------------------------------
+  //
+  // Aquí y no dentro de la fase 6, porque la pregunta que contesta no es de una
+  // ciudad: es «¿tuvo sentido repartir las noches así?», y para eso hay que ver
+  // todas a la vez y con todo terminado. Y ANTES de `traducirRegistro`, que es
+  // quien congela el registro para la vista traducida: detrás de ella, lo que
+  // escriba este paso no saldría en esa pantalla.
+  //
+  // Va con su try/catch dentro, como el presupuesto: un fallo contando huecos no
+  // puede convertir un viaje bien montado en un viaje con error.
+  await ejecutarRevisionDelReparto({ id: trabajo.id, viajeId });
+
   // LA VISTA TRADUCIDA, DE UNA PASADA Y AQUÍ.
   //
   // Es el único momento en que el registro está completo y quieto. Traducirlo al
@@ -1772,6 +1799,51 @@ async function ejecutarPresupuesto({ id, viajeId }) {
     );
   } catch (err) {
     console.warn(`[worker] Trabajo #${id}: no se pudo estimar el gasto diario (${err.message}).`);
+  }
+}
+
+/**
+ * LA REVISIÓN FINAL DEL REPARTO DE NOCHES.
+ *
+ * Con el viaje entero montado, juzga ciudad por ciudad si las noches que le
+ * tocaron dieron de sí: corta, holgada o ajustada. Solo mira y avisa; no mueve
+ * una sola noche ni regenera nada.
+ *
+ * SE PUEDE APAGAR POR VIAJE (`viajes.revision_reparto`). Apagada, el viaje queda
+ * exactamente como quedaba antes de que esto existiera.
+ *
+ * Y NO CORRE AL ABRIR UN VIAJE VIEJO. Esto vive dentro de `ejecutarOrquestador`,
+ * que solo se ejecuta con un trabajo de tipo «orquestador», y ese trabajo solo
+ * lo encolan `lanzarOrquestador` y `reanudarOrquestador`. Mirar un viaje no
+ * encola nada: la columna nueva, con su DEFAULT 1, solo dice qué pasará la
+ * próxima vez que alguien pulse generar.
+ *
+ * El try/catch es el mismo del presupuesto y por lo mismo: contar huecos no
+ * puede tumbar un viaje que ya está bien montado.
+ */
+async function ejecutarRevisionDelReparto({ id, viajeId }) {
+  const viaje = una('SELECT * FROM viajes WHERE id = ?', viajeId);
+  if (!viaje) return;
+
+  const ultima = FASES[FASES.length - 1].clave;
+
+  if (!viaje.revision_reparto) {
+    console.log(`[worker] Trabajo #${id}: revisión del reparto desactivada en este viaje.`);
+    return;
+  }
+
+  try {
+    const veredictos = revisarElReparto(viaje, (t) => anotar(viajeId, ultima, t, ORIGENES.ninguno));
+    const cuenta = (q) => veredictos.filter((v) => v.que === q).length;
+    console.log(
+      `[worker] Trabajo #${id}: revisión del reparto — ${cuenta('corta')} corta(s), ` +
+        `${cuenta('holgada')} holgada(s), ${cuenta('ajustada')} ajustada(s).`
+    );
+  } catch (err) {
+    // Se dice en el registro además de en la consola: un paso que se cae en
+    // silencio parece un paso que dijo «todo bien».
+    anotar(viajeId, ultima, `No pude revisar el reparto de noches (${err.message}).`, ORIGENES.ninguno);
+    console.warn(`[worker] Trabajo #${id}: falló la revisión del reparto (${err.message}).`);
   }
 }
 

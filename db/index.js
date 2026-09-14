@@ -398,6 +398,7 @@ export function migrarEsquema() {
   migracionCosteDeTrasladosInternos();
   migracionRegistroTraducido();
   migracionAliasDeCivitatis();
+  migracionRevisionDelReparto();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5561,6 +5562,36 @@ function migracionRegistroTraducido() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: vista traducida del registro.');
+  return true;
+}
+
+/**
+ * LA REVISION FINAL DEL REPARTO DE NOCHES.
+ *
+ * La fase 1 reparte las noches antes de saber que hay en cada ciudad y antes de
+ * saber a que hora se llega y se sale. Al terminar el viaje eso ya no hay que
+ * adivinarlo, asi que un paso final lo juzga: corta, holgada o ajustada. Solo
+ * avisa; no mueve ninguna noche.
+ *
+ * SE ENCIENDE POR VIAJE, y nace encendida. Cuesta unos milisegundos, no llama a
+ * la IA ni a la red, y apagada por defecto no la veria nadie nunca.
+ *
+ * A UN VIAJE YA GENERADO ESTO NO LE HACE NADA. La revision vive dentro del
+ * trabajo del orquestador, que solo se encola al pulsar generar o reanudar:
+ * abrir un viaje viejo no la dispara. La columna solo dice que pasara la proxima
+ * vez que ese viaje se genere.
+ */
+function migracionRevisionDelReparto() {
+  const CLAVE = '2026-09-revision-del-reparto';
+  if (yaAplicada(CLAVE)) return false;
+
+  const columnas = db.prepare('PRAGMA table_info(viajes)').all().map((c) => c.name);
+  if (!columnas.includes('revision_reparto')) {
+    db.exec('ALTER TABLE viajes ADD COLUMN revision_reparto INTEGER NOT NULL DEFAULT 1');
+  }
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: revision final del reparto de noches.');
   return true;
 }
 
