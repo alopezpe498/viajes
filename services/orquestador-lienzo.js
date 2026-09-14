@@ -931,8 +931,37 @@ function recolocarConHora(
 function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
   let tocados = 0;
 
-  for (const c of lienzo.colocados) {
-    if (idos.has(c.id)) continue;
+  // EL TABLERO SE RELEE DESPUÉS DE CADA MOVIMIENTO.
+  //
+  // EL FALLO QUE ORIGINA ESTO, y viene del viaje 38. Este bucle recorría todo lo
+  // colocado llamando a `recolocarConHora` SIEMPRE con el mismo `lienzo`: la foto
+  // con la que arrancó la pasada. Así que la segunda tarjeta buscaba hueco sin
+  // ver dónde acababa de aterrizar la primera, y salía esto:
+  //
+  //     Basílica de Santa María … lo paso al día 4 a las 11:45.
+  //     Sinagoga del Templo    … lo paso al día 4 a las 11:45.
+  //     Iglesia de Corpus Christi … lo paso al día 4 a las 11:45.
+  //
+  // Tres bloques al mismo minuto del mismo día, y la revisión siguiente teniendo
+  // que deshacer tres solapes recién creados. `horaLibreEn` calcula bien los
+  // huecos —no es él— : es que le dábamos un tablero caducado.
+  //
+  // `resolverChoque` ya resolvió esto mismo unas líneas más abajo y su comentario
+  // lo explica. Aquí se aplica el mismo patrón entero, que son cuatro cosas y no
+  // una: releer, rehacer la tarjeta por su id, usar la fresca en vez de la vieja,
+  // y saltarse la que ya no esté porque se la llevó otro arreglo de esta pasada.
+  let tablero = lienzo;
+
+  // La LISTA de candidatos se fija al entrar —es a quién hay que mirar— pero el
+  // estado de cada uno se relee. Iterar sobre `tablero.colocados` mientras cambia
+  // sería recorrer una lista que se mueve bajo los pies.
+  const candidatos = lienzo.colocados.map((x) => x.id);
+
+  for (const id of candidatos) {
+    if (idos.has(id)) continue;
+
+    const c = tablero.colocados.find((x) => x.id === id);
+    if (!c) continue;
     if (esComida(c)) continue;
 
     const naturaleza = naturalezaDe(c);
@@ -943,9 +972,10 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
       ? `solo tiene pases a las ${naturaleza.sesiones.join(' y ')}`
       : 'es cosa de última hora';
 
-    const r = recolocarConHora(viajeId, lienzo, c);
+    const r = recolocarConHora(viajeId, tablero, c);
     if (r.movido) {
       di(`   ${c.nombre} estaba a las ${c.hora} y ${comoEs}: lo paso al día ${r.dia} a las ${r.hora}.`);
+      tablero = lienzoDeViaje(viajeId);
       tocados += 1;
       continue;
     }
@@ -957,12 +987,16 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
     // la etiqueta— llamaba a `sacar` sin preguntarle a nadie. Toda expulsión
     // pasa por el mismo sitio o la regla no sirve de nada.
     if (esDeLosQueNoSePuedenPerder(c)) {
-      const ultimo = agotarLaParada(viajeId, lienzo, c, di);
+      // También con el tablero al día: `agotarLaParada` aparta cosas de otros
+      // días para hacer sitio, y decidir cuáles con la foto vieja es el mismo
+      // error un piso más abajo.
+      const ultimo = agotarLaParada(viajeId, tablero, c, di);
       if (ultimo.movido) {
         di(
           `   ${c.nombre} no se pierde: lo llevo al día ${ultimo.dia} a las ${ultimo.hora}` +
             (ultimo.aparte ? ` (aparté ${ultimo.aparte}).` : '.')
         );
+        tablero = lienzoDeViaje(viajeId);
         tocados += 1;
         continue;
       }
@@ -971,11 +1005,14 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
         `${comoEs} y no cabe en ninguna de sus horas en ningún día de la parada — ` +
           `${ultimo.porQueNo.join('; ') || 'sin días alternativos'}`
       );
+      // Sacar algo deja un hueco: el siguiente candidato tiene derecho a verlo.
+      tablero = lienzoDeViaje(viajeId);
       tocados += 1;
       continue;
     }
 
     sacar(c, `estaba a las ${c.hora} y ${comoEs}; no encontré ninguna de sus horas libre`);
+    tablero = lienzoDeViaje(viajeId);
     tocados += 1;
   }
 
