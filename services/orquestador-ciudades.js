@@ -867,7 +867,18 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     ORIGENES.ninguno
   );
 
-  porQue = `entro por ${elegida.entrada.ciudad} y salgo por ${elegida.salida.ciudad}`;
+  // EL TEXTO DE RESPALDO YA CUENTA LA RUTA DE VERDAD.
+  //
+  // Es el que se usa cuando la IA no redacta o cuando su redacción se descarta, y
+  // hasta ahora era un «entro por X y salgo por Y» pelado. No hace falta que lo
+  // sea: el reparto con el que se ha puntuado la puerta está aquí mismo, lo ha
+  // calculado el código y es el orden que se va a montar. Dicho por el código no
+  // puede salir mal ordenado, que es justo lo que sí le pasa a la IA.
+  porQue =
+    `entro por ${elegida.entrada.ciudad} y salgo por ${elegida.salida.ciudad}, ` +
+    `con el reparto ${elegida.mejorReparto.reparto
+      .map((x) => `${x.ciudad} ${x.noches}n`)
+      .join(' → ')}`;
 
   avisarDeTrasladosCaros(viajeId, elegida, combinaciones, candidatas, tiemposVivos, noches, minimoNoches);
 
@@ -928,8 +939,6 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
           continue;
         }
 
-        if (typeof r?.por_que === 'string' && r.por_que.trim()) porQue = r.por_que.trim();
-
         // LA RUTA QUE LA IA IMAGINÓ AL REDACTAR. Y se llama así a propósito.
         //
         // Se llamaba «Ruta con la que ha echado la cuenta» y era mentira: la
@@ -943,7 +952,28 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         rutaPrevista = saneaRutaPrevista(r?.ruta_prevista, candidatas, elegida, (t) =>
           anotar(viajeId, 'ciudades_y_noches', t)
         );
+        // EL TEXTO SOLO VALE SI SU RUTA VALÍA, y este orden es todo el arreglo.
+        //
+        // EL FALLO QUE ORIGINA ESTO. El `por_que` se aceptaba ARRIBA, antes de
+        // validar nada. Así que cuando `saneaRutaPrevista` rechazaba la ruta
+        // —porque no empieza en la entrada y acaba en la salida— se tiraba la
+        // ruta y se guardaba el texto que la narraba. En Grecia salió esto:
+        //
+        //   Puerta elegida: …recorrer Grecia de norte a sur: Tesalónica (2n) →
+        //   Atenas (2n) → Nafplio (2n)…
+        //
+        // cuando la ruta que se montó fue Tesalónica → Nafplio → Atenas. El
+        // recorrido de verdad acaba en la puerta de salida; el del texto la
+        // dejaba en medio. La ruta se había corregido sola y la explicación se
+        // quedó contando la que se tiró, que es peor que no explicar nada: quien
+        // lo lee cree que su viaje es otro.
+        //
+        // Ahora el texto entra por la misma puerta que la ruta: si la ruta no
+        // pasa el filtro, su redacción tampoco, y queda el texto de respaldo —que
+        // lo escribe el código con el reparto real, unas líneas más arriba—.
         if (rutaPrevista) {
+          if (typeof r?.por_que === 'string' && r.por_que.trim()) porQue = r.por_que.trim();
+
           anotar(
             viajeId,
             'ciudades_y_noches',
