@@ -17,6 +17,7 @@ import { router } from './routes/viajes.js';
 import { arrancarWorker } from './jobs/worker.js';
 import { hayClaveIA } from './lib/ia.js';
 import { hayClaveGoogle } from './lib/google.js';
+import { volcarAjustes } from './services/ajustes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +51,17 @@ app.use((err, req, res, _next) => {
 crearEsquema();
 migrarEsquema();   // añade columnas nuevas y renumera pasos si hace falta
 sembrarSiHaceFalta();
+
+// LAS CLAVES GUARDADAS, ANTES DE QUE NADIE LAS PIDA.
+//
+// Vuelca a `process.env` lo que haya en `ajustes_instalacion`, y tiene que pasar
+// aquí: después de migrar —la tabla puede no existir todavía— y antes del
+// worker, que es lo primero que va a querer la clave de la IA.
+//
+// Con la tabla vacía no pisa nada y todo sigue leyendo el `.env` de siempre, que
+// es lo que permite que esto entre en una instalación que ya funciona sin que se
+// entere. El orden es siempre tabla → .env → fábrica.
+volcarAjustes();
 
 // La cola de scraping vive dentro de este mismo proceso: marca como
 // interrumpidos los trabajos que quedaron a medias y se pone a escuchar.

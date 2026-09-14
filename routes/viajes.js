@@ -203,6 +203,12 @@ import {
   cargarPlantillaEn,
 } from '../services/plantillas.js';
 import {
+  ajustesParaLaPantalla,
+  guardarAjuste,
+  quitarAjuste,
+  probarAjuste,
+} from '../services/ajustes.js';
+import {
   traducirRegistro,
   registroTraducidoDe,
   cambiosAMano,
@@ -2861,7 +2867,44 @@ router.post('/viajes/:id/orquestador/parar', cargarViaje, async (req, res) => {
  * ver las dos. Ahora va todo junto, sección por sección.
  */
 router.get('/orquestador', (req, res) => {
-  res.render('orquestador', { secciones: seccionesDelOrquestador() });
+  res.render('orquestador', {
+    secciones: seccionesDelOrquestador(),
+    // Las claves NO viajan aquí: de los secretos solo van `hay` y los cuatro
+    // últimos caracteres. Mirar el HTML de esta página no enseña ninguna clave.
+    instalacion: ajustesParaLaPantalla(),
+  });
+});
+
+// =============================================================================
+// LOS AJUSTES DE INSTALACIÓN — las claves, fuera del .env
+// =============================================================================
+/**
+ * Guardar, quitar y probar. Las tres devuelven el ajuste con la misma forma que
+ * la pantalla ya sabe pintar, para que no haya dos maneras de describir lo mismo.
+ */
+router.post('/api/ajustes/:clave', (req, res) => {
+  const r = guardarAjuste(req.params.clave, req.body?.valor);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json(r);
+});
+
+router.post('/api/ajustes/:clave/quitar', (req, res) => {
+  const r = quitarAjuste(req.params.clave);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json(r);
+});
+
+/**
+ * Probar una credencial.
+ *
+ * Acepta un `valor` suelto para poder comprobar una clave ANTES de guardarla,
+ * que es lo que uno quiere hacer al pegar una nueva. Sin él se prueba la que
+ * esté en vigor.
+ */
+router.post('/api/ajustes/:clave/probar', async (req, res) => {
+  const r = await probarAjuste(req.params.clave, req.body?.valor ?? null);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json(r);
 });
 
 // Las dos direcciones de antes siguen funcionando: llevan a la pantalla nueva,

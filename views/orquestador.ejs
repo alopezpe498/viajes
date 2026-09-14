@@ -50,12 +50,121 @@ function cuando(iso) {
     <%# Un índice para no tener que bajar a buscar. Con siete secciones y prompts
         largos, la pantalla es larga: esto la vuelve navegable. %>
     <nav class="orq-indice" aria-label="Secciones">
+      <a class="orq-indice__enlace" href="#seccion-instalacion">
+        <i class="ti ti-key" aria-hidden="true"></i> Instalación
+      </a>
       <% secciones.forEach(s => { %>
         <a class="orq-indice__enlace" href="#seccion-<%= s.clave %>">
           <i class="ti <%= s.icono %>" aria-hidden="true"></i> <%= s.etiqueta %>
         </a>
       <% }) %>
     </nav>
+
+    <%# ======================= INSTALACIÓN =======================
+        Las claves y los ajustes del servidor. Van primeras porque sin ellas no
+        funciona nada de lo de abajo, y con su propio render: los parámetros de
+        las fases son números con valor de fábrica y un botón de restaurar, y una
+        credencial no es ninguna de esas tres cosas.
+
+        LA CLAVE NUNCA VIAJA A ESTA PÁGINA. De los secretos solo llega `hay` y
+        los cuatro últimos caracteres. Mirar el código de la página no enseña
+        ninguna clave. %>
+    <section class="orq-seccion" id="seccion-instalacion">
+      <header class="orq-seccion__cabecera">
+        <h2 class="orq-seccion__titulo">
+          <i class="ti ti-key" aria-hidden="true"></i> Instalación
+        </h2>
+        <p class="orq-seccion__explica">
+          Las claves de las APIs y los ajustes del servidor. Lo que guardes aquí manda
+          sobre el fichero <code>.env</code>; lo que dejes sin guardar se sigue leyendo
+          de él. El <code>.env</code> no se toca nunca.
+        </p>
+      </header>
+
+      <ul class="orq-ajustes">
+        <% instalacion.forEach(a => { %>
+          <li class="orq-ajuste" data-ajuste="<%= a.clave %>" data-secreto="<%= a.secreto ? '1' : '' %>">
+            <div class="orq-ajuste__texto">
+              <label class="orq-parametro__nombre" for="a-<%= a.clave %>"><%= a.etiqueta %></label>
+              <code class="orq-parametro__clave"><%= a.clave %></code>
+              <p class="orq-ajuste__explica"><%= a.explica %></p>
+            </div>
+
+            <div class="orq-ajuste__control">
+              <%# --- De dónde sale lo que se está usando ahora mismo --- %>
+              <span class="orq-origen orq-origen--<%= a.origen %>" data-origen>
+                <% if (a.origen === 'guardado') { %>Guardado aquí<% } %>
+                <% if (a.origen === 'entorno') { %>Del .env<% } %>
+                <% if (a.origen === 'fabrica') { %>De fábrica<% } %>
+                <% if (a.origen === 'sin-configurar') { %>Sin configurar<% } %>
+              </span>
+
+              <div class="orq-ajuste__fila">
+                <% if (a.secreto) { %>
+                  <%# EL CAMPO NACE BLOQUEADO CON PUNTITOS si ya hay clave. Para
+                      cambiarla hay que pulsar Reemplazar: así no se borra de un
+                      clic distraído algo que no se puede volver a ver. %>
+                  <input type="password" id="a-<%= a.clave %>" data-valor
+                         autocomplete="off" spellcheck="false"
+                         placeholder="<%= a.hay ? '' : 'Pega aquí la clave' %>"
+                         value="<%= a.hay ? '••••••••••••' : '' %>"
+                         <%= a.hay ? 'readonly' : '' %>
+                         aria-label="<%= a.etiqueta %>">
+                  <% if (a.pista) { %>
+                    <span class="orq-ajuste__pista" data-pista>acaba en <%= a.pista %></span>
+                  <% } %>
+                <% } else { %>
+                  <input type="text" id="a-<%= a.clave %>" data-valor
+                         autocomplete="off" spellcheck="false"
+                         placeholder="<%= a.fabrica || '(vacío)' %>"
+                         value="<%= a.valor || '' %>"
+                         aria-label="<%= a.etiqueta %>">
+                <% } %>
+              </div>
+
+              <div class="orq-ajuste__botones">
+                <% if (a.secreto) { %>
+                  <button type="button" class="boton-discreto" data-reemplazar
+                          <%= a.hay ? '' : 'hidden' %>>
+                    <i class="ti ti-pencil" aria-hidden="true"></i> Reemplazar
+                  </button>
+                  <button type="button" class="boton-discreto" data-guardar-ajuste
+                          <%= a.hay ? 'hidden' : '' %>>
+                    <i class="ti ti-device-floppy" aria-hidden="true"></i> Guardar
+                  </button>
+                <% } else { %>
+                  <button type="button" class="boton-discreto" data-guardar-ajuste>
+                    <i class="ti ti-device-floppy" aria-hidden="true"></i> Guardar
+                  </button>
+                <% } %>
+
+                <% if (a.sePuedeProbar) { %>
+                  <button type="button" class="boton-discreto" data-probar>
+                    <i class="ti ti-plug-connected" aria-hidden="true"></i> Probar
+                  </button>
+                <% } %>
+
+                <%# Quitar solo tiene sentido si hay algo guardado AQUÍ: lo que
+                    viene del .env no se quita desde una pantalla. %>
+                <button type="button" class="boton-discreto orq-ajuste__quitar" data-quitar
+                        <%= a.origen === 'guardado' ? '' : 'hidden' %>>
+                  <i class="ti ti-trash" aria-hidden="true"></i> Quitar
+                </button>
+              </div>
+
+              <p class="orq-ajuste__resultado" data-resultado hidden></p>
+            </div>
+          </li>
+        <% }) %>
+      </ul>
+
+      <p class="orq-ajuste__nota">
+        <i class="ti ti-info-circle" aria-hidden="true"></i>
+        El <strong>puerto</strong> no se ajusta aquí: se lee del <code>.env</code> al
+        arrancar, y cambiarlo desde una página serviría de poco —haría falta reiniciar,
+        y hasta entonces esta pantalla se seguiría sirviendo por el puerto viejo—.
+      </p>
+    </section>
 
     <% secciones.forEach(s => { %>
       <section class="orq-seccion" id="seccion-<%= s.clave %>">

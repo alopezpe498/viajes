@@ -400,6 +400,7 @@ export function migrarEsquema() {
   migracionAliasDeCivitatis();
   migracionRevisionDelReparto();
   migracionPlantillasConfig();
+  migracionAjustesDeInstalacion();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5633,6 +5634,43 @@ function migracionPlantillasConfig() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: plantillas de configuracion de viaje.');
+  return true;
+}
+
+/**
+ * LOS AJUSTES DE INSTALACION: las claves, fuera del .env.
+ *
+ * Hasta ahora, cambiar la clave de la IA o la de Google pedia entrar al servidor
+ * por SSH y editar un fichero. Eso convierte «pasarle la aplicacion a alguien»
+ * en «ensenarle a editar un .env por SSH», que no es pasarsela.
+ *
+ * SOLO GUARDA LO QUE EL USUARIO HAYA PUESTO. Lo que no este en esta tabla NO
+ * EXISTE aqui: se lee del .env, y si tampoco esta, del valor de fabrica. Ese
+ * orden —tabla, .env, fabrica— es lo que permite meter esto en una instalacion
+ * que ya funciona sin que se entere: con la tabla vacia, todo sigue igual.
+ *
+ * NO SE TOCA EL .env. Ni se lee para copiarlo aqui, ni se reescribe. Una
+ * aplicacion que edita su propio fichero de arranque es una aplicacion que un
+ * dia se cae a mitad de escribirlo y ya no arranca.
+ *
+ * `secreto` marca lo que NUNCA sale en claro de aqui: una clave de API se
+ * devuelve como «hay una, acaba en AB12», nunca entera.
+ */
+function migracionAjustesDeInstalacion() {
+  const CLAVE = '2026-09-ajustes-de-instalacion';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ajustes_instalacion (
+      clave          TEXT PRIMARY KEY,
+      valor          TEXT NOT NULL,
+      secreto        INTEGER NOT NULL DEFAULT 0,
+      actualizado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: ajustes de instalacion (claves fuera del .env).');
   return true;
 }
 

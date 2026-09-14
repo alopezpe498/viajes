@@ -318,5 +318,135 @@
         boton.disabled = false;
       }
     });
+
+    // =======================================================================
+    // LOS AJUSTES DE INSTALACIÓN
+    // =======================================================================
+    /**
+     * Las claves y los ajustes del servidor. Van aparte de los números de arriba
+     * porque son otra cosa: una credencial no tiene valor de fábrica, no se
+     * guarda al salir del campo —se guarda cuando lo dices— y NO SE ENSEÑA.
+     *
+     * De un secreto esta página nunca recibe el valor: recibe «hay una» y los
+     * cuatro últimos caracteres. Lo que se ve en el campo son puntitos nuestros.
+     */
+    const PUNTITOS = '••••••••••••';
+
+    /** Deja la fila de un ajuste con la cara que le toca tras guardar o quitar. */
+    const refrescarAjuste = (fila, a) => {
+      const campo = fila.querySelector('[data-valor]');
+      const origen = fila.querySelector('[data-origen]');
+      const pista = fila.querySelector('[data-pista]');
+      const reemplazar = fila.querySelector('[data-reemplazar]');
+      const guardar = fila.querySelector('[data-guardar-ajuste]');
+      const quitar = fila.querySelector('[data-quitar]');
+      const esSecreto = Boolean(fila.dataset.secreto);
+
+      if (origen) {
+        origen.className = 'orq-origen orq-origen--' + a.origen;
+        origen.textContent =
+          a.origen === 'guardado' ? 'Guardado aquí'
+          : a.origen === 'entorno' ? 'Del .env'
+          : a.origen === 'fabrica' ? 'De fábrica'
+          : 'Sin configurar';
+      }
+
+      if (campo) {
+        if (esSecreto) {
+          campo.value = a.hay ? PUNTITOS : '';
+          campo.readOnly = Boolean(a.hay);
+          campo.placeholder = a.hay ? '' : 'Pega aquí la clave';
+        } else {
+          campo.value = a.valor || '';
+        }
+      }
+
+      if (pista) {
+        pista.textContent = a.pista ? 'acaba en ' + a.pista : '';
+        pista.hidden = !a.pista;
+      }
+      if (esSecreto) {
+        if (reemplazar) reemplazar.hidden = !a.hay;
+        if (guardar) guardar.hidden = Boolean(a.hay);
+      }
+      if (quitar) quitar.hidden = a.origen !== 'guardado';
+    };
+
+    /** El resultado de una prueba, debajo de su fila. */
+    const contar = (fila, texto, como) => {
+      const caja = fila.querySelector('[data-resultado]');
+      if (!caja) return;
+      caja.textContent = texto;
+      caja.hidden = !texto;
+      caja.className = 'orq-ajuste__resultado' + (como ? ' orq-ajuste__resultado--' + como : '');
+    };
+
+    ajustes.addEventListener('click', async (ev) => {
+      const boton = ev.target.closest(
+        '[data-guardar-ajuste], [data-reemplazar], [data-quitar], [data-probar]'
+      );
+      if (!boton) return;
+      const fila = boton.closest('[data-ajuste]');
+      if (!fila) return;
+
+      const clave = fila.dataset.ajuste;
+      const campo = fila.querySelector('[data-valor]');
+      const esSecreto = Boolean(fila.dataset.secreto);
+
+      // REEMPLAZAR no llama al servidor: solo desbloquea el campo. Una clave que
+      // ya está no se puede volver a ver, así que cambiarla tiene que ser un
+      // gesto aparte y no un descuido al escribir encima.
+      if (boton.hasAttribute('data-reemplazar')) {
+        campo.readOnly = false;
+        campo.value = '';
+        campo.placeholder = 'Pega aquí la clave nueva';
+        campo.focus();
+        fila.querySelector('[data-guardar-ajuste]').hidden = false;
+        boton.hidden = true;
+        contar(fila, '');
+        return;
+      }
+
+      boton.disabled = true;
+      try {
+        if (boton.hasAttribute('data-guardar-ajuste')) {
+          // Los puntitos son nuestros: si siguen ahí es que no se ha escrito nada.
+          if (esSecreto && campo.value === PUNTITOS) {
+            decir('Pulsa «Reemplazar» para cambiar la clave', true);
+            return;
+          }
+          const datos = await mandar('/api/ajustes/' + clave, { valor: campo.value });
+          refrescarAjuste(fila, datos.ajuste);
+          contar(fila, '');
+          decir('Guardado');
+        } else if (boton.hasAttribute('data-quitar')) {
+          if (!confirm('¿Quitar «' + clave + '»? Volverá a valer lo que diga el .env, y para eso hay que reiniciar.')) {
+            return;
+          }
+          const datos = await mandar('/api/ajustes/' + clave + '/quitar');
+          refrescarAjuste(fila, datos.ajuste);
+          contar(fila, 'Quitado. Si el .env traía un valor, hará falta reiniciar para volver a usarlo.', 'aviso');
+          decir('Quitado');
+        } else {
+          // PROBAR. Si hay una clave recién pegada se prueba ESA, que es lo que
+          // uno quiere saber antes de guardarla.
+          const aMano = esSecreto && !campo.readOnly && campo.value && campo.value !== PUNTITOS
+            ? campo.value
+            : null;
+          contar(fila, 'Probando…', '');
+          const datos = await mandar('/api/ajustes/' + clave + '/probar', { valor: aMano });
+          contar(
+            fila,
+            datos.mensaje,
+            datos.sinRespuesta ? 'aviso' : datos.aviso ? 'aviso' : datos.ok ? 'bien' : 'mal'
+          );
+        }
+      } catch (err) {
+        contar(fila, err.message, 'mal');
+        decir(err.message, true);
+      } finally {
+        boton.disabled = false;
+      }
+    });
   }
 })();
