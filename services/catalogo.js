@@ -357,6 +357,83 @@ async function nombresAlternativos(ciudad, pais) {
   }
 }
 
+/**
+ * EL NOMBRE EN CASTELLANO DE TODA LA VIDA, PREGUNTADO UNA SOLA VEZ.
+ *
+ * EL CASO QUE ORIGINA ESTO. Civitatis indexa Nafplio como «Nauplia» —el exonimo
+ * español, como Breslavia para Wroclaw o Esmirna para Izmir— y la parada se
+ * quedaba sin una sola excursion teniendo dos publicadas.
+ *
+ * POR QUE NO VALE `nombresAlternativos`, que ya existe y ya pregunta: aquella
+ * pide el nombre LOCAL o INTERNACIONAL, y sus propios ejemplos apuntan en la
+ * direccion contraria («Breslavia» → «Wroclaw»). Para Nafplio devuelve Nafplio,
+ * Nafplion o Ναυπλιο; jamas Nauplia. Es la otra mitad del camino, y hacen falta
+ * las dos.
+ *
+ * LA TABLA MANDA, LA IA SOLO ESTRENA. Si la ciudad ya esta en `civitatis_alias`
+ * se devuelve lo que diga y no se llama a nadie —tambien cuando lo que diga es
+ * «no hay»—. Solo se pregunta la primera vez que una ciudad falla.
+ *
+ * Y SE DESCARTA LO QUE NO ES UN ALIAS: si el modelo devuelve el mismo nombre, o
+ * uno que ya estaba en las variantes probadas, no aporta nada y se apunta como
+ * «preguntado, sin alias» para no volver a gastar la llamada.
+ */
+async function exonimoEspanol(ciudad, pais) {
+  const clave = normalizarNombre(ciudad);
+
+  const guardada = una('SELECT alias FROM civitatis_alias WHERE nombre_norm = ?', clave);
+  if (guardada) return guardada.alias ?? null;
+
+  const apuntar = (alias) =>
+    ejecutar(
+      `INSERT INTO civitatis_alias (nombre_norm, nombre, alias, pais, preguntado_en)
+       VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT (nombre_norm) DO UPDATE SET alias = excluded.alias`,
+      clave,
+      ciudad,
+      alias,
+      pais ?? null
+    );
+
+  if (!hayClaveIA()) return null;
+
+  let dicho = null;
+  try {
+    const r = await consultarJSON(
+      `¿Cual es el nombre TRADICIONAL EN CASTELLANO (el exonimo español) de la ciudad ` +
+        `de «${ciudad}»${pais ? ` (${pais})` : ''}? Ejemplos: Wroclaw → Breslavia; ` +
+        'Izmir → Esmirna; Firenze → Florencia; Aachen → Aquisgran. ' +
+        'Si en español se llama igual o no tiene exonimo, devuelve null. ' +
+        'Devuelve SOLO: {"exonimo":"..."} o {"exonimo":null}',
+      { maxTokens: 120, paso: `nombre en castellano de ${ciudad}`, modelo: 'rapido' }
+    );
+    dicho = String(r?.exonimo ?? '').trim() || null;
+  } catch (err) {
+    console.warn(`[catalogo] no pude pedir el exonimo de «${ciudad}» (${err.message}).`);
+    // No se apunta nada: fue un fallo de la llamada, no una respuesta. Mañana
+    // puede contestar, y guardarlo como «no hay» seria cerrarle la puerta.
+    return null;
+  }
+
+  // El mismo nombre no es un alias.
+  if (dicho && normalizarNombre(dicho) === clave) dicho = null;
+
+  apuntar(dicho);
+  if (!dicho) {
+    console.log(`[catalogo] "${ciudad}" no tiene un nombre en castellano distinto: no vuelvo a preguntar.`);
+  }
+  return dicho;
+}
+
+/** Deja escrito si el alias llego a encontrar destino, para no reintentarlo en balde. */
+function apuntarSiElAliasSirvio(ciudad, sirvio) {
+  ejecutar(
+    'UPDATE civitatis_alias SET sirvio = ? WHERE nombre_norm = ?',
+    sirvio ? 1 : 0,
+    normalizarNombre(ciudad)
+  );
+}
+
 /** Cuántas se le piden a Civitatis por ciudad. */
 const MAX_ACTIVIDADES = 30;
 
@@ -409,14 +486,33 @@ export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudad
     ciudad.normalize('NFD').replace(/[̀-ͯł]/g, (c) => (c === 'ł' ? 'l' : '')),
   ].filter((x, i, xs) => x && x !== ciudad && xs.indexOf(x) === i);
 
-  const slug = await descubrirSlug(ciudad, { pais, tambien: variantes });
+  let slug = await descubrirSlug(ciudad, { pais, tambien: variantes });
 
+  // Y SI NADA DE ESO VALE, EL NOMBRE EN CASTELLANO DE TODA LA VIDA.
+  //
+  // Ultimo recurso, y solo aqui: si la busqueda normal encontro algo, por este
+  // camino no se pasa y no se le pregunta nada a nadie.
   if (!slug) {
-    throw new Error(
-      `«${ciudad}» no tiene destino en Civitatis. Probé también` +
-        `${pais ? ` el índice de ${pais}` : ''}` +
-        `${variantes.length ? ` y estas variantes: ${variantes.join(', ')}` : ''}.`
-    );
+    const alias = await exonimoEspanol(ciudad, pais);
+    if (alias) {
+      console.log(`[catalogo] "${ciudad}" no aparece en Civitatis; pruebo su nombre en castellano ("${alias}").`);
+      slug = await descubrirSlug(ciudad, { pais, tambien: [...variantes, alias] });
+      // SE APUNTA SI SIRVIO O NO. Las dos respuestas ahorran trabajo manana: la
+      // buena evita la consulta, y la mala evita repetirla en balde.
+      apuntarSiElAliasSirvio(ciudad, Boolean(slug));
+      if (slug) {
+        console.log(`[catalogo] "${ciudad}" es "${alias}" en Civitatis (slug "${slug}").`);
+      }
+    }
+
+    if (!slug) {
+      throw new Error(
+        `«${ciudad}» no tiene destino en Civitatis. Probé también` +
+          `${pais ? ` el índice de ${pais}` : ''}` +
+          `${variantes.length ? ` y estas variantes: ${variantes.join(', ')}` : ''}` +
+          `${alias ? ` y su nombre en castellano, «${alias}», que tampoco da resultados` : ''}.`
+      );
+    }
   }
 
   console.log(`[catalogo] buscando excursiones de "${ciudad}" en Civitatis (slug "${slug}")`);

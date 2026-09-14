@@ -397,6 +397,7 @@ export function migrarEsquema() {
   migracionTopePorTrabajo();
   migracionCosteDeTrasladosInternos();
   migracionRegistroTraducido();
+  migracionAliasDeCivitatis();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5426,6 +5427,48 @@ function migracionViajeros() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migración hecha.');
+  return true;
+}
+
+/**
+ * LOS ALIAS DE CIVITATIS, QUE SE APRENDEN SOLOS.
+ *
+ * EL CASO QUE ORIGINA ESTA TABLA. Civitatis indexa Nafplio como «Nauplia», que
+ * es el exonimo español de toda la vida —como Breslavia para Wroclaw o Esmirna
+ * para Izmir—. La app buscaba «Nafplio» y «Nafplion», no encontraba nada, y la
+ * parada se quedaba sin una sola excursion teniendo dos en la web.
+ *
+ * NO ES UNA REGLA MECANICA. Quitar el parentesis de «Creta (Heraclion)» si lo
+ * es, y por eso eso se resuelve en codigo. Un exonimo no se deduce de nada: hay
+ * que saberlo. Asi que se pregunta UNA VEZ y se apunta aqui para siempre.
+ *
+ * SE LLENA CON EL USO Y NO A MANO. La IA solo entra cuando la busqueda normal ha
+ * fallado Y la ciudad no esta todavia en esta tabla. Con el tiempo las ciudades
+ * que se repiten ya estan dentro y no se pregunta nada.
+ *
+ * SE APUNTA TAMBIEN LO QUE NO FUNCIONO. `alias` a NULL —la IA no supo o dijo lo
+ * mismo— y `sirvio` a 0 son respuestas: significan «ya lo intente, no vuelvas a
+ * gastar una llamada en esto». Un hueco apuntado vale tanto como un acierto.
+ */
+function migracionAliasDeCivitatis() {
+  const CLAVE = '2026-09-alias-civitatis';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS civitatis_alias (
+      nombre_norm   TEXT PRIMARY KEY,
+      nombre        TEXT NOT NULL,
+      -- El exonimo español. NULL = se pregunto y no habia uno distinto.
+      alias         TEXT,
+      -- 1 si con ese alias se encontro destino; 0 si tampoco. NULL = sin probar.
+      sirvio        INTEGER,
+      pais          TEXT,
+      preguntado_en TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: alias de destinos de Civitatis.');
   return true;
 }
 
