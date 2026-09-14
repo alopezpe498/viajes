@@ -124,29 +124,29 @@ function cuando(iso) {
 
               <div class="orq-ajuste__botones">
                 <% if (a.secreto) { %>
-                  <button type="button" class="boton-discreto" data-reemplazar
+                  <button type="button" class="orq-ajuste__accion" data-reemplazar
                           <%= a.hay ? '' : 'hidden' %>>
                     <i class="ti ti-pencil" aria-hidden="true"></i> Reemplazar
                   </button>
-                  <button type="button" class="boton-discreto" data-guardar-ajuste
+                  <button type="button" class="orq-ajuste__accion" data-guardar-ajuste
                           <%= a.hay ? 'hidden' : '' %>>
                     <i class="ti ti-device-floppy" aria-hidden="true"></i> Guardar
                   </button>
                 <% } else { %>
-                  <button type="button" class="boton-discreto" data-guardar-ajuste>
+                  <button type="button" class="orq-ajuste__accion" data-guardar-ajuste>
                     <i class="ti ti-device-floppy" aria-hidden="true"></i> Guardar
                   </button>
                 <% } %>
 
                 <% if (a.sePuedeProbar) { %>
-                  <button type="button" class="boton-discreto" data-probar>
+                  <button type="button" class="orq-ajuste__accion" data-probar>
                     <i class="ti ti-plug-connected" aria-hidden="true"></i> Probar
                   </button>
                 <% } %>
 
                 <%# Quitar solo tiene sentido si hay algo guardado AQUÍ: lo que
                     viene del .env no se quita desde una pantalla. %>
-                <button type="button" class="boton-discreto orq-ajuste__quitar" data-quitar
+                <button type="button" class="orq-ajuste__accion orq-ajuste__quitar" data-quitar
                         <%= a.origen === 'guardado' ? '' : 'hidden' %>>
                   <i class="ti ti-trash" aria-hidden="true"></i> Quitar
                 </button>

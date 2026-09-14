@@ -339,7 +339,12 @@
   font-weight: 700;
 }
 
-.orq-parametro__restaurar {
+/* EL BOTON PEQUEÑO DE ESTA PANTALLA, compartido por los dos sitios que lo
+   necesitan: el «de fabrica» de un numero y las acciones de una clave. Se amplia
+   el selector en vez de copiar los valores para que sigan siendo LOS MISMOS el
+   dia que alguien toque uno. */
+.orq-parametro__restaurar,
+.orq-ajuste__botones button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -352,7 +357,8 @@
   font-size: 12px;
   cursor: pointer;
 }
-.orq-parametro__restaurar:hover { border-color: var(--acento); color: var(--acento); }
+.orq-parametro__restaurar:hover,
+.orq-ajuste__botones button:hover { border-color: var(--acento); color: var(--acento); }
 
 /* ===========================================================================
    CEREBRO
@@ -580,21 +586,25 @@
 .orq-ajuste__control { flex: 1 1 320px; min-width: 280px; display: flex; flex-direction: column; gap: 8px; }
 .orq-ajuste__fila { display: flex; align-items: center; gap: 10px; }
 
+/* EXACTAMENTE EL CAMPO DE ESTA PANTALLA, no uno nuevo.
+   Los mismos valores que `.orq-parametro__control input`: radio de 10, borde
+   `--borde` —no el fuerte—, `font: inherit` a 14 y fondo de tarjeta. Lo unico
+   que cambia es el ancho y la alineacion, porque aquel es un numero corto
+   alineado a la derecha y esto es texto largo. */
 .orq-ajuste__control input {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--borde-fuerte);
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 9px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--tarjeta, #fff);
+  font: inherit;
+  font-size: 14px;
   color: var(--texto);
-  background: var(--superficie);
-  outline: none;
 }
-.orq-ajuste__control input:focus { border-color: var(--acento); }
+.orq-ajuste__control input:focus { outline: none; border-color: var(--acento); }
 /* Bloqueado = hay una clave y no se toca hasta pulsar Reemplazar. Se dice con el
-   color, no con un candado: el botón de al lado ya explica qué hacer. */
+   color, no con un candado: el boton de al lado ya explica que hacer. */
 .orq-ajuste__control input[readonly] { background: var(--fondo); color: var(--texto-2); }
 
 .orq-ajuste__pista {
@@ -604,7 +614,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.orq-ajuste__botones { display: flex; flex-wrap: wrap; gap: 8px; }
+.orq-ajuste__botones { display: flex; flex-wrap: wrap; gap: 7px; }
 .orq-ajuste__quitar:hover { color: var(--alerta-tx); border-color: var(--alerta-tx); }
 
 /* De dónde sale el valor que se está usando. Sin esto, un campo vacío no
