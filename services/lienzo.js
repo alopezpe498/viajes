@@ -1840,6 +1840,13 @@ export function cierraALasMinutos(sitio) {
   // Se coge el cierre MÁS TEMPRANO de la semana, que es la respuesta prudente
   // para «¿me cabe esta visita?» sin saber de qué día se habla; y se topa en la
   // medianoche, porque un cierre a las 02:00 no alarga el día de hoy.
+  // OJO CON LOS SITIOS DE VARIOS TURNOS. Esto devuelve el cierre MÁS TEMPRANO de
+  // todos los tramos, que es la respuesta prudente para «¿me cabe la visita?»
+  // sin saber de qué día se habla. Pero en un sitio con dos servicios el mismo
+  // día —«Almuerzo y cena»: 13:00-16:00 y 20:00-23:30— eso devuelve las 16:00, y
+  // leerlo como «cierra a las cuatro» dejaría fuera una cena perfectamente
+  // posible. Para esa pregunta hay que usar `abiertoA`, que mira tramo a tramo;
+  // aquí se contesta otra cosa, más gruesa y a propósito.
   const finales = horarioPorDias(sitio?.horarios).porDia
     .flatMap((d) => d.rangos)
     .map(([, fin]) => Math.min(fin, 24 * 60));

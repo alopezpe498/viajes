@@ -91,7 +91,45 @@ const GRUPOS = [
   ['weekdays', [1, 2, 3, 4, 5]],
 ];
 
-/** Lo que significa «siempre». */
+/**
+ * LAS FRANJAS QUE SE DICEN CON PALABRAS EN VEZ DE CON NÚMEROS.
+ *
+ * EL CASO QUE ORIGINA ESTO. La «Taverna Savopoulos» publica su horario como
+ * «Almuerzo y cena», y el lector lo daba por ilegible: sin un solo número no hay
+ * rango que sacar, así que el sitio se quedaba sin horario y se podía colocar a
+ * cualquier hora del día. Y es de las pocas cosas que un horario dice con
+ * claridad: un restaurante que sirve almuerzos y cenas no abre a las once de la
+ * mañana ni a las cinco de la tarde.
+ *
+ * Mismo patrón que `GRUPOS`, que traduce «fin de semana» a días: aquí se traduce
+ * «almuerzo» a horas. Es vocabulario, no una forma nueva de leer nada.
+ *
+ * SE BUSCAN CON FRONTERA DE PALABRA y no con `includes` —que es lo que usa
+ * GRUPOS— porque estas son cortas y se esconden dentro de otras: «cena» vive
+ * dentro de «escena» y de «docena», y «Según la cartelera de espectáculos» no es
+ * el horario de una cena.
+ */
+const FRANJAS = [
+  [/\bdesayunos?\b/, [8 * 60, 11 * 60]],
+  [/\balmuerzos?\b/, [13 * 60, 16 * 60]],
+  [/\bcomidas?\b/, [13 * 60, 16 * 60]],
+  [/\bmediod[ií]a\b/, [13 * 60, 16 * 60]],
+  [/\bcenas?\b/, [20 * 60, 23 * 60 + 30]],
+];
+
+/**
+ * Las franjas con nombre que aparecen en un texto, ordenadas por hora.
+ *
+ * Vacío si no nombra ninguna, que es lo normal: casi todos los horarios vienen
+ * en números y por este camino no pasan.
+ */
+function franjasConNombre(texto) {
+  const t = String(texto ?? '');
+  return FRANJAS.filter(([re]) => re.test(t))
+    .map(([, rango]) => rango)
+    .sort((a, b) => a[0] - b[0]);
+}
+
 /**
  * LO QUE SIGNIFICA «SIEMPRE».
  *
@@ -408,6 +446,8 @@ export function horarioPorDias(texto, mes = null) {
   let huboApertura = false;
   let huboCierre = false;
   let porDefecto = null;
+  // Los números ya leídos no los pisa una palabra: ver la guarda de más abajo.
+  let porDefectoEsDeNumeros = false;
   let temporadaDudosa = false;
 
   // LOS TRAMOS QUE HABLAN DE TEMPORADA SE RESUELVEN ANTES DE NADA.
@@ -486,7 +526,23 @@ export function horarioPorDias(texto, mes = null) {
 
     if (!dias.size) {
       // Unas horas sin día delante valen para los días que no digan otra cosa.
-      if (!esDeCierre && rangos.length) porDefecto = rangos;
+      if (!esDeCierre && rangos.length) {
+        porDefecto = rangos;
+        porDefectoEsDeNumeros = true;
+      } else if (!esDeCierre && !porDefectoEsDeNumeros) {
+        // Y SI NO HAY NÚMEROS, LAS FRANJAS QUE SE DICEN CON PALABRAS.
+        //
+        // «Almuerzo y cena» no trae un solo dígito y dejaba el sitio sin horario,
+        // colocable a cualquier hora. Aquí se traduce a sus tramos.
+        //
+        // LOS NÚMEROS MANDAN SIEMPRE, y por eso está el `porDefectoEsDeNumeros`:
+        // «Almuerzos y cenas (13:00 - 23:00)» trae las dos cosas, y el paréntesis
+        // se lee DESPUÉS por cómo parte `tramosDe`. Sin esta guarda, unas horas
+        // exactas ya leídas podían quedar pisadas por las de la palabra según el
+        // orden en que viniera escrito el texto.
+        const franjas = franjasConNombre(tramo);
+        if (franjas.length) porDefecto = franjas;
+      }
       continue;
     }
 

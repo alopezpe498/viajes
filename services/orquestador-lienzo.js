@@ -65,7 +65,7 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
-import { horasDeSesion, soloAUltimaHora, abreEl, horarioPorDias } from '../services/horarios.js';
+import { horasDeSesion, soloAUltimaHora, abreEl, abiertoA, horarioPorDias } from '../services/horarios.js';
 import {
   avisarDeParadasQueNoCaben,
   avisarDeParadasSinSusImprescindibles,
@@ -488,64 +488,118 @@ function esComida(colocado) {
  * restaurante con su motivo y se deja la zona. Nunca al revés, y nunca dejando
  * una visita puesta a una hora en que el sitio está cerrado.
  */
-function unaSolaComidaAlDia(viajeId, lienzo, di) {
-  const ALMUERZO = [12 * 60, 17 * 60];
+export function unaSolaComidaAlDia(viajeId, lienzo, di) {
+  // LAS DOS HORAS A LAS QUE SE COME, NO SOLO UNA.
+  //
+  // EL FALLO QUE ORIGINA ESTO. La regla se escribió mirando el almuerzo y se
+  // quedó ahí: la ventana era [12:00, 17:00] y un restaurante puesto de cena se
+  // le escapaba entero. La «Taverna Savopoulos» está colocada a las 20:00 y
+  // convivía tan tranquila con el bloque de comida del día — dos veces de comer
+  // el mismo día, que es justo lo que esta función existe para impedir.
+  //
+  // Dos ventanas y no una sola grande: entre las cinco y las ocho de la tarde no
+  // se come, y estirar la franja de 12:00 a 23:30 haría que un bar de tapas de
+  // las 18:00 pasara por «la comida del día» y se llevara por delante el bloque
+  // de mediodía.
+  const HORAS_DE_COMER = [
+    [12 * 60, 17 * 60],        // almuerzo
+    [19 * 60 + 30, 23 * 60],   // cena
+  ];
   let tocado = false;
+
+  /** ¿Es este bloque un restaurante del catálogo? Lo dice su ficha, no su nombre. */
+  const esRestaurante = (c) => {
+    const quien = deQuienEs(c);
+    if (quien?.de !== 'sitio' || !quien.deId) return false;
+    const f = una('SELECT categoria FROM sitios_lugar WHERE id = ?', quien.deId);
+    return /gastronom/i.test(String(f?.categoria ?? ''));
+  };
 
   for (const d of lienzo.dias ?? []) {
     const delDia = lienzo.colocados.filter((c) => c.dia === d.n);
 
-    const zona = delDia.find((c) => esComida(c));
-    if (!zona) continue;
+    // SE EMPAREJA DENTRO DE CADA FRANJA, y esto es la mitad del arreglo.
+    //
+    // Un bloque de zona a mediodía y un restaurante de cena NO son un duplicado:
+    // son la comida y la cena. Mirar el día entero de una vez y quedarse con uno
+    // borraría el almuerzo porque hay reservada una taverna para la noche, que
+    // es peor que el fallo que se está arreglando. Lo que no puede haber es dos
+    // veces de comer A LA MISMA HORA.
+    for (const [desde, hasta] of HORAS_DE_COMER) {
+      const enLaFranja = (c) => {
+        const h = enMinutos(c.hora);
+        return h != null && h >= desde && h <= hasta;
+      };
 
-    // Los restaurantes del día, a la hora de comer.
-    const restaurantes = delDia.filter((c) => {
-      if (esComida(c)) return false;
-      const quien = deQuienEs(c);
-      if (quien?.de !== 'sitio' || !quien.deId) return false;
-      const f = una('SELECT categoria, horarios FROM sitios_lugar WHERE id = ?', quien.deId);
-      if (!/gastronom/i.test(String(f?.categoria ?? ''))) return false;
-      const h = enMinutos(c.hora);
-      return h != null && h >= ALMUERZO[0] && h <= ALMUERZO[1];
-    });
-    if (!restaurantes.length) continue;
+      const zona = delDia.find((c) => esComida(c) && enLaFranja(c));
+      if (!zona) continue;
 
-    // ¿Cabe alguno en su horario? Si sí, ese es la comida y la zona sobra.
-    const cabe = restaurantes.find((c) => {
-      const abre = aperturaDe(c, d.fecha);
-      const cierra = cierreDe(c);
-      const empieza = enMinutos(c.hora);
-      const dura = Number(c.duracionMin) || 0;
-      if (empieza == null) return false;
-      if (abre != null && empieza < abre) return false;
-      if (cierra != null && empieza + dura > cierra) return false;
-      return true;
-    });
-
-    if (cabe) {
-      quitar(zona.id);
-      di(
-        `   Día ${d.n}: «${cabe.nombre}» es la comida de ese día, así que quito ` +
-          `«${zona.nombre}»: no hacen falta las dos.`
+      const restaurantes = delDia.filter(
+        (c) => !esComida(c) && enLaFranja(c) && esRestaurante(c)
       );
-      tocado = true;
-      continue;
-    }
+      if (!restaurantes.length) continue;
 
-    // Ninguno cabe: se van ellos y se queda la zona, que siempre cabe.
-    for (const c of restaurantes) {
-      quitar(c.id);
-      di(
-        `   Día ${d.n}: fuera «${c.nombre}» — a las ${c.hora} está cerrado y no da de ` +
-          `comer. Se queda «${zona.nombre}», que es flexible.`
-      );
-      apuntarHueco(
-        viajeId,
-        FASE,
-        `${d.ciudad}: «${c.nombre}» no abre a la hora de comer del día ${d.n}; ` +
-          'la comida se queda en la zona.'
-      );
-      tocado = true;
+      // ¿CABE ALGUNO EN SU HORARIO? Si sí, ese es la comida y la zona sobra.
+      //
+      // SE PREGUNTA TRAMO A TRAMO, no con la hora de cierre. Un restaurante tiene
+      // DOS servicios —«Almuerzo y cena» son 13:00-16:00 y 20:00-23:30— y
+      // `cierreDe` devuelve el más temprano de los dos, las 16:00, que es la
+      // respuesta prudente a otra pregunta. Usarla aquí echaba a la taverna con
+      // el motivo «a las 20:00 está cerrado» justo cuando está sirviendo cenas.
+      // `abiertoA` mira los tramos uno a uno y contesta lo que se pregunta.
+      const diaSemana = d.fecha ? new Date(`${d.fecha}T12:00:00`).getDay() : null;
+      const cabe = restaurantes.find((c) => {
+        const empieza = enMinutos(c.hora);
+        if (empieza == null) return false;
+
+        const quien = deQuienEs(c);
+        const horarios = quien?.deId
+          ? una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId)?.horarios
+          : null;
+
+        if (horarios && diaSemana != null) {
+          const dura = Number(c.duracionMin) || 0;
+          // Abierto al sentarse Y al levantarse. `null` es «no lo sé», y una
+          // duda no echa a nadie: cuenta como que cabe.
+          const alEmpezar = abiertoA(horarios, diaSemana, empieza);
+          const alAcabar = abiertoA(horarios, diaSemana, empieza + Math.max(0, dura - 1));
+          return alEmpezar !== false && alAcabar !== false;
+        }
+
+        // Sin horario legible se vuelve a lo grueso, que es lo que había.
+        const abre = aperturaDe(c, d.fecha);
+        const cierra = cierreDe(c);
+        const dura = Number(c.duracionMin) || 0;
+        if (abre != null && empieza < abre) return false;
+        if (cierra != null && empieza + dura > cierra) return false;
+        return true;
+      });
+
+      if (cabe) {
+        quitar(zona.id);
+        di(
+          `   Día ${d.n}: «${cabe.nombre}» es la comida de ese día, así que quito ` +
+            `«${zona.nombre}»: no hacen falta las dos.`
+        );
+        tocado = true;
+        continue;
+      }
+
+      // Ninguno cabe: se van ellos y se queda la zona, que siempre cabe.
+      for (const c of restaurantes) {
+        quitar(c.id);
+        di(
+          `   Día ${d.n}: fuera «${c.nombre}» — a las ${c.hora} está cerrado y no da de ` +
+            `comer. Se queda «${zona.nombre}», que es flexible.`
+        );
+        apuntarHueco(
+          viajeId,
+          FASE,
+          `${d.ciudad}: «${c.nombre}» no abre a la hora de comer del día ${d.n}; ` +
+            'la comida se queda en la zona.'
+        );
+        tocado = true;
+      }
     }
   }
 
