@@ -95,6 +95,15 @@ const { viaje } = ruta;
             <i class="ti ti-bookmark" aria-hidden="true"></i> Mis reservas
           </a>
 
+          <%# DOCUMENTOS: los papeles que ya se han subido, todos juntos. Va justo
+              detrás de las reservas porque es la pregunta de después: primero se
+              reserva, luego llegan los billetes y las confirmaciones, y el día
+              antes de salir lo que uno quiere es verlos sin abrir siete
+              pestañas. Aquí no se sube nada: cada papel se sube en su sitio. %>
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/documentos">
+            <i class="ti ti-files" aria-hidden="true"></i> Documentos
+          </a>
+
           <%# PRESUPUESTO: lo que costaría el viaje tal y como está montado.
               Va al lado de las reservas porque es la pregunta de justo antes:
               primero se mira si sale a cuenta y después se reserva. %>

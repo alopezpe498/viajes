@@ -35,11 +35,25 @@ export const CARPETA = path.join(__dirname, '..', 'adjuntos');
 export const TOPE = 15 * 1024 * 1024;
 
 /**
- * Lo que se acepta. Solo papeles: un PDF o una foto.
+ * Lo que se acepta: los papeles de un viaje, en las formas en que llegan.
  *
  * El HEIC está porque es lo que hace un iPhone por defecto y sería absurdo
  * rechazar la foto que acabas de hacerle al billete. No se convierte a nada: se
  * guarda tal cual y el navegador lo abrirá o lo descargará según pueda.
+ *
+ * EL CORREO Y EL TEXTO ENTRARON CON LA PANTALLA DE DOCUMENTOS. Media
+ * confirmación de hotel no llega en PDF: llega como el correo que te mandaron, y
+ * hasta ahora la única salida era imprimirlo a PDF a mano. Un `.eml` es el
+ * formato estándar —lo exportan Gmail, Apple Mail, Thunderbird y Outlook— y es
+ * texto plano con cabeceras, así que se puede leer sin librerías.
+ *
+ * EL `.msg` DE OUTLOOK NO ENTRA, y es una decisión. Es un formato binario
+ * propietario (OLE2) que necesita una librería entera para sacarle el asunto.
+ * Quien lo tenga puede reenviarse el correo y guardarlo como `.eml`, o
+ * imprimirlo a PDF. Mejor un formato menos que un formato a medias.
+ *
+ * OJO CON EL ORDEN: `message/rfc822` va antes que `text/plain` a propósito, no
+ * porque el Map lo necesite, sino para que se lea junto lo que es correo.
  */
 const ACEPTADOS = new Map([
   ['application/pdf', '.pdf'],
@@ -47,6 +61,8 @@ const ACEPTADOS = new Map([
   ['image/png', '.png'],
   ['image/heic', '.heic'],
   ['image/heif', '.heic'],
+  ['message/rfc822', '.eml'],
+  ['text/plain', '.txt'],
 ]);
 
 // 'reserva' cuelga del CANDIDATO reservado: el billete del vuelo, el bono de la
@@ -55,7 +71,39 @@ const ACEPTADOS = new Map([
 const TIPOS = ['transporte', 'alojamiento', 'excursion', 'reserva'];
 
 /** Qué se le dice a alguien que intenta subir un .docx. */
-export const LO_QUE_SE_ACEPTA = 'Solo PDF o imágenes (JPG, PNG, HEIC).';
+export const LO_QUE_SE_ACEPTA =
+  'Solo PDF, imágenes (JPG, PNG, HEIC), correos guardados (.eml) o texto (.txt).';
+
+/**
+ * CUANDO EL NAVEGADOR NO SABE QUÉ ES, SE MIRA LA EXTENSIÓN.
+ *
+ * Un `.pdf` o un `.jpg` llegan siempre con su tipo puesto, pero un `.eml`
+ * arrastrado desde el escritorio llega con `File.type` VACÍO en Chrome y en
+ * Firefox —no tienen ese tipo registrado— y algunos sistemas mandan
+ * `application/octet-stream` para todo. Sin este respaldo, aceptar el correo
+ * sería mentira: la lista lo admite y el navegador no lo manda nunca.
+ *
+ * Solo se usa cuando el tipo declarado NO sirve, así que un PDF sigue entrando
+ * por su MIME aunque se llame `factura.txt`.
+ */
+const POR_EXTENSION = new Map([
+  ['.pdf', 'application/pdf'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.heic', 'image/heic'],
+  ['.heif', 'image/heif'],
+  ['.eml', 'message/rfc822'],
+  ['.txt', 'text/plain'],
+]);
+
+function tipoDeVerdad(mime, nombre) {
+  const limpio = String(mime ?? '').split(';')[0].trim().toLowerCase();
+  if (ACEPTADOS.has(limpio)) return limpio;
+
+  const ext = (String(nombre ?? '').match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase();
+  return POR_EXTENSION.get(ext) ?? limpio;
+}
 
 /** El nombre, sin nada que pueda salirse de su carpeta. */
 function sanear(nombre) {
@@ -103,7 +151,7 @@ export async function guardarAdjunto({ viajeId, tipo, elementoId, nombre, mime, 
     return { ok: false, error: `El archivo pesa ${comoTamano(datos.length)}; el máximo son ${comoTamano(TOPE)}.` };
   }
 
-  const limpio = String(mime ?? '').split(';')[0].trim().toLowerCase();
+  const limpio = tipoDeVerdad(mime, nombre);
   const extension = ACEPTADOS.get(limpio);
   if (!extension) return { ok: false, error: LO_QUE_SE_ACEPTA };
 

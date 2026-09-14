@@ -13,7 +13,25 @@
  */
 (() => {
   const TOPE = 15 * 1024 * 1024;
-  const ACEPTADOS = ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/heif'];
+  const ACEPTADOS = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/heic',
+    'image/heif',
+    'message/rfc822',
+    'text/plain',
+  ];
+
+  // Y LAS EXTENSIONES, PORQUE EL NAVEGADOR NO SIEMPRE SABE QUÉ ES.
+  //
+  // Un `.eml` arrastrado desde el escritorio llega con `type` VACÍO en Chrome y
+  // en Firefox: no tienen ese tipo registrado. Sin esto, el correo se rechazaría
+  // aquí sin llegar nunca al servidor. El servidor hace la misma comprobación,
+  // que es la que manda; esto solo evita el viaje de subida.
+  const EXTENSIONES = ['.pdf', '.jpg', '.jpeg', '.png', '.heic', '.heif', '.eml', '.txt'];
+  const valeElArchivo = (a) =>
+    ACEPTADOS.includes(a.type) || EXTENSIONES.some((e) => a.name.toLowerCase().endsWith(e));
 
   /** "1.2 MB" · "340 KB" — el mismo criterio que el servidor. */
   function comoTamano(bytes) {
@@ -77,8 +95,8 @@
   async function subir(cajon, archivo) {
     const { tipo, elemento } = cajon.dataset;
 
-    if (!ACEPTADOS.includes(archivo.type)) {
-      avisar(cajon, `«${archivo.name}»: solo PDF o imágenes (JPG, PNG, HEIC).`);
+    if (!valeElArchivo(archivo)) {
+      avisar(cajon, `«${archivo.name}»: solo PDF, imágenes (JPG, PNG, HEIC), correos (.eml) o texto (.txt).`);
       return false;
     }
     if (archivo.size > TOPE) {

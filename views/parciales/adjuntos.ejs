@@ -67,11 +67,15 @@ const titulo = typeof etiqueta !== 'undefined' ? etiqueta : 'Adjuntos';
     <%# La zona de soltar es también la de pulsar: el mismo sitio hace las dos
         cosas, que es lo que espera cualquiera. %>
     <label class="soltar" data-soltar>
-      <input type="file" accept="application/pdf,image/jpeg,image/png,image/heic,image/heif"
+      <%# Las extensiones van además de los MIME a propósito: un `.eml` no tiene
+          tipo registrado en Chrome ni en Firefox, así que sin ellas el selector
+          de archivos lo enseñaría en gris. %>
+      <input type="file"
+             accept="application/pdf,image/jpeg,image/png,image/heic,image/heif,message/rfc822,text/plain,.pdf,.jpg,.jpeg,.png,.heic,.heif,.eml,.txt"
              multiple hidden data-archivo>
       <i class="ti ti-cloud-upload" aria-hidden="true"></i>
       <span class="soltar__texto">Arrastra aquí los archivos o pulsa para elegirlos</span>
-      <span class="soltar__pista secundario">PDF o imágenes, hasta 15 MB cada uno</span>
+      <span class="soltar__pista secundario">PDF, imágenes, correos (.eml) o texto, hasta 15 MB cada uno</span>
     </label>
 
     <p class="adjuntos__aviso oculto" data-aviso></p>

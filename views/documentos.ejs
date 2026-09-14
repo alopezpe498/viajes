@@ -1,0 +1,135 @@
+<%
+/**
+ * DOCUMENTOS DEL VIAJE: todos los papeles juntos.
+ *
+ * Los adjuntos se suben cada uno en su pestaña —el billete en su tramo, la
+ * confirmación en su hotel— y ahí se quedan. Esta pantalla no sube nada: reúne
+ * lo que ya hay y lo enseña, que es la pregunta del día antes de salir.
+ *
+ * DOS COLUMNAS. A la izquierda la lista agrupada por tipo de cosa, con el nombre
+ * del archivo y DEBAJO de quién es: sin esa segunda línea, «confirmacion.pdf» no
+ * dice nada. A la derecha, el documento grande.
+ *
+ * SIN ESTADO EN EL SERVIDOR. Cuál está abierto es cosa de la pantalla, así que
+ * no hay recargas ni parámetros en la URL: se pulsa y se ve.
+ *
+ * Espera: viaje, grupos ([{ clave, titulo, icono, documentos }]), total.
+ */
+const cabezaExtra = '<link rel="stylesheet" href="/css/documentos.css">';
+const pieExtra = '<script src="/js/documentos.js" defer></script>';
+%>
+<%- include('parciales/cabecera', {
+      viaje: null,
+      pasoActual: null,
+      titulo: `Documentos · ${viaje.nombre}`,
+      extraCabeza: cabezaExtra,
+    }) %>
+
+<main class="envoltorio envoltorio--simple">
+  <div class="contenido">
+
+    <header class="ruta-cabecera">
+      <p class="ruta-cabecera__miga">
+        <a href="/">Mis viajes</a> / <a href="/viaje/<%= viaje.id %>/ruta"><%= viaje.nombre %></a>
+      </p>
+      <div class="etapa-titular">
+        <div>
+          <h1 class="ruta-cabecera__titulo">Documentos del viaje</h1>
+          <p class="secundario" style="margin:4px 0 0">
+            <% if (total) { %>
+              <%= total %> documento<%= total === 1 ? '' : 's' %> guardado<%= total === 1 ? '' : 's' %>
+              <% if (viaje.destino) { %> · <%= viaje.destino %><% } %>
+            <% } else { %>
+              Aquí se reúnen los papeles que subas en cada vuelo, hotel o excursión.
+            <% } %>
+          </p>
+        </div>
+        <span class="etapa-acciones">
+          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/ruta">
+            <i class="ti ti-route" aria-hidden="true"></i> Volver a la ruta
+          </a>
+        </span>
+      </div>
+    </header>
+
+    <% if (!total) { %>
+      <%# ---------- Sin papeles: se dice DÓNDE se suben, no solo que no hay ---------- %>
+      <div class="caja vacio aireado">
+        <i class="ti ti-folder-open" style="font-size:30px;color:var(--texto-3)" aria-hidden="true"></i>
+        <p style="margin-top:10px">Todavía no has guardado ningún documento de este viaje.</p>
+        <p class="secundario" style="margin-top:4px">
+          Los billetes se suben en cada tramo de la ruta, las confirmaciones en el hotel de cada
+          parada y los bonos en su excursión. Aquí aparecerán todos juntos.
+        </p>
+        <a class="boton boton--secundario" href="/viaje/<%= viaje.id %>/ruta">Ir a la ruta</a>
+      </div>
+
+    <% } else { %>
+      <div class="docs" data-docs>
+
+        <%# ================= IZQUIERDA: la lista ================= %>
+        <aside class="docs__lista" aria-label="Documentos del viaje">
+          <% grupos.forEach(g => { %>
+            <section class="docs-grupo">
+              <h2 class="docs-grupo__titulo">
+                <i class="ti <%= g.icono %>" aria-hidden="true"></i>
+                <span><%= g.titulo %></span>
+                <span class="docs-grupo__cuenta"><%= g.documentos.length %></span>
+              </h2>
+
+              <ul class="docs-grupo__lista">
+                <% g.documentos.forEach(d => { %>
+                  <li>
+                    <button type="button" class="doc"
+                            data-doc="<%= d.id %>"
+                            data-como="<%= d.comoSeVe %>"
+                            data-url="<%= d.url %>"
+                            data-nombre="<%= d.nombre %>"
+                            data-etiqueta="<%= d.etiqueta %>">
+                      <i class="ti <%= d.icono %> doc__icono" aria-hidden="true"></i>
+                      <span class="doc__texto">
+                        <span class="doc__nombre"><%= d.nombre %></span>
+                        <%# LA ETIQUETA ES LA MITAD DE LA PANTALLA: sin ella, un
+                            nombre de archivo no dice de qué reserva es. %>
+                        <span class="doc__de"><%= d.etiqueta %></span>
+                      </span>
+                      <span class="doc__peso"><%= d.tamano %></span>
+                    </button>
+                  </li>
+                <% }) %>
+              </ul>
+            </section>
+          <% }) %>
+        </aside>
+
+        <%# ================= DERECHA: el visor ================= %>
+        <section class="docs__visor" data-visor>
+          <header class="visor__barra">
+            <div class="visor__quien">
+              <strong data-visor-nombre>Elige un documento</strong>
+              <span class="secundario" data-visor-etiqueta>de la lista de la izquierda</span>
+            </div>
+            <div class="visor__acciones">
+              <a class="boton-discreto" data-visor-descargar href="#" download hidden>
+                <i class="ti ti-download" aria-hidden="true"></i> Descargar
+              </a>
+              <button type="button" class="boton-discreto" data-visor-completa hidden>
+                <i class="ti ti-maximize" aria-hidden="true"></i> Pantalla completa
+              </button>
+            </div>
+          </header>
+
+          <div class="visor__lienzo" data-visor-lienzo>
+            <p class="visor__vacio">
+              <i class="ti ti-file-search" aria-hidden="true"></i>
+              Pulsa un documento para verlo aquí.
+            </p>
+          </div>
+        </section>
+      </div>
+    <% } %>
+
+  </div>
+</main>
+
+<%- include('parciales/pie', { extraPie: pieExtra }) %>

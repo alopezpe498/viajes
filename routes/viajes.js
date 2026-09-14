@@ -195,6 +195,7 @@ import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-
 import { actualizarAhora, climaDelPais } from '../services/clima.js';
 import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import { mapaDeViaje } from '../services/mapa-viaje.js';
+import { documentosDelViaje, contenidoDe } from '../services/documentos.js';
 import {
   traducirRegistro,
   registroTraducidoDe,
@@ -3457,6 +3458,42 @@ router.get('/viaje/:viajeId/presupuesto', (req, res) => {
     return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
   }
   res.render('presupuesto', { viaje: presupuesto.viaje, presupuesto });
+});
+
+// =============================================================================
+// LOS DOCUMENTOS — todos los papeles del viaje, juntos
+// =============================================================================
+/**
+ * El visor de documentos. Reúne los adjuntos que se subieron en sus pestañas y
+ * los enseña agrupados, con la etiqueta de quién es cada uno.
+ *
+ * SOLO LEE. No sube, no borra, no edita: cada papel se sigue gestionando donde
+ * vive, que es junto a la cosa a la que pertenece.
+ */
+router.get('/viaje/:viajeId/documentos', async (req, res) => {
+  const datos = await documentosDelViaje(Number(req.params.viajeId));
+  if (!datos) {
+    return res.status(404).send('No existe ese viaje. <a href="/">Volver a mis viajes</a>');
+  }
+  res.render('documentos', { viaje: datos.viaje, grupos: datos.grupos, total: datos.total });
+});
+
+/**
+ * El contenido legible de un correo o de una nota.
+ *
+ * Va aparte de `/adjunto/:id` —que sirve el archivo tal cual— porque aquí lo que
+ * se devuelve no es el archivo: es el correo ya desmontado en de/para/asunto y
+ * cuerpo. El PDF y la imagen no pasan por aquí: esos los pinta el navegador.
+ */
+router.get('/api/adjunto/:id/contenido', async (req, res) => {
+  const a = adjuntoPorId(Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Ese documento ya no está.' });
+
+  const contenido = await contenidoDe(a);
+  if (!contenido) {
+    return res.status(415).json({ error: 'Este documento no se lee como texto.' });
+  }
+  res.json({ nombre: a.nombre_original, ...contenido });
 });
 
 /**
