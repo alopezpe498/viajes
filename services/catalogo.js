@@ -478,12 +478,30 @@ export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudad
   // preguntarle nada a nadie— y la que más veces va a acertar.
   const sinParentesis = ciudad.includes('(') ? ciudad.split('(')[0].trim() : null;
 
+  // LAS FORMAS LATINAS PRIMERO, LA NATIVA DETRÁS.
+  //
+  // `nombresAlternativos` devuelve el nombre local y el internacional, y para
+  // Heraclión los dio en ese orden: «Ηράκλειο, Heraklion, Heraclion». El
+  // descubrimiento prueba en orden y se queda con el primero que funcione, así
+  // que el griego se llevaba el turno y «Heraklion» —que es el que existe en
+  // Civitatis— quedaba siempre detrás.
+  //
+  // Una URL es siempre ASCII, así que un nombre del que no sobrevive ningún
+  // carácter latino no puede ser nunca un slug. Van al final, no fuera: si un
+  // día Civitatis translitera un nombre que solo tenemos en su alfabeto, sigue
+  // habiendo por dónde intentarlo.
+  const tieneLetraLatina = (t) =>
+    /[a-z0-9]/.test(String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());
+
+  const alternativos = await nombresAlternativos(ciudad, pais);
+
   const variantes = [
     sinParentesis,
     ciudadBase,
-    ...(await nombresAlternativos(ciudad, pais)),
+    ...alternativos.filter(tieneLetraLatina),
     // Sin diacríticos: «Wrocław» → «Wroclaw», que es como va en las URLs.
     ciudad.normalize('NFD').replace(/[̀-ͯł]/g, (c) => (c === 'ł' ? 'l' : '')),
+    ...alternativos.filter((x) => !tieneLetraLatina(x)),
   ].filter((x, i, xs) => x && x !== ciudad && xs.indexOf(x) === i);
 
   let slug = await descubrirSlug(ciudad, { pais, tambien: variantes });
