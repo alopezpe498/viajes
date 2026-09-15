@@ -129,6 +129,7 @@ import {
   trasladosDeElemento,
   trasladosDeElementos,
   fijarTraslado,
+  calcularVariasRutas,
 } from '../services/traslados.js';
 import {
   comoLlegarDeTramo,
@@ -230,6 +231,7 @@ import {
   lanzarOrquestador,
   progresoDeViaje,
   seccionesDelOrquestador,
+  parametro,
   guardarParametro,
   restaurarParametro,
   guardarPrompt,
@@ -3623,6 +3625,90 @@ router.get('/viaje/:viajeId/mapa', async (req, res) => {
     claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
   });
 });
+
+/**
+ * LOS TIEMPOS DE VERDAD DE UN RECORRIDO DEL MAPA.
+ *
+ * El mapa dibuja el día en línea recta y lo dice —«1,2 km en línea recta»—
+ * porque medirlo de verdad costaba una llamada a Google por tramo cada vez que
+ * alguien abría la pantalla. Con la caché eso se paga UNA vez, así que ahora se
+ * puede preguntar.
+ *
+ * LLEGAN IDS, NO COORDENADAS. El cliente manda la cadena del día en el orden en
+ * que la pintó —que es donde vive esa lógica, y no puede haber dos— y aquí se
+ * resuelven contra el mapa del viaje. Así no viaja ni una coordenada suelta y
+ * nadie puede usar esto como un proxy gratis de Google con puntos inventados.
+ *
+ * Y AQUÍ ESTRENA LA MATRIZ: los pares del día van juntos a `calcularVariasRutas`,
+ * que mira la caché y pide a Google de una vez lo que falte. Un día de ocho
+ * paradas son nueve tramos: antes, 27 llamadas; ahora, 3 la primera vez y
+ * ninguna las siguientes.
+ */
+router.post('/api/viaje/:viajeId/tiempos', async (req, res) => {
+  const mapa = await mapaDeViaje(Number(req.params.viajeId));
+  if (!mapa) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const cadena = Array.isArray(req.body?.cadena) ? req.body.cadena.map(String) : [];
+  if (cadena.length < 2) return res.json({ tramos: [] });
+
+  // Un tope por si alguien manda una cadena absurda: un día no tiene cincuenta
+  // paradas, y sin límite esto es una forma de gastar cuota ajena.
+  if (cadena.length > 40) return res.status(400).json({ error: 'Demasiados puntos para un día.' });
+
+  const porId = new Map(mapa.items.filter((i) => !i.sinUbicar).map((i) => [i.id, i]));
+  const puntos = cadena.map((id) => porId.get(id) ?? null);
+  if (puntos.some((p) => !p)) {
+    return res.status(400).json({ error: 'Alguno de esos puntos ya no está en el viaje.' });
+  }
+
+  const pares = [];
+  for (let k = 0; k + 1 < puntos.length; k++) {
+    pares.push([
+      { lat: puntos[k].lat, lng: puntos[k].lon },
+      { lat: puntos[k + 1].lat, lng: puntos[k + 1].lon },
+    ]);
+  }
+
+  const calculados = await calcularVariasRutas(pares);
+
+  res.json({
+    tramos: calculados.map((r, k) => ({
+      de: cadena[k],
+      a: cadena[k + 1],
+      desde: puntos[k].nombre,
+      hasta: puntos[k + 1].nombre,
+      // El que se enseña, elegido por el umbral de a pie. Ver `elegirModo`.
+      elegido: elegirModo(r.resultados),
+      resultados: r.resultados,
+      fuente: r.fuente,
+      mensaje: r.mensaje ?? null,
+    })),
+  });
+});
+
+/**
+ * CUÁL DE LOS TRES MODOS SE ENSEÑA.
+ *
+ * Sobre una línea del mapa cabe un número, no tres. El criterio es el del
+ * encargo y es el que uno usa de verdad: si andando es razonable, se va andando;
+ * si no, lo que haya. Doce minutos a pie no se cogen en metro.
+ *
+ * El umbral vive en los parámetros por si hay que moverlo: quien camina mucho lo
+ * sube, quien viaja con niños lo baja.
+ */
+function elegirModo(resultados) {
+  if (!resultados?.length) return null;
+
+  const tope = parametro('minutos_a_pie_razonables', 20);
+  const aPie = resultados.find((r) => r.modo === 'andando');
+  if (aPie && aPie.minutos != null && aPie.minutos <= tope) return aPie;
+
+  // Si andar no vale, el más rápido de los otros. Y si no hay otros —un pueblo
+  // sin transporte— se enseña el paseo largo, que es la verdad: no hay otra.
+  const resto = resultados.filter((r) => r.modo !== 'andando' && r.minutos != null);
+  if (resto.length) return resto.reduce((a, b) => (b.minutos < a.minutos ? b : a));
+  return aPie ?? null;
+}
 
 /** El importe diario que escribe el usuario. A partir de aquí es suyo. */
 router.post('/api/viaje/:viajeId/presupuesto/importe', (req, res) => {

@@ -43,7 +43,7 @@
    * de capas es parte de la definición de la vista y no una lista global.
    */
   const VISTAS = {
-    dia: { titulo: 'Día', capas: ['sitio', 'comer', 'actividad', 'hotel', 'recorrido'] },
+    dia: { titulo: 'Día', capas: ['sitio', 'comer', 'actividad', 'hotel', 'recorrido', 'tiempos'] },
     etapa: { titulo: 'Etapa', capas: ['sitio', 'comer', 'actividad', 'hotel', 'orden'] },
     ruta: { titulo: 'Ruta', capas: ['linea', 'datos'] },
     expandida: { titulo: 'Ruta expandida', capas: ['sitio', 'comer', 'actividad', 'hotel', 'linea', 'datos'] },
@@ -51,6 +51,7 @@
 
   const EXTRA = {
     recorrido: { etiqueta: 'Recorrido del día', color: '#12303E' },
+    tiempos: { etiqueta: 'Ver tiempos', color: '#1B7FA6' },
     orden: { etiqueta: 'Orden de visita', color: '#12303E' },
     linea: { etiqueta: 'Líneas de traslado', color: '#16688A' },
     datos: { etiqueta: 'Tiempo y precio', color: '#16688A' },
@@ -146,9 +147,19 @@
   let seleccion = null;
 
   // Todas encendidas de salida; lo que se recuerde manda por encima.
+  //
+  // MENOS «Ver tiempos», que nace APAGADA. Las demás capas solo pintan lo que ya
+  // está en la pantalla; esta puede costar una llamada a Google la primera vez
+  // que se mira un día. El comentario del recorrido lo dice desde siempre —«este
+  // mapa es de lectura y no gasta una llamada por tramo»— y encenderla de salida
+  // sería romper esa promesa sin que nadie la hubiera pedido. Se enciende y se
+  // recuerda encendida: la segunda vez sale de la caché y es gratis.
+  const APAGADAS_DE_SALIDA = new Set(['tiempos']);
   const capas = {};
   for (const c of [...Object.keys(D.tipos), ...Object.keys(EXTRA)]) {
-    capas[c] = typeof previo.capas?.[c] === 'boolean' ? previo.capas[c] : true;
+    capas[c] = typeof previo.capas?.[c] === 'boolean'
+      ? previo.capas[c]
+      : !APAGADAS_DE_SALIDA.has(c);
   }
 
   // ===========================================================================
@@ -258,7 +269,7 @@
     n < 1 ? `${Math.round(n * 1000)} m` : `${n.toFixed(1).replace('.', ',')} km`;
 
   /** La etiqueta de un tramo a pie entre el hotel y una parada. */
-  function etiquetaDeTramo(desde, hasta, rotulo) {
+  function etiquetaDeTramo(desde, hasta, rotulo, tiempo = null) {
     if (!desde || !hasta) return;
     const d = km(desde, hasta);
     // Dos bloques en el mismo sitio —el hotel y la cena de al lado— darían una
@@ -275,15 +286,84 @@
     const t = 0.34;
     L.marker([desde.lat + (hasta.lat - desde.lat) * t, desde.lon + (hasta.lon - desde.lon) * t], {
       icon: L.divIcon({
+        // Con tiempo real se enseña ESE, que es el dato bueno; sin él, la recta
+        // de siempre y diciéndolo. Nunca las dos: la etiqueta cabe una vez.
         html:
-          `<div class="mm-etq mm-etq--suave"><i class="ti ti-walk"></i> ` +
-          `${esc(rotulo)} · ${esc(comoKm(d))} en línea recta</div>`,
+          `<div class="mm-etq mm-etq--suave">` +
+          (tiempo
+            ? [tiempo, rotulo ? esc(rotulo) : null].filter(Boolean).join(' · ')
+            : `<i class="ti ti-walk"></i> ${esc(rotulo)} · ${esc(comoKm(d))} en línea recta`) +
+          `</div>`,
         className: '',
         iconSize: null,
       }),
       interactive: false,
     }).addTo(capa);
   }
+
+  // ===========================================================================
+  // LOS TIEMPOS DE VERDAD
+  // ---------------------------------------------------------------------------
+  // El recorrido del día se dibuja en línea recta y lo dice, porque medirlo de
+  // verdad costaba una llamada a Google por tramo CADA VEZ que se abría el mapa.
+  // Con la caché del servidor eso se paga una vez, así que ya se puede preguntar
+  // — pero solo cuando alguien enciende el check, no de oficio.
+  //
+  // SE PREGUNTA POR IDS, no por coordenadas: la cadena del día la arma el mismo
+  // sitio que la pinta y el servidor la resuelve contra el viaje. Así no hay dos
+  // versiones de «de dónde a dónde va el día» y no viaja ni un punto suelto.
+  //
+  // Lo traído se guarda por día: cambiar de día y volver no vuelve a preguntar,
+  // y encender y apagar el check, tampoco.
+  // ===========================================================================
+  const tiemposPorDia = new Map();   // dia -> { estado, tramos, error }
+
+  const claveDeCadena = (cadena) => cadena.map((i) => i.id).join('>');
+
+  async function pedirTiempos(nDia, cadena) {
+    const clave = claveDeCadena(cadena);
+    const yaEsta = tiemposPorDia.get(nDia);
+    // La misma cadena ya pedida —o pidiéndose— no se vuelve a pedir. Cambiarla
+    // —mover algo de día— sí: la clave lleva los ids en orden.
+    if (yaEsta && yaEsta.clave === clave && yaEsta.estado !== 'error') return;
+
+    tiemposPorDia.set(nDia, { clave, estado: 'pidiendo', tramos: [] });
+    refrescar();
+
+    try {
+      const r = await fetch(`/api/viaje/${VIAJE}/tiempos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ cadena: cadena.map((i) => i.id) }),
+      });
+      const datos = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
+      tiemposPorDia.set(nDia, { clave, estado: 'hecho', tramos: datos.tramos ?? [] });
+    } catch (err) {
+      // NO SE INVENTA NADA. Sin respuesta, la línea se queda con su distancia en
+      // recta, que es lo que había antes, y el aviso dice qué ha pasado.
+      console.warn('[mapa-viaje] no pude traer los tiempos:', err.message);
+      tiemposPorDia.set(nDia, { clave, estado: 'error', tramos: [], error: err.message });
+    }
+    refrescar();
+  }
+
+  /** La etiqueta de un tramo con su tiempo real, o null si no se sabe. */
+  function etiquetaDeTiempo(desde, hasta, nDia) {
+    const guardado = tiemposPorDia.get(nDia);
+    if (guardado?.estado !== 'hecho') return null;
+
+    const t = guardado.tramos.find((x) => x.de === desde.id && x.a === hasta.id);
+    if (!t?.elegido) return null;
+
+    const icono = ICONO_MODO[t.elegido.modo] ?? 'ti-arrow-right';
+    // El tiempo de transporte público envejece —son los horarios de hoy— y se
+    // marca con un asterisco en vez de callarlo.
+    const viejo = t.elegido.modo === 'publico' ? '*' : '';
+    return `<i class="ti ${icono}"></i> ${t.elegido.minutos} min${viejo}`;
+  }
+
+  const ICONO_MODO = { andando: 'ti-walk', coche: 'ti-car', publico: 'ti-bus' };
 
   /** La etiqueta de una línea de traslado: modo, duración y €/persona. */
   function textoDelTraslado(t) {
@@ -379,9 +459,32 @@
         // preguntárselo a Google. Este mapa es de lectura y no gasta una llamada
         // por tramo; un número honesto y etiquetado vale más que uno exacto que
         // cuesta dinero cada vez que se abre la pantalla.
+        //
+        // SALVO QUE SE PIDA. Con «Ver tiempos» encendido se pregunta una vez por
+        // día —los tramos van juntos, en una sola petición— y a partir de ahí
+        // sale de la caché. La recta se queda de respaldo para lo que no se
+        // pueda medir: es preferible a un hueco.
+        if (capas.tiempos && cadena.length > 1) pedirTiempos(dia, cadena);
+
         if (hotel) {
-          etiquetaDeTramo(hotel, delDia[0], 'Salida');
-          etiquetaDeTramo(delDia.at(-1), hotel, 'Vuelta');
+          etiquetaDeTramo(hotel, delDia[0], 'Salida',
+            capas.tiempos ? etiquetaDeTiempo(hotel, delDia[0], dia) : null);
+          etiquetaDeTramo(delDia.at(-1), hotel, 'Vuelta',
+            capas.tiempos ? etiquetaDeTiempo(delDia.at(-1), hotel, dia) : null);
+        }
+
+        // LOS TRAMOS DE EN MEDIO SOLO SE ETIQUETAN CON TIEMPO, y no con la recta.
+        //
+        // La distancia en línea recta entre dos museos del centro no le dice nada
+        // a nadie, y nueve etiquetas de «300 m en recta» sobre un día tapan el
+        // mapa. Un tiempo real sí: es lo que se tarda en ir, que es la pregunta.
+        if (capas.tiempos) {
+          for (let k = 0; k + 1 < cadena.length; k++) {
+            // La salida y la vuelta ya las ha puesto el bloque de arriba.
+            if (hotel && (k === 0 || k + 2 === cadena.length)) continue;
+            const t = etiquetaDeTiempo(cadena[k], cadena[k + 1], dia);
+            if (t) etiquetaDeTramo(cadena[k], cadena[k + 1], '', t);
+          }
         }
       }
 
@@ -490,7 +593,17 @@
       input.type = 'checkbox';
       input.checked = capas[c];
       input.onchange = (e) => { capas[c] = e.target.checked; refrescar(); };
-      l.append(input, document.createTextNode(nombreCapa(c)));
+      // «Ver tiempos» dice en qué estado está: mientras se pregunta a Google hay
+      // medio segundo en que el mapa no cambia, y un check que parece no hacer
+      // nada es un check que se vuelve a pulsar. Y si falla, se dice: las
+      // etiquetas se quedan con la distancia en recta y hay que saber por qué.
+      let etiqueta = nombreCapa(c);
+      if (c === 'tiempos' && capas.tiempos) {
+        const e = tiemposPorDia.get(dia)?.estado;
+        if (e === 'pidiendo') etiqueta += ' · midiendo…';
+        else if (e === 'error') etiqueta += ' · no se pudo';
+      }
+      l.append(input, document.createTextNode(etiqueta));
       g.appendChild(l);
     }
   }
