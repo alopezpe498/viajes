@@ -1307,17 +1307,42 @@ function avisarDeSaltosQueNoCuadran(viajeId, etapas, di) {
     const porCarretera = Number(ref?.minutos_coche);
     if (!Number.isFinite(porCarretera) || porCarretera <= 0) continue;
 
-    // Lo que se eligió, con su puerta a puerta ya medido. Es `duracion_puerta_min`
-    // y no `duracion_min`: esa segunda es la referencia de Google, y comparar la
-    // referencia contra sí misma no avisaría nunca de nada.
+    // SE COMPARA CONTRA EL TRAYECTO, NO CONTRA EL PUERTA A PUERTA.
+    //
+    // Los dos números tienen que medir lo mismo para que su cociente signifique
+    // algo, y aquí lo de arriba es TIEMPO DE CONDUCCIÓN: lo que tarda un coche
+    // en ir de una ciudad a otra. El puerta a puerta lleva además el acceso, la
+    // antelación y la salida, que no son camino: son la gestión de antes y de
+    // después.
+    //
+    // Comparar uno con otro hace que la diferencia salte sola en cuanto el
+    // margen pesa frente al viaje. En el viaje a Túnez, un taxi de 55 minutos
+    // con 45 de antelación daba 1,7 veces y el aviso decía que una de las dos
+    // ciudades estaba mal situada. No lo estaba: eran los márgenes.
+    //
+    // De tres saltos avisaba en dos, y los dos en falso. Un aviso que salta
+    // siempre se deja de leer, y este existe justamente para cazar la ciudad que
+    // sí está mal puesta.
+    //
+    // El trayecto sale del desglose que la fase 2 ya guardó al elegir. Si no hay
+    // desglose no se compara nada: sin él no se puede separar el camino de la
+    // gestión, y adivinarlo es como se llegó hasta aquí.
     const tramo = una(
-      `SELECT duracion_puerta_min, tipo, notas FROM transportes
+      `SELECT datos_extra, tipo, notas FROM transportes
         WHERE viaje_id = ? AND etapa_origen_id = ? AND etapa_destino_id = ?`,
       viajeId,
       a.id,
       b.id
     );
-    const elegido = Number(tramo?.duracion_puerta_min);
+
+    let bloque = null;
+    try {
+      bloque = tramo?.datos_extra ? JSON.parse(tramo.datos_extra)?.bloque ?? null : null;
+    } catch {
+      /* datos_extra corrupto: este salto no se puede comparar */
+    }
+
+    const elegido = Number(bloque?.trayecto);
     if (!Number.isFinite(elegido) || elegido <= 0) continue;
 
     // COMPARAR UN FERRY CON UNA RUTA EN COCHE NO DICE NADA.
@@ -1342,7 +1367,7 @@ function avisarDeSaltosQueNoCuadran(viajeId, etapas, di) {
     di(
       `OJO en ${a.nombre_ciudad} → ${b.nombre_ciudad}: la ruta del mapa dice ` +
         `${comoTexto(porCarretera)} en coche y el traslado elegido ${comoTexto(elegido)} ` +
-        `puerta a puerta (${veces.toFixed(1)} veces). Suele ser que una de las dos ciudades ` +
+        `de trayecto (${veces.toFixed(1)} veces). Suele ser que una de las dos ciudades ` +
         'está mal situada: mira sus coordenadas antes de fiarte de los kilómetros.',
       ORIGENES.ninguno
     );
