@@ -25,7 +25,7 @@
  */
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
-import { resumenDeSitio } from '../lib/resumen-sitio.js';
+import { resumenDeSitio, resumirPrecio } from '../lib/resumen-sitio.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { buscarTablaDeSitios, ErrorCaptcha } from '../providers/google-busqueda.js';
 import { diasQueCierra, horarioPorDias, TODOS_LOS_DIAS } from './horarios.js';
@@ -896,3 +896,101 @@ export default {
   interpretarHorario,
   DIAS_PARA_AVISAR,
 };
+
+// =============================================================================
+// EL DETECTOR: CUANDO LA TARJETA NO DICE LO MISMO QUE SUS PROPIOS DATOS
+// =============================================================================
+/**
+ * DOS SITIOS DE LA MISMA FICHA QUE SE CONTRADICEN.
+ *
+ * Una ficha enseña dos veces lo mismo a dos alturas distintas: arriba, la línea
+ * corta de la tarjeta —precio, horario, visita—, y abajo, en «Ver detalle», los
+ * datos prácticos enteros. Salen del MISMO campo, así que cuando no coinciden no
+ * es que haya dos verdades: es que el resumen está mal hecho.
+ *
+ * Y una tercera contradicción, que ésta sí es de dos sitios distintos: la
+ * descripción la escribe la IA antes de que existan los datos duros, así que
+ * puede aconsejar «dedica 1-2 horas» donde la búsqueda encontró «45 a 60
+ * minutos».
+ *
+ * Esto encontró en un segundo lo que llevaba semanas en la base: el Estadio
+ * Panatenaico anunciando «Gratis» con la entrada a 10 € dos líneas más abajo, y
+ * otras cuatro fichas del catálogo con el mismo defecto.
+ *
+ * SOLO DETECTA. No corrige ni una: el precio se recalcula solo al leer —basta
+ * con arreglar el resumidor— y las descripciones son un consejo redactado, no un
+ * dato, así que reescribirlas es una decisión de quien mire, no de esto.
+ */
+export function fichasQueSeContradicen({ puntoId = null } = {}) {
+  const filas = todas(
+    `SELECT s.id, s.nombre, s.bloque, s.precio, s.tiempo_visita, s.descripcion,
+            p.nombre AS ciudad
+       FROM sitios_lugar s
+       JOIN puntos_interes p ON p.id = s.punto_interes_id
+      WHERE s.datos_en IS NOT NULL
+        ${puntoId ? 'AND p.id = ?' : ''}
+      ORDER BY p.nombre, s.nombre`,
+    ...(puntoId ? [Number(puntoId)] : [])
+  );
+
+  const precio = [];
+  const duracion = [];
+
+  for (const s of filas) {
+    // --- 1) «Gratis» arriba con un precio de verdad delante -----------------
+    //
+    // Se mira si el resumidor dice «Gratis» habiendo un importe ANTES de la
+    // palabra. Un importe detrás no acusa a nadie: en una taberna la entrada es
+    // gratis y lo que cuesta es la comida, y eso está bien dicho.
+    const resumido = resumirPrecio(s.precio);
+    if (resumido === 'Gratis' && hayPrecioAntesDelGratis(s.precio)) {
+      precio.push({ ...s, resumido });
+    }
+
+    // --- 2) La descripción aconseja una duración que no es la medida --------
+    const medida = enMinutos(s.tiempo_visita);
+    const dicha = duracionDeLaDescripcion(s.descripcion);
+    if (medida && dicha) {
+      const centro = (r) => (r.min + r.max) / 2;
+      const proporcion = centro(dicha) / centro(medida);
+      // Un tercio arriba o abajo. Más fino sería acusar al redondeo: «1 hora» y
+      // «45 a 60 minutos» dicen lo mismo con otras palabras.
+      if (proporcion > 1.4 || proporcion < 0.72) {
+        duracion.push({ ...s, medida, dicha, proporcion });
+      }
+    }
+  }
+
+  return { precio, duracion, revisadas: filas.length };
+}
+
+/** ¿Hay un importe ANTES de la palabra «gratis»? Entonces no es gratis. */
+function hayPrecioAntesDelGratis(texto) {
+  if (!texto) return false;
+  // Los paréntesis se quitan igual que en el resumidor: ahí viven los matices,
+  // y compararse contra un texto distinto del que se resume daría falsos avisos.
+  const crudo = String(texto).replace(/\([^)]*\)/g, ' ');
+  const gratis = /\b(gratis|gratuit|entrada libre|sin coste|acceso libre)/i.exec(crudo);
+  if (!gratis) return false;
+  const importe = /(\d{1,3}(?:[.,]\d{1,2})?)\s*€|€\s*(\d{1,3}(?:[.,]\d{1,2})?)/.exec(crudo);
+  return Boolean(importe) && importe.index < gratis.index;
+}
+
+/** «De 45 a 60 minutos» -> {min:45,max:60}. «2 a 3 horas» -> {min:120,max:180}. */
+function enMinutos(texto) {
+  if (!texto) return null;
+  const t = String(texto).toLowerCase();
+  const numeros = (t.match(/\d+(?:[.,]\d+)?/g) ?? []).map((n) => Number(n.replace(',', '.')));
+  if (!numeros.length) return null;
+  const enHoras = /hora|\bh\b/.test(t) && !/minuto|\bmin\b/.test(t);
+  const factor = enHoras ? 60 : 1;
+  return { min: Math.min(...numeros) * factor, max: Math.max(...numeros) * factor };
+}
+
+/** La duración que aconseja el texto libre: «dedica 1-2 horas», «en unos 30 min». */
+function duracionDeLaDescripcion(texto) {
+  const m = /(?:dedica|reserva|calcula|necesitas|hacen falta|basta con|en unos?|unas?)\s+([^.;]{0,40}?(?:hora|minuto|min)\w*)/i.exec(
+    String(texto ?? '')
+  );
+  return m ? enMinutos(m[1]) : null;
+}
