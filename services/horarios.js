@@ -155,6 +155,21 @@ const SIEMPRE = [
   '24h', '24 horas', '24hs', 'las 24 horas', 'abierto 24',
   'open 24', 'always open', 'siempre abierto', 'sin horario', 'sin horarios',
   'acceso libre', 'entrada libre', 'al aire libre', 'no cierra', 'nunca cierra',
+  // LO QUE SOLO SE VE POR FUERA TAMPOCO CIERRA.
+  //
+  // Una zaouia, una fuente o una mezquita a la que no se entra no tienen puerta
+  // que cerrar: se ven desde la calle y se ven siempre. El lector las daba por
+  // ilegibles y el lienzo soltaba «no he podido leer su horario con seguridad,
+  // compruébalo antes de ir», que aquí es falso: no hay nada que comprobar.
+  //
+  // Y es el mismo defecto que ya arregló la lista de arriba con el faro y el
+  // mirador, por otra puerta: un aviso que salta sin motivo tapa los que sí lo
+  // tienen.
+  //
+  // FRASES ENTERAS Y NO LA PALABRA SUELTA. «Visible» a secas aparece en
+  // «Visible desde la Acrópolis. Interior solo en espectáculos», donde el
+  // interior SÍ tiene restricción y darlo por siempre abierto sería mentir.
+  'solo exteriores', 'solo exterior', 'visible desde el exterior', 'visible todo el dia',
 ];
 
 /** Las palabras que dan la vuelta al sentido de un tramo. */
