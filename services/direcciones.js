@@ -26,7 +26,13 @@
 
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
-import { geocodificarConGoogle, googleDisponible, contadorDeAverias, situarLugarConGoogle } from '../lib/google.js';
+import {
+  geocodificarConGoogle,
+  googleDisponible,
+  contadorDeAverias,
+  situarLugarConGoogle,
+  pareceUnSitio,
+} from '../lib/google.js';
 import { distanciaKm } from './distancias.js';
 
 /**
@@ -255,11 +261,45 @@ export async function geocodificarFila(direccionId, { cerca = null } = {}) {
   // preguntado y que no exista.
   const averiasAntes = contadorDeAverias();
 
+  // UNA CIUDAD SOLO ES LA RESPUESTA CUANDO SE PREGUNTA POR UNA CIUDAD.
+  //
+  // `punto` es una parada del viaje —una fila de puntos_interes—, y ahí que
+  // Google conteste con la localidad entera es justo lo que se le pedía. Para
+  // todo lo demás (un sitio, un hotel, un restaurante, una excursión) recibir
+  // la ciudad entera significa que no ha encontrado lo que se buscaba.
+  const buscabaUnaCiudad = d.tipo_elemento === 'punto';
+
+  // Lo que el guardián aparta, para poder contarlo en el mensaje. Rechazar en
+  // silencio dejaría el mismo "no se ha encontrado" de siempre, y esto no es
+  // eso: Google contestó, y contestó otra cosa.
+  let devolvioLaCiudad = null;
+
   for (const forma of formas) {
     try {
       hallado = await geocodificarConGoogle(forma, { cerca });
     } catch (err) {
       console.warn('[direcciones] Google falló:', err.message);
+    }
+
+    // EL GUARDIÁN. `geocodificarConGoogle` viene devolviendo `tipos` y `parcial`
+    // desde que se arreglaron los kilómetros inflados del viaje de Asia, y aquí
+    // se tiraban los dos. Son exactamente la señal que distingue «el Teatro de
+    // Epidauro» de «Nauplia», que es como cuatro sitios de Nafplio acabaron
+    // compartiendo un pin en el centro de la ciudad.
+    //
+    // Se mira SOLO el tipo, no `parcial`. Google marca coincidencia parcial muy
+    // a la ligera: la Iglesia Ortodoxa de Santa María Magdalena de Varsovia
+    // vuelve con `parcial: true` y con la dirección correcta. Rechazar por ahí
+    // tiraría aciertos. `parcial` se cuenta en el log y no decide.
+    if (hallado && !buscabaUnaCiudad && !pareceUnSitio(hallado)) {
+      devolvioLaCiudad = hallado;
+      hallado = null;
+      console.warn(
+        `[direcciones] «${forma}» resolvió a «${devolvioLaCiudad.direccion}» ` +
+          `(${(devolvioLaCiudad.tipos ?? []).join(', ')}` +
+          `${devolvioLaCiudad.parcial ? ', coincidencia parcial' : ''}): ` +
+          'eso es la ciudad entera, no el sitio. No lo doy por bueno.'
+      );
     }
 
     if (hallado) {
@@ -280,21 +320,43 @@ export async function geocodificarFila(direccionId, { cerca = null } = {}) {
     //
     // Lo que NO puede pasar, pase lo que pase, es quedarse en 'buscando': eso
     // es la ruedecita eterna.
+    // Y UN TERCERO, desde que hay guardián: Google sí encontró algo, pero lo
+    // que encontró era la ciudad entera. Eso no se arregla escribiendo mejor la
+    // dirección ni es una avería, así que merece su propio mensaje. Lo que no
+    // merece, y es el motivo de todo esto, es quedarse guardado como un punto
+    // bueno: un hueco honesto vale más que un pin que miente.
     const noSePudo = contadorDeAverias() > averiasAntes || !googleDisponible();
-    const mensaje = noSePudo
-      ? 'No he podido situar esta dirección: Google no ha contestado.'
-      : 'No se ha encontrado esa dirección. Puedes afinarla y volver a guardar.';
+    const mensaje = devolvioLaCiudad
+      ? `Google devuelve «${devolvioLaCiudad.direccion}», que es la ciudad entera y no este sitio. ` +
+        'Lo dejo sin situar antes que ponerlo en el centro del pueblo.'
+      : noSePudo
+        ? 'No he podido situar esta dirección: Google no ha contestado.'
+        : 'No se ha encontrado esa dirección. Puedes afinarla y volver a guardar.';
 
+    // El punto viejo se borra SOLO cuando ha hablado el guardián. Si lo que ha
+    // pasado es que Google no contestó, las coordenadas que ya hubiera son tan
+    // buenas como esta mañana y tirarlas sería castigar una avería de red. Pero
+    // si lo que hay guardado es un centroide, dejarlo ahí es dejar la mentira:
+    // `estado` deja de ser 'ok', pero `punto` sigue saliendo y los traslados se
+    // calculan igual desde el centro del pueblo.
     ejecutar(
-      `UPDATE direcciones
-          SET estado = ?, mensaje = ?, buscada_en = datetime('now'),
-              actualizado_en = datetime('now')
-        WHERE id = ?`,
-      noSePudo ? 'error' : 'sin_resultado',
-      mensaje,
-      d.id
+      devolvioLaCiudad
+        ? `UPDATE direcciones
+              SET estado = 'sin_resultado', mensaje = ?, lat = NULL, lng = NULL, fuente = NULL,
+                  buscada_en = datetime('now'), actualizado_en = datetime('now')
+            WHERE id = ?`
+        : `UPDATE direcciones
+              SET estado = ?, mensaje = ?, buscada_en = datetime('now'),
+                  actualizado_en = datetime('now')
+            WHERE id = ?`,
+      ...(devolvioLaCiudad
+        ? [mensaje, d.id]
+        : [noSePudo ? 'error' : 'sin_resultado', mensaje, d.id])
     );
-    console.log(`[direcciones] ${noSePudo ? 'avería' : 'sin resultado'}: «${d.direccion}»`);
+    console.log(
+      `[direcciones] ${devolvioLaCiudad ? 'era la ciudad' : noSePudo ? 'avería' : 'sin resultado'}: ` +
+        `«${d.direccion}»`
+    );
     return direccionDe(d.tipo_elemento, d.elemento_id);
   }
 
