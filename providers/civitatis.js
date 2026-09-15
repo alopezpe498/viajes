@@ -300,7 +300,23 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
     guardar(nombre, null);
     return null;
   } finally {
-    await contexto.close().catch(() => {});
+    // POR `cerrarNavegador`, Y NO POR `contexto.close()`.
+    //
+    // Cerrar el navegador a pelo apaga el Chrome pero NO suelta la plaza del
+    // dominio: eso vive dentro de `cerrarNavegador` (`plazaDe.get(contexto)?.()`),
+    // que es lo que ya usaban `buscarActividades` y `buscarFichaActividad`.
+    //
+    // Esta función tardaba tres segundos y dejaba la plaza tomada TRES MINUTOS,
+    // hasta que el vigilante la liberaba. Con cinco descubrimientos en el viaje a
+    // Túnez —dos de Sousse, dos de Kairouan y uno de la capital— eran quince
+    // minutos de una fase que trabajó menos de dos: cinco muertes del vigilante,
+    // una por llamada, y ninguna por un cuelgue de verdad.
+    //
+    // Y arrastraba el cronómetro con ella: `pararReloj` está en ese mismo
+    // camino, así que el tiempo de scraping seguía corriendo hasta el corte. Los
+    // «15m 32s de scraping» y los «39m 25s esperando cola» eran la misma fuga
+    // contada dos veces.
+    await cerrarNavegador(contexto);
   }
 }
 
