@@ -1,0 +1,284 @@
+/* =============================================================================
+   EL ASISTENTE DE AYUDA: la burbuja y su panel.
+   =============================================================================
+
+   HOJA PROPIA Y PREFIJO PROPIO (`ay-`), y las dos cosas por el mismo motivo:
+   esto sale en TODAS las pantallas, y cada pantalla tiene su hoja y su
+   vocabulario. Un componente que aterriza encima de todas no puede usar las
+   clases compartidas —`.boton`, `.nota`, `.caja`— porque cada hoja las redefine
+   a su manera y el resultado cambia según dónde estés. Aquí no se usa ninguna.
+
+   Lo que sí se usa son las VARIABLES de la app (--acento, --texto, --borde,
+   --radio…), que es lo que hace que esto parezca de la casa y no un añadido.
+
+   Medidas tomadas de los controles reales de la app, no inventadas: radio 14px
+   como `--radio-sm`, tipografía de 14-15px como las tarjetas, y el mismo azul
+   mar de acento.
+   ========================================================================== */
+
+/* --- La burbuja ----------------------------------------------------------
+   Abajo a la derecha, que es la única esquina libre en todas las pantallas:
+   los avisos flotantes salen abajo en el centro y las barras van arriba. */
+.ay-burbuja {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 3000;
+
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: var(--acento);
+  color: #fff;
+  font-size: 21px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(18, 48, 62, .22);
+  transition: background .15s, transform .15s, box-shadow .15s;
+}
+
+.ay-burbuja:hover {
+  background: var(--acento-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(18, 48, 62, .28);
+}
+
+.ay-burbuja:focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
+
+/* Con el panel abierto la burbuja se aparta: sobra, y taparía el campo. */
+.ay-burbuja.ay-burbuja--oculta { opacity: 0; pointer-events: none; transform: scale(.85); }
+
+/* EN EL MAPA A PANTALLA COMPLETA, a la izquierda.
+   Esa pantalla ya tiene la leyenda pegada abajo a la derecha, y dos cosas
+   flotando en la misma esquina se tapan. Abajo a la izquierda está libre. */
+body.mapa-maestro .ay-burbuja { right: auto; left: 18px; }
+body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
+
+/* --- El panel ------------------------------------------------------------- */
+.ay-panel {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  z-index: 3001;
+
+  width: min(370px, calc(100vw - 28px));
+  max-height: min(560px, calc(100vh - 36px));
+  display: flex;
+  flex-direction: column;
+
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: 0 10px 34px rgba(18, 48, 62, .20);
+  overflow: hidden;
+}
+
+.ay-panel[hidden] { display: none; }
+
+/* --- Cabecera ------------------------------------------------------------- */
+.ay-cab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 12px 12px 15px;
+  border-bottom: 1px solid var(--borde);
+  background: var(--fondo);
+}
+
+.ay-cab__titulo {
+  margin: 0;
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--texto);
+  line-height: 1.25;
+}
+
+.ay-cab__pie {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--texto-2);
+}
+
+.ay-cab__icono { color: var(--acento); font-size: 19px; }
+
+.ay-cerrar {
+  border: none;
+  background: none;
+  color: var(--texto-2);
+  font-size: 19px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ay-cerrar:hover { color: var(--texto); background: var(--borde); }
+.ay-cerrar:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+/* --- La conversación ------------------------------------------------------ */
+.ay-hilo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ay-msg {
+  max-width: 88%;
+  padding: 9px 12px;
+  border-radius: var(--radio-sm);
+  white-space: pre-wrap;   /* los pasos vienen en líneas sueltas */
+  overflow-wrap: anywhere; /* una URL larga no ensancha el panel */
+}
+
+.ay-msg--yo {
+  align-self: flex-end;
+  background: var(--acento);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+
+.ay-msg--el {
+  align-self: flex-start;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  color: var(--texto);
+  border-bottom-left-radius: 5px;
+}
+
+/* NO LO SÉ, con cara de nota y no de error.
+   Que el manual no cubra algo no es un fallo de nadie: es información. En rojo
+   parecería que se ha roto la aplicación. */
+.ay-msg--nosabe {
+  background: var(--prec-bg);
+  border-color: transparent;
+  color: var(--prec-tx);
+}
+
+/* Un problema de verdad: sin clave, sin red, la IA no contesta. */
+.ay-msg--fallo {
+  background: var(--alerta-bg);
+  border-color: transparent;
+  color: var(--alerta-tx);
+}
+
+/* El texto de bienvenida y las sugerencias. */
+.ay-hola {
+  color: var(--texto-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ay-ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ay-idea {
+  border: 1px solid var(--borde-fuerte);
+  background: var(--superficie);
+  color: var(--texto-2);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-align: left;
+}
+.ay-idea:hover { border-color: var(--acento); color: var(--acento); }
+.ay-idea:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+/* Los tres puntos mientras piensa. */
+.ay-pensando { display: flex; gap: 4px; align-self: flex-start; padding: 12px 13px; }
+.ay-pensando span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--texto-3);
+  animation: ay-latido 1.1s infinite ease-in-out;
+}
+.ay-pensando span:nth-child(2) { animation-delay: .15s; }
+.ay-pensando span:nth-child(3) { animation-delay: .30s; }
+
+@keyframes ay-latido {
+  0%, 60%, 100% { opacity: .3; transform: translateY(0); }
+  30%           { opacity: 1;  transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ay-pensando span { animation: none; opacity: .55; }
+  .ay-burbuja { transition: none; }
+}
+
+/* --- El campo ------------------------------------------------------------- */
+.ay-pie {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px;
+  border-top: 1px solid var(--borde);
+  background: var(--fondo);
+}
+
+.ay-campo {
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde-fuerte);
+  border-radius: var(--radio-sm);
+  padding: 8px 11px;
+  resize: none;
+  max-height: 96px;
+  line-height: 1.4;
+}
+.ay-campo:focus { outline: none; border-color: var(--acento); }
+.ay-campo::placeholder { color: var(--texto-3); }
+
+.ay-enviar {
+  border: none;
+  background: var(--acento);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 50%;
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.ay-enviar:hover:not(:disabled) { background: var(--acento-hover); }
+.ay-enviar:disabled { background: var(--texto-3); cursor: default; }
+.ay-enviar:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* --- Móvil ---------------------------------------------------------------
+   La app reserva `--barra-alto` abajo para su barra fija, así que aquí la
+   burbuja y el panel suben por encima de ella en vez de quedar debajo. */
+@media (max-width: 720px) {
+  .ay-burbuja {
+    bottom: calc(var(--barra-alto, 78px) + 12px + env(safe-area-inset-bottom, 0px));
+  }
+  .ay-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+    bottom: calc(var(--barra-alto, 78px) + 12px + env(safe-area-inset-bottom, 0px));
+    max-height: calc(100vh - var(--barra-alto, 78px) - 34px);
+  }
+  /* En el mapa no hay barra fija: el panel llega hasta abajo. */
+  body.mapa-maestro .ay-burbuja,
+  body.mapa-maestro .ay-panel {
+    left: 10px;
+    right: 10px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  body.mapa-maestro .ay-burbuja { right: auto; width: 46px; }
+}

@@ -38,6 +38,11 @@ const MUTANT = '0.14.1';
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/<%= LEAFLET %>/leaflet.min.css">
   <link rel="stylesheet" href="/css/estilo.css">
   <link rel="stylesheet" href="/css/mapa-viaje.css">
+  <%# Esta pantalla no incluye `parciales/cabecera`, así que la hoja del asistente
+      de ayuda se carga aquí a mano. Su burbuja se coloca abajo a la IZQUIERDA en
+      esta pantalla —lo decide `body.mapa-maestro` en su propia hoja—, porque la
+      esquina de abajo a la derecha ya la ocupa la leyenda. %>
+  <link rel="stylesheet" href="/css/ayuda.css">
 </head>
 <body class="mapa-maestro">
 
@@ -107,5 +112,7 @@ const MUTANT = '0.14.1';
   <script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@<%= MUTANT %>/dist/Leaflet.GoogleMutant.min.js"></script>
   <script src="/js/mapa-teselas.js"></script>
   <script src="/js/mapa-viaje.js"></script>
+  <%# El asistente de ayuda, que en las demás pantallas entra por `parciales/pie`. %>
+  <script src="/js/ayuda.js" defer></script>
 </body>
 </html>

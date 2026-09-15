@@ -1,4 +1,9 @@
 <script src="/js/app.js"></script>
+<%# El asistente de ayuda. Se monta solo y va en todas las pantallas que usan
+    este pie; el mapa a pantalla completa, que no lo usa, lo carga por su cuenta.
+    El dosier NO lo lleva a propósito: es el documento que uno imprime o comparte,
+    y una burbuja de ayuda no pinta nada ahí. %>
+<script src="/js/ayuda.js" defer></script>
 <%# Hueco para el JS propio de una pantalla concreta %>
 <%- typeof extraPie !== 'undefined' && extraPie ? extraPie : '' %>
 </body>

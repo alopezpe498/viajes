@@ -67,6 +67,11 @@ const avionPct = typeof pasoActual !== 'undefined' && pasoActual
   <%# Iconos Tabler como webfont. Necesita conexión: si no hay, el resto se ve igual. %>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/estilo.css">
+  <%# El asistente de ayuda sale en todas las pantallas, así que su hoja va aquí.
+      Tiene la suya y no vive en estilo.css a propósito: es un componente que
+      aterriza encima de pantallas que ya tienen su propio vocabulario, y sus
+      clases (`ay-`) no se cruzan con ninguna. %>
+  <link rel="stylesheet" href="/css/ayuda.css">
   <%# Hueco para las pantallas que necesitan algo más en la cabeza (Leaflet, p.ej.) %>
   <%- typeof extraCabeza !== 'undefined' && extraCabeza ? extraCabeza : '' %>
 </head>

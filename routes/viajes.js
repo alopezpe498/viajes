@@ -208,6 +208,7 @@ import {
   quitarAjuste,
   probarAjuste,
 } from '../services/ajustes.js';
+import { preguntar, ayudaDisponible } from '../services/ayuda.js';
 import {
   traducirRegistro,
   registroTraducidoDe,
@@ -2905,6 +2906,38 @@ router.post('/api/ajustes/:clave/probar', async (req, res) => {
   const r = await probarAjuste(req.params.clave, req.body?.valor ?? null);
   if (r.error) return res.status(400).json({ error: r.error });
   res.json(r);
+});
+
+// =============================================================================
+// EL ASISTENTE DE AYUDA
+// =============================================================================
+/**
+ * Una duda sobre cómo se usa la web.
+ *
+ * El botón flotante está en todas las pantallas, así que esta ruta no cuelga de
+ * ningún viaje: la ayuda es de la aplicación, no de un viaje concreto.
+ *
+ * Los errores van con su texto, no con un «algo ha fallado»: el más probable con
+ * diferencia es que falte la clave de la IA, y eso se arregla en la pantalla de
+ * ajustes de instalación. Decir cuál es el problema ahorra el viaje.
+ */
+/**
+ * ¿Puede contestar el asistente ahora mismo?
+ *
+ * Lo pregunta el panel al abrirse. Sin clave de IA no hay respuestas, y decirlo
+ * al abrir es mejor que dejar escribir una pregunta entera para contestar con un
+ * error: el trabajo ya estaría hecho y tirado.
+ */
+router.get('/api/ayuda', (req, res) => res.json({ disponible: ayudaDisponible() }));
+
+router.post('/api/ayuda', async (req, res) => {
+  try {
+    const r = await preguntar(req.body?.pregunta, req.body?.historial);
+    res.json(r);
+  } catch (err) {
+    console.warn('[ayuda] no pude contestar:', err.message);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Las dos direcciones de antes siguen funcionando: llevan a la pantalla nueva,
