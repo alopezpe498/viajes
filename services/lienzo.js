@@ -667,6 +667,15 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       donde,
       icono,
       texto,
+      // LAS DOS DURACIONES, PARA PODER COMPARARLAS.
+      //
+      // `referenciaMin` es la ruta por carretera que mide Google entre las dos
+      // ciudades; `puertaMin`, lo que dura el medio elegido de puerta a puerta.
+      // Viajan aquí para que el validador pueda ver si se contradicen, que es lo
+      // que destapa un trayecto al que le falta contar un tramo.
+      referenciaMin: t.fuente_distancia === 'carretera' ? t.duracion_min ?? null : null,
+      puertaMin: t.duracion_puerta_min ?? null,
+      ciudades: origen && destino ? `${origen.nombre_ciudad} → ${destino.nombre_ciudad}` : null,
       // Solo en el bloque de ida: cuánto se ha volado y cuántos husos se han
       // cruzado. Es lo que convierte el día de llegada en un día de
       // aclimatación en vez de en un día normal con menos horas.
@@ -974,6 +983,9 @@ function calcularAvisos(dias, colocados, fijos, viajeId) {
   // 6) Y si has puesto algo mientras vas dentro del tren.
   avisos.push(...avisosDeTraslado(dias, colocados, fijos));
 
+  // 6a) Y si la duración del traslado elegido no se cree.
+  avisos.push(...avisosDeTrasladoIncompleto(fijos));
+
   // 6b) Y si algo pisa el vuelo de llegada o el de salida, a la hora exacta.
   avisos.push(...avisosContraFijos(dias, colocados, fijos));
 
@@ -1195,6 +1207,62 @@ function bordesDeFranja(clave) {
  * Se avisa de lo que cae dentro de la ventana: lo que tiene hora, por su hora;
  * lo que no la tiene, cuando su franja entera queda comida por el viaje.
  */
+/**
+ * CUANDO EL TRASLADO ELEGIDO NO SE CREE A SÍ MISMO.
+ *
+ * Un tramo tiene dos medidas del mismo camino: la ruta que mide Google entre las
+ * dos ciudades y el puerta a puerta del medio elegido. Difieren siempre un poco
+ * —un tren no va por la carretera, y el puerta a puerta suma accesos— y eso está
+ * bien. Lo que no puede ser es que la referencia DOBLE a lo elegido: entonces al
+ * trayecto le falta contar algo.
+ *
+ * EL CASO QUE ORIGINA ESTO. Heraclión → Nafplio: Google dice 10h34 y el coche
+ * elegido 3h45 puerta a puerta. La ficha del coche lo confiesa en su propia
+ * nota: «Conducción desde El Pireo a Nafplio… Se puede embarcar coche en el
+ * ferry desde Heraclión». Esa 1h45 de trayecto es solo el último tramo; las
+ * nueve horas de barco entre Creta y el continente no las cuenta nadie. El
+ * lienzo prometía llegar a Nafplio a las 11:45 cuando se llega pasadas las
+ * ocho de la tarde.
+ *
+ * NO SE CORRIGE, SE DICE. No hay forma de saber desde aquí cuánto dura de verdad
+ * —habría que preguntárselo a alguien, y un número inventado es justo lo que ha
+ * causado esto—. Un hueco honesto en el día vale más que una hora de llegada que
+ * miente.
+ *
+ * Solo se mira hacia un lado: que la referencia sea mucho mayor. Al revés —un
+ * puerta a puerta más largo que la carretera— es lo normal y no dice nada: son
+ * los accesos, la antelación y que el medio elegido no va en línea recta.
+ */
+function avisosDeTrasladoIncompleto(fijos) {
+  // EL UMBRAL, PARA PODER MOVERLO. Con 2 se caza el ferry de Creta (2,8 veces) y
+  // no salta ni el bus de Nafplio ni el tren de Cracovia, que se quedan muy por
+  // debajo. Bajarlo de 1,6 empezaría a acusar a trenes rápidos, que legítimamente
+  // tardan la mitad que la carretera.
+  const factor = Math.max(1.6, parametro('factor_traslado_incompleto', 2));
+  const avisos = [];
+
+  for (const f of fijos) {
+    if (f.donde !== 'salto' || !f.referenciaMin || !f.puertaMin) continue;
+
+    const veces = f.referenciaMin / f.puertaMin;
+    if (veces < factor) continue;
+
+    avisos.push({
+      dia: f.dia,
+      tipo: 'traslado-incompleto',
+      idsAfectados: [],
+      texto:
+        `${f.ciudades ?? 'Este traslado'}: el medio elegido dice ` +
+        `${comoRatoCorto(f.puertaMin)} puerta a puerta, pero la ruta real entre las dos ` +
+        `ciudades son ${comoRatoCorto(f.referenciaMin)} (${veces.toFixed(1)} veces más). ` +
+        'Al trayecto le falta contar algún tramo —un ferry, un enlace—, así que la hora ' +
+        'de llegada de aquí arriba no es de fiar. Compruébalo antes de montar el día.',
+    });
+  }
+
+  return avisos;
+}
+
 function avisosDeTraslado(dias, colocados, fijos) {
   const avisos = [];
 
