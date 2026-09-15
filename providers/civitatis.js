@@ -258,7 +258,13 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
       return null;
     }
 
-    const slugPais = destinoASlug(pais);
+    const slugPais = await slugDelPais(pagina, pais);
+    if (!slugPais) {
+      console.log(`[civitatis] no encuentro el indice de "${pais}".`);
+      guardar(nombre, null);
+      return null;
+    }
+
     await pagina.goto(`${BASE}/${slugPais}/`, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
     await pausaHumana(600, 1200);
 
@@ -332,6 +338,51 @@ export function esLaPortada(url) {
 function laPaginaNoExiste(respuesta) {
   const estado = respuesta?.status?.();
   return typeof estado === 'number' && estado >= 400;
+}
+
+/**
+ * EL ÍNDICE DE UN PAÍS NO SIEMPRE SE LLAMA COMO EL PAÍS.
+ *
+ * Cuando el nombre del país choca con el de una de sus ciudades, Civitatis
+ * desambigua con el sufijo `-pais`. Y la ciudad se queda con el nombre pelado,
+ * no al revés:
+ *
+ *     /es/tunez/        la CIUDAD de Túnez
+ *     /es/tunez-pais/   el PAÍS
+ *
+ * Aquí se hacía `destinoASlug(pais)` y punto, así que al buscar el índice de
+ * Tunisia se abría la página de la capital. Comprobado con Playwright, que es lo
+ * que corre en producción: del índice del país salen ocho destinos tunecinos
+ * —tunez, djerba, hammamet, tozeur, susa, monastir, douz, nabeul— y de la
+ * ciudad sale UNO, `tunez-pais`. De ahí la huella invertida que quedó en la
+ * base: «Túnez ciudad» apuntando a la página del país.
+ *
+ * SE PRUEBA `-pais` PRIMERO, y no al revés. El pelado existe SIEMPRE —para un
+ * país sin choque es el índice, y para uno con choque es la ciudad—, así que
+ * probarlo primero no distingue nada. El sufijo, en cambio, solo existe cuando
+ * hay choque: si contesta, es el país sin lugar a dudas. Comprobado contra
+ * Civitatis: solo lo tienen Túnez, Luxemburgo y Singapur; Grecia, Polonia,
+ * Italia, Marruecos, Egipto, México, Panamá y Guatemala van pelados.
+ *
+ * Cuesta una comprobación de más, y solo cuando hay que ir al índice.
+ */
+async function slugDelPais(pagina, pais) {
+  const pelado = destinoASlug(pais);
+  if (!pelado) return null;
+
+  for (const candidato of [`${pelado}-pais`, pelado]) {
+    const respuesta = await pagina.goto(`${BASE}/${candidato}/`, {
+      waitUntil: 'domcontentloaded',
+      timeout: TIMEOUT_LARGO,
+    });
+    if (laPaginaNoExiste(respuesta) || esLaPortada(pagina.url())) continue;
+    if (candidato !== pelado) {
+      console.log(`[civitatis] el indice de "${pais}" lleva sufijo: ${candidato}`);
+    }
+    return candidato;
+  }
+
+  return null;
 }
 
 /** Guarda una captura para poder ver que habia en pantalla cuando algo fallo. */
