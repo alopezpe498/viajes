@@ -48,6 +48,27 @@ const esPunto = (p) =>
   p && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng));
 
 /**
+ * UN NÚMERO, O «NO HAY RUTA». Y `null` NO ES CERO.
+ *
+ * `Number.isFinite(Number(v))` parecía bastar y no bastaba: `Number(null)` es
+ * `0`, y `0` es finito. Así que un «no hay bus entre estos dos puntos» —que
+ * viaja como `minutos: null`— se guardaba como **cero minutos**.
+ *
+ * Bourtzi → Epidauro en transporte público son veintiocho kilómetros, y la caché
+ * decía que se tarda cero. Es el mismo defecto que el «Gratis» de las fichas y
+ * que la llegada falsa del traslado: un hueco relleno con un número que parece
+ * bueno. `''` cae por lo mismo, que también vale cero.
+ *
+ * Ojo a la asimetría: `Number(undefined)` es `NaN`, que NO es finito, así que
+ * `undefined` sí se colaba bien. Solo fallaba el caso que de verdad ocurre.
+ */
+const numeroOSinRuta = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
  * El par, siempre en el mismo orden.
  *
  * Con el menor delante, una fila vale para ir y para volver: el tiempo de A a B
@@ -118,6 +139,19 @@ export function guardar(a, b, resultados) {
 
   for (const r of resultados) {
     if (!r?.modo) continue;
+
+    // EL «SIN RUTA» SE GUARDA, Y SE GUARDA COMO LO QUE ES.
+    //
+    // Guardarlo es deliberado —lo explican `loQueSeSabe` aquí arriba y el propio
+    // `calcularVariasRutas`—: «no hay bus entre estos dos puntos» es una
+    // respuesta de Google, y no apuntarla condena a preguntarla en cada visita.
+    // Es el caso más frecuente, el transporte público fuera de una ciudad.
+    //
+    // Lo que no puede es guardarse como un cero. `minutos: null` sale de aquí
+    // como `null`, y `deLaCache` ya sabe leerlo: filtra por `minutos != null`.
+    const minutos = numeroOSinRuta(r.minutos);
+    const km = numeroOSinRuta(r.km);
+
     ejecutar(
       `INSERT INTO distancias_puntos (a_lat, a_lon, b_lat, b_lon, modo, minutos, km, fuente, calculado_en)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -131,8 +165,8 @@ export function guardar(a, b, resultados) {
       q.lat,
       q.lon,
       r.modo,
-      Number.isFinite(Number(r.minutos)) ? Math.round(Number(r.minutos)) : null,
-      Number.isFinite(Number(r.km)) ? Number(r.km) : null,
+      minutos == null ? null : Math.round(minutos),
+      km,
       r.fuente ?? 'google'
     );
     guardadas += 1;
