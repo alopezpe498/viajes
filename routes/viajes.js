@@ -3687,6 +3687,72 @@ router.post('/api/viaje/:viajeId/tiempos', async (req, res) => {
 });
 
 /**
+ * MEDIR DOS PUNTOS DEL MAPA.
+ *
+ * La capa de tiempos contesta «cuánto hay entre lo que ya está puesto en un
+ * día». Esto contesta la otra mitad: «¿y de aquí a aquí?».
+ *
+ * POR IDS, como los tiempos, y por lo mismo: el servidor no acepta coordenadas
+ * sueltas, así que nadie puede usar esto como un proxy gratis de Google.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * Y SE GUARDA EN LOS TRASLADOS DE LA PARADA, PERO SOLO SI ES DE UNA.
+ *
+ * Una medida entre dos puntos de la misma ciudad es material de esa parada:
+ * aparece en su pestaña, va al dosier y se puede fijar. Entre ciudades
+ * distintas —el hotel de Atenas y un sitio de Santorini— no cuelga de ninguna
+ * parada, y meterla en una a dedo sería ensuciar la lista de esa ciudad con algo
+ * que no es suyo. Ahí se queda en la caché y en pantalla, que es lo que se
+ * había ido a buscar.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+router.post('/api/viaje/:viajeId/medir', async (req, res) => {
+  const viajeId = Number(req.params.viajeId);
+  const mapa = await mapaDeViaje(viajeId);
+  if (!mapa) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
+
+  const porId = new Map(mapa.items.filter((i) => !i.sinUbicar).map((i) => [i.id, i]));
+  const de = porId.get(String(req.body?.de ?? ''));
+  const a = porId.get(String(req.body?.a ?? ''));
+
+  if (!de || !a) return res.status(400).json({ error: 'Alguno de esos puntos ya no está en el viaje.' });
+  if (de.id === a.id) return res.status(400).json({ error: 'Son el mismo punto.' });
+
+  const [r] = await calcularVariasRutas([
+    [{ lat: de.lat, lng: de.lon }, { lat: a.lat, lng: a.lon }],
+  ]);
+
+  // Si no se ha podido medir, no se guarda nada: un traslado en la lista sin
+  // tiempos es una fila que promete un dato que no existe.
+  let guardadoEn = null;
+  if (r.resultados.length && de.etapaId && de.etapaId === a.etapaId) {
+    const etapa = una('SELECT nombre_ciudad FROM etapas WHERE id = ?', de.etapaId);
+    // `crearTraslado` ya devuelve el que hubiera si la consulta se repite, así
+    // que medir dos veces lo mismo no llena la lista de duplicados.
+    const creado = crearTraslado(
+      de.etapaId,
+      { ...(de.dir ?? {}), texto: de.nombre },
+      { ...(a.dir ?? {}), texto: a.nombre }
+    );
+    if (creado && !creado.error) guardadoEn = etapa?.nombre_ciudad ?? null;
+  }
+
+  res.json({
+    de: de.id,
+    a: a.id,
+    desde: de.nombre,
+    hasta: a.nombre,
+    resultados: r.resultados,
+    elegido: elegirModo(r.resultados),
+    fuente: r.fuente,
+    mensaje: r.mensaje ?? null,
+    // Para poder decir en pantalla dónde ha quedado, o no decir nada si no ha
+    // quedado en ninguna parte.
+    guardadoEn,
+  });
+});
+
+/**
  * CUÁL DE LOS TRES MODOS SE ENSEÑA.
  *
  * Sobre una línea del mapa cabe un número, no tres. El criterio es el del

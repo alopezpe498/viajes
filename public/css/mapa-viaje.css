@@ -288,3 +288,57 @@ html:has(.mapa-maestro) { height: 100%; }
   .mm-titulo { max-width: calc(100vw - 28px); }
   .mm-leyenda { bottom: 74px; max-width: calc(100vw - 28px); }
 }
+
+/* ============================================================================
+   MEDIR DOS PUNTOS
+   ----------------------------------------------------------------------------
+   Debajo de la barra de vistas y centrado como ella: es una herramienta del
+   mapa, no del panel. Comparte `.mm-flota` con todo lo demás flotante —mismo
+   vidrio, mismo borde, misma sombra— que es lo que hace que las cajas sobre el
+   mapa se lean como una sola capa y no como parches sueltos.
+   ========================================================================== */
+.mm-medir {
+  top: 62px; left: 50%; transform: translateX(-50%);
+  border-radius: var(--radio-sm);
+  padding: 5px;
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: min(84vw, 360px);
+}
+.mm-medir__boton {
+  border: 0; background: transparent; font: inherit;
+  font-size: 12.5px; font-weight: 600; color: var(--texto-2);
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.mm-medir__boton:hover { color: var(--texto); }
+/* Armado: se ve de lejos que el próximo clic en el mapa hace algo distinto. */
+.mm-medir__boton[aria-pressed="true"] { background: var(--acento); color: #fff; }
+.mm-medir__boton:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+.mm-medir__caja {
+  padding: 8px 12px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--texto-2);
+  border-top: 1px solid var(--borde);
+}
+.mm-medir__caja b { color: var(--texto); }
+.mm-medir__quien { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
+.mm-medir__modos { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.mm-medir__modo { display: inline-flex; align-items: center; gap: 5px; }
+.mm-medir__modo i { color: var(--acento); }
+/* El elegido por el umbral, marcado: es el que se enseñaría en una etiqueta. */
+.mm-medir__modo--elegido b { color: var(--acento); }
+.mm-medir__nota { display: block; margin-top: 6px; color: var(--texto-3); font-size: 11.5px; }
+.mm-medir__nota--mala { color: var(--alerta-tx); }
+
+/* El punto ya marcado, esperando al segundo clic. */
+.mm-punto-medido {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--acento); border: 3px solid #fff;
+  box-shadow: 0 1px 6px rgba(18, 48, 62, .5);
+}
+
+@media (max-width: 640px) {
+  .mm-medir { top: 58px; }
+}

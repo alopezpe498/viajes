@@ -499,7 +499,10 @@
             `<b>${esc(i.nombre)}</b>${i.hora ? ` · ${esc(i.hora)}` : ''}` +
               (i.situadaComo ? `<br><small>${esc(i.situadaComo)}</small>` : '')
           )
-          .on('click', () => seleccionar(i.id, true));
+          // Con la medida armada, el clic es para medir y no para abrir la
+          // ficha: dos cosas distintas en el mismo gesto se distinguen por el
+          // modo, que además se ve en el cursor y en el botón.
+          .on('click', () => { if (!clicMidiendo(i)) seleccionar(i.id, true); });
         puntos.push([i.lat, i.lon]);
       }
     }
@@ -763,6 +766,136 @@
 
   document.getElementById('mm-cerrar').onclick = plegar;
   abrir.onclick = desplegar;
+
+  // ===========================================================================
+  // MEDIR DOS PUNTOS
+  // ---------------------------------------------------------------------------
+  // La capa de tiempos contesta «cuánto hay entre lo que ya está puesto en un
+  // día». Esto contesta la otra mitad: «¿y de AQUÍ a AQUÍ?», que es la pregunta
+  // que uno se hace mirando el mapa y que hasta ahora obligaba a salir a Google
+  // Maps y volver sin que quedara constancia.
+  //
+  // SE MIDE ENTRE PUNTOS DEL VIAJE, no entre coordenadas sueltas. Dos motivos y
+  // los dos pesan: el servidor solo acepta ids —nadie puede usar esto como un
+  // proxy gratis de Google— y una medida entre dos sitios del viaje se puede
+  // guardar en su parada; entre dos manchas del mapa, no.
+  // ===========================================================================
+  const botonMedir = document.getElementById('mm-medir-boton');
+  const textoMedir = document.getElementById('mm-medir-texto');
+  const cajaMedir = document.getElementById('mm-medir-caja');
+
+  let midiendo = false;
+  let primerPunto = null;
+  let marcaMedida = null;
+
+  function decirMedida(html, tono = '') {
+    cajaMedir.innerHTML = html;
+    cajaMedir.hidden = !html;
+    cajaMedir.className = 'mm-medir__caja' + (tono ? ` mm-medir__caja--${tono}` : '');
+  }
+
+  function limpiarMedida() {
+    primerPunto = null;
+    if (marcaMedida) { marcaMedida.remove(); marcaMedida = null; }
+  }
+
+  function armarMedir(si) {
+    midiendo = si;
+    botonMedir.setAttribute('aria-pressed', String(si));
+    textoMedir.textContent = si ? 'Elige dos puntos' : 'Medir';
+    // El cursor lo dice mejor que cualquier texto: el mapa está esperando algo.
+    div.style.cursor = si ? 'crosshair' : '';
+    if (!si) { limpiarMedida(); decirMedida(''); }
+  }
+
+  botonMedir.addEventListener('click', () => armarMedir(!midiendo));
+
+  /** Segundo clic: se pregunta. El primero solo marca y espera. */
+  async function medirHasta(item) {
+    const a = primerPunto;
+    limpiarMedida();
+    armarMedir(false);
+
+    decirMedida(
+      `<span class="mm-medir__quien"><b>${esc(a.nombre)}</b> → <b>${esc(item.nombre)}</b></span>` +
+        '<span class="mm-medir__nota">Midiendo…</span>'
+    );
+
+    try {
+      const r = await fetch(`/api/viaje/${VIAJE}/medir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ de: a.id, a: item.id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+
+      const quien = `<span class="mm-medir__quien"><b>${esc(a.nombre)}</b> → <b>${esc(item.nombre)}</b></span>`;
+
+      if (!d.resultados?.length) {
+        // NO SE INVENTA NADA: si Google no contestó, se dice, con su motivo.
+        decirMedida(quien + `<span class="mm-medir__nota mm-medir__nota--mala">${esc(d.mensaje ?? 'No se pudo medir.')}</span>`);
+        return;
+      }
+
+      const modos = d.resultados
+        .map((x) => {
+          const elegido = d.elegido && x.modo === d.elegido.modo;
+          return (
+            `<span class="mm-medir__modo${elegido ? ' mm-medir__modo--elegido' : ''}">` +
+            `<i class="ti ${ICONO_MODO[x.modo] ?? 'ti-arrow-right'}"></i> ` +
+            `<b>${x.minutos} min</b>${x.km != null ? ` · ${comoKm(x.km)}` : ''}</span>`
+          );
+        })
+        .join('');
+
+      // De dónde salió y si envejece: las dos cosas que el número solo no dice.
+      const notas = [];
+      if (d.fuente === 'cache') notas.push('ya estaba medido');
+      if (d.resultados.some((x) => x.modo === 'publico')) notas.push('el tiempo en transporte es el de hoy');
+      if (d.guardadoEn) notas.push(`guardado en los traslados de ${esc(d.guardadoEn)}`);
+
+      decirMedida(
+        quien +
+          `<span class="mm-medir__modos">${modos}</span>` +
+          (notas.length ? `<span class="mm-medir__nota">${notas.join(' · ')}.</span>` : '')
+      );
+    } catch (err) {
+      decirMedida(`<span class="mm-medir__nota mm-medir__nota--mala">${esc(err.message)}</span>`);
+    }
+  }
+
+  /**
+   * El clic en un punto del mapa cuando la medida está armada.
+   *
+   * Devuelve true si lo ha consumido: quien lo llama tiene que saber que ESE
+   * clic no era para seleccionar la ficha.
+   */
+  function clicMidiendo(item) {
+    if (!midiendo || !item || item.lat == null) return false;
+
+    if (!primerPunto) {
+      primerPunto = item;
+      marcaMedida = L.marker([item.lat, item.lon], {
+        icon: L.divIcon({ html: '<div class="mm-punto-medido"></div>', className: '', iconSize: [14, 14] }),
+        interactive: false,
+      }).addTo(mapa);
+      textoMedir.textContent = 'Ahora el segundo';
+      decirMedida(`<span class="mm-medir__quien">Desde <b>${esc(item.nombre)}</b>. Elige el otro punto.</span>`);
+      return true;
+    }
+
+    // El mismo punto dos veces no mide nada: se toma como cambiar de idea.
+    if (primerPunto.id === item.id) {
+      limpiarMedida();
+      textoMedir.textContent = 'Elige dos puntos';
+      decirMedida('');
+      return true;
+    }
+
+    medirHasta(item);
+    return true;
+  }
 
   // EN EL MÓVIL ARRANCA PLEGADO. Un panel de 320 px sobre una pantalla de 390
   // deja el mapa en una rendija, y el mapa es a lo que se viene.

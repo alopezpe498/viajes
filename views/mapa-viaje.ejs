@@ -87,6 +87,19 @@ const MUTANT = '0.14.1';
     <div class="mm-lista" id="mm-lista"></div>
   </section>
 
+  <%# --- MEDIR DOS PUNTOS ---
+      El boton arma la seleccion; los dos clics siguientes sobre el mapa dicen de
+      donde a donde. El resultado sale aqui mismo, no en el panel: se mide
+      mirando el mapa, y mandar la respuesta a otro sitio obliga a apartar la
+      vista de lo que se acaba de señalar. %>
+  <div class="mm-flota mm-medir" id="mm-medir">
+    <button class="mm-medir__boton" id="mm-medir-boton" type="button" aria-pressed="false">
+      <i class="ti ti-ruler-measure" aria-hidden="true"></i>
+      <span id="mm-medir-texto">Medir</span>
+    </button>
+    <div class="mm-medir__caja" id="mm-medir-caja" hidden></div>
+  </div>
+
   <%# --- La leyenda, discreta --- %>
   <div class="mm-flota mm-leyenda" id="mm-leyenda"></div>
 
