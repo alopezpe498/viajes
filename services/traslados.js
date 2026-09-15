@@ -30,7 +30,7 @@
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
-import { rutasConGoogle, MODOS, hayClaveGoogle } from '../lib/google.js';
+import { rutasConGoogle, matrizConGoogle, MODOS, hayClaveGoogle } from '../lib/google.js';
 import { loQueSeSabe, guardar as guardarEnCache } from './cache-distancias.js';
 import { comoDuracion } from './distancias.js';
 import { direccionDe, TIPOS_CON_DIRECCION } from './direcciones.js';
@@ -48,89 +48,148 @@ const punto = (p) => p && Number.isFinite(Number(p.lat)) && Number.isFinite(Numb
  * porque mirando "12 min en coche" no hay forma de saber quién lo dijo.
  */
 export async function calcularRutas(a, b) {
-  if (!punto(a) || !punto(b)) {
-    return { resultados: [], fuente: null, mensaje: 'Faltan las coordenadas de algún extremo.' };
-  }
+  const [uno] = await calcularVariasRutas([[a, b]]);
+  return uno;
+}
 
-  // LO QUE YA SE SABE NO SE VUELVE A PREGUNTAR.
+/**
+ * LO MISMO, PERO PARA VARIOS PARES A LA VEZ.
+ *
+ * Aquí está el ahorro. `calcularRutas` es un par, y para un par la matriz no
+ * aporta nada: sigue siendo una llamada por modo. Con varios sí, y mucho —ocho
+ * puntos y tres modos pasan de veintiuna llamadas a tres—, porque la matriz
+ * cruza todos los pares en una sola petición por modo.
+ *
+ * Devuelve un array del MISMO tamaño y EN EL MISMO ORDEN que `pares`, con la
+ * misma forma que devolvía `calcularRutas` en cada hueco: `{ resultados,
+ * fuente, mensaje }`. El orden importa porque quien llama empareja por índice.
+ */
+export async function calcularVariasRutas(pares) {
+  const salidas = pares.map(() => null);
+
+  // --- 1) Lo que ya se sabe ------------------------------------------------
   //
-  // Del hotel al Partenón andando hay lo que hay. Esto son tres llamadas a
-  // Google por par —una por modo— y lo que no cambia se paga una sola vez. La
-  // caché es de catálogo y vive por debajo de `traslados`: esta tabla sigue
-  // guardando lo suyo igual, solo que ahora a veces no hay que salir a
-  // preguntarlo.
-  const sabido = loQueSeSabe(a, b, MODOS_QUE_SE_PIDEN);
-  const faltan = MODOS_QUE_SE_PIDEN.filter((m) => !sabido.has(m));
+  // Del hotel al Partenón andando hay lo que hay. La caché es de catálogo y vive
+  // por debajo de `traslados`: esa tabla sigue guardando lo suyo igual, solo que
+  // ahora a veces no hay que salir a preguntarlo.
+  const pendientes = [];
 
-  // Los tres en la caché: no se llama a nadie.
-  if (!faltan.length) {
-    const resultados = [...sabido.values()]
-      .filter((r) => r.minutos != null)
-      .sort((x, y) => orden(x.modo) - orden(y.modo));
+  pares.forEach(([a, b], i) => {
+    if (!punto(a) || !punto(b)) {
+      salidas[i] = { resultados: [], fuente: null, mensaje: 'Faltan las coordenadas de algún extremo.' };
+      return;
+    }
 
-    if (resultados.length) return { resultados, fuente: 'cache' };
+    const sabido = loQueSeSabe(a, b, MODOS_QUE_SE_PIDEN);
+    const faltan = MODOS_QUE_SE_PIDEN.filter((m) => !sabido.has(m));
 
-    // Los tres guardados y los tres sin ruta: se preguntó y no hay forma de ir.
-    // Eso es una respuesta y vale tanto como un tiempo: no se vuelve a preguntar.
-    return {
-      resultados: [],
-      fuente: 'cache',
-      mensaje: 'No hay forma de ir entre esos dos puntos por ninguno de los medios.',
-    };
-  }
+    if (faltan.length) {
+      pendientes.push({ i, a, b, sabido, faltan });
+      return;
+    }
 
+    // Los tres en la caché: no se llama a nadie.
+    const resultados = deLaCache(sabido);
+    salidas[i] = resultados.length
+      ? { resultados, fuente: 'cache' }
+      : {
+          // Los tres guardados y los tres sin ruta: se preguntó y no hay forma de
+          // ir. Es una respuesta y vale tanto como un tiempo.
+          resultados: [],
+          fuente: 'cache',
+          mensaje: 'No hay forma de ir entre esos dos puntos por ninguno de los medios.',
+        };
+  });
+
+  if (!pendientes.length) return salidas;
+
+  // --- 2) Lo que falta, a Google -------------------------------------------
+  //
   // SOLO GOOGLE. Aquí había un plan B con OSRM y una estimación a pie, y el
   // plan B era el problema: cuando Google no contestaba, la pantalla seguía
   // enseñando tiempos —peores, y sin decir que lo eran— y nadie se enteraba de
   // que la clave llevaba semanas sin funcionar. Un respaldo silencioso es un
   // fallo que no existe hasta que alguien lo mira a ojo.
   //
-  // Ahora hay dos respuestas posibles y las dos son honestas: los tiempos de
-  // Google, o un mensaje diciendo que no se ha podido. La caché no cambia eso:
-  // es lo que Google dijo la otra vez, no una estimación nuestra.
+  // La caché no rompe eso: es lo que Google dijo la otra vez, no una estimación.
   //
-  // Se piden SOLO los modos que faltan: si andando ya está guardado y el público
-  // no, se pregunta el público y nada más.
-  const deGoogle = await rutasConGoogle(a, b, faltan);
+  // CON VARIOS PARES, LA MATRIZ; CON UNO, LA DE SIEMPRE. Para un solo par la
+  // matriz gasta exactamente lo mismo y añade una forma más de fallar.
+  //
+  // Los modos que se piden son la UNIÓN de los que faltan: la matriz es una
+  // llamada por modo para TODOS los pares, así que no se puede afinar por par.
+  // Lo que sobre de un par ya lo tenía guardado y se descarta al juntar.
+  const modosQueFaltan = [...new Set(pendientes.flatMap((x) => x.faltan))];
+  let porMatriz = null;
 
-  if (deGoogle) {
-    // SE GUARDA TAMBIÉN LO QUE NO TIENE RUTA. «No hay bus entre estos dos
-    // puntos» es una respuesta de Google, y no guardarla condena a preguntarlo
-    // en cada visita: es justo el caso más frecuente —el transporte público de
-    // un pueblo— y el que más llamadas gastaba.
-    const conHueco = faltan.map(
-      (m) => deGoogle.find((r) => r.modo === m) ?? { modo: m, minutos: null, km: null, fuente: 'google' }
+  if (pendientes.length > 1) {
+    porMatriz = await matrizConGoogle(
+      pendientes.map((x) => [x.a, x.b]),
+      modosQueFaltan
     );
-    guardarEnCache(a, b, conHueco);
+    if (!porMatriz) {
+      console.warn('[traslados] la matriz no contestó; pregunto par a par.');
+    }
   }
 
-  if (deGoogle && deGoogle.length) {
-    // Andando delante: en ciudad es lo primero que uno mira. Se juntan los
-    // recién traídos con los que ya estaban guardados.
-    const resultados = [...deGoogle, ...[...sabido.values()].filter((r) => r.minutos != null)]
-      .sort((x, y) => orden(x.modo) - orden(y.modo));
-    return { resultados, fuente: sabido.size ? 'google+cache' : 'google' };
+  for (let k = 0; k < pendientes.length; k++) {
+    const { i, a, b, sabido, faltan } = pendientes[k];
+
+    // De la matriz o, si no la hubo o falló, de la llamada de siempre.
+    const traidos = porMatriz
+      ? porMatriz[k].filter((r) => faltan.includes(r.modo))
+      : await rutasConGoogle(a, b, faltan);
+
+    if (traidos) {
+      // SE GUARDA TAMBIÉN LO QUE NO TIENE RUTA. «No hay bus entre estos dos
+      // puntos» es una respuesta de Google, y no guardarla condena a preguntarlo
+      // en cada visita: es el caso más frecuente —el transporte público de un
+      // pueblo— y el que más llamadas gastaba.
+      guardarEnCache(
+        a,
+        b,
+        faltan.map(
+          (m) => traidos.find((r) => r.modo === m) ?? { modo: m, minutos: null, km: null, fuente: 'google' }
+        )
+      );
+    }
+
+    const guardados = deLaCache(sabido);
+
+    if (traidos && traidos.length) {
+      salidas[i] = {
+        resultados: [...traidos, ...guardados].sort((x, y) => orden(x.modo) - orden(y.modo)),
+        fuente: guardados.length ? 'google+cache' : 'google',
+      };
+      continue;
+    }
+
+    // Google no contestó, pero puede que la caché tuviera parte: enseñarlo es
+    // mejor que decir que no se sabe nada de un par que ya se midió.
+    if (guardados.length) {
+      salidas[i] = { resultados: guardados, fuente: 'cache' };
+      continue;
+    }
+
+    // `null` es "no he podido preguntar"; un array vacío es "he preguntado y no
+    // hay forma de ir". Son cosas distintas y merecen mensajes distintos.
+    const mensaje =
+      traidos === null || traidos === undefined
+        ? (hayClaveGoogle()
+            ? 'No he podido consultar el trayecto: Google no contestó.'
+            : 'No he podido consultar el trayecto: falta la clave de Google.')
+        : 'No hay forma de ir entre esos dos puntos por ninguno de los medios.';
+
+    console.warn(`[traslados] sin ruta: ${mensaje}`);
+    salidas[i] = { resultados: [], fuente: null, mensaje };
   }
 
-  // Google no contestó, pero puede que la caché tuviera algo: enseñarlo es mejor
-  // que decir que no se sabe nada de un par que ya se midió.
-  const guardados = [...sabido.values()]
-    .filter((r) => r.minutos != null)
-    .sort((x, y) => orden(x.modo) - orden(y.modo));
-  if (guardados.length) return { resultados: guardados, fuente: 'cache' };
-
-  // `null` es "no he podido preguntar"; un array vacío es "he preguntado y no
-  // hay forma de ir". Son cosas distintas y merecen mensajes distintos.
-  const mensaje =
-    deGoogle === null
-      ? (hayClaveGoogle()
-          ? 'No he podido consultar el trayecto: Google no contestó.'
-          : 'No he podido consultar el trayecto: falta la clave de Google.')
-      : 'No hay forma de ir entre esos dos puntos por ninguno de los medios.';
-
-  console.warn(`[traslados] sin ruta: ${mensaje}`);
-  return { resultados: [], fuente: null, mensaje };
+  return salidas;
 }
+
+/** Lo guardado que de verdad tiene tiempo, en el orden de siempre. */
+const deLaCache = (sabido) =>
+  [...sabido.values()].filter((r) => r.minutos != null).sort((x, y) => orden(x.modo) - orden(y.modo));
 
 /** Los tres que se preguntan. Es la lista de `MODOS` y se nombra aparte para
     que la cache y la llamada pidan EXACTAMENTE lo mismo. */
