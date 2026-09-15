@@ -31,6 +31,7 @@
 import { todas, una, ejecutar } from '../db/index.js';
 import { encolar, trabajoActivo } from '../jobs/cola.js';
 import { rutasConGoogle, MODOS, hayClaveGoogle } from '../lib/google.js';
+import { loQueSeSabe, guardar as guardarEnCache } from './cache-distancias.js';
 import { comoDuracion } from './distancias.js';
 import { direccionDe, TIPOS_CON_DIRECCION } from './direcciones.js';
 
@@ -51,6 +52,33 @@ export async function calcularRutas(a, b) {
     return { resultados: [], fuente: null, mensaje: 'Faltan las coordenadas de algún extremo.' };
   }
 
+  // LO QUE YA SE SABE NO SE VUELVE A PREGUNTAR.
+  //
+  // Del hotel al Partenón andando hay lo que hay. Esto son tres llamadas a
+  // Google por par —una por modo— y lo que no cambia se paga una sola vez. La
+  // caché es de catálogo y vive por debajo de `traslados`: esta tabla sigue
+  // guardando lo suyo igual, solo que ahora a veces no hay que salir a
+  // preguntarlo.
+  const sabido = loQueSeSabe(a, b, MODOS_QUE_SE_PIDEN);
+  const faltan = MODOS_QUE_SE_PIDEN.filter((m) => !sabido.has(m));
+
+  // Los tres en la caché: no se llama a nadie.
+  if (!faltan.length) {
+    const resultados = [...sabido.values()]
+      .filter((r) => r.minutos != null)
+      .sort((x, y) => orden(x.modo) - orden(y.modo));
+
+    if (resultados.length) return { resultados, fuente: 'cache' };
+
+    // Los tres guardados y los tres sin ruta: se preguntó y no hay forma de ir.
+    // Eso es una respuesta y vale tanto como un tiempo: no se vuelve a preguntar.
+    return {
+      resultados: [],
+      fuente: 'cache',
+      mensaje: 'No hay forma de ir entre esos dos puntos por ninguno de los medios.',
+    };
+  }
+
   // SOLO GOOGLE. Aquí había un plan B con OSRM y una estimación a pie, y el
   // plan B era el problema: cuando Google no contestaba, la pantalla seguía
   // enseñando tiempos —peores, y sin decir que lo eran— y nadie se enteraba de
@@ -58,14 +86,38 @@ export async function calcularRutas(a, b) {
   // fallo que no existe hasta que alguien lo mira a ojo.
   //
   // Ahora hay dos respuestas posibles y las dos son honestas: los tiempos de
-  // Google, o un mensaje diciendo que no se ha podido.
-  const deGoogle = await rutasConGoogle(a, b);
+  // Google, o un mensaje diciendo que no se ha podido. La caché no cambia eso:
+  // es lo que Google dijo la otra vez, no una estimación nuestra.
+  //
+  // Se piden SOLO los modos que faltan: si andando ya está guardado y el público
+  // no, se pregunta el público y nada más.
+  const deGoogle = await rutasConGoogle(a, b, faltan);
+
+  if (deGoogle) {
+    // SE GUARDA TAMBIÉN LO QUE NO TIENE RUTA. «No hay bus entre estos dos
+    // puntos» es una respuesta de Google, y no guardarla condena a preguntarlo
+    // en cada visita: es justo el caso más frecuente —el transporte público de
+    // un pueblo— y el que más llamadas gastaba.
+    const conHueco = faltan.map(
+      (m) => deGoogle.find((r) => r.modo === m) ?? { modo: m, minutos: null, km: null, fuente: 'google' }
+    );
+    guardarEnCache(a, b, conHueco);
+  }
 
   if (deGoogle && deGoogle.length) {
-    // Andando delante: en ciudad es lo primero que uno mira.
-    const resultados = [...deGoogle].sort((x, y) => orden(x.modo) - orden(y.modo));
-    return { resultados, fuente: 'google' };
+    // Andando delante: en ciudad es lo primero que uno mira. Se juntan los
+    // recién traídos con los que ya estaban guardados.
+    const resultados = [...deGoogle, ...[...sabido.values()].filter((r) => r.minutos != null)]
+      .sort((x, y) => orden(x.modo) - orden(y.modo));
+    return { resultados, fuente: sabido.size ? 'google+cache' : 'google' };
   }
+
+  // Google no contestó, pero puede que la caché tuviera algo: enseñarlo es mejor
+  // que decir que no se sabe nada de un par que ya se midió.
+  const guardados = [...sabido.values()]
+    .filter((r) => r.minutos != null)
+    .sort((x, y) => orden(x.modo) - orden(y.modo));
+  if (guardados.length) return { resultados: guardados, fuente: 'cache' };
 
   // `null` es "no he podido preguntar"; un array vacío es "he preguntado y no
   // hay forma de ir". Son cosas distintas y merecen mensajes distintos.
@@ -79,6 +131,10 @@ export async function calcularRutas(a, b) {
   console.warn(`[traslados] sin ruta: ${mensaje}`);
   return { resultados: [], fuente: null, mensaje };
 }
+
+/** Los tres que se preguntan. Es la lista de `MODOS` y se nombra aparte para
+    que la cache y la llamada pidan EXACTAMENTE lo mismo. */
+const MODOS_QUE_SE_PIDEN = Object.keys(MODOS);
 
 const ORDEN_MODOS = ['andando', 'publico', 'coche'];
 const orden = (m) => {

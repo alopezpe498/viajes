@@ -401,6 +401,7 @@ export function migrarEsquema() {
   migracionRevisionDelReparto();
   migracionPlantillasConfig();
   migracionAjustesDeInstalacion();
+  migracionCacheDeDistancias();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5671,6 +5672,74 @@ function migracionAjustesDeInstalacion() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: ajustes de instalacion (claves fuera del .env).');
+  return true;
+}
+
+/**
+ * LA CACHE DE DISTANCIAS ENTRE DOS PUNTOS.
+ *
+ * Lo que hay de un punto a otro andando no cambia. Hoy se le pregunta a Google
+ * cada vez que alguien abre un traslado, y son TRES llamadas por par —una por
+ * modo—. Esta tabla es la respuesta guardada: antes de preguntar se mira aqui.
+ *
+ * ES CATALOGO, NO ES DEL VIAJE. Sin `viaje_id` a proposito. La tabla `traslados`
+ * cuelga de un viaje y de una etapa con ON DELETE CASCADE, y ademas congela los
+ * extremos porque es una NOTA del usuario: «lo que valia cuando lo consulte».
+ * Una cache que muere al borrar el viaje que la lleno no es una cache. Las dos
+ * conviven: `traslados` sigue siendo el registro por viaje y esto es la capa de
+ * debajo.
+ *
+ * Mismo patron que `distancias_ciudades`: el par SIEMPRE ordenado, con el menor
+ * delante y su CHECK, para que una sola fila sirva para los dos sentidos.
+ *
+ * LA CLAVE VA REDONDEADA A CINCO DECIMALES, Y AHI ESTA TODO.
+ *
+ * Cinco decimales es aproximadamente un metro. Guardar lat/lon en crudo seria
+ * tener una cache que no acierta NUNCA: dos geocodificaciones del mismo portal
+ * difieren en el sexto decimal, y cada consulta abriria fila nueva. Se guarda lo
+ * redondeado —no el original— porque lo redondeado es la clave, y una clave que
+ * no es lo que se busca no sirve de nada.
+ *
+ * LA CADUCIDAD DEPENDE DEL MODO, y esto es honestidad, no optimizacion:
+ *
+ *   andando y coche  no caducan. La acera y la carretera siguen donde estaban.
+ *   publico          caduca. TRANSIT contesta con los horarios de HOY y de esta
+ *                    hora: «45 min en bus» es el bus de un martes de septiembre.
+ *                    Se guarda igual —sirve de orientacion— pero con su
+ *                    `calculado_en` a la vista para que quien lo lea sepa de
+ *                    cuando es.
+ */
+function migracionCacheDeDistancias() {
+  const CLAVE = '2026-09-cache-de-distancias';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS distancias_puntos (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      -- El par, REDONDEADO a 5 decimales y con el punto menor delante. El orden
+      -- lo decide la pareja (lat, lon) comparada como texto: da igual cual sea
+      -- el criterio mientras sea SIEMPRE el mismo.
+      a_lat        REAL NOT NULL,
+      a_lon        REAL NOT NULL,
+      b_lat        REAL NOT NULL,
+      b_lon        REAL NOT NULL,
+      modo         TEXT NOT NULL,      -- andando / coche / publico
+      minutos      INTEGER,
+      km           REAL,
+      fuente       TEXT NOT NULL DEFAULT 'google',
+      calculado_en TEXT NOT NULL DEFAULT (datetime('now')),
+      -- El par ordenado: con el menor delante, una fila vale para ir y volver.
+      CHECK (a_lat < b_lat OR (a_lat = b_lat AND a_lon <= b_lon))
+    );
+  `);
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_distancias_puntos_par
+      ON distancias_puntos(a_lat, a_lon, b_lat, b_lon, modo);
+  `);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: cache de distancias entre puntos.');
   return true;
 }
 
