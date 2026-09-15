@@ -217,13 +217,23 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
         continue;
       }
 
-      await pagina.goto(`${BASE}/${slug}/`, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
+      const respuesta = await pagina.goto(`${BASE}/${slug}/`, {
+        waitUntil: 'domcontentloaded',
+        timeout: TIMEOUT_LARGO,
+      });
       await pausaHumana(400, 900);
-      if (!/^\/es\/?$/.test(new URL(pagina.url()).pathname)) {
-        console.log(`[civitatis] "${c}" existe tal cual: ${slug}`);
-        guardar(nombre, slug);
-        return slug;
+
+      // DOS FORMAS DE NO EXISTIR, y hasta ahora solo se miraba una: que te
+      // manden a la portada. La otra es un 404 a secas.
+      if (laPaginaNoExiste(respuesta)) {
+        console.log(`[civitatis] "${c}" (slug "${slug}"): ${respuesta.status()}, ahi no hay destino.`);
+        continue;
       }
+      if (esLaPortada(pagina.url())) continue;
+
+      console.log(`[civitatis] "${c}" existe tal cual: ${slug}`);
+      guardar(nombre, slug);
+      return slug;
     }
 
     // 3) El indice del pais, que es donde estan los nombres de verdad.
@@ -270,6 +280,42 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
   } finally {
     await contexto.close().catch(() => {});
   }
+}
+
+/**
+ * ¿ESTA URL ES UNA PORTADA, O ES UN DESTINO DE VERDAD?
+ *
+ * Civitatis no da 404 con un destino que no existe: te manda a la portada. Pero
+ * la comprobacion miraba SOLO `/es/`, y la cadena real de `/es/heraclion/`
+ * termina en `https://www.civitatis.com/en/` —te cambia de idioma por el camino—,
+ * que no encajaba con el patron. Un destino inexistente se daba por bueno.
+ *
+ * Asi que vale cualquier portada: la raiz y la de cualquier idioma.
+ */
+export function esLaPortada(url) {
+  let ruta;
+  try {
+    ruta = new URL(url).pathname;
+  } catch {
+    return true; // si ni siquiera es una URL, desde luego no es un destino
+  }
+  return /^\/(?:[a-z]{2})?\/?$/.test(ruta);
+}
+
+/**
+ * ¿La respuesta dice que ahi no hay nada?
+ *
+ * El otro agujero del guardian: solo sabia reconocer la redireccion a la
+ * portada, y un 404 le pasaba por delante. `/es//` contesta 404 y se daba por
+ * un destino que existe.
+ *
+ * `respuesta` puede ser null: Playwright no devuelve una para una navegacion
+ * servida desde cache o para un `about:blank`. Sin dato no se acusa a nadie, y
+ * ya esta el resto del guardian para eso.
+ */
+function laPaginaNoExiste(respuesta) {
+  const estado = respuesta?.status?.();
+  return typeof estado === 'number' && estado >= 400;
 }
 
 /** Guarda una captura para poder ver que habia en pantalla cuando algo fallo. */
@@ -443,14 +489,22 @@ export async function buscarActividades({ destino, maxResultados = 30, slug: slu
   try {
     // ---- PASO 1: abrir la pagina del destino -----------------------------
     await paso(`1. Abrir el destino "${slug}"`, async () => {
-      await pagina.goto(`${BASE}/${slug}/`, {
+      const respuesta = await pagina.goto(`${BASE}/${slug}/`, {
         waitUntil: 'domcontentloaded',
         timeout: TIMEOUT_LARGO,
       });
 
-      // Civitatis no da 404 con un destino inexistente: te manda a la portada.
-      const ruta = new URL(pagina.url()).pathname;
-      if (/^\/es\/?$/.test(ruta)) {
+      // EL MISMO GUARDIAN QUE EN EL DESCUBRIMIENTO, y por el mismo motivo: aqui
+      // tambien se miraba solo `/es/`, y ni el 404 ni la portada en otro idioma
+      // encajaban. Con el slug vacio esto llegaba hasta el paso 3 y moria mucho
+      // mas adelante, con un mensaje sobre selectores rotos que no era verdad.
+      if (laPaginaNoExiste(respuesta)) {
+        throw new ErrorDestino(
+          `El destino "${destino}" (slug "${slug}") no existe en Civitatis: ` +
+            `la web contesta ${respuesta.status()}.`
+        );
+      }
+      if (esLaPortada(pagina.url())) {
         throw new ErrorDestino(
           `El destino "${destino}" (slug "${slug}") no existe en Civitatis: ` +
             'la web ha redirigido a la portada. Comprueba como se llama la ciudad ' +
