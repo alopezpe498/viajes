@@ -64,7 +64,9 @@ const volver = etapaAbierta
     <%# AL MAPA SIN PASAR POR «Mi ruta». Son las dos formas de mirar el mismo
         viaje —el cuándo y el dónde— y hasta ahora ir de una a la otra obligaba a
         subir a la ruta y volver a bajar. %>
-    <a class="boton-discreto" href="/viaje/<%= viaje.id %>/mapa">
+    <%# Y con la ciudad que se esté mirando, si hay una: el mapa entra filtrado
+        por ella en vez de por lo último que se mirase. %>
+    <a class="boton-discreto" href="/viaje/<%= viaje.id %>/mapa<%= lienzo.etapaId ? `?etapa=${lienzo.etapaId}` : '' %>">
       <i class="ti ti-map-2" aria-hidden="true"></i> Mapa del viaje
     </a>
 

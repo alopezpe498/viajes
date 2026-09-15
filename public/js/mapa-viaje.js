@@ -89,11 +89,60 @@
 
   const previo = recordado();
 
-  let vista = VISTAS[previo.vista] ? previo.vista : 'expandida';
-  let dia = Number(previo.dia) || D.dias[0]?.n || 1;
-  let ciudad = D.ciudades.some((c) => c.id === previo.ciudad)
-    ? previo.ciudad
-    : D.ciudades[0]?.id ?? null;
+  /**
+   * LO QUE PIDE LA URL MANDA SOBRE LO QUE SE RECORDABA.
+   *
+   * Al mapa se llega de dos maneras y quieren cosas distintas. Entrando por «Mi
+   * ruta» uno vuelve a lo que estaba mirando, y para eso está la memoria.
+   * Entrando desde una parada —«enséñame Heraclión»— la memoria es justo lo que
+   * estorba: llegabas pidiendo Heraclión y te salía el día de Atenas que mirabas
+   * ayer, y el enlace parecía roto.
+   *
+   * Así que el parámetro gana. Y no se recuerda en ese momento: se recordará al
+   * primer cambio que hagas, como cualquier otro.
+   */
+  const pedido = new URLSearchParams(location.search);
+
+  // SE VALIDA ANTES DE OBEDECER. Un `?dia=99` en un viaje de siete días no es
+  // una petición: es un enlace viejo o un dedazo. Hacerle caso a medias —cambiar
+  // de vista pero no de día— dejaba la pantalla en la vista de Día enseñando un
+  // día que no se había pedido, que es la peor de las tres respuestas posibles.
+  const diaPedido = D.dias.some((d) => d.n === Number(pedido.get('dia')))
+    ? Number(pedido.get('dia'))
+    : null;
+
+  // Una etapa se pide por su id de base de datos; el mapa las nombra `e<id>`.
+  const ciudadPedida = D.ciudades.find((c) => c.id === `e${Number(pedido.get('etapa'))}`)?.id ?? null;
+
+  // Con día pedido, la vista es la del día; con etapa, la de la etapa. Pedir un
+  // día y quedarse en «Ruta expandida» sería no hacer caso a medias.
+  let vista = diaPedido
+    ? 'dia'
+    : ciudadPedida
+      ? 'etapa'
+      : (VISTAS[previo.vista] ? previo.vista : 'expandida');
+
+  let dia = diaPedido ?? Number(previo.dia) ?? D.dias[0]?.n ?? 1;
+
+  let ciudad = ciudadPedida
+    ?? (D.ciudades.some((c) => c.id === previo.ciudad) ? previo.ciudad : null)
+    ?? D.ciudades[0]?.id
+    ?? null;
+
+  // LOS DOS SELECTORES SE PONEN DE ACUERDO, aunque solo se haya pedido uno.
+  //
+  // Pedir un día y dejar la ciudad como estaba deja el selector de ciudad
+  // apuntando a otra parada: no se nota en la vista de Día —ahí filtra el día—
+  // pero en cuanto se cambia a «Etapa» aparece la ciudad de ayer. Y al revés:
+  // pedir una etapa sin día dejaba el día viejo esperando a que alguien mirase.
+  if (diaPedido) {
+    const suya = D.dias.find((d) => d.n === diaPedido)?.ciudadId;
+    if (suya && D.ciudades.some((c) => c.id === suya)) ciudad = suya;
+  } else if (ciudadPedida) {
+    const suyo = D.dias.find((d) => d.ciudadId === ciudadPedida);
+    if (suyo) dia = suyo.n;
+  }
+
   let seleccion = null;
 
   // Todas encendidas de salida; lo que se recuerde manda por encima.
