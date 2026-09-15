@@ -198,6 +198,25 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
     // 2) El slug directo, que acierta la mayoria de las veces.
     for (const c of candidatos) {
       const slug = destinoASlug(c);
+
+      // UN SLUG VACIO NO ES UN CANDIDATO, y es la raiz de lo de Heraclion.
+      //
+      // `destinoASlug` se queda con lo que sea [a-z0-9], asi que de un nombre en
+      // griego, cirilico o japones no sobrevive ni un caracter: «Ηράκλειο» sale
+      // como "". Con eso la URL era `/es//`, que NO es la portada —Civitatis
+      // contesta 404— y por tanto pasaba por el guardian de abajo como si el
+      // destino existiera. Se guardaba slug "" y, como "" es falso, arriba se
+      // reportaba «no tiene destino en Civitatis».
+      //
+      // Lo caro no era el fallo, era que devolvia AQUI: «Heraklion», que iba
+      // justo detras en la lista y funciona, no se probaba nunca. Heraclion se
+      // quedo sin sus 17 excursiones por una variante que ni siquiera era una
+      // URL.
+      if (!slug) {
+        console.log(`[civitatis] "${c}" no deja nada al convertirlo a URL; lo salto.`);
+        continue;
+      }
+
       await pagina.goto(`${BASE}/${slug}/`, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_LARGO });
       await pausaHumana(400, 900);
       if (!/^\/es\/?$/.test(new URL(pagina.url()).pathname)) {
