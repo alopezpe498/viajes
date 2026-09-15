@@ -790,3 +790,74 @@ export async function situarActividadConPlaces(actividadId, { cerca = null } = {
   console.log(`[direcciones] excursión «${ficha.titulo}» → ${hallado.nombre} (${hallado.direccion}).`);
   return true;
 }
+
+// =============================================================================
+// EL DETECTOR BARATO: DOS SITIOS DISTINTOS EN EL MISMO PUNTO
+// =============================================================================
+/**
+ * DOS COSAS DISTINTAS NO PUEDEN ESTAR EN EL MISMO SITIO.
+ *
+ * Cero metros entre dos nombres diferentes es siempre un error, y es la
+ * comprobación más barata que hay: no pregunta nada a nadie, solo agrupa lo que
+ * ya está guardado. Encontró en un segundo lo que llevaba meses en la base —el
+ * Teatro de Epidauro, el yacimiento de Micenas, la mezquita de Voivode y la
+ * isla de Bourtzi compartiendo el centro de Nauplia—, y encontró otros nueve
+ * grupos que nadie había mirado.
+ *
+ * SOLO DETECTA. No recoloca nada, y es a propósito: la causa de cada grupo es
+ * distinta —a veces es el geocodificador, a veces son dos filas del catálogo
+ * que son el mismo sitio con dos nombres, y a veces es un sitio metido en la
+ * ciudad equivocada— y arreglarlas todas igual sería cambiar un error por otro.
+ * Aquí se señala; quien decida, decide mirando.
+ *
+ * Se agrupa por parada, no por viaje: un sitio del catálogo pertenece a su
+ * punto de interés y puede estar apuntado en varios viajes a la vez. La
+ * coincidencia se mira TAL CUAL está guardada, sin redondear: Google devuelve
+ * siete decimales, así que dos filas idénticas al último decimal no son dos
+ * medidas parecidas, son la misma respuesta repetida.
+ *
+ * `puntoId` acota a una sola parada; sin él, barre el catálogo entero.
+ */
+export function sitiosConLaMismaCoordenada({ puntoId = null } = {}) {
+  const filas = todas(
+    `SELECT s.id, s.nombre, p.id AS punto_id, p.nombre AS ciudad,
+            d.lat, d.lng, d.fuente, d.direccion
+       FROM direcciones d
+       JOIN sitios_lugar s ON s.id = d.elemento_id AND d.tipo_elemento = 'sitio'
+       JOIN puntos_interes p ON p.id = s.punto_interes_id
+      WHERE d.estado = 'ok' AND d.lat IS NOT NULL AND d.lng IS NOT NULL
+        ${puntoId ? 'AND p.id = ?' : ''}
+      ORDER BY p.nombre, s.nombre`,
+    ...(puntoId ? [Number(puntoId)] : [])
+  );
+
+  const porCoordenada = new Map();
+  for (const f of filas) {
+    const clave = `${f.punto_id}|${f.lat}|${f.lng}`;
+    if (!porCoordenada.has(clave)) porCoordenada.set(clave, []);
+    porCoordenada.get(clave).push(f);
+  }
+
+  return [...porCoordenada.values()]
+    .filter((grupo) => grupo.length > 1)
+    .map((grupo) => ({
+      puntoId: grupo[0].punto_id,
+      ciudad: grupo[0].ciudad,
+      lat: grupo[0].lat,
+      lng: grupo[0].lng,
+      sitios: grupo.map((f) => ({
+        id: f.id,
+        nombre: f.nombre,
+        fuente: f.fuente,
+        direccion: f.direccion,
+      })),
+    }))
+    .sort((a, b) => b.sitios.length - a.sitios.length || a.ciudad.localeCompare(b.ciudad));
+}
+
+/** Los mismos grupos, en una línea por sitio, para leerlos por consola. */
+export function contarSitiosConLaMismaCoordenada({ puntoId = null } = {}) {
+  const grupos = sitiosConLaMismaCoordenada({ puntoId });
+  const sitios = grupos.reduce((n, g) => n + g.sitios.length, 0);
+  return { grupos, cuantosGrupos: grupos.length, cuantosSitios: sitios };
+}
