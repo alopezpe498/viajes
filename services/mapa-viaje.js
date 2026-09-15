@@ -24,9 +24,9 @@
  *   ciudades  · las etapas confirmadas, con sus noches y sus días.
  *   items     · los bloques del lienzo (`itinerario`), con su día y su hora.
  *   puntos    · `direcciones` primero, y el catálogo después —`sitios_lugar` y
- *               `puntos_interes` traen lat/lon de serie—. Es el mismo orden que
- *               usa `services/mapa-etapa.js`, y a propósito: dos formas de
- *               situar la misma cosa acabarían discrepando.
+ *               `puntos_interes` traen lat/lon de serie—. Ese orden lo compartía
+ *               con el mapa pequeño de etapa, que ya no existe: este es el único
+ *               mapa, y por eso este es el único sitio donde se sitúa nada.
  *   traslados · los `transportes` entre etapas, con su precio ya en €/persona.
  *
  * LA REGLA DE HONESTIDAD, que aquí tiene una forma muy concreta: NADA se pinta
@@ -56,8 +56,8 @@ import {
  * partir de esto, y porque la leyenda lo lee del mismo sitio: un color que se
  * escriba dos veces acaba siendo dos colores.
  *
- * Son los mismos cuatro de `mapa-etapa.js` y con los mismos nombres de tipo, que
- * es lo que permite que quien haya visto un mapa entienda el otro.
+ * Eran los mismos cuatro que los del mapa pequeño de etapa —dos listas iguales
+ * escritas dos veces—. Al quedarse este como único mapa, esta es la lista.
  */
 export const TIPOS_DEL_MAPA = {
   sitio: { etiqueta: 'Sitios', singular: 'Sitio', icono: 'ti-map-pin', color: '#2E9E7B' },

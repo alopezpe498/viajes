@@ -193,7 +193,6 @@ import {
 } from '../services/paises.js';
 import { fichasDelViaje, generarFicha, marcarRevisado } from '../services/ficha-pais.js';
 import { actualizarAhora, climaDelPais } from '../services/clima.js';
-import { mapaDeEtapa } from '../services/mapa-etapa.js';
 import { mapaDeViaje } from '../services/mapa-viaje.js';
 import { documentosDelViaje, contenidoDe } from '../services/documentos.js';
 import {
@@ -2266,7 +2265,6 @@ router.get('/etapa/:etapaId', cargarContextoEtapa, async (req, res) => {
     // EL MAPA DE LA PARADA: el hotel, lo apuntado y los restaurantes, con sus
     // coordenadas. Van al cliente porque hay que dibujarlas; no se enseñan en
     // ninguna pantalla, que es la regla de siempre.
-    mapaEtapa: mapaDeEtapa(etapa.id),
     claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
     ordenVuelos,
     // Los filtros de hotel se pintan DENTRO de la pestaña: el formulario vive
@@ -3889,8 +3887,6 @@ router.get('/viaje/:viajeId/lienzo', (req, res) => {
 
   res.render('lienzo', {
     lienzo,
-    opinion: viaje.opinion_lienzo,
-    pensando: Boolean(trabajoActivo(viajeId, 'opinar_lienzo')),
     // El mismo panel del dosier que la ruta: se cierra el viaje desde donde se
     // esté mirando, no solo desde una pantalla.
     dosier: estadoDelDosier(viaje),
@@ -3991,32 +3987,11 @@ router.delete('/api/itinerario/:id', (req, res) => {
   res.json(lienzoDeViaje(fila.viaje_id, { etapaId: Number(req.query.etapa) || null }));
 });
 
-/** "Pedir opinión a la IA": encola el trabajo y la pantalla sondea. */
-router.post('/api/viaje/:viajeId/opinar', (req, res) => {
-  const viajeId = Number(req.params.viajeId);
-  if (!una('SELECT id FROM viajes WHERE id = ?', viajeId)) {
-    return res.status(404).json({ error: 'Ese viaje ya no existe.' });
-  }
-  const trabajo = encolar(viajeId, 'opinar_lienzo');
-  res.json({ pensando: true, trabajoId: trabajo.id });
-});
-
-/** Sondeo de la opinión. */
-router.get('/api/viaje/:viajeId/opinion', (req, res) => {
-  const viajeId = Number(req.params.viajeId);
-  const viaje = una('SELECT opinion_lienzo, opinion_lienzo_en FROM viajes WHERE id = ?', viajeId);
-  if (!viaje) return res.status(404).json({ error: 'Ese viaje ya no existe.' });
-
-  const activo = trabajoActivo(viajeId, 'opinar_lienzo');
-  const ultimo = ultimoTrabajo(viajeId, 'opinar_lienzo');
-
-  res.json({
-    pensando: Boolean(activo),
-    opinion: viaje.opinion_lienzo,
-    cuando: viaje.opinion_lienzo_en,
-    mensaje_error: !activo && ultimo?.estado === 'error' ? ultimo.mensaje_error : null,
-  });
-});
+// «Pedir opinión a la IA» vivía aquí: un botón en el lienzo, dos rutas y un
+// trabajo en el worker que nunca llamó a la IA —escribía «llegará en la próxima
+// versión» y terminaba—. Se ha quitado entero. Las columnas `opinion_lienzo` y
+// `opinion_lienzo_en` de `viajes` se quedan: migrar por dos campos que no
+// estorban cuesta más que dejarlos.
 
 // =============================================================================
 // PORTADA: renombrar y borrar viajes

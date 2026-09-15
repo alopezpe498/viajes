@@ -7,7 +7,7 @@
  * partida: si el marcado estuviera en dos sitios, arrastrar una tarjeta
  * repintaría algo distinto de lo que había.
  *
- * Espera: lienzo, opinion, pensando.
+ * Espera: lienzo.
  */
 const pieExtra = '<script src="/js/lienzo.js"></script><script src="/js/dosier.js"></script>';
 const { viaje } = lienzo;
@@ -37,7 +37,7 @@ const volver = etapaAbierta
       viaje: null, pasoActual: null, titulo: `Lienzo · ${viaje.nombre}`, extraCabeza: ''
     }) %>
 
-<div class="lienzo-pantalla" data-viaje="<%= viaje.id %>" data-pensando="<%= pensando ? '1' : '' %>">
+<div class="lienzo-pantalla" data-viaje="<%= viaje.id %>">
 
   <%# LAS MIGAS, COMO EN EL RESTO DEL VIAJE.
       Esta pantalla no las tenía: solo la píldora de volver. Y la píldora SE
@@ -70,14 +70,7 @@ const volver = etapaAbierta
 
     <%# El mismo control del dosier que en "Mi ruta", en una línea. %>
     <%- include('parciales/panel-dosier', { viajeId: viaje.id, dosier }) %>
-
-    <button class="btn-ia" type="button" id="boton-ia">
-      <i class="ti ti-sparkles" aria-hidden="true"></i> Pedir opinión a la IA
-    </button>
   </header>
-
-  <%# El resultado de la IA aterriza aquí. Se rellena desde el JS. %>
-  <div class="opinion" id="opinion" hidden></div>
 
 
   <%# ======================= CUERPO ======================= %>
@@ -95,6 +88,5 @@ const volver = etapaAbierta
 
 <%# Los datos de partida viajan en el HTML: la pantalla se pinta ya llena. %>
 <script type="application/json" id="datos-lienzo"><%- JSON.stringify(lienzo) %></script>
-<script type="application/json" id="datos-opinion"><%- JSON.stringify({ opinion, pensando }) %></script>
 
 <%- include('parciales/pie', { extraPie: pieExtra }) %>

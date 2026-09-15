@@ -198,7 +198,7 @@ function mensajeLegible(err, destino, tipo = 'actividades') {
 
   // Los de IA ya vienen escritos para leerse: el de la clave que falta, sobre
   // todo, que es el más probable la primera vez que se usa esto.
-  if (tipo === 'descubrir_destino' || tipo === 'investigar_ciudad' || tipo === 'opinar_lienzo') {
+  if (tipo === 'descubrir_destino' || tipo === 'investigar_ciudad') {
     return err?.message ?? String(err);
   }
 
@@ -856,7 +856,7 @@ async function ejecutarComerDetalles(trabajo) {
 /** Los tipos de trabajo que ESTE worker sabe ejecutar. */
 const TIPOS_CONOCIDOS = [
   'actividades', 'hoteles', 'vuelos', 'avisos',
-  'descubrir_destino', 'investigar_ciudad', 'opinar_lienzo',
+  'descubrir_destino', 'investigar_ciudad',
   'ficha_actividad', 'preparar_etapa', 'distancias', 'distancias_ruta',
   'transporte_tramo', 'movilidad_ciudad',
   'geocodificar', 'traslado',
@@ -1435,25 +1435,6 @@ async function ejecutarDatosDeSitios(trabajo) {
 
 
 /**
- * Ejecuta un trabajo de tipo 'opinar_lienzo'.
- *
- * CASCARÓN A PROPÓSITO. La opinión de verdad —mirar el reparto y decir si el
- * ritmo tiene sentido, si falta algo, si el orden se puede mejorar— llega en el
- * siguiente prompt. Lo que existe ya es todo lo demás: el botón, la cola, el
- * sondeo y el hueco donde aterriza el resultado. Cuando haya contenido real,
- * solo hay que rellenar el medio.
- */
-async function ejecutarOpinarLienzo(trabajo) {
-  console.log(`[worker] Trabajo #${trabajo.id}: opinión del lienzo (todavía en hueco)`);
-
-  ejecutar(
-    "UPDATE viajes SET opinion_lienzo = ?, opinion_lienzo_en = datetime('now') WHERE id = ?",
-    'La opinión de la IA llegará en la próxima versión.',
-    trabajo.viaje_id
-  );
-}
-
-/**
  * Una búsqueda del usuario en la pestaña «Mis búsquedas».
  *
  * El worker aquí no decide nada: el servicio sabe si toca proponer o generar
@@ -1849,7 +1830,6 @@ async function ejecutarRevisionDelReparto({ id, viajeId }) {
 
 /** Ejecuta un trabajo cualquiera según su tipo. */
 async function ejecutarTrabajo(trabajo) {
-  if (trabajo.tipo === 'opinar_lienzo') return ejecutarOpinarLienzo(trabajo);
   if (trabajo.tipo === 'actividades') return ejecutarActividades(trabajo);
   if (trabajo.tipo === 'avisos') return ejecutarAvisos(trabajo);
   if (trabajo.tipo === 'descubrir_destino') return ejecutarDescubrirDestino(trabajo);
