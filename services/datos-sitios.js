@@ -972,7 +972,12 @@ function hayPrecioAntesDelGratis(texto) {
   const crudo = String(texto).replace(/\([^)]*\)/g, ' ');
   const gratis = /\b(gratis|gratuit|entrada libre|sin coste|acceso libre)/i.exec(crudo);
   if (!gratis) return false;
-  const importe = /(\d{1,3}(?:[.,]\d{1,2})?)\s*€|€\s*(\d{1,3}(?:[.,]\d{1,2})?)/.exec(crudo);
+  // En CUALQUIER moneda, no solo en euros: mirando solo el € este detector era
+  // ciego a media Polonia, que es justo donde estaba media docena de casos.
+  const importe =
+    /(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|\$|£|PLN|zł|CZK|Kč|HUF|Ft|SEK|NOK|DKK|CHF|USD|EUR|GBP)|[€$£]\s*\d/i.exec(
+      crudo
+    );
   return Boolean(importe) && importe.index < gratis.index;
 }
 
