@@ -454,25 +454,46 @@ function ocupacionDelSalto(t) {
   // La hora sale de lo elegido; si no la hay, de las notas escritas a mano.
   const hora = horaSuelta(datos?.horario) ?? horaSuelta(t.notas);
 
-  let minutos = null;
+  let bloque = null;
   try {
-    const extra = t.datos_extra ? JSON.parse(t.datos_extra) : null;
-    const total = Number(extra?.bloque?.total);
-    if (Number.isFinite(total) && total > 0) minutos = Math.round(total);
+    bloque = t.datos_extra ? JSON.parse(t.datos_extra)?.bloque ?? null : null;
   } catch {
-    /* datos_extra corrupto: el bloque se queda sin duración */
+    /* datos_extra corrupto: el bloque se queda sin desglose */
   }
 
-  // El desglose puerta a puerta ya trae el acceso y la antelación: el bloque
-  // empieza ahí, no a la hora del billete.
+  const total = Number(bloque?.total);
+  const minutos = Number.isFinite(total) && total > 0 ? Math.round(total) : null;
+
+  // LA FRANJA SE ABRE CON LOS MÁRGENES DEL PROPIO BLOQUE.
+  //
+  // Esto hacía dos cuentas que no casaban entre sí. Para el principio restaba un
+  // margen GENÉRICO —30 de presentación + 45 de acceso, 75 para todo— y para el
+  // final sumaba `total` ENTERO a la hora del billete. Pero `total` ya lleva
+  // dentro el acceso y la antelación, que pasan ANTES de subirse: sumarlos hacia
+  // delante los cuenta dos veces y estira la llegada.
+  //
+  // El coche de Heraclión salía «sales a las 08:45» con la franja «10:00 →
+  // 13:45»: leído entero son cinco horas para un bloque que dice 3h45, y ninguna
+  // de las dos cuentas usaba los 120 minutos de margen que el propio bloque
+  // llevaba escritos.
+  //
+  // Ahora: empieza en la hora del billete menos lo que hay que hacer antes
+  // (acceso + antelación) y acaba en la hora del billete más lo que queda por
+  // delante (trayecto + salida). Sin bloque no hay desglose y se recurre al
+  // margen genérico, que es lo que había.
   const m = margenesDelBloque();
-  const desdeCasa = hora ? sumarMinutos(hora, -antelacionDe(t.tipo, m)) : null;
+  const antes = bloque
+    ? (Number(bloque.acceso) || 0) + (Number(bloque.antelacion) || 0)
+    : antelacionDe(t.tipo, m);
+  const despues = bloque
+    ? (Number(bloque.trayecto) || 0) + (Number(bloque.salida) || 0)
+    : minutos;
 
   return {
-    hora: desdeCasa ?? hora,
+    hora: hora ? sumarMinutos(hora, -antes) : null,
     salidaReal: hora,
     minutos,
-    fin: sumarMinutos(hora, minutos),
+    fin: sumarMinutos(hora, despues),
   };
 }
 
@@ -689,16 +710,42 @@ function resumenDeSalto(t, origen, destino) {
   }
   trozos.push(`${origen.nombre_ciudad} → ${destino.nombre_ciudad}`);
 
-  // El tiempo de referencia es EN COCHE, así que solo se enseña cuando el tramo va
-  // por carretera de verdad. Poner "Shinkansen · 5h35" al lado de un tren que
-  // tarda 2h15 no es un detalle: es decirle a alguien una hora que no es.
-  const porCarretera = t.tipo === 'coche' || t.tipo === 'bus';
-  if (t.duracion_min && t.fuente_distancia === 'carretera' && porCarretera) {
-    const h = Math.floor(t.duracion_min / 60);
-    const m = t.duracion_min % 60;
-    trozos.push(h ? `${h}h${m ? String(m).padStart(2, '0') : ''}` : `${m} min`);
+  // CADA DURACIÓN CON SU NOMBRE.
+  //
+  // Aquí se soltaba una cifra desnuda —«Coche · Heraclión → Nafplio · 10h34»— y
+  // el lector no tenía cómo saber de qué hablaba. En Nafplio → Atenas el chip
+  // decía «2h01» y la franja de al lado «3h20», y las dos eran ciertas: una es
+  // el trayecto y la otra el puerta a puerta con su acceso y su antelación. Sin
+  // etiqueta, parecían contradecirse.
+  //
+  // El trayecto solo se enseña cuando la referencia habla del mismo camino que
+  // el medio elegido: por carretera o por vía. La referencia de un ferry es un
+  // rodeo por tierra que nadie va a hacer. Los trenes entran ahora —antes se
+  // quedaban fuera y el salto Cracovia → Varsovia no enseñaba duración ninguna—,
+  // porque una vía y una carretera van por el mismo sitio a efectos de esto.
+  const porTierra = t.tipo === 'coche' || t.tipo === 'bus' || t.tipo === 'tren';
+  if (t.duracion_min && t.fuente_distancia === 'carretera' && porTierra) {
+    trozos.push(`${comoRatoCorto(t.duracion_min)} de trayecto`);
+  }
+  if (t.duracion_puerta_min) {
+    trozos.push(`${comoRatoCorto(t.duracion_puerta_min)} puerta a puerta`);
   }
   return trozos.join(' · ');
+}
+
+/**
+ * 634 -> "10h34" · 200 -> "3h20" · 45 -> "45 min".
+ *
+ * Sin espacios, que es el formato del chip del día: ahí el sitio se cuenta en
+ * píxeles. Más abajo hay un `comoRato` que escribe "10 h 34" para los textos
+ * que se leen en una línea entera; son dos formatos a propósito.
+ */
+function comoRatoCorto(minutos) {
+  const n = Math.round(Number(minutos) || 0);
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
 }
 
 /**
