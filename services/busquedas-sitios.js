@@ -203,7 +203,7 @@ Devuelve SOLO este JSON:
   "tipo": "concreto" | "generico",
   "sitio": {
     "nombre": "nombre en español del lugar",
-    "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir, qué no perderse, cuánto tiempo hace falta.",
+    "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir, qué no perderse. NO digas cuánto tiempo hace falta: ese dato se busca aparte y sale al lado.",
     "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
     "lat": número, "lon": número,
     "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
@@ -237,7 +237,7 @@ Devuelve SOLO este JSON:
   "sitios": [
     {
       "nombre": "el nombre tal y como te lo he escrito",
-      "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir, qué no perderse, cuánto tiempo hace falta.",
+      "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir, qué no perderse. NO digas cuánto tiempo hace falta: ese dato se busca aparte y sale al lado.",
       "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
       "lat": número, "lon": número,
       "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",

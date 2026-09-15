@@ -759,7 +759,7 @@ Devuelve un objeto JSON con esta forma exacta:
   "sitios": [
     {
       "nombre": "nombre en español del lugar concreto",
-      "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir para evitar colas o pillar buena luz, qué es lo que no te puedes perder de dentro, cuánto tiempo hace falta.",
+      "descripcion": "3-4 frases. Qué es, y CONSEJO PRÁCTICO: a qué hora ir para evitar colas o pillar buena luz, qué es lo que no te puedes perder de dentro. NO digas cuánto tiempo hace falta: ese dato se busca aparte y sale al lado.",
       "categoria": "una sola de esta lista, copiada tal cual: ${CATEGORIAS_SITIO.join(' | ')}",
       "lat": número, "lon": número,
       "titulo_wikipedia": "título EXACTO del artículo en la Wikipedia en español",
