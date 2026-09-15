@@ -23,7 +23,7 @@
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { referenciaDeTramo, comoDuracion } from './distancias.js';
-import { geocodificarConGoogle, pareceUnaCiudad } from '../lib/google.js';
+import { geocodificarConGoogle, pareceUnaCiudad, situarLugarConGoogle } from '../lib/google.js';
 import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 
 // =============================================================================
@@ -97,6 +97,82 @@ function guardar(ciudadA, ciudadB, ref) {
  * Si Google no contesta se devuelve null y se reintenta la proxima vez: una
  * ciudad sin situar deja su salto sin kilometros y no rompe nada mas.
  */
+/**
+ * ¿ESTÁ ESE PUNTO DONDE ESTÁN LAS COSAS DE ESA CIUDAD?
+ *
+ * La comprobación que faltaba, y es la más barata que hay: una ciudad ya tiene
+ * sitios situados, con sus coordenadas buenas de Places. Si el punto que se le
+ * quiere poner a la ciudad cae a decenas de kilómetros de todos ellos, no es el
+ * punto de esa ciudad, diga lo que diga quien lo haya dado.
+ *
+ * EL CASO QUE ORIGINA ESTO. El punto de Nafplio quedó en 37.5653, 23.1537: a 31
+ * km de su propio casco viejo y a 7 de Epidauro. Con eso se midieron el salto
+ * desde Heraclión y el salto a Atenas, y se pintó el mapa. Nadie lo vio porque
+ * la única comprobación que había —`pareceUnaCiudad`— mira QUÉ CLASE de sitio
+ * ha devuelto Google, no DÓNDE cae.
+ *
+ * SE MIDE CONTRA LA MEDIANA, NO CONTRA EL SITIO MÁS CERCANO. El catálogo de una
+ * ciudad lleva excursiones de los alrededores —Epidauro cuelga de Nafplio y está
+ * a 26 km del casco viejo—, así que basta con que el punto malo caiga cerca de
+ * UNA de ellas para que el mínimo lo dé por bueno. Eso es justo lo que pasaba:
+ * el punto equivocado de Nafplio está a 7 km de Epidauro. La mediana no se deja
+ * engañar por un sitio suelto y sigue diciendo 31 km.
+ *
+ * Devuelve esa mediana en km, o `null` cuando todavía no hay sitios con los que
+ * comparar, que es el caso normal la primera vez que se sitúa una ciudad. Sin
+ * dato no se acusa a nadie.
+ */
+function kmALoMasCercanoDeSuCiudad(puntoId, punto) {
+  const sitios = todas(
+    `SELECT lat, lon FROM sitios_lugar
+      WHERE punto_interes_id = ? AND lat IS NOT NULL AND lon IS NOT NULL`,
+    Number(puntoId)
+  );
+  if (!sitios.length) return null;
+
+  const R = 6371;
+  const rad = (g) => (g * Math.PI) / 180;
+  const km = (a, b) => {
+    const dLat = rad(b.lat - a.lat);
+    const dLon = rad(b.lon - a.lon);
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  };
+
+  const distancias = sitios.map((s) => km(punto, s)).sort((a, b) => a - b);
+  return distancias[Math.floor(distancias.length / 2)];
+}
+
+/**
+ * Lo lejos que puede estar el punto de una ciudad de sus propios sitios.
+ *
+ * Generoso a propósito: una ciudad grande con una excursión apuntada en su
+ * catálogo puede tener el sitio más cercano a diez kilómetros del centro. Lo que
+ * se busca aquí no son los matices, son los disparates: Nafplio a 31 km de sí
+ * misma.
+ */
+const KM_MAXIMO_DE_SUS_SITIOS = 20;
+
+/**
+ * ¿Vale este punto como centro de esa ciudad? Con el motivo en el log si no.
+ *
+ * Cuando la ciudad todavía no tiene sitios situados no hay con qué comparar y se
+ * acepta: sin dato no se acusa a nadie.
+ */
+function caeDondeDebe(candidato, puntoId, nombre, quienLoDijo) {
+  const km = kmALoMasCercanoDeSuCiudad(puntoId, { lat: candidato.lat, lon: candidato.lng });
+  if (km == null || km <= KM_MAXIMO_DE_SUS_SITIOS) return true;
+
+  console.warn(
+    `[distancias] ${quienLoDijo} sitúa "${nombre}" en ${candidato.lat}, ${candidato.lng}` +
+      `${candidato.direccion ? ` («${candidato.direccion}»)` : ''}, a ${Math.round(km)} km del sitio ` +
+      `más cercano de esa misma ciudad. No es el punto de "${nombre}": lo descarto.`
+  );
+  return false;
+}
+
 async function asegurarCoordenadas(puntoId) {
   const p = una(
     'SELECT id, nombre, lat, lon, destino_id FROM puntos_interes WHERE id = ?',
@@ -140,7 +216,31 @@ async function asegurarCoordenadas(puntoId) {
     );
   }
 
-  // SEGUNDA VIA: LA IA, que es de donde salen las coordenadas del resto del
+  // Y LA SEGUNDA COMPROBACION, LA QUE FALTABA: que caiga donde estan las cosas
+  // de esa ciudad. `pareceUnaCiudad` mira QUE CLASE de sitio ha devuelto Google;
+  // esto mira DONDE cae, que es lo que se le escapo a Nafplio.
+  if (hallado && !caeDondeDebe(hallado, puntoId, p.nombre, 'la geocodificacion')) {
+    if (!sospechoso) sospechoso = hallado;
+    hallado = null;
+  }
+
+  // SEGUNDA VIA: PLACES. Es la que acerto con los sitios que la geocodificacion
+  // dejaba en el centro del pueblo, y con una ciudad hace lo mismo: busca el
+  // lugar por su nombre en vez de interpretar una direccion. Va antes que la IA
+  // porque es un dato medido y no una memoria.
+  if (!hallado) {
+    try {
+      const enPlaces = await situarLugarConGoogle(p.nombre, destino?.pais || destino?.nombre || null);
+      if (enPlaces?.lat != null && enPlaces?.lng != null) {
+        const candidato = { lat: enPlaces.lat, lng: enPlaces.lng, direccion: enPlaces.direccion };
+        if (caeDondeDebe(candidato, puntoId, p.nombre, 'Places')) hallado = candidato;
+      }
+    } catch (err) {
+      console.warn(`[distancias] Places no situo "${consulta}": ${err.message}`);
+    }
+  }
+
+  // TERCERA VIA: LA IA, que es de donde salen las coordenadas del resto del
   // catalogo. Las ciudades del mapa se guardan con el lat/lon que da el modelo
   // al investigar el destino, asi que preguntarselo aqui no es rebajar la
   // fuente: es usar la misma. Sirve ademas para cuando la clave de Google no
@@ -156,16 +256,25 @@ async function asegurarCoordenadas(puntoId) {
       const lat = Number(r?.lat);
       const lon = Number(r?.lon);
       if (Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-        hallado = { lat, lng: lon };
+        const candidato = { lat, lng: lon, direccion: `${lat}, ${lon} (dicho por la IA)` };
+        if (caeDondeDebe(candidato, puntoId, p.nombre, 'la IA')) hallado = candidato;
       }
     } catch (err) {
       console.warn(`[distancias] la IA tampoco situo "${consulta}": ${err.message}`);
     }
   }
 
-  // Si la IA tampoco supo, se acepta el punto dudoso antes que quedarse sin
-  // nada, pero queda dicho en el log de donde salio.
-  if (!hallado && sospechoso) {
+  // EL ULTIMO RECURSO YA NO ES CUALQUIER COSA.
+  //
+  // Aqui se aceptaba el punto dudoso «antes que quedarse sin nada», y por esa
+  // puerta entro Nafplio a 31 km de si misma. Un punto que cae donde no esta la
+  // ciudad no es «algo mejor que nada»: con el se miden saltos y se pinta el
+  // mapa, y lo hace en silencio. Sin coordenadas, en cambio, el salto sale «sin
+  // calcular» y eso SE VE.
+  //
+  // Asi que el dudoso solo vale si al menos cae donde debe. Si tampoco, la
+  // ciudad se queda sin situar y se reintenta la proxima vez.
+  if (!hallado && sospechoso && caeDondeDebe(sospechoso, puntoId, p.nombre, 'el ultimo recurso')) {
     hallado = sospechoso;
     console.warn(
       `[distancias] me quedo con «${sospechoso.direccion}» para "${consulta}" a falta de algo mejor: ` +
