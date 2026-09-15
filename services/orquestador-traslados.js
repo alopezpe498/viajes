@@ -537,9 +537,15 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
   // deducirlo después, un taxi de 90 € se convertiría en 180 € para dos. Se
   // guarda aquí, en el momento de elegir, con lo que dijo la búsqueda de esa
   // opción (services/presupuesto.js tiene la regla).
+  // LA PUERTA A PUERTA VA A SU COLUMNA, NO A LA DE LA REFERENCIA.
+  //
+  // Esto escribía en `duracion_min`, que es donde `asegurarDistancia` guarda la
+  // ruta por carretera de Google. Dos significados en una casilla: lo que
+  // quedaba dependía de quién escribiera el último, y el chip del día enseñaba
+  // un número que no tenía nada que ver con su propia franja.
   ejecutar(
     `UPDATE transportes
-        SET datos_extra = ?, notas = ?, duracion_min = ?, precio_estimado = ?, precio_ambito = ?
+        SET datos_extra = ?, notas = ?, duracion_puerta_min = ?, precio_estimado = ?, precio_ambito = ?
       WHERE id = ?`,
     JSON.stringify({ ...previo, bloque, elegidoPor: 'orquestador', porQue }),
     `${opcion.nombre}${horaSalida ? ` · sale ${horaSalida}` : ''}`,
@@ -1301,15 +1307,17 @@ function avisarDeSaltosQueNoCuadran(viajeId, etapas, di) {
     const porCarretera = Number(ref?.minutos_coche);
     if (!Number.isFinite(porCarretera) || porCarretera <= 0) continue;
 
-    // Lo que se eligió, con su puerta a puerta ya medido.
+    // Lo que se eligió, con su puerta a puerta ya medido. Es `duracion_puerta_min`
+    // y no `duracion_min`: esa segunda es la referencia de Google, y comparar la
+    // referencia contra sí misma no avisaría nunca de nada.
     const tramo = una(
-      `SELECT duracion_min, tipo, notas FROM transportes
+      `SELECT duracion_puerta_min, tipo, notas FROM transportes
         WHERE viaje_id = ? AND etapa_origen_id = ? AND etapa_destino_id = ?`,
       viajeId,
       a.id,
       b.id
     );
-    const elegido = Number(tramo?.duracion_min);
+    const elegido = Number(tramo?.duracion_puerta_min);
     if (!Number.isFinite(elegido) || elegido <= 0) continue;
 
     // COMPARAR UN FERRY CON UNA RUTA EN COCHE NO DICE NADA.

@@ -402,6 +402,7 @@ export function migrarEsquema() {
   migracionPlantillasConfig();
   migracionAjustesDeInstalacion();
   migracionCacheDeDistancias();
+  migracionDosDuracionesDeTramo();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5273,6 +5274,76 @@ function migracionCosteDeTrasladosInternos() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: aviso de coste de traslados internos.');
+  return true;
+}
+
+/**
+ * UN TRAMO TIENE DOS DURACIONES, Y COMPARTÍAN COLUMNA.
+ *
+ * `transportes.duracion_min` nació como «la referencia por carretera», al lado
+ * de `distancia_km` y `fuente_distancia`, y así la leen la pantalla de etapa, el
+ * mapa y el chip del lienzo. Pero la fase 2, al elegir un medio, escribía ahí
+ * encima el `bloque.total` puerta a puerta de la opción elegida. Dos cosas
+ * distintas en la misma casilla, y lo que quedaba dependía de quién escribiera
+ * el último.
+ *
+ * En el viaje a Grecia ganó la de Google: el chip del día decía «10h34» —la ruta
+ * real Heraclión → Nafplio, ferry incluido— pegado a una franja «10:00 → 13:45»
+ * que salía del bloque, y las dos cifras no se parecían en nada.
+ *
+ * `duracion_min` se queda con su significado de siempre. La puerta a puerta se
+ * va a `duracion_puerta_min`, que es suya y de nadie más.
+ *
+ * El relleno sale de `datos_extra.bloque.total`, que es de donde venía el valor
+ * pisado: lo que ya estaba elegido no hay que volver a elegirlo.
+ */
+function migracionDosDuracionesDeTramo() {
+  const CLAVE = '2026-09-dos-duraciones-de-tramo';
+  if (yaAplicada(CLAVE)) return false;
+
+  console.log('[bd] Migrando: la referencia de carretera y la puerta a puerta dejan de compartir columna.');
+
+  anadirColumnaSiFalta('transportes', 'duracion_puerta_min', 'INTEGER');
+
+  let rellenados = 0;
+  for (const t of db.prepare('SELECT id, datos_extra FROM transportes').all()) {
+    let total = null;
+    try {
+      total = Number(JSON.parse(t.datos_extra || '{}')?.bloque?.total);
+    } catch {
+      /* datos_extra corrupto: ese tramo se queda sin puerta a puerta */
+    }
+    if (!Number.isFinite(total) || total <= 0) continue;
+    db.prepare('UPDATE transportes SET duracion_puerta_min = ? WHERE id = ?').run(
+      Math.round(total),
+      t.id
+    );
+    rellenados += 1;
+  }
+
+  // Y SE LIMPIA LO QUE QUEDÓ MAL EN LA COLUMNA VIEJA.
+  //
+  // Donde `asegurarDistancia` no llegó a medir nunca, lo que quedó en
+  // `duracion_min` es el puerta a puerta que escribió la fase 2, sin distancia
+  // ni fuente que lo acompañen. Copiado ya a su columna, ahí sobra: dejarlo
+  // sería conservar el mismo equívoco que esta migración viene a deshacer. Se
+  // vacía solo si no hay fuente —si la hay, es una medida de verdad— y la
+  // siguiente pasada de `asegurarDistancia` lo rellenará como es debido.
+  const limpiados = db
+    .prepare(
+      `UPDATE transportes
+          SET duracion_min = NULL
+        WHERE fuente_distancia IS NULL
+          AND duracion_min IS NOT NULL
+          AND duracion_min = duracion_puerta_min`
+    )
+    .run().changes;
+
+  console.log(
+    `[bd] Migración hecha: ${rellenados} tramo/s con su puerta a puerta separada` +
+      `${limpiados ? `, ${limpiados} con la referencia vacía a la espera de medirse` : ''}.`
+  );
+  marcarAplicada(CLAVE);
   return true;
 }
 
