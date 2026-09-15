@@ -139,8 +139,21 @@ function conCara(d) {
  * Cambiar el texto vuelve a poner el estado en 'pendiente' y borra el punto
  * viejo: unas coordenadas de la dirección anterior son peores que ninguna,
  * porque el cálculo saldría con toda naturalidad desde el sitio equivocado.
+ *
+ * `encolar: false` es para quien YA TIENE la respuesta y solo viene a dejar el
+ * texto. Places devuelve dirección y coordenadas de una vez; si aun así se
+ * encolara la búsqueda, el worker llegaría minutos después, preguntaría por esa
+ * dirección pegándole el nombre de la ciudad y escribiría el centroide encima
+ * del acierto. Eso es lo que juntó a Epidauro, Micenas, Bourtzi y la mezquita
+ * de Voivode en un solo pin en mitad de Nauplia: no falló la búsqueda, falló
+ * que se buscara algo que no hacía falta buscar.
  */
-export function guardarDireccion(tipo, elementoId, direccionTexto, { viajeId = null } = {}) {
+export function guardarDireccion(
+  tipo,
+  elementoId,
+  direccionTexto,
+  { viajeId = null, encolar: pedirla = true } = {}
+) {
   if (!tipoValido(tipo)) return null;
 
   const id = Number(elementoId);
@@ -179,7 +192,7 @@ export function guardarDireccion(tipo, elementoId, direccionTexto, { viajeId = n
     );
   }
 
-  pedirGeocodificar(tipo, id, { viajeId });
+  if (pedirla) pedirGeocodificar(tipo, id, { viajeId });
   return direccionDe(tipo, id);
 }
 
@@ -563,11 +576,20 @@ export async function situarLosSitios(punto) {
     const enPlaces = await situarLugarConGoogle(s.nombre, ciudad);
     if (!enPlaces?.direccion) continue;
 
-    guardarDireccion('sitio', s.id, enPlaces.direccion);
+    // SIN ENCOLAR. La dirección ya viene con su punto, así que preguntar otra
+    // vez no es solo pagar dos veces por lo mismo: la segunda respuesta es
+    // PEOR. El worker busca el texto con el nombre de la ciudad pegado detrás
+    // —«Epidavros 210 52, Grecia, Nafplio»— y Google, que no sabe qué hacer con
+    // eso, devuelve el centroide de Nauplia. Y lo escribe encima.
+    //
+    // Aquí ponía «se marca situada sin pasar por la cola de geocodificación».
+    // Era la intención correcta desde el principio; lo que faltaba era que
+    // fuese verdad. Si Places trae la dirección pero no el punto, entonces sí
+    // se encola: ahí no hay nada que pisar.
+    const tienePunto = enPlaces.lat != null && enPlaces.lng != null;
+    guardarDireccion('sitio', s.id, enPlaces.direccion, { encolar: !tienePunto });
 
-    // La dirección ya viene con su punto: se marca situada sin pasar por la
-    // cola de geocodificación, que sería preguntar dos veces lo mismo.
-    if (enPlaces.lat != null && enPlaces.lng != null) {
+    if (tienePunto) {
       ejecutar(
         `UPDATE direcciones
             SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
