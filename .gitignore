@@ -17,6 +17,11 @@ Desktop.ini
 
 # Capturas de fallo de las recetas: se acumulan solas y no son del proyecto.
 capturas/
+
+# El cuaderno de los diagnósticos. Se sobrescribe en cada uno, así que lo que
+# pone hoy no tiene nada que ver con lo que ponía ayer: versionarlo sería
+# guardar un historial de borradores pisados.
+salida.md
 *.db-journal
 *.db-wal
 *.db-shm
