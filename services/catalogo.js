@@ -17,7 +17,7 @@
 
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
 import { direccionDe, guardarDireccion, pedirGeocodificar } from './direcciones.js';
-import { buscarActividades, descubrirSlug } from '../providers/civitatis.js';
+import { buscarActividades, descubrirSlug, buscarFichaActividad } from '../providers/civitatis.js';
 import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 
 export { normalizarNombre };
@@ -227,6 +227,40 @@ export function guardarFichaActividad(id, ficha) {
   volcarPuntoDeEncuentro(Number(id), ficha.puntoEncuentro);
 
   return actividadPorId(id);
+}
+
+/**
+ * TRAE LA FICHA PROFUNDA SI TODAVÍA NO ESTÁ, Y SI NO, NO HACE NADA.
+ *
+ * La ficha completa de una excursión —su itinerario, su punto de encuentro, qué
+ * incluye— solo se pedía cuando alguien pulsaba «Ver detalles». Para el
+ * orquestador eso llegaba tarde: la fase 6 colocaba la excursión antes de que
+ * esos datos existieran, y con ellos la hora de salida que Civitatis publica en
+ * la prosa del itinerario. La excursión a Dougga quedó a las 07:30 porque su
+ * ficha, que dice «sobre las 8:00 horas», se descargó media hora DESPUÉS de
+ * colocarla.
+ *
+ * `detalles_en` es la marca de «esto ya se buscó», así que una ficha que ya está
+ * no se vuelve a pedir: esto es de catálogo, no del viaje, y lo que incluye una
+ * excursión no cambia porque yo viaje en marzo.
+ *
+ * NO LANZA. Que Civitatis no conteste no puede tumbar la fase: se avisa y se
+ * sigue sin hora, que es como se trabajaba hasta ahora.
+ */
+export async function asegurarFichaDeActividad(id) {
+  const a = actividadPorId(id);
+  if (!a) return null;
+  if (a.detalles_en) return a;              // ya está: ni una llamada
+  if (!a.url) return a;                     // sin enlace no hay ficha que buscar
+
+  try {
+    const ficha = await buscarFichaActividad({ url: a.url });
+    guardarFichaActividad(a.id, ficha);
+    return actividadPorId(id);
+  } catch (err) {
+    console.warn(`[catalogo] sin ficha profunda de «${a.titulo}»: ${err.message}`);
+    return a;
+  }
 }
 
 /**

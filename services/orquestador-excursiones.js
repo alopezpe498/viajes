@@ -26,8 +26,13 @@
  * Hueco es que la búsqueda falle, que es otra cosa.
  */
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
+import { horaDeInicioDeExcursion, hayRecogidaEnHotel } from './horarios.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
-import { traerExcursionesSiHacenFalta, actividadesDeCiudad } from '../services/catalogo.js';
+import {
+  traerExcursionesSiHacenFalta,
+  actividadesDeCiudad,
+  asegurarFichaDeActividad,
+} from '../services/catalogo.js';
 import { alternarApuntado } from '../services/etapa.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
@@ -503,6 +508,34 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
 
         guardadas.push(e);
         yaEnElViaje.push({ titulo: e.actividad.titulo, ciudad });
+
+        // LA FICHA PROFUNDA, AHORA QUE SABEMOS QUE ESTA ENTRA.
+        //
+        // Hasta aquí solo se tenía lo del listado: título, precio, nota y
+        // duración. El itinerario —y con él la hora a la que pasan a buscarte—
+        // vive en la ficha completa, y esa solo se pedía cuando alguien pulsaba
+        // «Ver detalles». Para la fase 6 eso llegaba tarde: colocaba la
+        // excursión sin la hora y el modelo se la inventaba. Dougga quedó a las
+        // 07:30 y su ficha dice «sobre las 8:00 horas».
+        //
+        // SOLO DE LAS ELEGIDAS, y por eso va aquí dentro y no arriba: una ciudad
+        // ofrece treinta excursiones y entran una o dos. Treinta fichas serían
+        // treinta visitas a Civitatis para tirar veintiocho.
+        //
+        // Y si ya estaba descargada no cuesta nada: `asegurarFichaDeActividad`
+        // mira `detalles_en` antes de abrir el navegador.
+        const conFicha = await asegurarFichaDeActividad(e.actividad.id);
+        const horaOficial = horaDeInicioDeExcursion(
+          conFicha?.horarios,
+          conFicha?.descripcion_larga
+        );
+        if (horaOficial) {
+          di(
+            `   «${e.actividad.titulo}»: Civitatis publica salida a las ${horaOficial}` +
+              `${hayRecogidaEnHotel(conFicha?.incluye, conFicha?.descripcion_larga) ? ', con recogida en el hotel' : ''}.`,
+            ORIGENES.scraping
+          );
+        }
 
         // Y si la temporada era dudosa —no motivo para tirarla, pero tampoco
         // para fiarse— se dice aquí, que es donde se lee antes de reservar.

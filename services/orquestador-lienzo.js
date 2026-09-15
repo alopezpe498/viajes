@@ -65,7 +65,15 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
-import { horasDeSesion, soloAUltimaHora, abreEl, abiertoA, horarioPorDias } from '../services/horarios.js';
+import {
+  horasDeSesion,
+  soloAUltimaHora,
+  abreEl,
+  abiertoA,
+  horarioPorDias,
+  horaDeInicioDeExcursion,
+  hayRecogidaEnHotel,
+} from '../services/horarios.js';
 import {
   avisarDeParadasQueNoCaben,
   avisarDeParadasSinSusImprescindibles,
@@ -135,6 +143,27 @@ export function diasDeLaEtapa(lienzo, etapaId) {
  * colocar ocho dejaría veintidós apuntados que nadie va a ver. Lo que no cabe se
  * queda generado y sin apuntar, que es exactamente lo que significa.
  */
+/**
+ * La ficha de catálogo de una excursión candidata, o null.
+ *
+ * `naturalezaDe` hace este mismo salto un poco más abajo, pero con el colocado
+ * ya puesto; aquí hace falta ANTES, cuando todavía se está decidiendo. Es la
+ * misma consulta, en el otro extremo del proceso.
+ */
+function fichaDeLaExcursion(candidato) {
+  let deId = null;
+  try {
+    deId = JSON.parse(candidato.datos_extra ?? '{}').deId ?? null;
+  } catch {
+    deId = null;
+  }
+  if (!deId) return null;
+  return una(
+    'SELECT horarios, descripcion_larga, incluye, punto_encuentro FROM catalogo_actividades WHERE id = ?',
+    Number(deId)
+  );
+}
+
 export function colocablesDeEtapa(etapa, lienzo) {
   const yaColocados = new Set(lienzo.colocados.map((c) => c.candidatoId).filter(Boolean));
 
@@ -145,18 +174,38 @@ export function colocablesDeEtapa(etapa, lienzo) {
     etapa.id
   )
     .filter((c) => !yaColocados.has(c.id))
-    .map((c) => ({
-      clase: 'excursion',
-      candidatoId: c.id,
-      sitioId: null,
-      tipo: 'actividad',
-      nombre: c.titulo,
-      categoria: null,
-      duracion: c.duracion ?? null,
-      horarios: null,
-      cierraDias: [],
-      cierraTexto: null,
-    }));
+    .map((c) => {
+      // LA HORA QUE PUBLICA CIVITATIS, QUE ANTES SE TIRABA.
+      //
+      // Aquí ponía `horarios: null` a pelo. No es que la ficha no lo dijera: es
+      // que no se miraba. El itinerario de la excursión a Dougga dice «Tras
+      // recogeros en vuestro hotel de Túnez sobre las 8:00 horas», y el modelo,
+      // que recibía solo el nombre y «8 horas», la colocó a las 07:30.
+      //
+      // La fase 5 ya deja la ficha profunda descargada para las que entran, así
+      // que aquí el dato está.
+      const ficha = fichaDeLaExcursion(c);
+      const horaOficial = horaDeInicioDeExcursion(ficha?.horarios, ficha?.descripcion_larga);
+
+      return {
+        clase: 'excursion',
+        candidatoId: c.id,
+        sitioId: null,
+        tipo: 'actividad',
+        nombre: c.titulo,
+        categoria: null,
+        duracion: c.duracion ?? null,
+        // `horaOficial` es la afirmación; `horarios` la deja además con la forma
+        // que el resto del prompt ya entiende, para no estrenar un campo que
+        // solo lea una cosa.
+        horaOficial,
+        horarios: horaOficial,
+        recogidaHotel: hayRecogidaEnHotel(ficha?.incluye, ficha?.descripcion_larga),
+        puntoEncuentro: ficha?.punto_encuentro ?? null,
+        cierraDias: [],
+        cierraTexto: null,
+      };
+    });
 
   // --- Y los sitios generados, en el orden de sus bloques -----------------
   const sitios = etapa.punto_interes_id
@@ -1532,6 +1581,74 @@ function puntoDeLoColocado(colocado) {
  * comprada, la revisión ya no lo mueve —lo suyo es no ponerlo— pero tiene que
  * salir en los avisos.
  */
+/** El suelo del día cuando no hay hora publicada. El mismo que usa `horaLibreEn`. */
+const INICIO_DEL_DIA_TEXTO = '09:00';
+
+/**
+ * LA HORA OFICIAL DE UNA EXCURSIÓN NO SE SUGIERE: SE IMPONE.
+ *
+ * Decirle al modelo «empieza a las 08:00» y confiar en que haga caso es lo que
+ * ya falló: colocó la excursión a Dougga a las 07:30 sin tener la hora, y con la
+ * hora delante tampoco hay garantía de que la respete. Una hora publicada por
+ * quien vende la excursión es un dato, no una preferencia, así que se escribe
+ * encima de lo que haya decidido.
+ *
+ * Y LA JERARQUÍA, en este orden:
+ *
+ *   1. Hay hora publicada → esa, tal cual, aunque sea antes de las nueve. Si el
+ *      autobús sale a las 06:15, sale a las 06:15: discutirlo no lo retrasa.
+ *   2. No la hay → se respeta lo que propuso el modelo…
+ *   3. …pero nunca antes del suelo del día. Sin dato, un 07:30 no es una hora
+ *      que nadie haya publicado: es una invención, y el suelo la corrige.
+ *
+ * NO SE TOCA LA DURACIÓN NI EL DÍA. Mover el día es otra decisión —hay cierres y
+ * huecos de por medio— y de eso se ocupa la revisión que viene detrás.
+ */
+function imponerLaHoraDeLasExcursiones(viajeId, di) {
+  const lienzo = lienzoDeViaje(viajeId);
+  if (!lienzo?.colocados?.length) return 0;
+
+  const suelo = enMinutos(INICIO_DEL_DIA_TEXTO) ?? 9 * 60;
+  let tocadas = 0;
+
+  for (const c of lienzo.colocados) {
+    const quien = deQuienEs(c);
+    if (quien?.candidato?.tipo !== 'actividad' || !quien.deId) continue;
+
+    const ficha = una(
+      'SELECT titulo, horarios, descripcion_larga, incluye FROM catalogo_actividades WHERE id = ?',
+      Number(quien.deId)
+    );
+    const oficial = horaDeInicioDeExcursion(ficha?.horarios, ficha?.descripcion_larga);
+
+    if (oficial) {
+      if (c.hora === oficial) continue;
+      retocar(c.id, { hora: oficial });
+      tocadas += 1;
+      di(
+        `   ${c.nombre}: Civitatis la saca a las ${oficial}` +
+          `${hayRecogidaEnHotel(ficha?.incluye, ficha?.descripcion_larga) ? ' recogiéndote en el hotel' : ''}` +
+          `${c.hora ? `, no a las ${c.hora}` : ''}. Mando la hora publicada.`,
+        ORIGENES.ninguno
+      );
+      continue;
+    }
+
+    // Sin hora publicada: al menos, que no empiece de madrugada.
+    const suya = enMinutos(c.hora);
+    if (suya == null || suya >= suelo) continue;
+    retocar(c.id, { hora: INICIO_DEL_DIA_TEXTO });
+    tocadas += 1;
+    di(
+      `   ${c.nombre} estaba a las ${c.hora} y nadie publica esa hora: la dejo a las ` +
+        `${INICIO_DEL_DIA_TEXTO}, que es lo más pronto que empieza un día.`,
+      ORIGENES.ninguno
+    );
+  }
+
+  return tocadas;
+}
+
 function contarLoDeLaAclimatacion(viajeId, lienzo, di) {
   const a = diaDeAclimatacion(lienzo);
   if (!a) return;
@@ -2661,6 +2778,13 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // pregunta, se corrige y se vuelve a preguntar.
   const maxPasadas = Math.max(1, parametro('max_revisiones_lienzo', 2));
   const sacados = [];
+
+  // LA HORA QUE PUBLICA CIVITATIS MANDA, Y SE IMPONE ANTES DE REVISAR NADA.
+  //
+  // Va aquí y no después: lo que la revisión corrija tiene que partir ya de la
+  // hora buena. Si se forzara al final, la revisión habría estado peleándose con
+  // una hora inventada y moviendo cosas alrededor de ella.
+  imponerLaHoraDeLasExcursiones(viajeId, di);
 
   await asegurarCierres(viajeId, di);
 

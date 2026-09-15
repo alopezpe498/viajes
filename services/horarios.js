@@ -771,3 +771,125 @@ export function esDeAmanecer(...textos) {
   const t = normalizar(textos.filter(Boolean).join(' · '));
   return ['amanecer', 'sunrise', 'primera luz'].some((p) => t.includes(p));
 }
+
+/**
+ * LA HORA A LA QUE ARRANCA UNA EXCURSIÓN, SACADA DE SU PROSA.
+ *
+ * Civitatis casi nunca rellena el campo «Horario» de la ficha —lo enseña en el
+ * calendario de reserva, después de elegir día— pero SÍ lo dice en el itinerario:
+ * «Tras recogeros en vuestro hotel de Túnez sobre las 8:00 horas…». Ese dato
+ * estaba en la base, entero, y no lo leía nadie: la excursión a Dougga se colocó
+ * a las 07:30 porque el modelo no tenía la hora y se la inventó.
+ *
+ * POR QUÉ NO VALE `horasDeSesion`. Aquella exige que el texto hable de pases o
+ * sesiones, y hace bien: sin esa guarda clavaría cualquier museo a su hora de
+ * apertura. Una descripción de excursión no dice «sesiones», dice «os
+ * recogeremos». Son dos lecturas distintas del mismo tipo de dato.
+ *
+ * LO QUE HACE FALTA ACERTAR ES CUÁL DE LAS HORAS. La misma descripción suele
+ * traer la de vuelta —«Regresaremos a Túnez en torno a las 16:00»— y coger la
+ * primera o la última del texto acierta unas veces y otras no. Así que la hora
+ * no se busca sola: se busca UNA PALABRA DE SALIDA y la hora que va con ella,
+ * cerca y por detrás.
+ *
+ * Y las palabras de regreso descalifican: si entre la palabra de salida y la
+ * hora se ha colado un «regreso», esa hora es de otra frase.
+ *
+ * Devuelve «HH:MM» o null. Null es una respuesta normal y frecuente: muchas
+ * fichas no dicen la hora en ninguna parte, y para eso está el suelo del día.
+ */
+
+/** Lo que anuncia que una hora es de SALIDA. */
+const DE_SALIDA = [
+  'recogid', 'recogida', 'recogeros', 'recogeremos', 'os recogemos', 'te recogemos',
+  'salida', 'saldremos', 'partiremos', 'partida', 'comenzaremos', 'comenzara',
+  'empezaremos', 'empezara', 'iniciaremos', 'inicio', 'nos encontraremos',
+  'quedaremos', 'cita', 'punto de encuentro', 'pick up', 'pickup',
+];
+
+/** Lo que anuncia que una hora es de VUELTA, y por tanto no sirve. */
+const DE_REGRESO = [
+  'regres', 'volvere', 'vuelta', 'retorno', 'de vuelta', 'llegada al hotel',
+  'os dejaremos', 'te dejaremos', 'finaliza', 'finalizara', 'termina', 'terminara',
+  'fin de la actividad', 'de regreso',
+];
+
+/** Cuántos caracteres puede haber entre la palabra de salida y su hora. */
+const CERCA = 120;
+
+export function horaDeInicioDeExcursion(...textos) {
+  const t = normalizar(textos.filter(Boolean).join(' · '));
+  if (!t.trim()) return null;
+
+  // Las horas del texto, con su posición. Se exige minutos, am/pm o «h»: un
+  // número suelto no es una hora, y en estas descripciones hay muchos («2
+  // yacimientos», «siglo III»).
+  const horas = [];
+  const re = /(\d{1,2})[:.]?(\d{2})?\s*(am|pm|h\b|horas\b)?/g;
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    const crudo = Number(m[1]);
+    if (!Number.isInteger(crudo) || crudo > 24) continue;
+    if (m[2] === undefined && !m[3]) continue;
+
+    let h = crudo;
+    if (m[3] === 'pm' && h < 12) h += 12;
+    if (m[3] === 'am' && h === 12) h = 0;
+    if (h > 23) continue;
+
+    const min = m[2] === undefined ? 0 : Number(m[2]);
+    if (min > 59) continue;
+
+    horas.push({ texto: `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`, en: m.index });
+  }
+  if (!horas.length) return null;
+
+  // Para cada palabra de salida, la primera hora que venga DETRÁS y cerca.
+  let mejor = null;
+  for (const palabra of DE_SALIDA) {
+    let desde = 0;
+    for (;;) {
+      const i = t.indexOf(palabra, desde);
+      if (i < 0) break;
+      desde = i + palabra.length;
+
+      const suya = horas.find((x) => x.en >= i && x.en - i <= CERCA);
+      if (!suya) continue;
+
+      // Si entre la palabra y la hora se ha colado un regreso, esa hora es de
+      // otra frase: «saldremos del hotel … y regresaremos sobre las 16:00».
+      const enMedio = t.slice(i, suya.en);
+      if (DE_REGRESO.some((p) => enMedio.includes(p))) continue;
+
+      // La más temprana de las candidatas: una excursión empieza una vez.
+      if (!mejor || suya.en < mejor.en) mejor = suya;
+    }
+  }
+
+  return mejor?.texto ?? null;
+}
+
+/**
+ * ¿VIENEN A BUSCARTE AL HOTEL?
+ *
+ * Importa porque decide si hay que salir antes: a una recogida en la puerta no
+ * se llega con antelación, se baja. Un punto de encuentro, sí.
+ *
+ * SE EXIGE EVIDENCIA POSITIVA en el texto, y no basta con que
+ * `punto_encuentro` esté vacío: vacío también es «esta ficha no se ha pedido
+ * nunca» y «es una entrada de museo que no tiene ninguno». Un campo que no está
+ * no afirma nada.
+ */
+const RECOGIDA = [
+  'recogida en el hotel', 'recogida y traslado al hotel', 'recogida en vuestro hotel',
+  'recogida en su hotel', 'recogida en tu hotel', 'os recogeremos en', 'te recogemos en',
+  'recogeros en vuestro hotel', 'recogeros en su hotel', 'recogerte en tu hotel',
+  'os recogemos en', 'recogida desde el hotel', 'pick up en el hotel',
+  'traslado desde el hotel', 'recogida en los hoteles',
+];
+
+export function hayRecogidaEnHotel(...textos) {
+  const t = normalizar(textos.filter(Boolean).join(' · '));
+  if (!t.trim()) return false;
+  return RECOGIDA.some((p) => t.includes(p));
+}
