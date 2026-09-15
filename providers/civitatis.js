@@ -148,13 +148,29 @@ export function destinoASlug(destino) {
  */
 export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) {
   const candidatos = [nombre, ...tambien].filter(Boolean);
-  const normal = (t) =>
-    String(t ?? '')
+
+  /**
+   * LA CLAVE DE CACHE, QUE NO PUEDE QUEDARSE VACIA.
+   *
+   * Esto tira todo lo que no sea [a-z0-9] para que \u00abHeracli\u00f3n\u00bb y \u00abHeraclion\u00bb
+   * sean la misma fila. Pero de un nombre escrito en griego, cirilico o japones
+   * no sobrevive ni un caracter, y los tres acababan bajo la MISMA clave vacia:
+   * \u00ab\u0397\u03c1\u03ac\u03ba\u03bb\u03b5\u03b9\u03bf\u00bb, \u00ab\u041c\u043e\u0441\u043a\u0432\u0430\u00bb y \u00ab\u6771\u4eac\u00bb eran la misma fila de la tabla. La primera que
+   * se guardara contestaria por todas las demas.
+   *
+   * Cuando no queda nada, la clave es el nombre original en minusculas. Pierde
+   * la tolerancia a las tildes \u2014que en esos alfabetos no aplica\u2014 y a cambio cada
+   * ciudad tiene la suya.
+   */
+  const normal = (t) => {
+    const limpio = String(t ?? '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '')
       .trim();
+    return limpio || String(t ?? '').trim().toLowerCase();
+  };
 
   // 1) LO QUE YA SE SEPA. Y un SI de cualquiera vale para todas.
   for (const c of candidatos) {
