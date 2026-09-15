@@ -175,6 +175,28 @@ export function guardar(a, b, resultados) {
   return guardadas;
 }
 
+/**
+ * CERO MINUTOS ENTRE DOS PUNTOS DISTINTOS NO ES UN TIEMPO.
+ *
+ * Es el rastro del fallo de `guardar`: un «no hay ruta» convertido en número. Y
+ * el detector es más barato que la causa —una consulta, sin preguntarle nada a
+ * nadie— así que se queda aunque la causa esté cerrada: si otro camino vuelve a
+ * meter un cero, esto lo enseña.
+ *
+ * Solo se mira `minutos`. Un `km` de cero SÍ es legítimo: dos portales a ochenta
+ * metros redondean a cero kilómetros y tardan un minuto, y hay filas así.
+ *
+ * Y solo entre puntos DISTINTOS: un par consigo mismo en cero es la verdad.
+ */
+export function cerosQueMienten() {
+  return todas(
+    `SELECT * FROM distancias_puntos
+      WHERE minutos = 0
+        AND NOT (a_lat = b_lat AND a_lon = b_lon)
+      ORDER BY a_lat, a_lon, b_lat, b_lon, modo`
+  );
+}
+
 /** Cuántos pares y filas hay guardados. Para la pantalla de mantenimiento. */
 export function cuantoSeSabe() {
   const n = una('SELECT COUNT(*) AS filas FROM distancias_puntos');
@@ -184,4 +206,4 @@ export function cuantoSeSabe() {
   return { filas: n?.filas ?? 0, pares: pares?.n ?? 0 };
 }
 
-export default { loQueSeSabe, guardar, caduca, cuantoSeSabe };
+export default { loQueSeSabe, guardar, caduca, cuantoSeSabe, cerosQueMienten };
