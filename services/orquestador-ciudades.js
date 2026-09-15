@@ -1139,6 +1139,39 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
               : null,
         }));
 
+        // UN VIAJE EN BUCLE SE CIERRA, Y AQUÍ NO SE CERRABA.
+        //
+        // Con entrada y salida en la misma ciudad, esto devolvía «Túnez 3n →
+        // Hammamet 2n → Kairouan 2n»: una ruta que empieza en la puerta y acaba
+        // en otro sitio. `validarRuta` exige que la última parada sea la de
+        // salida —y contempla el bucle: permite cero noches en los extremos y
+        // repetir la ciudad de entrada al final—, así que ningún reparto de los
+        // que salían de aquí podía pasar su propio validador.
+        //
+        // Lo caro no era eso: era que la IA SÍ proponía el bucle bien cerrado, y
+        // como su propuesta de cuatro paradas no casaba con ninguno de estos de
+        // tres, se descartaba y se sustituía por el primero de la lista. La
+        // respuesta buena se tiraba antes de validarla, se agotaban los dos
+        // intentos y la fase moría.
+        //
+        // Se añade DESPUÉS del `map` y no dentro de `enOrden` a propósito: el
+        // mapa de noches va por nombre, así que una segunda Túnez ahí dentro
+        // saldría con las mismas tres noches en vez de con cero.
+        //
+        // No suma noche ninguna —es la parada de paso en la que se coge el
+        // avión— y por eso no toca ni `minimos`, ni `maximos`, ni el reparto.
+        if (irYVolver) {
+          reparto.push({
+            ciudad: cEntrada.nombre,
+            noches: 0,
+            peso: cEntrada.peso ?? 3,
+            // El motivo NO es adorno: `validarRuta` rechaza toda parada de cero
+            // noches que no explique por qué, así que sin esto el bucle bien
+            // cerrado se caería igual, y por otra puerta.
+            motivo: 'parada de salida: se vuelve a coger el vuelo',
+          });
+        }
+
         const huella = reparto.map((x) => `${x.ciudad}:${x.noches}`).join('|');
         if (salidas.some((x) => x.huella === huella)) continue;
 
@@ -2038,6 +2071,30 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
       const coincide = repartosLegales_.find(
         (x) => huellaDe(x.reparto.map((y) => ({ ciudad: y.ciudad, noches: y.noches }))) === suya
       );
+
+      // SI ACIERTA, SE LE COGE EL REPARTO ENTERO, NO SOLO EL VISTO BUENO.
+      //
+      // La huella compara ciudad y noches, que es lo que decide si el reparto es
+      // legal. Los «motivo» no entran en esa comparación, y son obligatorios en
+      // toda parada de cero noches: sin ellos `validarRuta` la tumba.
+      //
+      // Así que una IA que devuelva el bucle bien cerrado pero sin explicar la
+      // parada de paso acertaría el reparto y moriría igual, dos líneas más
+      // abajo, por una frase que el código ya tiene escrita. Se la ponemos: el
+      // motivo de una parada legal lo sabe quien la declaró legal.
+      // Se empareja por POSICIÓN y no por nombre: en un viaje en bucle la ciudad
+      // de la puerta sale dos veces, y buscarla por nombre devolvería siempre la
+      // primera. Las dos listas tienen la misma huella, así que van en el mismo
+      // orden.
+      if (coincide) {
+        propuesta = coincide.reparto.map((x, i) => ({
+          ciudad: x.ciudad,
+          noches: x.noches,
+          // El del código manda; el de la IA se conserva cuando el código no
+          // tenía nada que decir, que es donde ella aporta el matiz.
+          motivo: x.motivo ?? propuesta[i]?.motivo ?? null,
+        }));
+      }
 
       if (!coincide) {
         const primero = repartosLegales_[0];
