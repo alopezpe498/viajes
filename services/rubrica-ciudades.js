@@ -343,12 +343,37 @@ export function puntosDeCiudad(evidencia, multiplicadores = null) {
  * NO SE USA PARA DECIDIR NADA. Si algún día aparece un `=== banda` en una
  * decisión, es un error.
  */
-export function bandaDePuntos(puntos) {
-  const p = Number(puntos) || 0;
-  if (p >= 9) return 5;
-  if (p >= 6.5) return 4;
-  if (p >= 4) return 3;
-  if (p >= 2) return 2;
+export function bandaDePuntos(puntos, multiplicadores = null) {
+  // SE MIDE CONTRA UNA ESCALA QUE NO SE MUEVE.
+  //
+  // Los cortes se calibraron sobre la puntuación objetiva, cuyo máximo teórico
+  // son los siete pesos sumados. La puntuación perfilada vive en otra escala:
+  // con todas las categorías marcadas, los multiplicadores inflan TODO en torno
+  // a ×1,7, y una ciudad de 12 puntos se convierte en una de 21.
+  //
+  // La primera versión aplicaba los cortes directamente sobre la perfilada, y el
+  // resultado era que la banda dependía de cuántas casillas hubiera marcado el
+  // viajero: el mismo Polonia daba Cracovia 5 con un perfil cultural completo y
+  // Cracovia 3 con el perfil vacío, sin que Cracovia hubiera cambiado. Eso
+  // contradice lo que la banda significa —un 5 es la ciudad por la que se
+  // organiza el viaje— así que se divide por el multiplicador medio antes de
+  // mirar los cortes.
+  //
+  // Lo que NO se pierde al dividir es la comparación entre ciudades: el perfil
+  // infla a todas por el mismo factor medio, pero a cada una un poco distinto
+  // según sus casillas, y esa diferencia es justo la señal que se quería. En el
+  // Polonia medido, Zakopane baja respecto a las demás porque su paisaje y su
+  // queso no le interesan a un perfil cultural, y eso sobrevive a la división.
+  const medio = multiplicadores
+    ? Object.values(multiplicadores).reduce((a, x) => a + x, 0) /
+      Math.max(1, Object.values(multiplicadores).length)
+    : 1;
+  const p = (Number(puntos) || 0) / (medio > 0 ? medio : 1);
+
+  if (p >= parametro('banda_5_desde', 12)) return 5;
+  if (p >= parametro('banda_4_desde', 11)) return 4;
+  if (p >= parametro('banda_3_desde', 7)) return 3;
+  if (p >= parametro('banda_2_desde', 2.5)) return 2;
   return 1;
 }
 

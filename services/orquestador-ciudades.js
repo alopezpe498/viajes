@@ -166,7 +166,7 @@ export function saneaCandidatas(respuesta, tope, multiplicadores = null) {
         // cero la sacaría de comparaciones que sí tienen que poder hacerse.
         peso: Math.max(0.5, cuenta.perfil),
         puntosObjetivos: cuenta.objetivos,
-        banda: bandaDePuntos(cuenta.perfil),
+        banda: bandaDePuntos(cuenta.perfil, multiplicadores),
         evidencia: puestas,
         evidenciaTirada: tiradas,
         desglose: cuenta.desglose,

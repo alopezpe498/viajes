@@ -408,6 +408,7 @@ export function migrarEsquema() {
   migracionPuntuarConCriterio();
   migracionNombresDeCiudadDelCatalogo();
   migracionRubricaDeCiudades();
+  migracionCortesDeBanda();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5705,6 +5706,48 @@ function migracionRubricaDeCiudades() {
 
   marcarAplicada(CLAVE);
   console.log(`[bd] Migracion: rubrica de ciudades (${puestos} de 2 retoques de prompt puestos).`);
+  return true;
+}
+
+/**
+ * QUE UN 5 SIGNIFIQUE ALGO.
+ *
+ * La primera calibracion de las bandas daba siete cincos de ocho en Polonia. Dos
+ * motivos, y los dos eran mios: los cortes se pusieron pensando en la puntuacion
+ * objetiva —maximo teorico 14— y se aplicaban sobre la perfilada, que con todas
+ * las categorias marcadas se va a 21; y ademas estaban demasiado bajos incluso
+ * para la objetiva, porque en un pais como Polonia casi toda ciudad tiene UNESCO
+ * mas hito mas casco historico.
+ *
+ * El criterio es: un 5 es EXCEPCIONAL, la ciudad por la que se organiza el
+ * viaje, y en un pais normal caben una o dos. Un 4 es muy valiosa, un 3 solida,
+ * un 2 complemento, un 1 relleno.
+ *
+ * Con estos cortes y la normalizacion por el multiplicador medio, el Polonia
+ * medido da Cracovia 5, Varsovia y Wroclaw 4, Gdansk, Torun y Poznan 3,
+ * Kazimierz Dolny y Zakopane 2 — y las MISMAS bandas con un perfil vacio, que es
+ * lo que antes no pasaba.
+ */
+function migracionCortesDeBanda() {
+  const CLAVE = '2026-09-cortes-de-banda';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion) =>
+    meter.run(clave, valor, valor, descripcion, 'puntos', ++orden);
+
+  nuevo('banda_5_desde', '12', 'Puntos (ya sin el inflado del perfil) desde los que una ciudad es un 5: excepcional, la razon del viaje');
+  nuevo('banda_4_desde', '11', 'Desde los que una ciudad es un 4: muy valiosa');
+  nuevo('banda_3_desde', '7', 'Desde los que una ciudad es un 3: solida');
+  nuevo('banda_2_desde', '2.5', 'Desde los que una ciudad es un 2: complemento. Por debajo, relleno');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: cortes de banda recalibrados (un 5 vuelve a ser excepcional).');
   return true;
 }
 
