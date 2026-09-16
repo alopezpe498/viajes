@@ -250,9 +250,20 @@ export function cabenLosImprescindibles(viajeId, etapa) {
 export function avisarDeParadasQueNoCaben(viaje, di = () => {}) {
   ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'parada-corta'", viaje.id);
 
+  // EN UNA PARADA DE PASO NO SE DUERME, ASÍ QUE ESTA PLANTILLA NO LE APLICA.
+  //
+  // Todo lo que escribe esta función habla de dormir —«se duerme allí sin ver el
+  // motivo»— y de tiempo útil para visitar. Una parada de cero noches no es ni
+  // una cosa ni la otra: es volver a la ciudad del aeropuerto a coger el avión.
+  // Salía con «0 min útiles para 8h de imprescindibles», que es verdad y no
+  // significa nada.
+  //
+  // Es el mismo despiste que en la fase de dormir, y por el mismo motivo: estas
+  // consultas se escribieron cuando toda parada confirmada tenía al menos una
+  // noche, y las rutas en bucle estrenaron la parada de salida.
   const cortas = todas(
     `SELECT * FROM etapas
-      WHERE viaje_id = ? AND estado = 'confirmada'
+      WHERE viaje_id = ? AND estado = 'confirmada' AND noches > 0
       ORDER BY orden`,
     viaje.id
   );
