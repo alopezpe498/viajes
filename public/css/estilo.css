@@ -1962,412 +1962,498 @@ a  { color: var(--acento); }
 
 /* ===========================================================================
    MI RUTA (/viaje/:viajeId/ruta)
-   Sigue la maqueta aprobada; los colores salen de las variables del tema.
+   ---------------------------------------------------------------------------
+   LA RUTA ES UNA LÍNEA, NO UNA LISTA.
+
+   Antes esto eran cuatro bloques apilados —dos tarjetas de acceso, un banner de
+   avisos, un contador, los candidatos y por fin las paradas— y el viaje, que es
+   lo único que se viene a ver, empezaba por debajo del pliegue. Ahora hay un
+   tronco vertical continuo de casa a casa, con las paradas como nodos numerados
+   y los vuelos y traslados VIVIENDO SOBRE la línea, entre nodo y nodo, en vez de
+   sueltos como chips.
+
+   DE LA MAQUETA SE TOMAN LAS PROPORCIONES, NO LA ROPA. La referencia trae dos
+   tipografías de Google y una paleta propia con tema oscuro. Aquí se usan las
+   variables del tema de la app y su tipografía de sistema: añadir dos fuentes
+   externas por una pantalla cambiaría el aire de las otras veinte, y la app no
+   tiene tema oscuro en ninguna parte —no hay un solo `prefers-color-scheme` ni
+   un `data-theme`— así que inventárselo aquí dejaría esta pantalla hablando un
+   idioma que el resto no entiende.
    =========================================================================== */
-.contenido--ruta { max-width: 720px; }
+.contenido--ruta { max-width: 880px; }
 .contenido--esperando { opacity: .6; pointer-events: none; }
 
-/* --- Cabecera ------------------------------------------------------------- */
-.ruta-cabecera { margin-bottom: 22px; }
+/* Único color que la paleta de la app no tiene y la línea sí necesita: el ámbar
+   de los extremos del tronco y del punto de «hay algo que mirar». Se declara
+   aquí, en el único sitio que lo usa, y no en :root, que es de toda la app. */
+.contenido--ruta { --ruta-hito: #C98A12; }
+
+/* --- La barra de mando ----------------------------------------------------- */
+/*
+   Título, viaje y accesos en UNA fila. Los tres accesos que se usan —lienzo,
+   mapa y antes de viajar— son píldoras del mismo tamaño, y el resto se pliega
+   detrás de «⋯». «Antes de viajar» deja de ser un banner de cincuenta píxeles:
+   lo que tenía que decir —«mírame, aún no lo has hecho»— lo dice un punto ámbar.
+*/
+.ruta-cab { margin-bottom: 16px; }
 .ruta-cabecera__miga {
   font-size: 13px;
-  color: var(--texto-3);
-  margin: 0 0 6px;
+  color: var(--texto-2);
+  margin-bottom: 10px;
 }
 .ruta-cabecera__miga a { color: inherit; text-decoration: none; }
 .ruta-cabecera__miga a:hover { color: var(--acento); text-decoration: underline; }
-
-/* Las dos piezas del parcial `migas`: el separador, que se despinta para que no
-   compita con los nombres, y el sitio donde estás, que sí se marca. Sin esto,
-   una miga de tres tramos se lee como tres enlaces iguales y no dice dónde
-   estás, que es lo único que tiene que decir. */
 .ruta-cabecera__miga .miga__sep { margin: 0 5px; opacity: .45; }
 .ruta-cabecera__miga .miga__actual { color: var(--texto-2); font-weight: 600; }
 
-.ruta-cabecera__titulo {
+.ruta-cab__fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ruta-cab__titulo {
   margin: 0;
-  font-size: 26px;
+  font-size: clamp(28px, 5vw, 38px);
   font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.05;
+}
+.ruta-cab__acciones {
+  margin-left: auto;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.chip-ambito {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--acento);
-  background: var(--tinte);
-  border-radius: 999px;
-  padding: 5px 14px;
-}
-
-/* --- Contador de noches --------------------------------------------------- */
-.ruta-contador {
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: 16px;
-  padding: 16px 20px;
-  margin-bottom: 26px;
-}
-.ruta-contador__fila {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-.ruta-contador__texto { font-size: 15px; font-weight: 600; }
-.ruta-contador__fechas { font-size: 13px; color: var(--texto-2); }
-
-.ruta-barra {
-  height: 8px;
-  background: var(--fondo);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.ruta-barra__lleno {
-  height: 100%;
-  background: var(--acento);
-  border-radius: 999px;
-  transition: width .3s ease;
-}
-.ruta-barra__lleno--exceso { background: #C0563B; }
-
-.ruta-contador__aviso {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--texto-2);
-}
-.ruta-contador__aviso a { color: var(--acento); font-weight: 600; }
-.ruta-contador__aviso--exceso { color: #C0563B; font-weight: 600; }
-.ruta-contador__aviso--exacto { color: var(--verde-tx); font-weight: 600; }
-.ruta-contador__aviso--exacto i { font-size: 15px; vertical-align: -2px; }
-
-/* --- Títulos de sección --------------------------------------------------- */
-.seccion-titulo {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--texto-3);
-  margin: 26px 4px 12px;
-  display: flex;
-  align-items: center;
   gap: 8px;
-}
-.seccion-titulo__num {
-  background: var(--tinte);
-  color: var(--acento);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 2px 9px;
-}
-
-/* --- Candidatos ----------------------------------------------------------- */
-.candidatos {
-  display: flex;
-  gap: 10px;
   flex-wrap: wrap;
-}
-.candidato {
-  background: var(--superficie);
-  /* Discontinuo: todavía no está decidido que entre en la ruta. */
-  border: 1px dashed var(--texto-3);
-  border-radius: 14px;
-  padding: 12px 16px;
-  display: flex;
   align-items: center;
-  gap: 12px;
-}
-.candidato__nombre { font-weight: 600; font-size: 15px; }
-.candidato__botones { display: flex; gap: 6px; }
-
-.btn-mini {
-  border: 0;
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.btn-mini--confirmar { background: var(--acento); color: #fff; }
-.btn-mini--confirmar:hover { background: var(--acento-hover); }
-.btn-mini--quitar { background: var(--fondo); color: var(--texto-2); }
-.btn-mini--quitar:hover { background: var(--borde); }
-
-.candidatos__vacio {
-  font-size: 14px;
-  color: var(--texto-3);
-  padding: 8px 4px;
-  margin: 0;
 }
 
-/* --- La ruta -------------------------------------------------------------- */
-.ruta-lista { position: relative; }
-
-.extremo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 18px;
-  font-size: 14px;
-  color: var(--texto-2);
-}
-.extremo__icono {
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  background: var(--fondo);
-  border: 1px solid var(--borde);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  color: var(--texto-3);
-}
-
-/* El ruta-tramo lleva la línea vertical que enhebra toda la ruta. */
-.ruta-tramo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0 4px 26px;
-  position: relative;
-}
-.ruta-tramo::before {
-  content: '';
-  position: absolute;
-  left: 12px; top: -6px; bottom: -6px;
-  width: 2px;
-  background: var(--borde);
-}
-
-.chip-transporte {
-  font-size: 13px;
-  border-radius: 999px;
-  padding: 6px 14px;
+.ruta-pildora {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid transparent;
+  gap: 7px;
+  border: 1.5px solid var(--borde);
+  background: var(--superficie);
+  color: var(--texto);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.chip-transporte i { font-size: 15px; }
-.chip-transporte--pendiente { background: #FBEED6; color: #8A5A16; }
-.chip-transporte--resuelto  { background: var(--verde-bg); color: var(--verde-tx); }
-.chip-transporte:hover { border-color: currentColor; }
+.ruta-pildora:hover { border-color: var(--acento); color: var(--acento); }
+.ruta-pildora i { font-size: 16px; }
 
-/* --- Cada parada ---------------------------------------------------------- */
-.etapa {
+/* EL PUNTO ÁMBAR. Se apaga solo cuando el botón lleva la clase que ya conmuta
+   public/js/antes-de-viajar.js al marcar «ya lo he revisado»: así el estado del
+   panel y el de la píldora no pueden desincronizarse, y no hay que tocar aquel
+   archivo para que esto funcione. */
+.ruta-pildora__pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ruta-hito);
+  flex: none;
+}
+.ruta-pildora.antes-boton--hecho .ruta-pildora__pip { display: none; }
+
+/* --- El «⋯» y lo que esconde ---------------------------------------------- */
+.ruta-mas { position: relative; }
+.ruta-mas__boton {
+  list-style: none;
+  padding: 9px 14px;
+  border-style: dashed;
+  color: var(--texto-2);
+}
+.ruta-mas__boton::-webkit-details-marker { display: none; }
+.ruta-mas__boton::marker { content: ''; }
+.ruta-mas__cuerpo {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 40;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 16px;
-  padding: 16px 18px;
+  border-radius: var(--radio-sm);
+  box-shadow: 0 10px 30px rgba(18, 48, 62, .13);
+}
+
+/* --- La línea de estado ---------------------------------------------------- */
+/*
+   Sustituye a la tarjeta del contador. Una sola píldora ancha: noches, barra,
+   veredicto y fechas. Lo pinta el JS, que es quien tiene el número bueno después
+   de cada cambio.
+*/
+.ruta-estado {
+  margin: 0 0 26px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   gap: 14px;
-  cursor: grab;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+}
+.ruta-estado:empty { display: none; }
+.ruta-estado__noches { font-weight: 700; white-space: nowrap; }
+.ruta-estado__barra {
+  flex: 1;
+  min-width: 110px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--borde);
+  overflow: hidden;
+}
+.ruta-estado__lleno {
+  display: block;
+  height: 100%;
+  background: var(--acento);
+}
+.ruta-estado__lleno--exceso { background: #C0563B; }
+.ruta-estado__veredicto { font-weight: 700; white-space: nowrap; }
+.ruta-estado__veredicto--exacto { color: var(--verde-tx); }
+.ruta-estado__veredicto--exceso { color: #C0563B; }
+.ruta-estado__veredicto--faltan { color: var(--texto-2); }
+.ruta-estado__fechas { color: var(--texto-2); white-space: nowrap; }
+.ruta-estado__fechas a { color: var(--acento); font-weight: 600; }
+
+/* --- El tronco ------------------------------------------------------------- */
+/*
+   La línea entera es un pseudoelemento del contenedor, no un borde por nodo: así
+   no se parte entre tarjetas y los degradados de los extremos —ámbar en casa,
+   azul en el viaje— caen donde tienen que caer.
+*/
+.ruta-tronco {
+  position: relative;
+  padding-left: 64px;
+}
+.ruta-tronco::before {
+  content: '';
+  position: absolute;
+  left: 27px;
+  top: 26px;
+  bottom: 26px;
+  width: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    var(--ruta-hito) 0%,
+    var(--acento) 12%,
+    var(--acento) 88%,
+    var(--ruta-hito) 100%
+  );
+}
+.ruta-nodo { position: relative; margin-bottom: 14px; }
+.ruta-punto {
+  position: absolute;
+  left: -64px;
+  top: 4px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--superficie);
+  border: 6px solid var(--acento);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--acento);
+}
+.ruta-punto i { font-size: 24px; }
+.ruta-punto--casa { border-color: var(--borde-fuerte); color: var(--texto-2); }
+/* De paso: la parada que no duerme. Borde discontinuo, como en la maqueta: se
+   ve de un vistazo que ahí no se hace noche. */
+.ruta-punto--paso {
+  border-style: dashed;
+  border-color: var(--borde-fuerte);
+  color: var(--texto-3);
+}
+.ruta-casa {
+  display: flex;
+  align-items: center;
+  min-height: 60px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--texto-2);
+}
+
+/* --- Vuelos y traslados, sobre la línea ------------------------------------ */
+.ruta-tramo {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 6px 0 6px 8px;
+  color: var(--texto-2);
+  font-size: 13.5px;
+}
+.ruta-tramo__medio {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--superficie);
+  border: 1.5px solid var(--borde);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 600;
+  color: var(--texto);
+  text-decoration: none;
+}
+.ruta-tramo__medio:hover { border-color: var(--acento); }
+.ruta-tramo__medio i { font-size: 15px; }
+.ruta-tramo--resuelto .ruta-tramo__medio i { color: var(--verde-tx); }
+.ruta-tramo--pendiente .ruta-tramo__medio {
+  border-style: dashed;
+  border-color: var(--prec-tx);
+  color: var(--prec-tx);
+}
+.ruta-tramo--pendiente .ruta-tramo__medio i { color: var(--prec-tx); }
+.ruta-tramo__dato { white-space: nowrap; }
+
+/* --- La tarjeta de una parada ---------------------------------------------- */
+.etapa {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-sm);
+  padding: 15px 18px;
 }
 .etapa--arrastrando { opacity: .4; }
 .etapa--encima { border-color: var(--acento); box-shadow: 0 0 0 3px var(--tinte); }
 
+.etapa__cab { display: flex; align-items: flex-start; gap: 10px; }
 .etapa__asa {
   color: var(--texto-3);
-  font-size: 18px;
   cursor: grab;
+  padding: 3px 2px 0 0;
   user-select: none;
-  line-height: 1;
+  flex: none;
 }
-.etapa__orden {
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  background: var(--acento);
-  color: #fff;
+.etapa__asa i { font-size: 18px; }
+.etapa__info { flex: 1; min-width: 0; }
+.etapa__nombre {
+  display: block;
+  font-size: clamp(21px, 3.4vw, 27px);
   font-weight: 700;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  letter-spacing: -.01em;
+  line-height: 1.1;
 }
-/* LA COLUMNA DEL MEDIO NO PUEDE ENCOGER MÁS QUE SU FECHA.
-   Estaba en `min-width: 0`, que es lo que deja a un hijo de flex achicarse por
-   debajo de su contenido. Con el nombre de la ciudad, el selector de noches y
-   la píldora del hotel compitiendo por el ancho, esta columna se quedaba tan
-   estrecha que el rango de fechas se partía palabra por palabra: «16 / oct / →
-   / 20 / oct», cinco líneas para quince caracteres.
-   El suelo son los ~100 px que ocupa la cadena más larga que puede salir
-   —«28 sep → 28 sep», con los meses de tres letras de `ruta.js`— y un poco de
-   aire. El nombre de la ciudad sigue pudiendo partirse: es el que sobra cuando
-   falta sitio, y es de longitud variable. */
-.etapa__info { flex: 1; min-width: 116px; }
-.etapa__nombre { display: block; font-weight: 700; font-size: 16px; }
-/* Y en una línea, como `.etapa__valor` y `.etapa__dormir`, que ya llevaban lo
-   mismo por este motivo: un dato corto y de ancho conocido no se parte. */
+/* LAS FECHAS, EN UNA LÍNEA Y SIEMPRE. Se partían en columna —una palabra por
+   renglón— porque el contenedor no tenía sitio y no había nada que lo impidiera.
+   El `nowrap` es la regla; el `min-width:0` de arriba es lo que deja que la
+   tarjeta se encoja sin empujarlas. */
 .etapa__fechas {
   display: block;
-  font-size: 13px;
-  color: var(--texto-2);
   margin-top: 2px;
+  font-size: 14px;
+  color: var(--texto-2);
   white-space: nowrap;
 }
-
-.etapa__noches {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--fondo);
-  border-radius: 999px;
-  padding: 5px 8px;
-}
-.etapa__noches button {
-  width: 26px; height: 26px;
-  border: 1px solid var(--borde);
-  border-radius: 50%;
-  background: var(--superficie);
-  color: var(--texto);
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-}
-.etapa__noches button:hover:not(:disabled) { background: var(--tinte); }
-.etapa__noches button:disabled { color: var(--texto-3); cursor: default; opacity: .55; }
-.etapa__valor { font-size: 14px; font-weight: 700; min-width: 62px; text-align: center; }
-
-.etapa__abrir {
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  color: var(--acento);
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.etapa__abrir:hover { background: var(--tinte); }
-
 .etapa__quitar {
   border: 0;
-  background: none;
+  background: transparent;
   color: var(--texto-3);
-  padding: 4px;
-  border-radius: 50%;
+  padding: 3px 6px;
+  border-radius: 8px;
   cursor: pointer;
-  line-height: 1;
+  flex: none;
 }
 .etapa__quitar i { font-size: 17px; }
 .etapa__quitar:hover { color: #C0563B; background: var(--fondo); }
 
-/* --- Los dos accesos destacados de "Mi ruta" ------------------------------- */
-/*
-   El lienzo y el mapa, arriba y en dos columnas. Antes el lienzo estaba en el
-   pie de la página, detrás de toda la lista de paradas, y es lo que más se abre.
-
-   CON LA ROPA DE LA APP, y esto va contra la maqueta a propósito: allí son dos
-   bloques de color macizo con sombra fuerte. Aquí son tarjetas como las demás
-   —superficie, borde, radio— y destacan por lo que de verdad las destaca: ir
-   arriba, ser solo dos y llevar subtítulo. Dos slabs de color en una pantalla
-   que ya tiene un chip por ciudad pesarían más de lo que aportan.
-*/
-.ruta-destacados {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin: 16px 0 14px;
-}
-.destacado {
+.etapa__fila {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
-  text-decoration: none;
-  color: var(--texto);
-}
-.destacado:hover { border-color: var(--acento); }
-.destacado__icono {
-  flex: none;
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: var(--tinte);
-  color: var(--acento);
-  display: grid;
-  place-items: center;
-  font-size: 20px;
-}
-.destacado__texto { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.destacado__titulo { font-size: 14.5px; font-weight: 600; }
-.destacado__sub { font-size: 12px; color: var(--texto-2); }
-.destacado:hover .destacado__titulo { color: var(--acento); }
-
-/* --- "Más opciones": lo secundario, plegado ------------------------------- */
-/*
-   `<details>` y no el checkbox escondido de la maqueta: es lo que ya usa media
-   docena de pantallas de esta casa, va con teclado y no necesita una línea de
-   JavaScript. Cerrado de fábrica, que es el objetivo —que esta pantalla ocupe
-   menos que antes, no más—.
-*/
-.ruta-mas { margin-bottom: 18px; }
-.ruta-mas__boton {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--acento);
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-/* El triangulito de fábrica sobra: ya hay una flecha propia que además gira. */
-.ruta-mas__boton::-webkit-details-marker { display: none; }
-.ruta-mas__boton::marker { content: ''; }
-.ruta-mas__flecha { transition: transform .15s; font-size: 15px; }
-.ruta-mas[open] .ruta-mas__flecha { transform: rotate(180deg); }
-
-.ruta-mas__cuerpo {
-  display: flex;
+  gap: 10px;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  margin-top: 13px;
+}
+.etapa__noches {
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid var(--borde);
+  border-radius: 999px;
+  overflow: hidden;
+  flex: none;
+}
+.etapa__noches button {
+  border: 0;
+  background: transparent;
+  color: var(--texto);
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  cursor: pointer;
+}
+.etapa__noches button:hover:not(:disabled) { background: var(--tinte); }
+.etapa__noches button:disabled { color: var(--texto-3); cursor: default; opacity: .55; }
+.etapa__valor {
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  min-width: 70px;
+  text-align: center;
+}
+.etapa__noches--paso .etapa__valor { color: var(--texto-2); font-weight: 600; }
+
+/* EL CHIP DEL HOTEL, TRUNCADO CON ELIPSIS Y NO RECORTADO A DOS LETRAS. La nota
+   va fuera del trozo que se encoge: es lo último que se debe perder. */
+.etapa__dormir {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--tinte);
+  color: var(--tinte-texto);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  max-width: 280px;
+  min-width: 0;
+}
+.etapa__dormir i { font-size: 15px; flex: none; }
+.etapa__dormir-nombre {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.etapa__dormir-nota {
+  background: var(--acento);
+  color: #fff;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+}
+.etapa__dormir--sin {
+  background: transparent;
+  border: 1.5px dashed var(--borde);
+  color: var(--texto-2);
 }
 
-@media (max-width: 640px) {
-  .ruta-destacados { grid-template-columns: 1fr; }
+.etapa__acciones { margin-left: auto; display: flex; gap: 8px; }
+.etapa__abrir,
+.etapa__clonar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid var(--borde);
+  background: transparent;
+  color: var(--texto);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
 }
+.etapa__abrir {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+.etapa__abrir:hover { background: var(--acento-hover); border-color: var(--acento-hover); }
+.etapa__clonar:hover { border-color: var(--acento); color: var(--acento); }
+.etapa__clonar i { font-size: 15px; }
 
-/* --- Pie ------------------------------------------------------------------ */
-.ruta-pie {
-  margin-top: 30px;
+/* --- Ciudades por decidir --------------------------------------------------- */
+/*
+   Lo que antes era la sección «Candidatos», y NO son sitios: son CIUDADES que
+   alguien mandó aquí con «A mi ruta» desde Descubrir o desde el mapa, y que
+   esperan en estado `recopilando` —sin noches y sin fechas— a que se decida si
+   entran. Esta pantalla es el único sitio de la app que las enseña y el único
+   que las puede confirmar.
+
+   Por eso no desaparecen del todo: se quedan en una tira fina DEBAJO de la
+   línea, y solo cuando hay alguna. Con cero —que es el caso de todos los viajes
+   de la base hoy— la pantalla queda exactamente como la maqueta.
+*/
+.ruta-pordecidir {
+  margin-top: 26px;
   display: flex;
-  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--superficie);
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: var(--radio-sm);
 }
-.boton-lienzo {
+.ruta-pordecidir:empty { display: none; }
+.ruta-pordecidir__titulo {
+  font-size: 12px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--texto-2);
+  font-weight: 700;
+}
+.ruta-pordecidir__ciudad {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: var(--superficie);
-  border: 1px solid var(--borde);
-  color: var(--texto-2);
+  background: var(--fondo);
   border-radius: 999px;
-  padding: 12px 24px;
-  font-size: 14px;
+  padding: 5px 6px 5px 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  text-decoration: none;
 }
-.boton-lienzo:hover { color: var(--acento); border-color: var(--acento); }
+.ruta-pordecidir__ciudad button {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-mini--confirmar { background: var(--acento); color: #fff; }
+.btn-mini--confirmar:hover { background: var(--acento-hover); }
+.btn-mini--quitar { background: transparent; color: var(--texto-2); }
+.btn-mini--quitar:hover { color: #C0563B; }
+
+.ruta-vacia {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--texto-2);
+  font-size: 14px;
+  background: var(--superficie);
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: var(--radio-sm);
+}
+
+/* --- Móvil ----------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .ruta-tronco { padding-left: 52px; }
+  .ruta-tronco::before { left: 21px; }
+  .ruta-punto {
+    left: -52px;
+    width: 48px;
+    height: 48px;
+    border-width: 5px;
+    font-size: 18px;
+  }
+  .ruta-punto i { font-size: 20px; }
+  .ruta-casa { min-height: 48px; }
+  .ruta-cab__acciones { margin-left: 0; width: 100%; }
+  /* Las acciones bajan a su propia línea en vez de apretarse contra el chip. */
+  .etapa__acciones { margin-left: 0; width: 100%; }
+  .etapa__dormir { max-width: 100%; }
+  .ruta-estado { border-radius: var(--radio-sm); }
+  .ruta-mas__cuerpo { right: auto; left: 0; min-width: 0; width: 100%; }
+}
 
 /* --- Modal de confirmación ------------------------------------------------ */
 .modal {

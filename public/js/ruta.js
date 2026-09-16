@@ -51,173 +51,195 @@
   // PINTAR
   // ===========================================================================
   function pintar() {
-    pintarContador();
-    pintarCandidatos();
+    pintarEstado();
     pintarRuta();
+    pintarPorDecidir();
   }
 
-  function pintarContador() {
+  /**
+   * LA LÍNEA DE ESTADO: noches, barra, veredicto y fechas, en una píldora.
+   *
+   * Sustituye a la tarjeta del contador. Dice lo mismo en un renglón, que es lo
+   * que un número al que solo se le echa un vistazo necesita.
+   */
+  function pintarEstado() {
     const { usadas, totales, estado, diferencia } = ruta.noches;
-    const caja = document.getElementById('ruta-contador');
+    const caja = document.getElementById('ruta-estado');
 
     if (estado === 'sin_fechas') {
       caja.innerHTML = `
-        <div class="ruta-contador__fila">
-          <span class="ruta-contador__texto">${usadas} ${usadas === 1 ? 'noche repartida' : 'noches repartidas'}</span>
-        </div>
-        <p class="ruta-contador__aviso">
-          Define las fechas del viaje para repartir noches.
-          <a href="/viajes/${viajeId}/paso/1">Ir a la configuración</a>
-        </p>`;
+        <span class="ruta-estado__noches">${usadas} ${usadas === 1 ? 'noche repartida' : 'noches repartidas'}</span>
+        <span class="ruta-estado__veredicto ruta-estado__veredicto--faltan">Sin fechas</span>
+        <span class="ruta-estado__fechas">
+          Define las fechas para repartir noches ·
+          <a href="/viajes/${viajeId}/paso/1">Configuración</a>
+        </span>`;
       return;
     }
 
     const pct = totales > 0 ? Math.min(100, (usadas / totales) * 100) : 0;
-    const aviso =
+    const veredicto =
       estado === 'exceso'
-        ? { clase: 'ruta-contador__aviso ruta-contador__aviso--exceso',
-            texto: `Te pasas en ${noches(diferencia)}: quita noches o alarga el viaje` }
+        ? { clase: 'exceso', texto: `Te pasas en ${noches(diferencia)}` }
         : estado === 'exacto'
-          ? { clase: 'ruta-contador__aviso ruta-contador__aviso--exacto', texto: 'Cuadra perfecto' }
-          : { clase: 'ruta-contador__aviso', texto: `Te quedan ${noches(diferencia)} por colocar` };
+          ? { clase: 'exacto', texto: '✓ Cuadra perfecto' }
+          : { clase: 'faltan', texto: `Faltan ${noches(diferencia)}` };
 
     caja.innerHTML = `
-      <div class="ruta-contador__fila">
-        <span class="ruta-contador__texto">${usadas} de ${totales} noches repartidas</span>
-        <span class="ruta-contador__fechas">
-          ${dia(ruta.viaje.fechaInicio)} — ${dia(ruta.viaje.fechaFin)} · ${noches(totales)}
-        </span>
-      </div>
-      <div class="ruta-barra">
-        <div class="ruta-barra__lleno ${estado === 'exceso' ? 'ruta-barra__lleno--exceso' : ''}" style="width:${pct}%"></div>
-      </div>
-      <p class="${aviso.clase}">
-        ${estado === 'exacto' ? '<i class="ti ti-check" aria-hidden="true"></i> ' : ''}${esc(aviso.texto)}
-      </p>`;
+      <span class="ruta-estado__noches">${usadas} de ${totales} noches</span>
+      <span class="ruta-estado__barra">
+        <i class="ruta-estado__lleno ${estado === 'exceso' ? 'ruta-estado__lleno--exceso' : ''}"
+           style="width:${pct}%"></i>
+      </span>
+      <span class="ruta-estado__veredicto ruta-estado__veredicto--${veredicto.clase}">${esc(veredicto.texto)}</span>
+      <span class="ruta-estado__fechas">${dia(ruta.viaje.fechaInicio)} — ${dia(ruta.viaje.fechaFin)}</span>`;
   }
 
-  function pintarCandidatos() {
-    document.getElementById('num-candidatos').textContent = ruta.candidatos.length;
-    const zona = document.getElementById('zona-candidatos');
-
-    if (!ruta.candidatos.length) {
-      zona.innerHTML =
-        '<p class="candidatos__vacio">Nada pendiente — marca sitios desde la pantalla ' +
-        'Descubrir y aparecerán aquí.</p>';
-      return;
-    }
-
-    zona.innerHTML = ruta.candidatos
-      .map(
-        (c) => `
-        <div class="candidato">
-          <span class="candidato__nombre">${esc(c.nombre)}</span>
-          <span class="candidato__botones">
-            <button class="btn-mini btn-mini--confirmar" type="button"
-                    data-accion="confirmar" data-id="${c.id}">A la ruta</button>
-            <button class="btn-mini btn-mini--quitar" type="button"
-                    data-accion="quitar" data-id="${c.id}" data-nombre="${esc(c.nombre)}">Quitar</button>
-          </span>
-        </div>`
-      )
-      .join('');
-  }
-
+  /**
+   * LA LÍNEA DEL VIAJE, de casa a casa.
+   *
+   * El orden es el del recorrido y no el de las tablas: casa, cómo se sale,
+   * parada, cómo se salta a la siguiente, parada… y al final cómo se vuelve y
+   * ya estás en casa. Los vuelos y los traslados van ENTRE los nodos, sobre la
+   * línea, porque es donde ocurren.
+   */
   function pintarRuta() {
-    document.getElementById('num-etapas').textContent = ruta.etapas.length;
     const zona = document.getElementById('zona-ruta');
 
     if (!ruta.etapas.length) {
       zona.innerHTML =
-        '<p class="candidatos__vacio">Todavía no hay ninguna parada. Pasa un candidato ' +
-        '"a la ruta" para empezar.</p>';
+        '<p class="ruta-vacia">Todavía no hay ninguna parada. Añade una ciudad desde ' +
+        'Descubrir o desde el mapa y confírmala aquí.</p>';
       return;
     }
 
     const trozos = [];
-
-    // El extremo de salida, y justo después su chip de transporte.
-    trozos.push(extremo('ti-home', 'Salida desde casa'));
-    trozos.push(chipDe(ruta.tramos.find((t) => t.donde === 'ida')));
+    trozos.push(nodoCasa('ti-home', 'Salida desde casa'));
+    trozos.push(tramo(ruta.tramos.find((t) => t.donde === 'ida')));
 
     ruta.etapas.forEach((e, i) => {
-      trozos.push(tarjetaEtapa(e, i));
-      // El salto hacia la siguiente parada, si la hay.
+      trozos.push(nodoEtapa(e, i));
       const salto = ruta.tramos.find((t) => t.donde === 'salto' && t.despuesDe === e.id);
-      if (salto) trozos.push(chipDe(salto));
+      if (salto) trozos.push(tramo(salto));
     });
 
-    // El chip de la vuelta va ANTES del extremo, como en la maqueta: primero
-    // cómo vuelves, y luego que ya estás en casa.
-    trozos.push(chipDe(ruta.tramos.find((t) => t.donde === 'vuelta')));
-    trozos.push(extremo('ti-home', 'Vuelta a casa'));
+    trozos.push(tramo(ruta.tramos.find((t) => t.donde === 'vuelta')));
+    trozos.push(nodoCasa('ti-home', 'Vuelta a casa'));
 
     zona.innerHTML = trozos.filter(Boolean).join('');
     engancharArrastre();
   }
 
-  function extremo(icono, texto) {
+  function nodoCasa(icono, texto) {
     return `
-      <div class="extremo">
-        <span class="extremo__icono"><i class="ti ${icono}" aria-hidden="true"></i></span>
-        ${esc(texto)}
+      <div class="ruta-nodo">
+        <span class="ruta-punto ruta-punto--casa" aria-hidden="true"><i class="ti ${icono}"></i></span>
+        <div class="ruta-casa">${esc(texto)}</div>
       </div>`;
   }
 
-  function chipDe(tramo) {
-    if (!tramo) return '';
-    const clase = tramo.resuelto ? 'chip-transporte--resuelto' : 'chip-transporte--pendiente';
-    const icono = tramo.resuelto ? 'ti-check' : 'ti-alert-triangle';
-    // A qué pantalla lleva el chip: a la de la etapa DE LA QUE SALE el tramo,
-    // que es donde se resuelve. La ida no sale de ninguna (viene de casa), así
-    // que esa se ve en la pantalla de la primera parada.
-    const donde = tramo.despuesDe ?? tramo.antesDe;
+  function tramo(t) {
+    if (!t) return '';
+    const clase = t.resuelto ? 'ruta-tramo--resuelto' : 'ruta-tramo--pendiente';
+    const icono = t.resuelto ? 'ti-check' : 'ti-alert-triangle';
+    // A qué pantalla lleva: a la de la etapa DE LA QUE SALE el tramo, que es
+    // donde se resuelve. La ida no sale de ninguna, así que va a la primera.
+    const donde = t.despuesDe ?? t.antesDe;
     return `
-      <div class="ruta-tramo">
-        <a class="chip-transporte ${clase}" href="/etapa/${donde}?p=llegar">
-          <i class="ti ${icono}" aria-hidden="true"></i> ${esc(tramo.texto)}${
-            tramo.km ? `<span class="chip-transporte__km">${esc(tramo.km)}</span>` : ''
-          }
+      <div class="ruta-tramo ${clase}">
+        <a class="ruta-tramo__medio" href="/etapa/${donde}?p=llegar">
+          <i class="ti ${icono}" aria-hidden="true"></i> ${esc(t.texto)}
         </a>
+        ${t.km ? `<span class="ruta-tramo__dato">${esc(t.km)}</span>` : ''}
       </div>`;
   }
 
-  function tarjetaEtapa(e, i) {
+  function nodoEtapa(e, i) {
     const fechas = e.fechaInicio ? `${dia(e.fechaInicio)} → ${dia(e.fechaFin)}` : '— → —';
+    const dePaso = e.noches <= 0;
+
+    // El chip del hotel: el nombre se trunca con elipsis y la nota va fuera del
+    // trozo que se encoge, porque es lo último que se debe perder de vista.
+    const dormir = e.hotel
+      ? `<span class="etapa__dormir" title="${esc(e.hotel.titulo)}">
+           <i class="ti ti-bed" aria-hidden="true"></i>
+           <span class="etapa__dormir-nombre">${esc(e.hotel.titulo)}</span>
+           ${e.hotel.valoracion ? `<span class="etapa__dormir-nota">${esc(e.hotel.valoracion)}</span>` : ''}
+         </span>`
+      : `<span class="etapa__dormir etapa__dormir--sin">
+           <i class="ti ti-bed-off" aria-hidden="true"></i>
+           <span class="etapa__dormir-nombre">Sin alojamiento</span>
+         </span>`;
+
     return `
-      <article class="etapa" draggable="true" data-id="${e.id}" data-indice="${i}">
-        <span class="etapa__asa" aria-hidden="true"><i class="ti ti-grip-vertical"></i></span>
-        <span class="etapa__orden">${i + 1}</span>
-        <span class="etapa__info">
-          <span class="etapa__nombre">${esc(e.nombre)}</span>
-          <span class="etapa__fechas">${fechas}</span>
-        </span>
-        <span class="etapa__noches">
-          <button type="button" data-accion="noches" data-id="${e.id}" data-delta="-1"
-                  aria-label="Una noche menos" ${e.noches <= 0 ? 'disabled' : ''}>−</button>
-          <span class="etapa__valor">${nochesDeEtapa(e.noches)}</span>
-          <button type="button" data-accion="noches" data-id="${e.id}" data-delta="1"
-                  aria-label="Una noche más">+</button>
-        </span>
-        <span class="etapa__dormir ${e.hotel ? 'etapa__dormir--ok' : ''}"
-              title="${e.hotel ? esc(e.hotel.titulo) : 'Todavía sin alojamiento'}">
-          <i class="ti ${e.hotel ? 'ti-bed' : 'ti-bed-off'}" aria-hidden="true"></i>
-          <span>${e.hotel
-            ? esc(e.hotel.titulo) + (e.hotel.valoracion ? ` · ${e.hotel.valoracion}` : '')
-            : 'Sin alojamiento'}</span>
-        </span>
-        <a class="etapa__abrir" href="/etapa/${e.id}">Abrir etapa</a>
-        <button class="etapa__clonar" type="button" data-accion="clonar"
-                data-id="${e.id}" data-nombre="${esc(e.nombre)}"
-                title="Volver a pasar por ${esc(e.nombre)} al final de la ruta">
-          <i class="ti ti-copy" aria-hidden="true"></i> Clonar
-        </button>
-        <button class="etapa__quitar" type="button" data-accion="quitar"
-                data-id="${e.id}" data-nombre="${esc(e.nombre)}" data-confirmada="1"
-                aria-label="Quitar ${esc(e.nombre)} de la ruta" title="Quitar de la ruta">
-          <i class="ti ti-x" aria-hidden="true"></i>
-        </button>
-      </article>`;
+      <div class="ruta-nodo">
+        <span class="ruta-punto ${dePaso ? 'ruta-punto--paso' : ''}" aria-hidden="true">${i + 1}</span>
+        <article class="etapa" draggable="true" data-id="${e.id}" data-indice="${i}">
+          <div class="etapa__cab">
+            <span class="etapa__asa" aria-hidden="true"><i class="ti ti-grip-vertical"></i></span>
+            <span class="etapa__info">
+              <span class="etapa__nombre">${esc(e.nombre)}</span>
+              <span class="etapa__fechas">${dePaso && e.fechaInicio ? `${dia(e.fechaInicio)} · parada de salida` : fechas}</span>
+            </span>
+            <button class="etapa__quitar" type="button" data-accion="quitar"
+                    data-id="${e.id}" data-nombre="${esc(e.nombre)}" data-confirmada="1"
+                    aria-label="Quitar ${esc(e.nombre)} de la ruta" title="Quitar de la ruta">
+              <i class="ti ti-x" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="etapa__fila">
+            <span class="etapa__noches ${dePaso ? 'etapa__noches--paso' : ''}">
+              <button type="button" data-accion="noches" data-id="${e.id}" data-delta="-1"
+                      aria-label="Una noche menos" ${e.noches <= 0 ? 'disabled' : ''}>−</button>
+              <span class="etapa__valor">${nochesDeEtapa(e.noches)}</span>
+              <button type="button" data-accion="noches" data-id="${e.id}" data-delta="1"
+                      aria-label="Una noche más">+</button>
+            </span>
+            ${dormir}
+            <span class="etapa__acciones">
+              <a class="etapa__abrir" href="/etapa/${e.id}">Abrir etapa</a>
+              <button class="etapa__clonar" type="button" data-accion="clonar"
+                      data-id="${e.id}" data-nombre="${esc(e.nombre)}"
+                      title="Volver a pasar por ${esc(e.nombre)} al final de la ruta">
+                <i class="ti ti-copy" aria-hidden="true"></i> Clonar
+              </button>
+            </span>
+          </div>
+        </article>
+      </div>`;
+  }
+
+  /**
+   * CIUDADES POR DECIDIR, fuera de la línea y solo si las hay.
+   *
+   * No son sitios: son ciudades que llegaron con «A mi ruta» desde Descubrir o
+   * desde el mapa y esperan en `recopilando`. Ésta sigue siendo la única
+   * pantalla que las enseña y la única que las puede confirmar, así que aquí se
+   * quedan —pero sin ocupar sitio cuando no hay ninguna, que es lo normal.
+   */
+  function pintarPorDecidir() {
+    const zona = document.getElementById('zona-pordecidir');
+    if (!zona) return;
+
+    if (!ruta.candidatos.length) {
+      zona.innerHTML = '';
+      return;
+    }
+
+    zona.innerHTML =
+      '<span class="ruta-pordecidir__titulo">Por decidir</span>' +
+      ruta.candidatos
+        .map(
+          (c) => `
+        <span class="ruta-pordecidir__ciudad">
+          ${esc(c.nombre)}
+          <button class="btn-mini--confirmar" type="button"
+                  data-accion="confirmar" data-id="${c.id}">A la ruta</button>
+          <button class="btn-mini--quitar" type="button"
+                  data-accion="quitar" data-id="${c.id}" data-nombre="${esc(c.nombre)}">Quitar</button>
+        </span>`
+        )
+        .join('');
   }
 
   // ===========================================================================
