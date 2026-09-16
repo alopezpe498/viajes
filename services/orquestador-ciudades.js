@@ -41,6 +41,15 @@ import {
 } from '../services/catalogo.js';
 import { recalcularRuta } from '../services/ruta.js';
 import {
+  sanearEvidencia,
+  puntosDeCiudad,
+  bandaDePuntos,
+  mismoPeso,
+  multiplicadoresDe,
+  ajustesDelTextoLibre,
+  comoSeLeeLaCuenta,
+} from '../services/rubrica-ciudades.js';
+import {
   anotar,
   apuntarHueco,
   parametro,
@@ -127,8 +136,19 @@ const entero = (v, min, max) => {
   return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : null;
 };
 
-/** Sanea lo que devuelva la IA en el paso 1. Lo que venga raro se cae. */
-export function saneaCandidatas(respuesta, tope) {
+/**
+ * Sanea lo que devuelva la IA en el paso 1. Lo que venga raro se cae.
+ *
+ * `multiplicadores` son los del perfil de quien viaja. Sin ellos la cuenta sale
+ * igualmente, con todas las casillas a 1: es lo que se quiere al probar la
+ * rúbrica en seco, sin que el perfil enturbie la comparación.
+ *
+ * `peso` ES LA PUNTUACIÓN CONTINUA, no el 1-5 de antes. Las decisiones —quién
+ * manda, cómo se ordenan los repartos— van con ella, porque redondear a cinco
+ * escalones volvía a empatar por accidente justo lo que esta rúbrica viene a
+ * separar. El 1-5 sigue existiendo como `banda`, y solo para leerlo.
+ */
+export function saneaCandidatas(respuesta, tope, multiplicadores = null) {
   const crudas = Array.isArray(respuesta?.ciudades) ? respuesta.ciudades : [];
 
   const ciudades = crudas
@@ -137,9 +157,20 @@ export function saneaCandidatas(respuesta, tope) {
     .map((c) => {
       const min = entero(c.noches_min, 1, 30) ?? 1;
       const max = entero(c.noches_max, 1, 30) ?? min;
+      const { puestas, tiradas } = sanearEvidencia(c.evidencia);
+      const cuenta = puntosDeCiudad(puestas, multiplicadores);
       return {
         nombre: c.nombre.trim(),
-        peso: entero(c.peso, 1, 5) ?? 3,
+        // La puntuación con perfil es la que decide. Un mínimo de 0,5 para que
+        // una ciudad sin ninguna casilla siga existiendo y se pueda ordenar:
+        // cero la sacaría de comparaciones que sí tienen que poder hacerse.
+        peso: Math.max(0.5, cuenta.perfil),
+        puntosObjetivos: cuenta.objetivos,
+        banda: bandaDePuntos(cuenta.perfil),
+        evidencia: puestas,
+        evidenciaTirada: tiradas,
+        desglose: cuenta.desglose,
+        habitantes: entero(c.habitantes_aprox, 0, 50_000_000),
         nochesMin: Math.min(min, max),
         nochesMax: Math.max(min, max),
         // Solo puede ser puerta lo que tenga aeropuerto con vuelos de fuera.
@@ -901,7 +932,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
             NOCHES: nochesEntre(viaje.fecha_inicio, viaje.fecha_fin),
             ORIGEN: casa,
             CANDIDATAS: candidatas
-              .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
+              .map((c) => `- ${c.nombre} (peso ${c.banda ?? 3}, ${c.nochesMin}-${c.nochesMax} noches)`)
               .join('\n'),
             TIEMPOS: tiemposVivos.length
               ? tiemposVivos
@@ -1087,7 +1118,7 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
   for (const exigirGeneral of [true, false]) {
     for (const conjunto of subconjuntos) {
       const ruta = irYVolver ? [cEntrada, ...conjunto] : [cEntrada, ...conjunto, cSalida];
-      if (!ruta.some((c) => (c.peso ?? 3) === pesoMaximo)) continue;
+      if (!ruta.some((c) => mismoPeso(c.peso ?? 3, pesoMaximo))) continue;
 
       const suelo = (c) => {
         const suyo = Math.max(1, Number(c.nochesMin) || 1);
@@ -1136,6 +1167,7 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
           ciudad: c.nombre,
           noches: nochesDe.get(clave(c.nombre)),
           peso: c.peso ?? 3,
+          banda: c.banda ?? 3,
           // Si se ha aflojado el mínimo general, queda dicho por qué: es lo que
           // la red de seguridad final pide para no tirarlo.
           motivo:
@@ -1170,6 +1202,7 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
             ciudad: cEntrada.nombre,
             noches: 0,
             peso: cEntrada.peso ?? 3,
+            banda: cEntrada.banda ?? 3,
             // El motivo NO es adorno: `validarRuta` rechaza toda parada de cero
             // noches que no explique por qué, así que sin esto el bucle bien
             // cerrado se caería igual, y por otra puerta.
@@ -1186,7 +1219,7 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
           minutos,
           // Para ordenar: cuántas noches se lleva la ciudad de más peso.
           alMasPesado: reparto
-            .filter((x) => x.peso === pesoMaximo)
+            .filter((x) => mismoPeso(x.peso, pesoMaximo))
             .reduce((a, x) => a + x.noches, 0),
         });
       }
@@ -1501,7 +1534,7 @@ export function nochePorPeso(ruta, candidatas, minimoNoches) {
   const pesoMaximo = Math.max(...paradas.map((p) => pesoDe(p.ciudad)));
 
   for (const corta of paradas) {
-    if (pesoDe(corta.ciudad) !== pesoMaximo) continue;
+    if (!mismoPeso(pesoDe(corta.ciudad), pesoMaximo)) continue;
     if (corta.noches > minimoNoches) continue;
     if (corta.motivo) continue; // lo explica: es la excepción que la regla permite
 
@@ -1516,8 +1549,8 @@ export function nochePorPeso(ruta, candidatas, minimoNoches) {
       .filter((p) => {
         if (p === corta) return false;
         const peso = pesoDe(p.ciudad);
-        if (peso < pesoMaximo) return p.noches > corta.noches;
-        return peso === pesoMaximo && p.noches >= corta.noches + 2;
+        if (!mismoPeso(peso, pesoMaximo)) return p.noches > corta.noches;
+        return p.noches >= corta.noches + 2;
       })
       .sort((a, b) => pesoDe(a.ciudad) - pesoDe(b.ciudad) || b.noches - a.noches);
 
@@ -1917,25 +1950,67 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   // --- PASO 1 -------------------------------------------------------------
   di(`Eligiendo ciudades candidatas para ${datos.DESTINO} (${datos.DIAS} días, ${datos.VIAJEROS})…`);
 
+  // EL PERFIL, ANTES DE PREGUNTAR NADA SOBRE CIUDADES.
+  //
+  // La ponderación por intereses la hace el código, no el modelo, así que los
+  // multiplicadores tienen que estar listos para cuando llegue la respuesta. El
+  // texto libre se traduce a ajustes por categoría —con su cita al lado— una vez
+  // por viaje: es lo único que hace falta preguntar para poder sumar.
+  const ajustes = await ajustesDelTextoLibre(viaje, auto.intereses, di);
+  const multiplicadores = multiplicadoresDe({ categorias: auto.categorias, ajustes });
+
   const r1 = await consultarJSON(rellenar(partes.candidatas, datos), {
     maxTokens: 4000,
     paso: `candidatas de ${datos.DESTINO}`,
-    // ESTA ES LA OTRA LLAMADA QUE PUNTÚA. De aquí salen `peso` y el rango de
-    // noches de cada candidata, y el peso máximo decide qué repartos son
-    // legales (`repartosLegales`, más abajo): una ciudad que baila de 3 a 2
-    // entre tiradas puede cambiar quién es el máximo y, con eso, la ruta entera.
+    // AQUÍ YA NO SE PIDE NINGÚN NÚMERO DE MÉRITO: se piden casillas con su
+    // evidencia, y la cuenta la hace `rubrica-ciudades.js`. La temperatura sigue
+    // puesta porque el rango de noches todavía sale de aquí a ojo, y porque la
+    // lista de candidatas se estabiliza con ella (medido: de 13 ciudades
+    // distintas en 10 tiradas a 9).
     temperatura: temperaturaAlPuntuar(),
   });
-  const { ciudades, tiempos } = saneaCandidatas(r1, maxCiudades);
+  const { ciudades, tiempos } = saneaCandidatas(r1, maxCiudades, multiplicadores);
   if (!ciudades.length) throw new Error('La IA no propuso ninguna ciudad.');
 
   di(
     `Candidatas (${ciudades.length}): ` +
       ciudades
-        .map((c) => `${c.nombre} [peso ${c.peso}, ${c.nochesMin}-${c.nochesMax}n${c.puerta ? ', puerta' : ''}]`)
+        .map((c) => `${c.nombre} [peso ${c.banda}, ${c.nochesMin}-${c.nochesMax}n${c.puerta ? ', puerta' : ''}]`)
         .join(' · ')
   );
-  for (const c of ciudades) if (c.porQue) di(`   ${c.nombre}: ${c.porQue}`);
+
+  // LA CUENTA, ENTERA Y A LA VISTA.
+  //
+  // Es el motivo de toda la rúbrica: un 4 a ojo no se puede discutir y «9 puntos
+  // por esto, esto y esto» sí. Va al registro para cada candidata, incluidas las
+  // casillas que se han caído por no nombrar nada, que son las que explican por
+  // qué una ciudad salió más baja de lo que parecía.
+  for (const c of ciudades) {
+    const cuenta = c.desglose.length ? comoSeLeeLaCuenta(c.desglose) : 'ninguna casilla marcada';
+    di(
+      `   ${c.nombre}: ${c.peso.toFixed(1)} puntos (peso ${c.banda})` +
+        (c.puntosObjetivos !== c.peso ? ` · ${c.puntosObjetivos} sin tu perfil` : '') +
+        ` — ${cuenta}`
+    );
+    for (const t of c.evidenciaTirada) {
+      di(`      · no le cuento «${t.casilla.replace(/_/g, ' ')}»: ${t.motivo}.`);
+    }
+    if (c.porQue) di(`      ${c.porQue}`);
+  }
+
+  // Y LO QUE VALE MUCHO PERO NO PARA TI, DICHO CON TODAS LAS LETRAS.
+  //
+  // Sin esto la ponderación por intereses sería una mano invisible: una ciudad
+  // de primer orden bajaría de puesto y nadie sabría por qué. Teniendo las dos
+  // puntuaciones, decirlo es aritmética.
+  const flojea = parametro('rubrica_aviso_si_baja_pct', 25) / 100;
+  for (const c of ciudades) {
+    if (!c.puntosObjetivos || c.peso >= c.puntosObjetivos * (1 - flojea)) continue;
+    di(
+      `   OJO: ${c.nombre} vale ${c.puntosObjetivos} puntos por lo que tiene, y con tus ` +
+        `intereses se queda en ${c.peso.toFixed(1)}. Si te importa, dilo en la configuración.`
+    );
+  }
 
   // LO QUE NO DA PARA DORMIR NO ES UNA PARADA.
   //
@@ -2044,7 +2119,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     // Solo las que pueden ser parada. Las de excursión no se le enseñan
     // siquiera: si están en la lista, acaba metiéndolas.
     CANDIDATAS: candidatasDeRuta
-      .map((c) => `- ${c.nombre} (peso ${c.peso}, ${c.nochesMin}-${c.nochesMax} noches)`)
+      .map((c) => `- ${c.nombre} (peso ${c.banda ?? 3}, ${c.nochesMin}-${c.nochesMax} noches)`)
       .join('\n'),
     TIEMPOS: await tablaDeTiempos(
       candidatasDeRuta,
@@ -2305,6 +2380,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     .map((c) => ({
       nombre: c.nombre,
       peso: c.peso,
+      banda: c.banda,
       nochesMin: c.nochesMin,
       nochesMax: c.nochesMax,
       porQue: c.porQue,

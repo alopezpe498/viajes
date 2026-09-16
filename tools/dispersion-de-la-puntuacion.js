@@ -44,6 +44,7 @@
 import { una, normalizarNombre } from '../db/index.js';
 import { consultarJSON, temperaturaAlPuntuar, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { promptDeFase } from '../services/orquestador.js';
+import { mismoPeso } from '../services/rubrica-ciudades.js';
 import {
   partirPrompt,
   rellenar,
@@ -109,7 +110,14 @@ const claveDeCiudad = (n) =>
       .replace(GENERICAS, ' ')
   ).replace(/[^a-z0-9]/g, '');
 
-const porCiudad = new Map(); // clave -> { nombres:Set, pesos:[], min:[], max:[] }
+// DESDE LA RÚBRICA, LO QUE HAY QUE MEDIR SON LAS CASILLAS.
+//
+// El peso ya no lo dice el modelo: lo calcula el código a partir de la evidencia,
+// así que medir su estabilidad sería medir mi propia aritmética y saldría
+// perfecto sin significar nada. Lo único que puede bailar ahora es QUÉ CASILLAS
+// marca, y eso es lo que se cuenta aquí. El peso se sigue enseñando, pero como
+// consecuencia, no como medida.
+const porCiudad = new Map(); // clave -> { nombres:Set, pesos:[], min:[], max:[], casillas:Map }
 const maximos = []; // quién fue la ciudad de peso máximo en cada tirada
 const fallos = [];
 
@@ -134,23 +142,34 @@ for (let i = 1; i <= tiradas; i++) {
 
   for (const c of ciudades) {
     const k = claveDeCiudad(c.nombre);
-    if (!porCiudad.has(k)) porCiudad.set(k, { nombres: new Set(), pesos: [], min: [], max: [] });
+    if (!porCiudad.has(k)) {
+      porCiudad.set(k, { nombres: new Set(), pesos: [], min: [], max: [], casillas: new Map() });
+    }
     const v = porCiudad.get(k);
     v.nombres.add(c.nombre);
     v.pesos.push(c.peso);
     v.min.push(c.nochesMin);
     v.max.push(c.nochesMax);
+    for (const casilla of Object.keys(c.evidencia ?? {})) {
+      v.casillas.set(casilla, (v.casillas.get(casilla) ?? 0) + 1);
+    }
   }
 
+  // «Quién manda» se decide con la MISMA holgura que usa la producción: con
+  // puntuación continua, la igualdad exacta convertiría cada empate real en un
+  // ganador único y el numero dejaria de significar lo mismo que dentro del motor.
   const tope = Math.max(...ciudades.map((c) => c.peso));
   const mandan = [
-    ...new Set(ciudades.filter((c) => c.peso === tope).map((c) => claveDeCiudad(c.nombre))),
+    ...new Set(
+      ciudades.filter((c) => mismoPeso(c.peso, tope)).map((c) => claveDeCiudad(c.nombre))
+    ),
   ].sort();
   maximos.push(mandan.join(' + '));
 
+  const corto = (x) => (Number.isInteger(x) ? x : x.toFixed(1));
   console.log(
-    `${ciudades.length} ciudades · manda ${mandan.join(' + ')} (peso ${tope}) · ` +
-      ciudades.map((c) => `${c.nombre} ${c.peso}/${c.nochesMin}-${c.nochesMax}`).join(', ')
+    `${ciudades.length} ciudades · manda ${mandan.join(' + ')} (${corto(tope)} pts) · ` +
+      ciudades.map((c) => `${c.nombre} ${corto(c.peso)}`).join(', ')
   );
 }
 
@@ -175,6 +194,8 @@ console.log('-'.repeat(78));
 const filas = [...porCiudad.entries()].sort((a, b) => b[1].pesos.length - a[1].pesos.length);
 let pesosQueBailan = 0;
 let rangosQueBailan = 0;
+let casillasQueBailan = 0;
+let casillasEnTotal = 0;
 
 for (const [, v] of filas) {
   const nombre = [...v.nombres][0];
@@ -188,12 +209,29 @@ for (const [, v] of filas) {
   const rangoBaila = new Set(rangos).size > 1;
   if (rangoBaila) rangosQueBailan += 1;
 
+  const redondo = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
   console.log(
     nombre.slice(0, 26).padEnd(28) +
       `${String(v.pesos.length).padStart(2)}/${buenas}`.padEnd(10) +
-      (baila ? `${pmin}–${pmax} (moda ${pmoda}×${veces})` : `${pmoda} siempre`).padEnd(16) +
+      (baila ? `${redondo(pmin)}–${redondo(pmax)}` : `${redondo(pmoda)} siempre`).padEnd(16) +
       (rangoBaila ? [...new Set(rangos)].join(' / ') : `${rangos[0]} siempre`)
   );
+
+  // LAS CASILLAS, QUE SON LO QUE DE VERDAD SE MIDE. Una que sale en todas las
+  // tiradas es evidencia firme; una que sale en la mitad es justo el sitio por
+  // donde la rubrica sigue temblando.
+  const firmes = [...v.casillas.entries()].sort((a, b) => b[1] - a[1]);
+  if (firmes.length) {
+    console.log(
+      '      ' +
+        firmes
+          .map(([c, n]) => `${c.replace(/_/g, ' ')} ${n}/${v.pesos.length}${n === v.pesos.length ? '' : ' (!)'}`)
+          .join(' · ')
+    );
+    const inestables = firmes.filter(([, n]) => n < v.pesos.length).length;
+    if (inestables) casillasQueBailan += inestables;
+    casillasEnTotal += firmes.length;
+  }
 }
 
 const [modaMax, vecesMax] = moda(maximos);
@@ -203,7 +241,11 @@ console.log(`\n${'-'.repeat(78)}`);
 console.log(`Ciudades propuestas alguna vez : ${filas.length}`);
 console.log(`  siempre presentes            : ${filas.filter(([, v]) => v.pesos.length === buenas).length}`);
 console.log(`  a veces sí y a veces no      : ${filas.filter(([, v]) => v.pesos.length < buenas).length}`);
-console.log(`Pesos que bailan               : ${pesosQueBailan} de ${filas.length}`);
+console.log(
+  `CASILLAS que bailan            : ${casillasQueBailan} de ${casillasEnTotal}` +
+    '   <- ESTA es la medida de la rubrica'
+);
+console.log(`Pesos que bailan (consecuencia): ${pesosQueBailan} de ${filas.length}`);
 console.log(`Rangos de noches que bailan    : ${rangosQueBailan} de ${filas.length}`);
 console.log(
   `QUIÉN MANDA (peso máximo)      : ${distintos} respuesta(s) distinta(s) en ${buenas} tiradas` +

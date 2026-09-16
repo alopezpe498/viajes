@@ -407,6 +407,7 @@ export function migrarEsquema() {
   migracionParametrosHuerfanos();
   migracionPuntuarConCriterio();
   migracionNombresDeCiudadDelCatalogo();
+  migracionRubricaDeCiudades();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5567,6 +5568,143 @@ function migracionNombresDeCiudadDelCatalogo() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: la fase 1 ya ve los nombres de ciudad que hay en el catalogo.');
+  return true;
+}
+
+/**
+ * LA RUBRICA DE CIUDADES: LA IA APORTA EVIDENCIA, EL CODIGO PUNTUA.
+ *
+ * El «peso» de una ciudad salia de una sola frase de instruccion —«de 1 a 5, no
+ * pongas todo a 5»— y bailaba: diez tiradas de la misma pregunta dieron Kairouan
+ * 4 o 5, El Jem 3 o 4, Sfax 2 o 3. Y no es decorativo: el peso maximo decide que
+ * repartos de noches son legales.
+ *
+ * Ahora no se le pide el numero. Se le piden CASILLAS con la evidencia que las
+ * justifica —y si no puede nombrarla, no la marca— y la aritmetica la hace
+ * services/rubrica-ciudades.js. Lo que la IA no puede hacer, no lo desestabiliza.
+ *
+ * Los pesos son la primera calibracion: van a parametros justamente porque se
+ * van a quedar cortos en algo y hay que poder moverlos sin tocar codigo.
+ *
+ * `perfil_intereses` guarda la traduccion del texto libre de intereses a ajustes
+ * por categoria, con su cita al lado. Es lo que permite que la cuenta impresa
+ * explique TODO lo que paso, y no solo la parte que cabia en una suma.
+ */
+function migracionRubricaDeCiudades() {
+  const CLAVE = '2026-09-rubrica-de-ciudades';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('viajes', 'perfil_intereses', 'TEXT');
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden);
+
+  nuevo('rubrica_peso_unesco', '3',
+    'Lo que suma que una ciudad tenga Patrimonio de la Humanidad declarado', 'puntos');
+  nuevo('rubrica_peso_hito', '3',
+    'Lo que suma un monumento o yacimiento de primer orden, de los que se estudian', 'puntos');
+  nuevo('rubrica_peso_conjunto', '2',
+    'Lo que suma un casco antiguo conservado y recorrible a pie', 'puntos');
+  nuevo('rubrica_peso_museo', '2',
+    'Lo que suma un museo cuya coleccion es de alcance mayor que local', 'puntos');
+  nuevo('rubrica_peso_paisaje', '2',
+    'Lo que suma un paisaje o accidente natural que sea motivo de ir', 'puntos');
+  nuevo('rubrica_peso_cocina', '1',
+    'Lo que suma una cocina o artesania reconocida fuera de la ciudad', 'puntos');
+  nuevo('rubrica_peso_puerta', '1',
+    'Lo que suma ser la base natural desde la que se visita una region', 'puntos');
+  nuevo('rubrica_bonus_por_interes', '0.35',
+    'Cuanto potencia cada categoria marcada a las casillas que le tocan', 'factor');
+  nuevo('rubrica_tope_multiplicador', '2',
+    'Techo del multiplicador por intereses, para que un perfil no borre la rubrica', 'veces');
+  nuevo('rubrica_holgura_de_empate', '0.15',
+    'Cuanto se pueden llevar dos ciudades para seguir contando como igual de importantes', 'fraccion');
+  nuevo('rubrica_aviso_si_baja_pct', '25',
+    'Cuanto tiene que bajar una ciudad por los intereses de quien viaja para que el motor lo diga', 'por ciento');
+
+  // --- Y EL PROMPT: casillas en vez de un numero ---------------------------
+  const retoques = [
+    {
+      viejo: `      "peso": 1-5,\n`,
+      nuevo:
+        `      "evidencia": [{"casilla": "unesco", "evidencia": "nombre exacto de la cosa"}],\n` +
+        `      "habitantes_aprox": número|null,\n`,
+    },
+    {
+      viejo: `3. "peso" es cuánto merece la pena, de 1 a 5, y sirve para repartir noches
+   después. No pongas todo a 5: si todo es imprescindible, no has priorizado.`,
+      nuevo: `3. NO ME DIGAS CUÁNTO VALE CADA CIUDAD: DIME QUÉ TIENE. Del 1 al 5 a ojo
+   sale distinto cada vez que te lo pregunto, así que la cuenta la hago yo.
+   Tú marcas casillas, y SOLO puedes marcar una si puedes NOMBRAR la cosa.
+
+   Las casillas, con lo que tienes que nombrar en cada una:
+     unesco               · Patrimonio de la Humanidad DECLARADO, en la ciudad
+                            o pegado a ella → el nombre exacto de la inscripción
+     hito_de_primer_orden · un monumento o yacimiento que se estudia o al que se
+                            viaja expresamente → su nombre
+     conjunto_historico   · casco antiguo, medina o centro conservado y
+                            recorrible a pie → cómo se llama
+     museo_de_referencia  · una colección de alcance mayor que local → el nombre
+                            del museo y de qué es su colección
+     paisaje_singular     · un accidente natural o una costa que sea motivo de
+                            ir → qué accidente concreto
+     cocina_o_artesania   · un plato, producto o artesanía reconocida FUERA de
+                            la ciudad → qué es y dónde se la conoce
+     puerta_de_region     · base natural desde la que se visita una zona → qué
+                            zona y qué se hace desde ahí
+
+   SI NO PUEDES NOMBRARLO, NO MARQUES LA CASILLA. Marcar de más no te hace
+   quedar mejor: una casilla con la evidencia vacía o con una frase de relleno
+   la tiro yo al leerla, así que solo añade ruido.
+
+   PROHIBIDO como evidencia: "bonita", "con encanto", "con identidad propia",
+   "ambiente único", "auténtica". Eso no nombra nada. "La Medina de Túnez" sí.
+
+   NO DESCUENTES PORQUE ESTÉ LEJOS. Lo que cuesta llegar lo mido yo con datos
+   reales; aquí solo me dices lo que hay. Una ciudad estupenda y mal comunicada
+   lleva sus casillas enteras.
+
+   "habitantes_aprox" es un número redondo o null. NO PUNTÚA: solo lo uso para
+   desempatar dos ciudades que hayan quedado igual. Una ciudad grande sin nada
+   que ver no puede salir alta por ser grande.`,
+    },
+  ];
+
+  const fila = db
+    .prepare('SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = ?')
+    .get('ciudades_y_noches');
+
+  let puestos = 0;
+  if (fila) {
+    let actual = fila.prompt_actual;
+    let fabrica = fila.prompt_fabrica;
+    const editadoAMano = fila.prompt_actual !== fila.prompt_fabrica;
+
+    for (const r of retoques) {
+      const antesF = fabrica;
+      fabrica = fabrica?.includes(r.viejo) ? fabrica.replace(r.viejo, r.nuevo) : fabrica;
+      // Lo editado a mano gana: si nadie lo ha tocado, el actual sigue a la fabrica.
+      actual = editadoAMano
+        ? actual?.includes(r.viejo)
+          ? actual.replace(r.viejo, r.nuevo)
+          : actual
+        : fabrica;
+      if (fabrica !== antesF) puestos += 1;
+    }
+
+    db.prepare(
+      'UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = ?'
+    ).run(actual, fabrica, 'ciudades_y_noches');
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(`[bd] Migracion: rubrica de ciudades (${puestos} de 2 retoques de prompt puestos).`);
   return true;
 }
 
