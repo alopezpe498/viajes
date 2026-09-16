@@ -266,6 +266,26 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         di(`${ciudad}: la has tocado tú; no la toco.`);
         return { hecha: false };
       }
+
+      // EN UNA PARADA DE CERO NOCHES NO SE DUERME, ASÍ QUE NO SE BUSCA HOTEL.
+      //
+      // Esta fase cogía TODAS las paradas confirmadas y nunca miraba las noches,
+      // porque hasta hace poco todas tenían al menos una. Las rutas en bucle
+      // estrenaron la «parada de salida» —se vuelve a la ciudad de entrada a
+      // coger el avión y no se hace noche— y con ella una parada cuya entrada y
+      // salida son el mismo día.
+      //
+      // Booking rechaza eso, con razón: «la fechaSalida debe ser posterior a la
+      // fechaEntrada». Y el fallo no salía barato: se pagaban DOS llamadas a la
+      // IA para estimar el precio de la ciudad y CUATRO reintentos —radio,
+      // precio dos veces y soltar lo de céntrico— que fallaban todos con el
+      // mismo error, porque ninguno de ellos tocaba las fechas.
+      //
+      // No es un hueco del viaje: es que ahí no hay nada que reservar.
+      if (!etapa.noches) {
+        di(`${ciudad}: es parada de paso y no se duerme allí. No busco alojamiento.`);
+        return { hecha: true };
+      }
       const yaElegido = una(
         "SELECT titulo FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
         etapa.id

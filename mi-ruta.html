@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi ruta — La línea del viaje</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --mar:#126E8D; --mar-osc:#0B4B61; --espuma:#EDF6F9; --arena:#E4A93C;
+  --tinta:#12303B; --gris:#5E7680; --linea:#D6E6EC; --blanco:#FFFFFF;
+  --ok:#1E8A5F; --aviso:#B27A00; --fondo:#F7FBFC; --radio:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --espuma:#0F2831; --tinta:#E8F2F5; --gris:#9FB6BE; --linea:#1E3D49;
+    --blanco:#122E38; --fondo:#0A1E25; --mar:#4FB3D4; --mar-osc:#A9DCEC; --aviso:#E8C87A;
+  }
+}
+:root[data-theme="dark"]{
+  --espuma:#0F2831; --tinta:#E8F2F5; --gris:#9FB6BE; --linea:#1E3D49;
+  --blanco:#122E38; --fondo:#0A1E25; --mar:#4FB3D4; --mar-osc:#A9DCEC; --aviso:#E8C87A;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Instrument Sans",system-ui,-apple-system,sans-serif;background:var(--fondo);color:var(--tinta);line-height:1.5}
+.display{font-family:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif}
+.pagina{max-width:920px;margin:0 auto;padding:22px 20px 80px}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--arena);outline-offset:2px}
+
+.miga{font-size:13px;color:var(--gris)}
+.miga a{color:var(--gris);text-decoration:none}
+
+/* ============ VARIANTE 1 · barra de mando ============ */
+.v1-cab{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:6px}
+.v1-cab h1{font-size:clamp(32px,5.5vw,46px);font-weight:750;letter-spacing:-.02em;line-height:1.05}
+.v1-cab .chip-viaje{background:var(--espuma);color:var(--mar);border-radius:99px;padding:5px 14px;font-size:14px;font-weight:700}
+.v1-cab .v1-botones{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.v1-boton{display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--linea);background:var(--blanco);color:var(--tinta);border-radius:99px;padding:9px 16px;font-size:14px;font-weight:600}
+.v1-boton:hover{border-color:var(--mar)}
+.v1-boton .pip{width:8px;height:8px;border-radius:50%;background:var(--arena);flex-shrink:0}
+.v1-boton.mas{border-style:dashed;color:var(--gris)}
+.v1-estado{margin-top:14px;background:var(--blanco);border:1px solid var(--linea);border-radius:99px;padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:13.5px}
+.v1-estado b{white-space:nowrap}
+.v1-estado .mini-barra{flex:1;min-width:120px;height:6px;border-radius:99px;background:var(--linea);overflow:hidden}
+.v1-estado .mini-barra i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--mar),#3AA0BE)}
+.v1-estado .ok{color:var(--ok);font-weight:700;white-space:nowrap}
+.v1-estado .fechas{color:var(--gris);white-space:nowrap}
+
+/* ============ secciones y línea (compartido) ============ */
+.seccion{margin-top:30px;display:flex;align-items:center;gap:10px}
+.seccion h2{font-size:14px;letter-spacing:.08em;color:var(--gris);font-weight:700}
+.seccion .cuenta{background:var(--espuma);color:var(--mar);border-radius:99px;min-width:26px;height:26px;display:grid;place-items:center;font-size:13px;font-weight:700;padding:0 8px}
+.seccion .vacio-inline{font-size:13.5px;color:var(--gris);font-weight:400;margin-left:4px}
+.tronco{position:relative;margin-top:22px;padding-left:64px}
+.tronco::before{content:"";position:absolute;left:27px;top:26px;bottom:26px;width:6px;border-radius:99px;background:linear-gradient(180deg,var(--arena) 0%,var(--mar) 12%,#3AA0BE 88%,var(--arena) 100%)}
+.nodo{position:relative;margin-bottom:14px}
+.punto{position:absolute;left:-64px;top:4px;width:60px;height:60px;border-radius:50%;background:var(--blanco);border:6px solid var(--mar);display:grid;place-items:center;font-weight:800;font-size:22px;color:var(--mar)}
+.punto.casa{border-color:var(--linea);color:var(--gris)}
+.punto.paso{border-style:dashed;border-color:#7FB6C9;color:#7FB6C9}
+.casa-fila{display:flex;align-items:center;min-height:60px;font-size:14.5px;font-weight:600;color:var(--gris)}
+.etapa{background:var(--blanco);border:1px solid var(--linea);border-radius:var(--radio);padding:16px 18px;box-shadow:0 1px 0 var(--linea)}
+.etapa-cab{display:flex;align-items:flex-start;gap:10px}
+.arrastre{color:var(--linea);font-size:17px;letter-spacing:-2px;cursor:grab;padding:4px 2px 0 0;user-select:none}
+.etapa-titulo{flex:1}
+.ciudad{font-size:29px;font-weight:720;letter-spacing:-.01em;line-height:1.08}
+.fechas{color:var(--gris);font-size:14px;margin-top:2px}
+.quitar{border:0;background:transparent;color:var(--gris);font-size:17px;padding:2px 6px;border-radius:8px}
+.quitar:hover{background:var(--espuma)}
+.fila{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:13px}
+.stepper{display:inline-flex;align-items:center;gap:2px;border:1.5px solid var(--linea);border-radius:99px;overflow:hidden}
+.stepper button{border:0;background:transparent;color:var(--tinta);width:34px;height:34px;font-size:18px}
+.stepper b{padding:0 10px;font-size:14px;white-space:nowrap}
+.stepper.paso b{color:var(--gris);font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--espuma);border-radius:99px;padding:8px 14px;font-size:13px;font-weight:500;max-width:260px}
+.chip .rec{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip .nota{background:var(--mar);color:#fff;border-radius:6px;padding:1px 6px;font-size:12px;font-weight:700;flex-shrink:0}
+.chip.pendiente{color:var(--gris);border:1.5px dashed var(--linea);background:transparent}
+.acciones{margin-left:auto;display:flex;gap:8px}
+.btn{border:1.5px solid var(--linea);background:transparent;color:var(--tinta);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600}
+.btn.primario{background:var(--mar);border-color:var(--mar);color:#fff}
+.traslado{display:flex;gap:12px;align-items:center;margin:0 0 14px;padding:8px 0 8px 8px;color:var(--gris);font-size:13.5px;flex-wrap:wrap}
+.traslado .medio,.vuelo .medio{background:var(--blanco);border:1.5px solid var(--linea);border-radius:99px;padding:6px 14px;font-weight:600;color:var(--tinta);display:inline-flex;gap:7px;align-items:center}
+.tick{color:var(--ok)}
+.vuelo{display:flex;gap:10px;align-items:center;margin:0 0 14px;padding:8px 0 8px 8px;color:var(--gris);font-size:13.5px}
+.total{margin-top:26px;background:var(--blanco);border:1px solid var(--linea);border-radius:var(--radio);padding:15px 18px;display:flex;gap:10px;align-items:center;font-size:14.5px}
+@media (max-width:640px){
+  .acciones{margin-left:0}
+  .tronco{padding-left:52px}
+  .tronco::before{left:21px}
+  .punto{left:-52px;width:48px;height:48px;border-width:5px;font-size:18px}
+  .v1-cab .v1-botones{margin-left:0}
+  .v2-icono span.lbl{display:none}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="pagina">
+
+  <nav class="miga"><a href="#">Mis viajes</a> / <a href="#">Mi ruta</a></nav>
+
+  <div class="v1-cab">
+    <h1 class="display">Mi ruta</h1>
+    <span class="chip-viaje">Polonia</span>
+    <span class="v1-botones">
+      <button class="v1-boton">🗓️ Lienzo</button>
+      <button class="v1-boton">🗺️ Mapa</button>
+      <button class="v1-boton"><span class="pip"></span> Antes de viajar</button>
+      <button class="v1-boton mas">⋯</button>
+    </span>
+  </div>
+
+  <div class="v1-estado">
+    <b>6 de 6 noches</b>
+    <span class="mini-barra"><i></i></span>
+    <span class="ok">✓ Cuadra perfecto</span>
+    <span class="fechas">21 sep — 27 sep</span>
+  </div>
+
+  <div class="tronco">
+    <div class="nodo"><div class="punto casa">🏠</div><div class="casa-fila">Salida desde casa</div></div>
+    <div class="vuelo"><span class="medio"><span class="tick">✓</span> ✈ Wizz Air · ida (WRO)</span></div>
+    <div class="nodo">
+      <div class="punto">1</div>
+      <article class="etapa">
+        <div class="etapa-cab"><span class="arrastre">⋮⋮</span>
+          <div class="etapa-titulo"><h3 class="ciudad display">Wrocław</h3><p class="fechas">21 sep → 24 sep</p></div>
+          <button class="quitar" aria-label="Quitar etapa">✕</button></div>
+        <div class="fila">
+          <span class="stepper"><button aria-label="Quitar noche">−</button><b>3 noches</b><button aria-label="Añadir noche">+</button></span>
+          <span class="chip">🏨 <span class="rec">Odrzańska Residence Old Town</span> <span class="nota">8,8</span></span>
+          <span class="acciones"><button class="btn primario">Abrir etapa</button><button class="btn">Clonar</button></span>
+        </div>
+      </article>
+    </div>
+    <div class="traslado"><span class="medio"><span class="tick">✓</span> 🚆 Tren · PKP Intercity · sale 09:30</span><span>≈ 276 km · 3 h 14</span></div>
+    <div class="nodo">
+      <div class="punto">2</div>
+      <article class="etapa">
+        <div class="etapa-cab"><span class="arrastre">⋮⋮</span>
+          <div class="etapa-titulo"><h3 class="ciudad display">Cracovia</h3><p class="fechas">24 sep → 27 sep</p></div>
+          <button class="quitar" aria-label="Quitar etapa">✕</button></div>
+        <div class="fila">
+          <span class="stepper"><button aria-label="Quitar noche">−</button><b>3 noches</b><button aria-label="Añadir noche">+</button></span>
+          <span class="chip">🏨 <span class="rec">4Wings Apartments</span> <span class="nota">9,2</span></span>
+          <span class="acciones"><button class="btn primario">Abrir etapa</button><button class="btn">Clonar</button></span>
+        </div>
+      </article>
+    </div>
+    <div class="traslado"><span class="medio"><span class="tick">✓</span> 🚆 Tren · PKP Intercity · sale 09:30</span><span>275 km · 3 h 14</span></div>
+    <div class="nodo">
+      <div class="punto paso">3</div>
+      <article class="etapa">
+        <div class="etapa-cab"><span class="arrastre">⋮⋮</span>
+          <div class="etapa-titulo"><h3 class="ciudad display">Wrocław</h3><p class="fechas">27 sep · parada de salida</p></div>
+          <button class="quitar" aria-label="Quitar etapa">✕</button></div>
+        <div class="fila">
+          <span class="stepper paso"><button aria-label="Quitar noche">−</button><b>de paso</b><button aria-label="Añadir noche">+</button></span>
+          <span class="chip pendiente">🏨 Sin alojamiento</span>
+          <span class="acciones"><button class="btn primario">Abrir etapa</button><button class="btn">Clonar</button></span>
+        </div>
+      </article>
+    </div>
+    <div class="vuelo"><span class="medio"><span class="tick">✓</span> ✈ SWISS · vuelta (WRO)</span></div>
+    <div class="nodo"><div class="punto casa">🏠</div><div class="casa-fila">Vuelta a casa</div></div>
+  </div>
+
+  <div class="total">🚗 <span><b>Total traslados:</b> 550 km · 6 h 28 en coche</span></div>
+
+</div>
+</body>
+</html>
