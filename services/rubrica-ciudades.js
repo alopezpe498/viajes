@@ -387,15 +387,29 @@ export function bandaDePuntos(puntos, multiplicadores = null) {
  * más»— se quedarían mudas o, peor, se volverían mucho más estrictas sin que
  * nadie lo hubiera decidido.
  *
- * Así que el empate se conserva, pero con una holgura declarada: dos ciudades
- * que se llevan menos de un 15% son «igual de importantes» para esas reglas.
+ * Así que el empate se conserva, pero con una holgura declarada.
+ *
+ * Y LA HOLGURA ERA DEL 15%, QUE SOBRE ESTA ESCALA ES UN DISPARATE. Se eligió
+ * pensando en números del 1 al 5, donde un 15% es menos de un escalón. Sobre
+ * puntuaciones de veinte son TRES PUNTOS Y MEDIO de margen, y en el Polonia
+ * medido eso metió a tres ciudades distintas en el mismo «peso máximo»:
+ * Cracovia 21,2, Varsovia 20,2 y Wrocław 20,2. Con consecuencia, además:
+ * `nochePorPeso` vio a Wrocław como ciudad de peso máximo y le quitó una noche
+ * a Cracovia (4 → 3), cuando el propio prompt de la fase lleva escrito
+ * «Cracovia 4 + Varsovia 2» como ejemplo de lo que está BIEN.
+ *
+ * Baja al 2%. La puntuación sale de sumar enteros pequeños multiplicados por
+ * factores del perfil, así que un empate de verdad es exacto o casi: lo que
+ * hace falta aquí es tolerar el ruido de los decimales, no declarar parecidas a
+ * dos ciudades que se llevan un punto entero. Cracovia y Varsovia vuelven a ser
+ * dos ciudades distintas, que es lo que son.
  */
 export function mismoPeso(a, b) {
   const x = Number(a) || 0;
   const y = Number(b) || 0;
   const mayor = Math.max(Math.abs(x), Math.abs(y));
   if (!mayor) return true;
-  return Math.abs(x - y) <= parametro('rubrica_holgura_de_empate', 0.15) * mayor;
+  return Math.abs(x - y) <= parametro('rubrica_holgura_de_empate', 0.02) * mayor;
 }
 
 // =============================================================================
