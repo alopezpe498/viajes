@@ -17,7 +17,12 @@
 
 import { todas, una, ejecutar, db, normalizarNombre } from '../db/index.js';
 import { direccionDe, guardarDireccion, pedirGeocodificar } from './direcciones.js';
-import { buscarActividades, descubrirSlug, buscarFichaActividad } from '../providers/civitatis.js';
+import {
+  buscarActividades,
+  descubrirSlug,
+  buscarFichaActividad,
+  conSesionDeCivitatis,
+} from '../providers/civitatis.js';
 import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 
 export { normalizarNombre };
@@ -538,26 +543,67 @@ export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudad
     ...alternativos.filter((x) => !tieneLetraLatina(x)),
   ].filter((x, i, xs) => x && x !== ciudad && xs.indexOf(x) === i);
 
-  let slug = await descubrirSlug(ciudad, { pais, tambien: variantes });
+  // UN SOLO NAVEGADOR PARA LAS DOS PREGUNTAS, PERO NO PARA LA DE LA IA.
+  //
+  // Descubrir el slug y buscar las actividades son dos preguntas al mismo sitio
+  // y abrian dos navegadores seguidos, cada uno con su arranque de Chromium y su
+  // turno en la cola de la plaza, que es una sola por dominio. Van juntas.
+  //
+  // LA CONSULTA DEL EXONIMO SE QUEDA FUERA, y esto lo decidio la medida, no el
+  // razonamiento: con ella dentro, la ciudad que necesita alias retiene la plaza
+  // mientras habla con la IA y las otras dos esperan detras. Medido con las tres
+  // paradas de Tunez en paralelo, eso costaba mas de lo que ahorraba.
+  //
+  // El cierre lo hace `conSesionDeCivitatis` en su `finally` llamando a
+  // `cerrarNavegador`, que es quien suelta la plaza. Esa parte no se toca: la
+  // fuga del 15/09 fue exactamente esto mal hecho.
+  const primero = await conSesionDeCivitatis(async (sesion) => {
+    const slug = await descubrirSlug(ciudad, { pais, tambien: variantes, sesion });
+    if (!slug) return { sinSlug: true };
+    console.log(`[catalogo] buscando excursiones de "${ciudad}" en Civitatis (slug "${slug}")`);
+    return {
+      actividades: await buscarActividades({
+        destino: ciudad,
+        slug,
+        maxResultados: MAX_ACTIVIDADES,
+        sesion,
+      }),
+    };
+  });
+
+  let actividades = primero.actividades;
 
   // Y SI NADA DE ESO VALE, EL NOMBRE EN CASTELLANO DE TODA LA VIDA.
   //
   // Ultimo recurso, y solo aqui: si la busqueda normal encontro algo, por este
-  // camino no se pasa y no se le pregunta nada a nadie.
-  if (!slug) {
+  // camino no se pasa y no se le pregunta nada a nadie. La plaza esta libre
+  // mientras se pregunta.
+  if (primero.sinSlug) {
     const alias = await exonimoEspanol(ciudad, pais);
+
     if (alias) {
       console.log(`[catalogo] "${ciudad}" no aparece en Civitatis; pruebo su nombre en castellano ("${alias}").`);
-      slug = await descubrirSlug(ciudad, { pais, tambien: [...variantes, alias] });
-      // SE APUNTA SI SIRVIO O NO. Las dos respuestas ahorran trabajo manana: la
-      // buena evita la consulta, y la mala evita repetirla en balde.
-      apuntarSiElAliasSirvio(ciudad, Boolean(slug));
-      if (slug) {
+      actividades = await conSesionDeCivitatis(async (sesion) => {
+        const slug = await descubrirSlug(ciudad, {
+          pais,
+          tambien: [...variantes, alias],
+          sesion,
+        });
+        // SE APUNTA SI SIRVIO O NO. Las dos respuestas ahorran trabajo manana: la
+        // buena evita la consulta, y la mala evita repetirla en balde.
+        apuntarSiElAliasSirvio(ciudad, Boolean(slug));
+        if (!slug) return null;
         console.log(`[catalogo] "${ciudad}" es "${alias}" en Civitatis (slug "${slug}").`);
-      }
+        return buscarActividades({
+          destino: ciudad,
+          slug,
+          maxResultados: MAX_ACTIVIDADES,
+          sesion,
+        });
+      });
     }
 
-    if (!slug) {
+    if (!actividades) {
       throw new Error(
         `«${ciudad}» no tiene destino en Civitatis. Probé también` +
           `${pais ? ` el índice de ${pais}` : ''}` +
@@ -567,12 +613,6 @@ export async function traerExcursionesSiHacenFalta(ciudad, { pais = null, ciudad
     }
   }
 
-  console.log(`[catalogo] buscando excursiones de "${ciudad}" en Civitatis (slug "${slug}")`);
-  const actividades = await buscarActividades({
-    destino: ciudad,
-    slug,
-    maxResultados: MAX_ACTIVIDADES,
-  });
   const utiles = actividades.filter((a) => esActividadDeVerdad(a.titulo));
   if (!utiles.length) throw new Error(`Civitatis no devolvió actividades de «${ciudad}»`);
 

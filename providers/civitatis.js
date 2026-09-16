@@ -146,7 +146,7 @@ export function destinoASlug(destino) {
  * @param {string[]} opciones.tambien   Otros nombres que valen (la ciudad base).
  * @returns {Promise<string|null>} el slug real, o null si no esta en Civitatis.
  */
-export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) {
+export async function descubrirSlug(nombre, { pais = null, tambien = [], sesion = null } = {}) {
   const candidatos = [nombre, ...tambien].filter(Boolean);
 
   /**
@@ -209,7 +209,9 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
       pais
     );
 
-  const { contexto, pagina } = await abrirNavegador({ de: 'Civitatis' });
+  // Prestada o propia. Solo se cierra la propia: ver `conSesionDeCivitatis`.
+  const mia = sesion ? null : await abrirNavegador({ de: 'Civitatis' });
+  const { contexto, pagina } = sesion ?? mia;
   try {
     // 2) El slug directo, que acierta la mayoria de las veces.
     for (const c of candidatos) {
@@ -300,6 +302,9 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
     guardar(nombre, null);
     return null;
   } finally {
+    // SOLO SE CIERRA LA PROPIA. Si la sesion venia prestada, la cierra quien la
+    // abrio: cerrarla aqui dejaria al que sigue con un navegador muerto.
+    //
     // POR `cerrarNavegador`, Y NO POR `contexto.close()`.
     //
     // Cerrar el navegador a pelo apaga el Chrome pero NO suelta la plaza del
@@ -316,7 +321,7 @@ export async function descubrirSlug(nombre, { pais = null, tambien = [] } = {}) 
     // camino, así que el tiempo de scraping seguía corriendo hasta el corte. Los
     // «15m 32s de scraping» y los «39m 25s esperando cola» eran la misma fuga
     // contada dos veces.
-    await cerrarNavegador(contexto);
+    if (mia) await cerrarNavegador(mia.contexto);
   }
 }
 
@@ -399,6 +404,38 @@ async function slugDelPais(pagina, pais) {
   }
 
   return null;
+}
+
+/**
+ * UNA SOLA SESION PARA TODO LO QUE SE LE PREGUNTE A CIVITATIS DE UNA CIUDAD.
+ *
+ * Descubrir el slug, buscar sus actividades y traerse la ficha de las elegidas
+ * son tres preguntas al mismo sitio, y abrian tres navegadores seguidos: tres
+ * arranques de Chromium y tres turnos en la cola de la plaza, que es una sola
+ * por dominio. Con el reintento por alias, cuatro.
+ *
+ * Aqui se abre uno y se presta. Las tres funciones aceptan una `sesion`
+ * opcional: si la reciben la usan, y si no, abren la suya como siempre —la ruta
+ * de «Ver detalles» y el worker siguen funcionando sin tocar nada—.
+ *
+ * QUIEN ABRE, CIERRA, y nadie mas. Ese es el contrato que evita repetir la fuga
+ * del 15/09: `descubrirSlug` cerraba con `contexto.close()`, que apaga el Chrome
+ * pero no suelta la plaza del dominio, y cada descubrimiento se quedaba con ella
+ * tres minutos hasta que el vigilante la liberaba. El cierre vive en UN `finally`
+ * y llama a `cerrarNavegador`, que es quien suelta la plaza.
+ *
+ * OJO AL VIGILANTE. El tope de tres minutos es POR SESION, asi que al juntar
+ * varias preguntas en una comparten presupuesto. Medido: descubrir tarda ~3 s y
+ * buscar entre 20 y 40 s, asi que sobra; pero el margen ya no es el de antes y
+ * conviene recordarlo si algun dia se mete algo mas aqui dentro.
+ */
+export async function conSesionDeCivitatis(loQueSea) {
+  const sesion = await abrirNavegador({ de: 'Civitatis' });
+  try {
+    return await loQueSea(sesion);
+  } finally {
+    await cerrarNavegador(sesion.contexto);
+  }
 }
 
 /** Guarda una captura para poder ver que habia en pantalla cuando algo fallo. */
@@ -556,7 +593,7 @@ function normalizarMoneda(simbolo) {
  * @param {string} opciones.destino          Ciudad ("Berlin", "berlin", "Nueva York")
  * @param {number} [opciones.maxResultados]  Cuantas actividades como maximo (30)
  */
-export async function buscarActividades({ destino, maxResultados = 30, slug: slugDado = null }) {
+export async function buscarActividades({ destino, maxResultados = 30, slug: slugDado = null, sesion = null }) {
   if (!destino || !String(destino).trim()) {
     throw new Error('[civitatis] Falta el destino.');
   }
@@ -567,7 +604,8 @@ export async function buscarActividades({ destino, maxResultados = 30, slug: slu
   // El slug ya descubierto manda sobre el fabricado: "Tesalonica" no existe en
   // Civitatis, pero "salonica" si, y quien llama ya lo ha averiguado.
   const slug = slugDado || destinoASlug(destino);
-  const { contexto, pagina } = await abrirNavegador({ de: 'Civitatis' });
+  const mia = sesion ? null : await abrirNavegador({ de: 'Civitatis' });
+  const { contexto, pagina } = sesion ?? mia;
 
   try {
     // ---- PASO 1: abrir la pagina del destino -----------------------------
@@ -688,7 +726,8 @@ export async function buscarActividades({ destino, maxResultados = 30, slug: slu
     }
     throw err;
   } finally {
-    await cerrarNavegador(contexto);
+    // Solo la propia: si venia prestada, cierra quien la abrio.
+    if (mia) await cerrarNavegador(mia.contexto);
   }
 }
 
@@ -813,12 +852,13 @@ function extraerFichaDelDOM({ etiquetas, cortes }) {
  *                              incluye, noIncluye, puntoEncuentro,
  *                              cancelacion, extra }
  */
-export async function buscarFichaActividad({ url }) {
+export async function buscarFichaActividad({ url, sesion = null }) {
   if (!url || !/^https?:\/\/(www\.)?civitatis\.com\//i.test(String(url))) {
     throw new Error(`[civitatis] La url de la actividad no parece de Civitatis: ${url}`);
   }
 
-  const { contexto, pagina } = await abrirNavegador({ de: 'Civitatis' });
+  const mia = sesion ? null : await abrirNavegador({ de: 'Civitatis' });
+  const { contexto, pagina } = sesion ?? mia;
 
   try {
     await paso('1. Abrir la ficha de la actividad', async () => {
@@ -884,7 +924,8 @@ export async function buscarFichaActividad({ url }) {
     await capturaDeFallo(pagina, err.paso ? err.paso.split(' ')[0].replace(/\./g, '_') : 'ficha');
     throw err;
   } finally {
-    await cerrarNavegador(contexto);
+    // Solo la propia: si venia prestada, cierra quien la abrio.
+    if (mia) await cerrarNavegador(mia.contexto);
   }
 }
 
