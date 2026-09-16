@@ -457,9 +457,12 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         // «Zakopane + paseo en moto de nieve» para un viaje del 21 al 27 de
         // septiembre. En los Tatras, en septiembre, no hay nieve: o no opera o
         // opera sin la moto, que es la mitad de por qué la eliges.
+        // La descripción larga YA NO ENTRA: es la página de Civitatis scrapeada
+        // entera, con reseñas y nombres propios dentro, y buscar ahí palabras
+        // clave es buscar en el ruido. «Ana Belén» descartó Auschwitz por
+        // navideña. El título sí, y la ficha manda sobre todo lo demás.
         const temporada = fueraDeTemporada({
           titulo: e.actividad.titulo,
-          descripcion: e.actividad.descripcion_larga ?? '',
           fechasPropias: e.actividad.detalles_extra ?? e.actividad.horarios ?? '',
           meses: mesesDelDestino,
         });

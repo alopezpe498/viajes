@@ -14,9 +14,20 @@
  * casos y se corrige en un sitio. Un prompt no se puede probar.
  *
  * Y LO DUDOSO NO SE TIRA. Hay actividades que llevan «hielo» en el nombre y
- * funcionan todo el año —una pista cubierta, una cueva de hielo—. Cuando la
- * temporada es clarísima se descarta; cuando no, se marca para que alguien lo
- * confirme antes de pagar. Descartar de más también estropea un viaje.
+ * funcionan todo el año —una pista cubierta, una cueva de hielo—. Descartar de
+ * más también estropea un viaje.
+ *
+ * LO QUE ENSEÑÓ POLONIA, Y POR QUÉ ESTO SE MIRA SOLO EN EL TÍTULO. La tabla se
+ * aplicaba sobre el título MÁS la descripción larga, que es una página de
+ * Civitatis scrapeada entera: reseñas de usuarios, nombres de bares, topónimos.
+ * Ahí dentro «belen» casó con «Ana Belén, Alicante» —una reseñista— y descartó
+ * la excursión a Auschwitz-Birkenau por ser de Navidad. Y «ski», con
+ * «Zakaski u Ani», «Karski» y «staromiejskie», se llevó tres free tours por
+ * falta de nieve en septiembre.
+ *
+ * Medido sobre el catálogo: de 5 coincidencias, 4 eran falsas y todas duras. La
+ * única buena tenía la palabra en el TÍTULO. Así que se mira el título, se exige
+ * palabra entera, y sin un dato real de temporada no se descarta nada.
  */
 
 /**
@@ -114,11 +125,11 @@ export function mesesDelViaje(desde, hasta) {
  * estable de la página —la enseña en el calendario de reserva, después de elegir
  * día— así que casi siempre llega vacío.
  */
-export function fueraDeTemporada({ titulo, descripcion = '', fechasPropias = null, meses }) {
-  const t = normalizar([titulo, descripcion].filter(Boolean).join(' · '));
+export function fueraDeTemporada({ titulo, fechasPropias = null, meses }) {
+  const t = normalizar(titulo);
   if (!t.trim() || !meses?.length) return null;
 
-  const encontrada = TEMPORADAS.find((x) => x.palabras.some((p) => t.includes(normalizar(p))));
+  const encontrada = TEMPORADAS.find((x) => x.palabras.some((p) => diceLaPalabra(t, p)));
   if (!encontrada) return null;
 
   // LO QUE DIGA LA FICHA MANDA SOBRE LA TABLA.
@@ -130,11 +141,53 @@ export function fueraDeTemporada({ titulo, descripcion = '', fechasPropias = nul
 
   return {
     que: encontrada.que,
-    duro: encontrada.duro && !suyos?.length ? encontrada.duro : Boolean(suyos?.length) || encontrada.duro,
+    // DESCARTAR SOLO CON UN DATO DE VERDAD.
+    //
+    // `duro` significa «esto no se coloca». Salía de la tabla, que es una
+    // heurística escrita a mano: «moto de nieve» ⇒ diciembre a marzo. Una
+    // heurística sirve para sospechar, no para borrar del viaje una visita a
+    // Auschwitz.
+    //
+    // Ahora solo es duro cuando la temporada la dice la FICHA —`fechasPropias`,
+    // lo que publique el proveedor—. Si la única prueba es que el título lleva
+    // una palabra de la tabla, se avisa y se deja puesto: es la misma regla que
+    // los cierres de los sitios, «no se corrige, se dice».
+    //
+    // El precio de esto, dicho: la «moto de nieve» que originó este fichero ya
+    // no se descarta sola, se coloca con su aviso. Un aviso de más molesta; un
+    // imprescindible borrado por el nombre de una reseñista arruina el viaje.
+    duro: Boolean(suyos?.length),
     porQue: encontrada.porQue,
     meses: temporada,
     deLaFicha: Boolean(suyos?.length),
   };
+}
+
+/**
+ * ¿EL TEXTO DICE ESA PALABRA, O SOLO LA LLEVA DENTRO DE OTRA?
+ *
+ * `includes` a secas encontró «ski» dentro de «Zakaski u Ani» —un bar de
+ * Cracovia—, de «Karski» y de «staromiejskie», y con eso descartó tres free
+ * tours por no haber nieve en septiembre. Una palabra de tres letras dentro de
+ * topónimos polacos casa en todas partes.
+ *
+ * Las fronteras son «lo que no es letra ni número», no `\b`: después de
+ * `normalizar` no hay acentos, pero sí guiones y puntos, y `\b` los trata como
+ * límite igual. Esto es lo mismo y se lee.
+ */
+function diceLaPalabra(texto, palabra) {
+  const p = normalizar(palabra);
+  if (!p) return false;
+  let desde = 0;
+  for (;;) {
+    const i = texto.indexOf(p, desde);
+    if (i < 0) return false;
+    const antes = i === 0 ? '' : texto[i - 1];
+    const despues = texto[i + p.length] ?? '';
+    const pegada = /[a-z0-9]/.test(antes) || /[a-z0-9]/.test(despues);
+    if (!pegada) return true;
+    desde = i + 1;
+  }
 }
 
 /** «De diciembre a marzo», «Temporada: dic-mar» → [12,1,2,3]. */
