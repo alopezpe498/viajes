@@ -28,7 +28,7 @@
  * el que no se puede confiar, y esta fase es justo la que hay que poder auditar.
  */
 import { db, todas, una, ejecutar, normalizarNombre } from '../db/index.js';
-import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
+import { consultarJSON, hayClaveIA, SIN_CLAVE, temperaturaAlPuntuar } from '../lib/ia.js';
 import { resolverIata } from '../lib/iata.js';
 import { enParalelo } from '../services/paralelo.js';
 import { buscarVuelosKayak } from '../providers/kayak.js';
@@ -123,7 +123,7 @@ const entero = (v, min, max) => {
 };
 
 /** Sanea lo que devuelva la IA en el paso 1. Lo que venga raro se cae. */
-function saneaCandidatas(respuesta, tope) {
+export function saneaCandidatas(respuesta, tope) {
   const crudas = Array.isArray(respuesta?.ciudades) ? respuesta.ciudades : [];
 
   const ciudades = crudas
@@ -1797,20 +1797,17 @@ function crearEtapas(viaje, ruta) {
 // LA FASE
 // =============================================================================
 /**
- * @param {object} viaje
- * @param {string} promptEntero El de la tabla, tal cual. Aquí se parte.
+ * TODO LO QUE EL PASO 1 NECESITA SABER DEL VIAJE, EN UN SITIO.
+ *
+ * Estaba suelto dentro de `ejecutarFaseCiudades` y sale aquí por una razón
+ * concreta: la herramienta que mide cuánto baila la puntuación entre tiradas
+ * tiene que preguntar EXACTAMENTE lo mismo que pregunta el orquestador. Con una
+ * copia del armado, la medición dejaría de medir la producción en cuanto una de
+ * las dos se tocara, y el número perdería el sentido justo cuando hiciera falta.
+ *
+ * No decide nada: junta datos y los deja listos para `rellenar()`.
  */
-export async function ejecutarFaseCiudades(viaje, promptEntero) {
-  const viajeId = viaje.id;
-  const FASE = 'ciudades_y_noches';
-  const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
-
-  if (!hayClaveIA()) throw new Error(SIN_CLAVE);
-  if (!viaje.fecha_inicio || !viaje.fecha_fin) {
-    throw new Error('El viaje no tiene fechas: sin ellas no hay noches que repartir.');
-  }
-
-  const partes = partirPrompt(promptEntero);
+export function datosDelPaso1(viaje) {
   const auto = configAuto(viaje);
   const nochesTotales = nochesEntre(viaje.fecha_inicio, viaje.fecha_fin);
   const dias = nochesTotales + 1;
@@ -1868,12 +1865,37 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     MINIMO_NOCHES: minimoNoches,
   };
 
+  return { datos, auto, maxCiudades, minimoNoches, nochesTotales, dias, viajeros };
+}
+
+/**
+ * @param {object} viaje
+ * @param {string} promptEntero El de la tabla, tal cual. Aquí se parte.
+ */
+export async function ejecutarFaseCiudades(viaje, promptEntero) {
+  const viajeId = viaje.id;
+  const FASE = 'ciudades_y_noches';
+  const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
+
+  if (!hayClaveIA()) throw new Error(SIN_CLAVE);
+  if (!viaje.fecha_inicio || !viaje.fecha_fin) {
+    throw new Error('El viaje no tiene fechas: sin ellas no hay noches que repartir.');
+  }
+
+  const partes = partirPrompt(promptEntero);
+  const { datos, auto, maxCiudades, minimoNoches, nochesTotales } = datosDelPaso1(viaje);
+
   // --- PASO 1 -------------------------------------------------------------
-  di(`Eligiendo ciudades candidatas para ${datos.DESTINO} (${dias} días, ${viajeros})…`);
+  di(`Eligiendo ciudades candidatas para ${datos.DESTINO} (${datos.DIAS} días, ${datos.VIAJEROS})…`);
 
   const r1 = await consultarJSON(rellenar(partes.candidatas, datos), {
     maxTokens: 4000,
     paso: `candidatas de ${datos.DESTINO}`,
+    // ESTA ES LA OTRA LLAMADA QUE PUNTÚA. De aquí salen `peso` y el rango de
+    // noches de cada candidata, y el peso máximo decide qué repartos son
+    // legales (`repartosLegales`, más abajo): una ciudad que baila de 3 a 2
+    // entre tiradas puede cambiar quién es el máximo y, con eso, la ruta entera.
+    temperatura: temperaturaAlPuntuar(),
   });
   const { ciudades, tiempos } = saneaCandidatas(r1, maxCiudades);
   if (!ciudades.length) throw new Error('La IA no propuso ninguna ciudad.');

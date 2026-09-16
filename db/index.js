@@ -405,6 +405,7 @@ export function migrarEsquema() {
   migracionDosDuracionesDeTramo();
   migracionLlegadaNocturna();
   migracionParametrosHuerfanos();
+  migracionPuntuarConCriterio();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5435,6 +5436,69 @@ function migracionParametrosHuerfanos() {
 
   marcarAplicada(CLAVE);
   console.log(`[bd] Migracion: ${puestos} parametro(s) que el codigo leia y no estaban en la tabla.`);
+  return true;
+}
+
+/**
+ * LAS LLAMADAS QUE PUNTUAN, MAS ESTABLES Y CON EL MODELO QUE DECIDE.
+ *
+ * Dos numeros, y los dos atacan lo mismo: que la puntuacion de la IA baile entre
+ * tiradas sin que haya cambiado nada. Medido en fase 1 sobre el mismo destino,
+ * Hammamet salia 3, 2 y 2 y Kairouan 5, 4 y 4. Eso no es ruido cosmetico: el
+ * peso maximo decide que repartos de noches son legales, asi que con esos
+ * bailes quien entra en la ruta es loteria.
+ *
+ *   temperatura_al_puntuar · No se mandaba `temperature` en NINGUNA llamada del
+ *       proyecto, asi que todas salian con la de por defecto de la API, la mas
+ *       alta. Para listar o traducir da igual; para puntuar no aporta nada.
+ *
+ *   modelo_sitios · Pasa de `rapido` a `criterio`. El ranking de los
+ *       imprescindibles de una ciudad no es mecanica: de su ORDEN sale la
+ *       categoria intocable del motor —los tres primeros— y con ella los avisos
+ *       graves y las expulsiones. Estaba clasificado como «ejecutar» cuando es
+ *       de los que mas deciden, y era el unico de los que deciden que no iba en
+ *       criterio.
+ *
+ * El valor de fabrica de modelo_sitios se mueve tambien, no solo el valor: la
+ * decision es que a partir de ahora el ranking se piensa. Pero si alguien lo
+ * habia cambiado a mano a otra cosa distinta del `rapido` de fabrica, se respeta.
+ */
+function migracionPuntuarConCriterio() {
+  const CLAVE = '2026-09-puntuar-con-criterio';
+  if (yaAplicada(CLAVE)) return false;
+
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n + 1;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run(
+    'temperatura_al_puntuar',
+    '0.2',
+    '0.2',
+    'Cuanta variacion se le deja al modelo en las llamadas que puntuan meritos (0 = el mismo veredicto siempre)',
+    'de 0 a 1',
+    orden
+  );
+
+  // El valor solo se pisa si sigue siendo el de fabrica: un cambio a mano manda.
+  const movido = db
+    .prepare(
+      `UPDATE parametros_orquestador
+          SET valor = 'criterio', valor_fabrica = 'criterio'
+        WHERE clave = 'modelo_sitios' AND valor = valor_fabrica AND valor = 'rapido'`
+    )
+    .run().changes;
+  if (!movido) {
+    db.prepare(
+      "UPDATE parametros_orquestador SET valor_fabrica = 'criterio' WHERE clave = 'modelo_sitios'"
+    ).run();
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migracion: temperatura al puntuar y modelo_sitios ${movido ? 'a criterio' : '(valor tocado a mano: solo se mueve la fabrica)'}.`
+  );
   return true;
 }
 

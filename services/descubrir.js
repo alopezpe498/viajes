@@ -20,7 +20,7 @@
  */
 
 import { db, todas, una, ejecutar, normalizarNombre } from '../db/index.js';
-import { consultarJSON } from '../lib/ia.js';
+import { consultarJSON, temperaturaAlPuntuar } from '../lib/ia.js';
 import { direccionDe, guardarDireccion } from './direcciones.js';
 import { actividadesDeCiudad } from './catalogo.js';
 
@@ -832,6 +832,13 @@ async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
   const respuesta = await consultarJSON(promptDeCiudad(punto, nombreDestino, bloque, opciones), {
     paso: `investigar «${punto.nombre}» · ${bloque}`,
     maxTokens: 6000,
+    // ESTA LLAMADA PUNTÚA, aunque no lo parezca. Pide los sitios «ordenados de
+    // más a menos imprescindible», y de ese ORDEN sale el nivel del motor: los
+    // tres primeros del bloque `imprescindibles` son la categoría intocable
+    // —`orquestador-lienzo.js:757`—, la que agota la parada entera antes de
+    // ceder y la que dispara los avisos graves. No hay ninguna otra fuente de
+    // jerarquía entre sitios: es el orden de llegada de esta lista.
+    temperatura: temperaturaAlPuntuar(),
   });
 
   const crudos = Array.isArray(respuesta?.sitios) ? respuesta.sitios : [];
