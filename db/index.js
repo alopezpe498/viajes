@@ -404,6 +404,7 @@ export function migrarEsquema() {
   migracionCacheDeDistancias();
   migracionDosDuracionesDeTramo();
   migracionLlegadaNocturna();
+  migracionParametrosHuerfanos();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5380,6 +5381,60 @@ function migracionLlegadaNocturna() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: una llegada nocturna tambien cuenta como dia de aclimatacion.');
+  return true;
+}
+
+/**
+ * CUATRO NUMEROS QUE EL CODIGO LEE Y QUE NO ESTABAN EN LA TABLA.
+ *
+ * `parametro()` devuelve el respaldo y avisa por consola cuando no encuentra la
+ * clave, asi que nada se comportaba mal: simplemente esos cuatro numeros no se
+ * podian tocar desde la pantalla de parametros y ensuciaban el log en cada
+ * lectura. Uno de ellos lo dice en su propio comentario —«el umbral vive en los
+ * parametros por si hay que moverlo»— y no vivia en ninguna parte.
+ *
+ * TRES SON OLVIDOS AL AÑADIR EL CODIGO. El cuarto no:
+ * `tope_por_trabajo_scraping_min` SI tiene su migracion, `2026-09-tope-por-
+ * trabajo-scraping`, y esa migracion figura como aplicada... con la fila
+ * ausente. Re-ejecutarla a mano la inserta sin quejarse, y en el codigo no hay
+ * un solo DELETE contra esta tabla. O sea que la fila se escribio y se perdio
+ * despues, por fuera de la aplicacion; el candidato obvio es la corrupcion de la
+ * base y lo que se rescato de ella, pero eso es una sospecha, no un hecho
+ * comprobado.
+ *
+ * Lo que si deja claro es que una marca en `migraciones` no demuestra que su
+ * efecto siga ahi. Por eso esta migracion lleva clave nueva y vuelve a insertar
+ * las cuatro con ON CONFLICT DO NOTHING, en vez de fiarse de la marca vieja.
+ */
+function migracionParametrosHuerfanos() {
+  const CLAVE = '2026-09-parametros-huerfanos';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  const nuevo = (clave, valor, descripcion, unidad) =>
+    meter.run(clave, valor, valor, descripcion, unidad, ++orden).changes;
+
+  let puestos = 0;
+  puestos += nuevo('factor_traslado_incompleto', '2',
+    'Cuantas veces mayor que el trayecto elegido tiene que ser la referencia de carretera para avisar de que el traslado no se cree a si mismo. Por debajo de 1.6 el codigo no baja',
+    'veces');
+  puestos += nuevo('tope_por_trabajo_scraping_min', '3',
+    'Minutos que se le dan a un trabajo de scraping antes de matar el navegador y soltar la plaza',
+    'minutos');
+  puestos += nuevo('espera_sitios_excursiones_seg', '240',
+    'Lo que la fase de excursiones espera a que la de sitios termine esa parada antes de seguir sin ella',
+    'segundos');
+  puestos += nuevo('minutos_a_pie_razonables', '20',
+    'Hasta cuantos minutos andando se prefiere ir a pie antes que en transporte',
+    'minutos');
+
+  marcarAplicada(CLAVE);
+  console.log(`[bd] Migracion: ${puestos} parametro(s) que el codigo leia y no estaban en la tabla.`);
   return true;
 }
 
