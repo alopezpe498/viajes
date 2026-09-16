@@ -294,9 +294,32 @@ export function colocablesDeEtapa(etapa, lienzo) {
  * quita del lienzo, vuelve a la mochila como cualquier otro.
  */
 function apuntarYObtener(etapaId, sitioId) {
+  // `alternarApuntado` ALTERNA, Y ESO AQUÍ ES UNA TRAMPA.
+  //
+  // Si el sitio ya estaba apuntado, esta llamada lo DESAPUNTA, se lleva por
+  // delante su candidato y con él el sitio que ya tenía en el lienzo. Y basta
+  // con que el modelo nombre el mismo sitio dos veces para que pase.
+  //
+  // Pasó en el viaje a Túnez: declaró «Avenida Habib Burguiba» en el día 5 y
+  // otra vez en el día 6. La primera lo apuntó y lo colocó; la segunda lo
+  // desapuntó, y un imprescindible de la ciudad se evaporó del viaje. El
+  // registro lo dejó escrito sin saber por qué: «tenía hueco libre (día 5,
+  // tarde, 19:00) y aun así no se colocó».
+  //
+  // La fase de excursiones ya se protege de esto mismo, con este mismo
+  // comentario. Aquí faltaba: se mira antes si ya está, y si está se devuelve el
+  // que hay en vez de tocar el interruptor.
+  const yaEsta = candidatoDelSitio(etapaId, sitioId);
+  if (yaEsta) return yaEsta;
+
   const r = alternarApuntado(etapaId, 'sitio', sitioId);
   if (!r?.apuntado) return null;
 
+  return candidatoDelSitio(etapaId, sitioId);
+}
+
+/** El candidato de ese sitio en esa etapa, si ya lo hay. */
+function candidatoDelSitio(etapaId, sitioId) {
   const c = una(
     `SELECT id FROM candidatos
       WHERE etapa_id = ? AND tipo = 'sitio' AND datos_extra LIKE ?
@@ -903,6 +926,137 @@ function horaLegitima(naturaleza, hora) {
 }
 
 /**
+ * LO MÍNIMO QUE SE TARDA EN IR DE UN SITIO A OTRO.
+ *
+ * En LÍNEA RECTA y EN EL MEJOR DE LOS CASOS, las dos cosas a propósito. Esto no
+ * calcula un trayecto: decide si un hueco es FÍSICAMENTE IMPOSIBLE, y para eso
+ * lo que hace falta es el suelo, no la estimación. La carretera siempre es más
+ * larga que la recta y el tráfico siempre es peor que el mejor de los casos, así
+ * que lo que no cabe aquí no cabe de ninguna manera. Al revés no: que algo pase
+ * esta comprobación no quiere decir que sea cómodo.
+ *
+ *   hasta 1 km  ·  0 min. Es el barrio: se va andando dentro de la holgura que
+ *                  tiene cualquier visita, y cobrarlo llenaría el plan de huecos
+ *                  de cortesía entre dos cosas de la misma plaza.
+ *   en ciudad   ·  15 km/h puerta a puerta — metro, bus o taxi con sus esperas.
+ *   por carretera· 50 km/h de media más veinte minutos de salir y aparcar.
+ *
+ * Se toma el MENOR de los dos últimos, que además los empalma sin escalón: el
+ * cruce cae sobre los 7 km, donde las dos cuentas dan lo mismo.
+ */
+function minutosMinimosEnLlegar(km) {
+  if (!Number.isFinite(km) || km <= 1) return 0;
+  return Math.round(Math.min(km * 4, 20 + km * 1.2));
+}
+
+/**
+ * LO QUE SE LE PERDONA A UN PLAN APRETADO.
+ *
+ * Esta guarda persigue lo IMPOSIBLE, no lo justo, y sin este margen perseguiría
+ * las dos cosas. Medido sobre los viajes que hay en la base: el reparto encadena
+ * los bloques pegados —termina uno a las 11:00 y empieza el siguiente a las
+ * 11:00— y así **18 de 62 bloques colocados** quedaban señalados. Con el margen
+ * quedan los que de verdad no se pueden hacer:
+ *
+ *     se persigue   Dougga → Cartago      13 km en 0 min
+ *                   Termas → Zoco          16 km en 0 min
+ *                   Medina de Bizerta → Café Saf-Saf   60 km en 0 min
+ *                   Lago de Bizerta → El Pescador     158 km en 150 min
+ *     se perdona    Schindler → Lonja       2 km en 0 min
+ *                   Bardo → Medina          3 km en 0 min
+ *                   Belvedere → Lago        4 km en 0 min
+ *
+ * Los perdonados también están apretados, y decirlo no es este arreglo: apretar
+ * un día es una decisión discutible, cruzar cien kilómetros en cero minutos no.
+ * Un aviso que salta en el 29 % de los bloques se deja de leer, y entonces no
+ * sirve ninguno.
+ */
+const MINUTOS_QUE_SE_PERDONAN = 20;
+
+/**
+ * ¿SE LLEGA A ESE HUECO, Y SE SALE DE ÉL?
+ *
+ * EL FALLO QUE ORIGINA ESTO, y es el día 6 del viaje a Túnez:
+ *
+ *     08:00  Excursión a Dougga y Bulla Regia   480 min   (110 km al oeste)
+ *     16:00  Free tour por Cartago              120 min   (20 km al noreste)
+ *
+ * Lo montó la propia revisión: «Free tour por Cartago pasa al día 6 a las
+ * 16:00». La excursión termina a las 16:00 y a las 16:00 empieza el free tour a
+ * ciento y pico kilómetros. No hay solape —el reloj cuadra al minuto— y por eso
+ * no saltó ningún aviso: `horaLibreEn` contesta a «¿está libre esa hora?», que
+ * es la pregunta de una AGENDA. La de un VIAJE es otra: «¿se llega?».
+ *
+ * Es la misma familia que el traslado de salida que no llegaba al vuelo. Los dos
+ * datos existían —la hora y el sitio— y nadie los cruzaba.
+ *
+ * SIN COORDENADAS NO SE DICE NADA. Una comida que solo es una zona, un traslado
+ * o un sitio sin situar devuelven null en `puntoDeLoColocado`, y entonces esto
+ * se calla: inventarse dónde cae algo para prohibir un hueco sería peor que el
+ * hueco.
+ *
+ * Devuelve null si el hueco vale, o el motivo si no. Cuando el problema es lo de
+ * ANTES viene además `desdeMinuto`: la primera hora a la que sí se llegaría, que
+ * es lo que deja a quien llama volver a probar más tarde en vez de rendirse.
+ */
+export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado }) {
+  const miPunto = puntoDeLoColocado(colocado);
+  const empieza = enMinutos(hora);
+  if (!miPunto || empieza == null) return null;
+  const acaba = empieza + (Number(duracion) || 0);
+
+  const delDia = (tablero.colocados ?? [])
+    .filter((c) => c.dia === dia && c.id !== colocado.id && enMinutos(c.hora) != null)
+    .sort((a, b) => enMinutos(a.hora) - enMinutos(b.hora));
+
+  // LO QUE ACABA MÁS TARDE SIN PASARSE, que no siempre es el vecino de la lista:
+  // una excursión de ocho horas empieza la primera del día y termina la última.
+  let antes = null;
+  for (const c of delDia) {
+    const fin = enMinutos(c.hora) + (Number(c.duracionMin) || 0);
+    if (fin <= empieza && (antes == null || fin > antes.fin)) antes = { c, fin };
+  }
+
+  if (antes) {
+    const suyo = puntoDeLoColocado(antes.c);
+    if (suyo) {
+      const km = distanciaKm(suyo, miPunto);
+      const falta = minutosMinimosEnLlegar(km);
+      if (antes.fin + falta > empieza + MINUTOS_QUE_SE_PERDONAN) {
+        return {
+          motivo:
+            `de «${antes.c.nombre}» a aquí hay ${Math.round(km)} km ` +
+            `y solo quedan ${empieza - antes.fin} min`,
+          desdeMinuto: antes.fin + falta,
+        };
+      }
+    }
+  }
+
+  // Y LO DE DESPUÉS, por el mismo motivo y en el otro sentido. Meter algo en un
+  // hueco de dos horas a cien kilómetros deja tirado a lo que venía detrás, y
+  // ese no es problema de lo que venía detrás.
+  const despues = delDia.find((c) => enMinutos(c.hora) >= acaba);
+  if (despues) {
+    const suyo = puntoDeLoColocado(despues);
+    if (suyo) {
+      const km = distanciaKm(miPunto, suyo);
+      const falta = minutosMinimosEnLlegar(km);
+      const hueco = enMinutos(despues.hora) - acaba;
+      if (falta > hueco + MINUTOS_QUE_SE_PERDONAN) {
+        // Retrasar no arregla esto: cuanto más tarde empiece, menos hueco queda.
+        return {
+          motivo: `de aquí a «${despues.nombre}» hay ${Math.round(km)} km y solo quedan ${hueco} min`,
+          desdeMinuto: null,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * LOS DÍAS EN QUE UN SITIO CIERRA, leídos de su horario publicado.
  *
  * La misma fuente que usa el aviso, y por el mismo motivo: si el aviso dice una
@@ -928,8 +1082,10 @@ function diaDeLaSemana(fecha) {
 /**
  * UN HUECO VÁLIDO PARA ESTA COSA EN ESTE DÍA, o null.
  *
- * Junta en un solo sitio las cuatro comprobaciones: el hueco libre, el cierre
- * del sitio, el tope del día y —la nueva— la naturaleza de lo que se coloca.
+ * Junta en un solo sitio las cinco comprobaciones: el hueco libre, el cierre del
+ * sitio, el tope del día, la naturaleza de lo que se coloca y —la última— que se
+ * pueda LLEGAR a ese hueco desde lo que hay antes y salir hacia lo que hay
+ * después.
  */
 function huecoValido(tablero, { dia, colocado, naturaleza, cierre, duracion, noAntesDe = null }) {
   // NI ANTES DE QUE ABRA. El suelo del hueco es el más tardío de los dos: lo que
@@ -954,14 +1110,32 @@ function huecoValido(tablero, { dia, colocado, naturaleza, cierre, duracion, noA
       if (!franja) continue;
       if (noAntesDe && hora < noAntesDe) continue;
       const libre = horaLibreEn(tablero, { dia, franja, duracion, noAntesDe: hora, cierraA: cierre });
-      if (libre === hora) return hora;
+      if (libre !== hora) continue;
+      // Con pases no hay negociación: si a esa hora no se llega, ese pase no es.
+      if (seLlegaAlHueco(tablero, { dia, hora, duracion, colocado })) continue;
+      return hora;
     }
     return null;
   }
 
   for (const franja of franjasQueAdmite(naturaleza)) {
-    const hora = horaLibreEn(tablero, { dia, franja, duracion, noAntesDe, cierraA: cierre });
-    if (hora && horaLegitima(naturaleza, hora)) return hora;
+    // SE REINTENTA MÁS TARDE, NO SE ABANDONA LA FRANJA.
+    //
+    // `horaLibreEn` da UNA hora por franja: la primera libre. Si a esa no se
+    // llega, rendirse ahí mandaría a otro día algo que cabía perfectamente dos
+    // horas después. Se vuelve a preguntar poniendo como suelo la hora a la que
+    // sí se llega, y el tope del día corta solo: cuando ya no queda día,
+    // `horaLibreEn` contesta null.
+    let suelo = noAntesDe;
+    for (let intento = 0; intento < 4; intento++) {
+      const hora = horaLibreEn(tablero, { dia, franja, duracion, noAntesDe: suelo, cierraA: cierre });
+      if (!hora || !horaLegitima(naturaleza, hora)) break;
+      const pega = seLlegaAlHueco(tablero, { dia, hora, duracion, colocado });
+      if (!pega) return hora;
+      if (!pega.desdeMinuto) break;
+      suelo = comoHoraDeMinutos(pega.desdeMinuto);
+      if (!suelo) break;
+    }
   }
   return null;
 }

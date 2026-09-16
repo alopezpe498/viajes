@@ -656,6 +656,66 @@ function horaDeSalidaDelVuelo(vueloExtra) {
 }
 
 /**
+ * LA JUSTIFICACIÓN TIENE QUE CUADRAR CON SUS PROPIOS NÚMEROS.
+ *
+ * EL CASO. Túnez, Sousse → Bizerta. Cuatro opciones, la primera de 4h 15min y la
+ * segunda de 4h 20min. Eligió la segunda y lo explicó así:
+ *
+ *     «Es la más rápida puerta a puerta (4h 20min vs 4h 15min del louage)»
+ *
+ * 4h 20min no es más rápida que 4h 15min. Y la regla del motor, cuando el empate
+ * por precio no se activa, es literalmente «gana la más rápida puerta a puerta».
+ * El motivo de verdad venía después —«para 6 adultos es más cómodo que compartir
+ * taxi con desconocidos»— y puede ser bueno; lo que no vale es colarlo diciendo
+ * que es el rápido.
+ *
+ * LOS HOTELES YA TIENEN ESTA GUARDA y en ese mismo viaje funcionó: cazó una
+ * justificación que citaba «1 €», que no era el precio de ningún candidato. Los
+ * traslados no la tenían.
+ *
+ * NO SE CAMBIA LA ELECCIÓN. Elegir la cómoda para seis personas es una decisión
+ * legítima y no me toca a mí discutirla. Lo que se corrige es el CUENTO: si dice
+ * «la más rápida» y no lo es, se quita esa afirmación y se deja constancia. Un
+ * motivo honesto vale más que uno que suena mejor.
+ */
+export function laJustificacionQueCuadre(texto, elegida, medidas, di) {
+  const t = typeof texto === 'string' ? texto.trim() : null;
+  if (!t || !elegida || !medidas?.length) return t;
+
+  // La más rápida de verdad, con los mismos minutos que se le enseñaron.
+  const masRapida = medidas.reduce(
+    (a, o) => (a == null || o.bloque.total < a.bloque.total ? o : a),
+    null
+  );
+  if (!masRapida || masRapida.id === elegida.id) return t;
+
+  // ¿Presume de serlo? Se mira la afirmación, no el adjetivo suelto: «más lenta
+  // pero más rápida de montar» no es lo mismo que «es la más rápida».
+  const presume = /\b(?:la\s+)?m[aá]s\s+r[aá]pid[ao]\b/i.test(t);
+  if (!presume) return t;
+
+  const suya = comoTexto(elegida.bloque.total);
+  const buena = comoTexto(masRapida.bloque.total);
+  di(
+    `   La justificación decía que «${elegida.nombre}» es la más rápida y no lo es: ` +
+      `tarda ${suya} y «${masRapida.nombre}» tarda ${buena}. Mantengo la elección ` +
+      'y le quito esa afirmación.',
+    ORIGENES.ninguno
+  );
+
+  // NO SE RECORTA LA PROSA, SE MARCA. La primera versión de esto borraba la
+  // frase que mentía, y en el caso real se llevó por delante el motivo bueno:
+  // todo iba en una sola oración —«Es la más rápida (...), tiene horario bajo
+  // demanda (...), y para 6 adultos es más cómodo que compartir taxi»— y al
+  // quitar la mitad falsa se perdía la verdadera. Se deja entero y se añade el
+  // desmentido detrás, que es donde se va a leer.
+  return (
+    `${t} [Ojo: no es la más rápida — tarda ${suya} y «${masRapida.nombre}» ` +
+    `tarda ${buena}.]`
+  );
+}
+
+/**
  * DEJA DICHO EN EL VIAJE QUE ESE TRASLADO ES UN MADRUGÓN.
  *
  * No cambia la decisión: cuando no hay alternativa razonable, el vuelo de las
@@ -1163,7 +1223,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
         eleccion = {
           opcion: elegida,
           hora: typeof r?.hora_salida === 'string' ? r.hora_salida.trim() : null,
-          porQue: typeof r?.por_que === 'string' ? r.por_que.trim() : null,
+          porQue: laJustificacionQueCuadre(r?.por_que, elegida, medidas, di),
         };
       }
     } catch (err) {
