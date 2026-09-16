@@ -36,7 +36,11 @@
  */
 import { todas, una, ejecutar, normalizarNombre } from '../db/index.js';
 import { direccionDe } from '../services/direcciones.js';
-import { distanciaKm } from '../services/distancias.js';
+import {
+  distanciaKm,
+  minutosMinimosEnLlegar,
+  MINUTOS_QUE_SE_PERDONAN,
+} from '../services/distancias.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import {
   lienzoDeViaje,
@@ -924,54 +928,6 @@ function horaLegitima(naturaleza, hora) {
   if (naturaleza.soloDeNoche) return ['tarde', 'noche'].includes(franjaDesde(hora));
   return true;
 }
-
-/**
- * LO MÍNIMO QUE SE TARDA EN IR DE UN SITIO A OTRO.
- *
- * En LÍNEA RECTA y EN EL MEJOR DE LOS CASOS, las dos cosas a propósito. Esto no
- * calcula un trayecto: decide si un hueco es FÍSICAMENTE IMPOSIBLE, y para eso
- * lo que hace falta es el suelo, no la estimación. La carretera siempre es más
- * larga que la recta y el tráfico siempre es peor que el mejor de los casos, así
- * que lo que no cabe aquí no cabe de ninguna manera. Al revés no: que algo pase
- * esta comprobación no quiere decir que sea cómodo.
- *
- *   hasta 1 km  ·  0 min. Es el barrio: se va andando dentro de la holgura que
- *                  tiene cualquier visita, y cobrarlo llenaría el plan de huecos
- *                  de cortesía entre dos cosas de la misma plaza.
- *   en ciudad   ·  15 km/h puerta a puerta — metro, bus o taxi con sus esperas.
- *   por carretera· 50 km/h de media más veinte minutos de salir y aparcar.
- *
- * Se toma el MENOR de los dos últimos, que además los empalma sin escalón: el
- * cruce cae sobre los 7 km, donde las dos cuentas dan lo mismo.
- */
-function minutosMinimosEnLlegar(km) {
-  if (!Number.isFinite(km) || km <= 1) return 0;
-  return Math.round(Math.min(km * 4, 20 + km * 1.2));
-}
-
-/**
- * LO QUE SE LE PERDONA A UN PLAN APRETADO.
- *
- * Esta guarda persigue lo IMPOSIBLE, no lo justo, y sin este margen perseguiría
- * las dos cosas. Medido sobre los viajes que hay en la base: el reparto encadena
- * los bloques pegados —termina uno a las 11:00 y empieza el siguiente a las
- * 11:00— y así **18 de 62 bloques colocados** quedaban señalados. Con el margen
- * quedan los que de verdad no se pueden hacer:
- *
- *     se persigue   Dougga → Cartago      13 km en 0 min
- *                   Termas → Zoco          16 km en 0 min
- *                   Medina de Bizerta → Café Saf-Saf   60 km en 0 min
- *                   Lago de Bizerta → El Pescador     158 km en 150 min
- *     se perdona    Schindler → Lonja       2 km en 0 min
- *                   Bardo → Medina          3 km en 0 min
- *                   Belvedere → Lago        4 km en 0 min
- *
- * Los perdonados también están apretados, y decirlo no es este arreglo: apretar
- * un día es una decisión discutible, cruzar cien kilómetros en cero minutos no.
- * Un aviso que salta en el 29 % de los bloques se deja de leer, y entonces no
- * sirve ninguno.
- */
-const MINUTOS_QUE_SE_PERDONAN = 20;
 
 /**
  * ¿SE LLEGA A ESE HUECO, Y SE SALE DE ÉL?

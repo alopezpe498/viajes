@@ -122,5 +122,77 @@ export async function fundirSitiosContenidos(punto, ciudad, di = () => {}) {
     fundidos += 1;
   }
 
+  avisarDeLosQueSonElMismoSitio(sitios, di);
+
   return fundidos;
+}
+
+/**
+ * A partir de aquí, un montón en la misma coordenada ya no son dos fichas de lo
+ * mismo: es que la geocodificación se rindió y los mandó a todos al mismo sitio.
+ */
+const SON_YA_UN_MONTON = 3;
+
+/**
+ * SITIOS QUE COMPARTEN LA COORDENADA EXACTA.
+ *
+ * EL CASO QUE ORIGINA ESTO, del viaje 101. El catálogo de Kairouan tenía:
+ *
+ *     Museo de Arte Islámico de Kairouan   35.5925359, 10.0528505
+ *     Museo de Kairouan                    35.5925359, 10.0528505
+ *
+ * La misma coordenada hasta el séptimo decimal: es el Museo Nacional de Arte
+ * Islámico de Raqqada, dos veces. El lienzo colocó uno y expulsó el otro con un
+ * AVISO GRAVE de imprescindible perdido — un aviso grave por dejar fuera algo
+ * que ya estaba dentro.
+ *
+ * SON DOS FENÓMENOS DISTINTOS Y HAY QUE DECIR CUÁL ES CADA UNO, que es lo que se
+ * vio al medirlo contra el catálogo entero: de 42 parejas «en el mismo punto»,
+ * casi todas no eran duplicados sino esto:
+ *
+ *     Kairouan  8 sitios en 35.681076, 10.104229
+ *     Susa      4 sitios en 35.827671, 10.638795
+ *
+ * Ocho sitios no son el mismo sitio ocho veces. Es que Google no supo situarlos
+ * uno a uno y devolvió el mismo punto para todos —la Gran Mezquita, el Ribat—, y
+ * eso importa MUCHO más que un duplicado: la guarda del reparto y el aviso de
+ * «no llegas» miden distancias entre esos puntos, y entre dos sitios que
+ * heredaron la misma coordenada la distancia sale cero SIEMPRE. No es que estén
+ * cerca: es que no lo sabemos.
+ *
+ * NO SE FUNDE NADA, Y ES A PROPÓSITO. Fundir marca `cubierto_por`, y eso saca al
+ * sitio de `colocablesDeEtapa`, de `imprescindiblesDeParada` y de la lectura de
+ * horarios: si el parecido fuera falso se perdería una visita entera sin que
+ * nadie lo dijera. La doctrina de este fichero es la de arriba —«ANTE LA DUDA,
+ * NO SE FUNDE»— y la duda la resuelve quien mira, no el programa.
+ *
+ * Tampoco se le pregunta a la IA: la coordenada ya lo ha dicho. Es aritmética
+ * sobre un dato que está en la base, y la aritmética no mejora por consultarla.
+ */
+function avisarDeLosQueSonElMismoSitio(sitios, di) {
+  const grupos = new Map();
+  for (const s of sitios) {
+    if (s.lat == null || s.lon == null) continue;
+    const clave = `${s.lat},${s.lon}`;
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(s.nombre);
+  }
+
+  for (const [clave, nombres] of grupos) {
+    if (nombres.length < 2) continue;
+
+    if (nombres.length >= SON_YA_UN_MONTON) {
+      di(
+        `   ${nombres.length} sitios comparten la misma coordenada exacta (${clave}): ` +
+          'no están situados uno a uno, heredaron un punto. Las distancias entre ellos ' +
+          `no valen. Son: ${nombres.join(', ')}.`
+      );
+      continue;
+    }
+
+    di(
+      `   «${nombres[0]}» y «${nombres[1]}» están en la coordenada exacta (${clave}): ` +
+        'puede que sean el mismo sitio con dos nombres. Los dejo puestos, míralo.'
+    );
+  }
 }

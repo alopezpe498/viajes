@@ -102,6 +102,57 @@ export function distanciaKm(a, b) {
 }
 
 /**
+ * LO MÍNIMO QUE SE TARDA EN IR DE UN SITIO A OTRO.
+ *
+ * En LÍNEA RECTA y EN EL MEJOR DE LOS CASOS, las dos cosas a propósito. Esto no
+ * calcula un trayecto: decide si un hueco de un plan es FÍSICAMENTE IMPOSIBLE, y
+ * para eso lo que hace falta es el suelo, no la estimación. La carretera siempre
+ * es más larga que la recta y el tráfico siempre es peor que el mejor de los
+ * casos, así que lo que no cabe aquí no cabe de ninguna manera. Al revés no: que
+ * algo pase esta cuenta no quiere decir que sea cómodo.
+ *
+ *   hasta 1 km  ·  0 min. Es el barrio: se va andando dentro de la holgura que
+ *                  tiene cualquier visita, y cobrarlo llenaría el plan de huecos
+ *                  de cortesía entre dos cosas de la misma plaza.
+ *   en ciudad   ·  15 km/h puerta a puerta — metro, bus o taxi con sus esperas.
+ *   por carretera· 50 km/h de media más veinte minutos de salir y aparcar.
+ *
+ * Se toma el MENOR de los dos últimos, que además los empalma sin escalón: el
+ * cruce cae sobre los 7 km, donde las dos cuentas dan lo mismo.
+ *
+ * VIVE AQUÍ, y no en quien la usa, porque la usan DOS. El aviso del lienzo
+ * («no llegas») y la guarda del reparto («ese hueco no vale») tienen que decir
+ * lo mismo: un aviso que señala lo que la guarda permite —o al revés— es peor
+ * que no tener ninguno de los dos.
+ */
+export function minutosMinimosEnLlegar(km) {
+  if (!Number.isFinite(km) || km <= 1) return 0;
+  return Math.round(Math.min(km * 4, 20 + km * 1.2));
+}
+
+/**
+ * LO QUE SE LE PERDONA A UN PLAN APRETADO.
+ *
+ * Se persigue lo IMPOSIBLE, no lo justo, y sin este margen se perseguirían las
+ * dos cosas. Medido sobre los viajes de la base: el reparto encadena los bloques
+ * pegados —termina uno a las 11:00 y empieza el siguiente a las 11:00— y así
+ * quedaban señalados 18 de 62 bloques colocados. Con el margen quedan los que de
+ * verdad no se pueden hacer:
+ *
+ *     se persigue   Dougga → Cartago                   13 km en 0 min
+ *                   Medina de Kairouan → Café Halfaouine 93 km en 30 min
+ *                   Gran Mezquita de Kairouan → Raqqada  11 km en 0 min
+ *     se perdona    Schindler → Lonja de los Paños       2 km en 0 min
+ *                   Bardo → Medina de Túnez              3 km en 0 min
+ *
+ * Los perdonados también van apretados, y decirlo no es cosa de esta cuenta:
+ * apretar un día es discutible, cruzar cien kilómetros en cero minutos no. Un
+ * aviso que salta en el 29 % de los bloques se deja de leer, y entonces no sirve
+ * ninguno.
+ */
+export const MINUTOS_QUE_SE_PERDONAN = 20;
+
+/**
  * La referencia de un tramo: carretera si la hay, línea recta si no.
  * Devuelve null solo si faltan coordenadas.
  */

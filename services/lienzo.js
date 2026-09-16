@@ -18,6 +18,11 @@
 
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
+import {
+  distanciaKm,
+  minutosMinimosEnLlegar,
+  MINUTOS_QUE_SE_PERDONAN,
+} from './distancias.js';
 import { abreEl, abiertoA, horarioPorDias } from './horarios.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { parametro, parametroTexto } from './orquestador.js';
@@ -1637,6 +1642,56 @@ function trayectoEntre(a, b) {
     : null;
 }
 
+/**
+ * DÓNDE ESTÁ UNA TARJETA DEL LIENZO.
+ *
+ * Un sitio de Google trae lat/lon de serie; una excursión las tiene en
+ * `direcciones` desde que el mapa la sitúa. Una comida que solo es una zona, un
+ * traslado o algo sin situar devuelven null, y entonces no se mide.
+ */
+function puntoDeTarjeta(c) {
+  const clave = claveDeTarjeta(c);
+  if (!clave?.id) return null;
+
+  if (clave.tipo === 'sitio' || clave.tipo === 'punto') {
+    const tabla = clave.tipo === 'punto' ? 'puntos_interes' : 'sitios_lugar';
+    const f = una(`SELECT lat, lon FROM ${tabla} WHERE id = ?`, clave.id);
+    if (Number.isFinite(Number(f?.lat))) return { lat: Number(f.lat), lon: Number(f.lon) };
+  }
+
+  const d = direccionDe(clave.tipo, clave.id);
+  return d?.situada ? { lat: Number(d.punto.lat), lon: Number(d.punto.lng) } : null;
+}
+
+/**
+ * EL TRAYECTO, Y SI NO LO HAY, EL SUELO EN LÍNEA RECTA.
+ *
+ * LA OTRA MITAD DEL AVISO MUERTO. Aunque la rama de «no llegas» se ejecutara,
+ * `trayectoEntre` solo sabe leer la tabla `traslados`, que guarda lo que alguien
+ * calculó a propósito entre dos tarjetas concretas. Entre dos visitas
+ * cualesquiera de un día no hay nada ahí, así que devolvía null y el aviso se
+ * callaba igual. Dos motivos para no salir nunca, y por eso ninguno se notaba.
+ *
+ * Cuando no hay trayecto calculado pero sí hay coordenadas, se usa el mínimo en
+ * línea recta —`minutosMinimosEnLlegar`, la misma cuenta que usa la guarda del
+ * reparto— y se dice de dónde sale: `modo: 'recta'`, para que el texto del aviso
+ * no invente un medio de transporte que nadie ha mirado. Sin coordenadas sigue
+ * devolviendo null y sigue sin decirse nada, que es lo correcto: mejor un aviso
+ * de menos que uno inventado.
+ */
+function trayectoOSuelo(a, b) {
+  const calculado = trayectoEntre(a, b);
+  if (calculado) return calculado;
+
+  const pa = puntoDeTarjeta(a);
+  const pb = puntoDeTarjeta(b);
+  if (!pa || !pb) return null;
+
+  const km = distanciaKm(pa, pb);
+  const minutos = minutosMinimosEnLlegar(km);
+  return minutos > 0 ? { minutos, modo: 'recta', km: Math.round(km) } : null;
+}
+
 const COMO_SE_VA = {
   andando: 'andando',
   coche: 'en coche',
@@ -1801,12 +1856,54 @@ function avisosDeTiempo(dias, colocados) {
         });
         continue;
       }
+      }
+    }
 
-      const trayecto = trayectoEntre(a, b);
+    // =========================================================================
+    // Y AHORA «NO LLEGAS», QUE ES LA PAREJA QUE **NO** SE PISA.
+    //
+    // AQUÍ ESTABA EL AVISO MUERTO. El bucle de arriba se cambió para cazar todos
+    // los solapes y no solo los vecinos, y para eso corta en cuanto encuentra
+    // uno que empieza después de que A termine:
+    //
+    //     if (enMinutos(b.hora) >= finDeA) break;
+    //
+    // Con ese corte, TODA pareja que llegaba al «no llegas» cumplía
+    // `empiezaB < acabaA`… que es exactamente la condición del solape de arriba,
+    // que hace `continue`. O sea: la rama de «no llegas» no se ejecutó nunca
+    // desde ese cambio. Se vio en el viaje 101, con dos parejas que ningún aviso
+    // señaló:
+    //
+    //     día 3  Medina de Kairouan 14:30-17:30  →  Café Halfaouine 18:00   93 km
+    //     día 4  Gran Mezquita 09:00-11:00       →  Museo de Kairouan 11:00  11 km
+    //
+    // Son las dos cosas contrarias y por eso van en bucles distintos: el solape
+    // es que B empieza ANTES de que A acabe; no llegar es que empieza DESPUÉS,
+    // pero no lo bastante después. Una pareja no puede ser las dos.
+    // =========================================================================
+    for (let i = 0; i < delDia.length - 1; i++) {
+      const a = delDia[i];
+      const empiezaA = enMinutos(a.hora);
+      if (empiezaA == null) continue;
+      const acabaA = empiezaA + (Number(a.duracionMin) || 0);
+
+      // EL SIGUIENTE DE VERDAD: el primero que empieza cuando A ya ha acabado.
+      // Los que se pisan con A ya los ha contado el bucle de arriba.
+      const b = delDia.slice(i + 1).find((x) => (enMinutos(x.hora) ?? -1) >= acabaA);
+      if (!b) continue;
+      const empiezaB = enMinutos(b.hora);
+
+      // Un traslado ya ES el trayecto. Misma exención que arriba.
+      if (a.tipo === 'traslado' || b.tipo === 'traslado') continue;
+
+      const trayecto = trayectoOSuelo(a, b);
       if (!trayecto) continue;
 
       const llegaria = acabaA + trayecto.minutos;
-      if (llegaria <= empiezaB) continue;
+      // EL MISMO MARGEN QUE USA LA GUARDA DEL REPARTO, y no por comodidad: si el
+      // aviso señalara lo que la guarda deja pasar, la revisión se pasaría las
+      // pasadas persiguiendo un aviso que ella misma no sabe quitar.
+      if (llegaria <= empiezaB + MINUTOS_QUE_SE_PERDONAN) continue;
 
       avisos.push({
         dia: d.n,
@@ -1815,12 +1912,15 @@ function avisosDeTiempo(dias, colocados) {
         idsEnConflicto: [a.id, b.id],
         libreDesde: comoHora(llegaria),
         texto:
-          `Sales de ${a.nombre} a las ${comoHora(acabaA)} y el trayecto son ` +
-          `${comoRato(trayecto.minutos)} ${COMO_SE_VA[trayecto.modo] ?? ''}`.trimEnd() +
-          `: no llegas a ${b.nombre} a las ${comoHora(empiezaB)}` +
-          ` (llegarías a las ${comoHora(llegaria)})`,
+          trayecto.modo === 'recta'
+            ? `Sales de ${a.nombre} a las ${comoHora(acabaA)} y hay ${trayecto.km} km hasta ` +
+              `${b.nombre}: no se hacen en menos de ${comoRato(trayecto.minutos)}, ` +
+              `y lo tienes puesto a las ${comoHora(empiezaB)}`
+            : `Sales de ${a.nombre} a las ${comoHora(acabaA)} y el trayecto son ` +
+              `${comoRato(trayecto.minutos)} ${COMO_SE_VA[trayecto.modo] ?? ''}`.trimEnd() +
+              `: no llegas a ${b.nombre} a las ${comoHora(empiezaB)}` +
+              ` (llegarías a las ${comoHora(llegaria)})`,
       });
-      }
     }
   }
 
