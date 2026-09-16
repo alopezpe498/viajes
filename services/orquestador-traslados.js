@@ -557,6 +557,105 @@ function guardarEleccion(tramo, opcion, horaSalida, bloque, porQue) {
 }
 
 /**
+ * EL TECHO QUE FALTABA: QUE EL TRASLADO DE SALIDA LLEGUE AL AVIÓN.
+ *
+ * EL CASO. Polonia, día 7. El tren de Cracovia a Varsovia salía a las 09:30 y
+ * llegaba a las 12:10; el vuelo de vuelta despegaba a las 11:40. El viaje no se
+ * podía coger, y nadie lo dijo.
+ *
+ * Las 09:30 no eran una frecuencia real: se las inventó el modelo, porque el
+ * prompt le pide literalmente «propón una hora razonable que encaje con esa
+ * frecuencia» cuando el horario del tren son frecuencias en vez de horas. Y
+ * razonable lo era: salía tarde, sin madrugón, como se le pide. Lo que no sabía
+ * es que había un avión, porque a esta fase no se le da esa información.
+ *
+ * Lo único que se comprobaba de la hora era un SUELO —`respetaElRitmo`, no
+ * salgas antes de las ocho—. Faltaba el techo.
+ *
+ * SE CALCULA, NO SE PIDE. La cuenta es una resta encadenada y las restas las
+ * hace el código:
+ *
+ *     estar en el aeropuerto = despegue − presentación
+ *     llegar a la ciudad     = estar en el aeropuerto − acceso al aeropuerto
+ *     salir de la otra       = llegar a la ciudad − (trayecto + salida)
+ *
+ * Si la hora elegida no cabe, se adelanta a la última que sí cabe. Y si ni
+ * siquiera la más temprana que permite el ritmo llega, NO se inventa nada: se
+ * deja la hora como está y el aviso del lienzo lo dirá con los dos números. Un
+ * traslado imposible dicho es mejor que uno posible falso.
+ */
+export function ajustarALaSalidaDelViaje({ viaje, etapas, hasta, eleccion, ritmo, di }) {
+  // Solo importa el último salto: el que deja en la ciudad desde la que se vuela.
+  const ultima = etapas[etapas.length - 1];
+  if (!ultima || hasta.id !== ultima.id) return eleccion;
+
+  // El JSON del vuelo vive en el CANDIDATO, no en el tramo: el tramo solo guarda
+  // a cuál está enganchado. Es el mismo join que hace el lienzo para pintarlo.
+  const vuelta = una(
+    `SELECT c.datos_extra AS vuelo
+       FROM transportes t
+       JOIN candidatos c ON c.id = t.candidato_id
+      WHERE t.viaje_id = ? AND t.tipo = 'vuelo'
+        AND json_extract(t.datos_extra, '$.pata') = 'vuelta'`,
+    viaje.id
+  );
+  if (!vuelta?.vuelo) return eleccion;
+
+  const despegue = horaDeSalidaDelVuelo(vuelta.vuelo);
+  const salida = enMinutosDelDia(despegue);
+  const bloque = eleccion.opcion?.bloque;
+  const sale = enMinutosDelDia(eleccion.hora);
+  if (salida == null || sale == null || !bloque) return eleccion;
+
+  const presentacion = parametro('presentacion_vuelo_min', 150);
+  const acceso = parametro('acceso_por_defecto_min', 45);
+  const viaje_ = (Number(bloque.trayecto) || 0) + (Number(bloque.salida) || 0);
+
+  // La última hora a la que se puede salir y seguir cogiendo ese avión.
+  const tope = salida - presentacion - acceso - viaje_;
+  if (sale <= tope) return eleccion; // cabe: no se toca nada
+
+  const limiteDelRitmo = horaMinimaDeSalida(eleccion.opcion.modo, ritmo);
+  const llegaba = comoHoraDelDia(sale + viaje_);
+
+  if (limiteDelRitmo != null && tope < limiteDelRitmo) {
+    di(
+      `   OJO: con este traslado no se coge el vuelo de vuelta (sale a las ${despegue}). ` +
+        `Habría que salir a las ${comoHoraDelDia(tope)} y tu ritmo no baja de las ` +
+        `${comoHoraDelDia(limiteDelRitmo)}. Lo dejo como está y el lienzo lo avisará.`,
+      ORIGENES.ninguno
+    );
+    return eleccion;
+  }
+
+  const nueva = comoHoraDelDia(tope);
+  di(
+    `   Adelanto la salida de las ${eleccion.hora} a las ${nueva}: el vuelo de vuelta sale ` +
+      `a las ${despegue} y saliendo a las ${eleccion.hora} se llegaba a las ${llegaba}.`,
+    ORIGENES.ninguno
+  );
+  return {
+    ...eleccion,
+    hora: nueva,
+    porQue:
+      `${eleccion.porQue ? `${eleccion.porQue} ` : ''}Adelantada para llegar al vuelo de ` +
+      `vuelta de las ${despegue}.`,
+  };
+}
+
+/** La hora de despegue de la vuelta, del JSON del vuelo. */
+function horaDeSalidaDelVuelo(vueloExtra) {
+  try {
+    const tramos = JSON.parse(vueloExtra)?.tramos ?? [];
+    const t = tramos.length === 1 ? tramos[0] : tramos.find((x) => x.tramo === 'vuelta') ?? tramos[1];
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t?.horaSalida ?? '').trim());
+    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * DEJA DICHO EN EL VIAJE QUE ESE TRASLADO ES UN MADRUGÓN.
  *
  * No cambia la decisión: cuando no hay alternativa razonable, el vuelo de las
@@ -1135,6 +1234,28 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
         avisarDeMadrugon(viaje, desde.nombre_ciudad, hasta.nombre_ciudad, eleccion, limite, di);
       }
     }
+
+    // --- Y QUE LLEGUE A TIEMPO AL AVIÓN, QUE ES LO QUE NADIE MIRABA --------
+    //
+    // El caso: Polonia, día 7. El tren de Cracovia a Varsovia salía a las 09:30
+    // —hora que se inventó la IA, porque el prompt solo le pide «una hora
+    // razonable» cuando el horario son frecuencias— y llegaba a las 12:10. El
+    // vuelo de vuelta despegaba a las 11:40. El viaje no se podía coger.
+    //
+    // La hora del vuelo existía desde la fase 1 y esta fase no la miraba: sus
+    // datos son ciudad, ciudad, día, ritmo y opciones. Nada del avión.
+    //
+    // Hasta ahora lo único que se comprobaba era un SUELO —no salgas antes de
+    // las 8— y lo que faltaba era el techo. Se calcula aquí y no se le pide al
+    // modelo: es una resta, y las restas las hace el código.
+    eleccion = ajustarALaSalidaDelViaje({
+      viaje,
+      etapas,
+      hasta,
+      eleccion,
+      ritmo,
+      di,
+    });
 
     guardarEleccion(tramo, eleccion.opcion, eleccion.hora, eleccion.opcion.bloque, eleccion.porQue);
     resueltos += 1;
