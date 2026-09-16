@@ -1524,8 +1524,25 @@ export function enlazarVuelosConTramos(viajeId) {
  * dejaba abierta.
  */
 export function nochePorPeso(ruta, candidatas, minimoNoches) {
-  const pesoDe = (nombre) =>
-    candidatas.find((c) => normalizarNombre(c.nombre) === normalizarNombre(nombre))?.peso ?? 3;
+  const deLaCandidata = (nombre) =>
+    candidatas.find((c) => normalizarNombre(c.nombre) === normalizarNombre(nombre));
+  const pesoDe = (nombre) => deLaCandidata(nombre)?.peso ?? 3;
+
+  // EL TECHO DE NOCHES DE UNA CANDIDATA ES UN CONTRATO, COMO EL SUELO.
+  //
+  // Esta función miraba el peso, las noches y el mínimo, y nunca el máximo. En
+  // el Polonia de hoy le dio una tercera noche a Wrocław, que había declarado
+  // «2-2»: la propia ciudad decía que con dos noches está vista y se le puso
+  // una más, quitándosela a Cracovia. El mínimo se respeta desde siempre y se
+  // razona cuando se incumple; el máximo se ignoraba en silencio, que es la
+  // mitad de un contrato.
+  //
+  // Sin techo declarado no hay techo: una candidata que no dijo su máximo no se
+  // limita con un número inventado aquí.
+  const techoDe = (nombre) => {
+    const n = Number(deLaCandidata(nombre)?.nochesMax);
+    return Number.isFinite(n) && n > 0 ? n : Infinity;
+  };
 
   // Las paradas de paso (0 noches en un extremo) no entran en el reparto.
   const paradas = ruta.filter((p) => p.noches > 0);
@@ -1537,6 +1554,8 @@ export function nochePorPeso(ruta, candidatas, minimoNoches) {
     if (!mismoPeso(pesoDe(corta.ciudad), pesoMaximo)) continue;
     if (corta.noches > minimoNoches) continue;
     if (corta.motivo) continue; // lo explica: es la excepción que la regla permite
+    // Y si ya está en su techo, no le falta una noche: tiene las que pidió.
+    if (corta.noches + 1 > techoDe(corta.ciudad)) continue;
 
     // DOS CLASES DE DONANTE, y las dos hacen falta.
     //
