@@ -154,11 +154,9 @@ const ICONO_TIPO = {
       <button class="pestana <%= vista.pestana === 'llegar' ? 'pestana--activa' : '' %>"
               type="button" role="tab"
               aria-selected="<%= vista.pestana === 'llegar' %>" data-panel="panel-llegar" data-ancla="llegar">Cómo llegar</button>
-      <%# LA PESTAÑA DEL MAPA LLEVA AL MAPA DEL VIAJE, que es el único que hay.
-          Aquí vivía un mapa pequeño con su propio servicio, su propio cliente y
-          su propio modelo de datos: dos mapas que enseñaban lo mismo de dos
-          maneras y había que arreglar por duplicado. %>
-      <a class="pestana" href="/viaje/<%= viaje.id %>/mapa?etapa=<%= etapa.id %>">Mapa</a>
+      <%# Aquí había una cuarta pestaña, «Mapa», que no era una pestaña: era un
+          enlace al mapa del viaje disfrazado de una. Al mapa se llega ya desde
+          «Mi ruta» y desde el lienzo, así que sobraba. %>
     </div>
 
     <%# ---------------------- 1) QUÉ VER ---------------------- %>

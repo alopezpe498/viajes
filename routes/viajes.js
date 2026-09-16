@@ -1074,7 +1074,11 @@ router.get('/descubrir/:destinoId', cargarDestino, (req, res) => {
  * Se valida contra la lista de siempre: cualquier cosa rara cae en la primera,
  * que es lo que se veía antes de todo esto.
  */
-const PESTANAS = ['ver', 'dormir', 'llegar', 'mapa'];
+// «mapa» sale de la lista con la pestaña. Era la única de las cuatro que no
+// tenía panel —un enlace al mapa del viaje disfrazado de pestaña—, así que
+// dejarla aquí permitiría entrar con `?p=mapa` y quedarse mirando una etapa con
+// los tres paneles ocultos y ninguno que enseñar.
+const PESTANAS = ['ver', 'dormir', 'llegar'];
 const SUBPESTANAS = ['sub-sitios', 'sub-excursiones', 'sub-comer', 'sub-moverse'];
 
 /**
