@@ -494,6 +494,12 @@ function ocupacionDelSalto(t) {
     salidaReal: hora,
     minutos,
     fin: sumarMinutos(hora, despues),
+    // Lo que se va MONTADO, aparte del total. Es lo único comparable con la
+    // referencia por carretera, y sale de aquí para no volver a parsear
+    // `datos_extra` en quien lo necesite.
+    trayecto: Number.isFinite(Number(bloque?.trayecto)) && Number(bloque.trayecto) > 0
+      ? Number(bloque.trayecto)
+      : null,
   };
 }
 
@@ -596,6 +602,9 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     let salidaReal = null;
     // Lo que ha costado llegar, solo en el bloque de ida.
     let esfuerzo = null;
+    // Lo que se va MONTADO, solo en un salto. Se declara aquí porque el `push`
+    // de abajo está fuera del if y `ocupa` vive dentro de su rama.
+    let trayectoMin = null;
 
     if (donde === 'ida') {
       // Se llega el dia en que empieza la primera parada.
@@ -633,6 +642,7 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       // Un salto se hace el dia en que empieza la etapa a la que se llega.
       dia = diaDeLaFecha(destino.fecha_inicio) ?? (diasDeEtapa.get(destino.id) ?? [])[0] ?? null;
       const ocupa = ocupacionDelSalto(t);
+      trayectoMin = ocupa.trayecto;
       hora = ocupa.hora;
       duracionMin = ocupa.minutos;
       horaFin = ocupa.fin;
@@ -667,13 +677,16 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       donde,
       icono,
       texto,
-      // LAS DOS DURACIONES, PARA PODER COMPARARLAS.
+      // LAS TRES DURACIONES, PARA PODER COMPARARLAS.
       //
       // `referenciaMin` es la ruta por carretera que mide Google entre las dos
-      // ciudades; `puertaMin`, lo que dura el medio elegido de puerta a puerta.
-      // Viajan aquí para que el validador pueda ver si se contradicen, que es lo
-      // que destapa un trayecto al que le falta contar un tramo.
+      // ciudades. `trayectoMin` es lo que se va montado según el medio elegido, y
+      // es la que se compara con ella: las dos son tiempo de camino. `puertaMin`
+      // es el total con acceso, antelación y salida, y sirve para pintar, no para
+      // comparar — sumarle los márgenes a un lado de una división falsea el
+      // cociente.
       referenciaMin: t.fuente_distancia === 'carretera' ? t.duracion_min ?? null : null,
+      trayectoMin,
       puertaMin: t.duracion_puerta_min ?? null,
       ciudades: origen && destino ? `${origen.nombre_ciudad} → ${destino.nombre_ciudad}` : null,
       // Solo en el bloque de ida: cuánto se ha volado y cuántos husos se han
@@ -1211,10 +1224,20 @@ function bordesDeFranja(clave) {
  * CUANDO EL TRASLADO ELEGIDO NO SE CREE A SÍ MISMO.
  *
  * Un tramo tiene dos medidas del mismo camino: la ruta que mide Google entre las
- * dos ciudades y el puerta a puerta del medio elegido. Difieren siempre un poco
- * —un tren no va por la carretera, y el puerta a puerta suma accesos— y eso está
- * bien. Lo que no puede ser es que la referencia DOBLE a lo elegido: entonces al
- * trayecto le falta contar algo.
+ * dos ciudades y el trayecto del medio elegido. Difieren siempre un poco —un tren
+ * no va por la carretera— y eso está bien. Lo que no puede ser es que la
+ * referencia DOBLE al trayecto: entonces al trayecto le falta contar algo.
+ *
+ * SE COMPARA CONTRA EL TRAYECTO, NO CONTRA EL PUERTA A PUERTA, igual que hace su
+ * hermano `avisarDeSaltosQueNoCuadran`. Los dos números tienen que medir lo mismo
+ * para que su cociente signifique algo, y la referencia de Google es tiempo de
+ * CONDUCCIÓN: el puerta a puerta lleva además el acceso, la antelación y la
+ * salida, que no son camino.
+ *
+ * Aquí eso no producía avisos falsos —al sumar márgenes, el puerta a puerta solo
+ * puede hacer el cociente más pequeño, y este aviso mira hacia el otro lado—,
+ * pero sí podía CALLAR uno de verdad: un ferry sin contar con una antelación
+ * grande se acercaba al umbral desde abajo y se escapaba.
  *
  * EL CASO QUE ORIGINA ESTO. Heraclión → Nafplio: Google dice 10h34 y el coche
  * elegido 3h45 puerta a puerta. La ficha del coche lo confiesa en su propia
@@ -1242,9 +1265,9 @@ function avisosDeTrasladoIncompleto(fijos) {
   const avisos = [];
 
   for (const f of fijos) {
-    if (f.donde !== 'salto' || !f.referenciaMin || !f.puertaMin) continue;
+    if (f.donde !== 'salto' || !f.referenciaMin || !f.trayectoMin) continue;
 
-    const veces = f.referenciaMin / f.puertaMin;
+    const veces = f.referenciaMin / f.trayectoMin;
     if (veces < factor) continue;
 
     avisos.push({
@@ -1253,7 +1276,7 @@ function avisosDeTrasladoIncompleto(fijos) {
       idsAfectados: [],
       texto:
         `${f.ciudades ?? 'Este traslado'}: el medio elegido dice ` +
-        `${comoRatoCorto(f.puertaMin)} puerta a puerta, pero la ruta real entre las dos ` +
+        `${comoRatoCorto(f.trayectoMin)} de trayecto, pero la ruta real entre las dos ` +
         `ciudades son ${comoRatoCorto(f.referenciaMin)} (${veces.toFixed(1)} veces más). ` +
         'Al trayecto le falta contar algún tramo —un ferry, un enlace—, así que la hora ' +
         'de llegada de aquí arriba no es de fiar. Compruébalo antes de montar el día.',
