@@ -719,6 +719,54 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     }
   }
 
+  // --- DESANDAR EL CAMINO CUESTA, Y HASTA AHORA ERA GRATIS -----------------
+  //
+  // EL CASO. Polonia entra por Varsovia y baja a Cracovia, y desde Cracovia hay
+  // vuelos directos a Barcelona ese mismo día. Lo natural es salir por donde
+  // acaba la ruta. El motor eligió volver a Varsovia: una parada de cero noches
+  // y un tren de 3h35 la mañana del vuelo que, además, no llegaba a tiempo.
+  //
+  // Ganó por 3,4 puntos sobre 1820 —un 0,19%— y esos 3,4 puntos eran diez
+  // minutos nominales de último día. Enfrente, el retroceso entero valía CERO
+  // en la cuenta: el término de las noches es `noches × peso`, y una parada de
+  // cero noches aporta cero. El tren, el día perdido y la noche de paso no los
+  // miraba nadie.
+  //
+  // LA REGLA EXISTÍA Y ESTABA MUERTA. Vivía en `porMinutosDeVuelo()`, declarada
+  // y nunca llamada desde que la puerta la elige el ranking en vez de la IA, y
+  // en la regla 1 del prompt del paso 2, que ya no decide nada por lo mismo. El
+  // objeto hasta calcula `misma` y solo lo leía la función muerta.
+  //
+  // SOLO SI HAY ALTERNATIVA DE VERDAD. Repetir ciudad es legítimo muchas veces:
+  // un destino con un solo aeropuerto, o una ciudad final sin vuelos. La
+  // penalización se aplica únicamente cuando existe una combinación asimétrica
+  // QUE ADEMÁS TIENE REPARTO LEGAL, que es la única definición de «alternativa
+  // viable» que este código maneja. Sin ella no se toca nada y la simétrica gana
+  // como siempre.
+  //
+  // CUÁNTO CUESTA. Medio día útil —6,5 de las 13 horas—, ponderado por el peso
+  // de la ciudad que se repite, para que hable la misma moneda que el resto de
+  // la cuenta. La calibración importa y es deliberada: queda POR DEBAJO de una
+  // noche entera (13 h × peso) y muy POR ENCIMA de cualquier diferencia de
+  // horarios de vuelo. Así desandar pierde contra un reparto de noches mejor
+  // —que es cuando retroceder sí compensa— y gana a los diez minutos de último
+  // día que decidieron esto.
+  //
+  // Lo que NO hace es medir el traslado real de vuelta: eso es el coste de
+  // tierra en la puntuación de la puerta, y va con la tanda del motor de
+  // repartos. Esto es un precio declarado, no una medida.
+  const hayAsimetricaViable = combinaciones.some((c) => !c.misma && c.repartos.length);
+  const cuestaDesandar = Math.max(0, parametro('desandar_cuesta_horas', 6.5));
+
+  if (hayAsimetricaViable && cuestaDesandar > 0) {
+    for (const c of combinaciones) {
+      if (!c.misma) continue;
+      const peso = puertas.find((p) => normalizarNombre(p.nombre) === normalizarNombre(c.salida.ciudad))?.peso ?? 3;
+      c.penalizacion = cuestaDesandar * peso;
+      c.puntos -= c.penalizacion;
+    }
+  }
+
   // GANA LA QUE DEJA MÁS DÍA, NO LA QUE VUELA MENOS.
   //
   // Con el criterio viejo salió elegida una vuelta desde Cracovia a las 9:40:
@@ -762,7 +810,10 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       'ciudades_y_noches',
       `   ${c.id}: entra por ${c.entrada.ciudad}, sale por ${c.salida.ciudad} · ` +
         `${c.puntos.toFixed(1)} h útiles ponderadas ` +
-        `(${c.util.toFixed(1)} de los vuelos + ${c.nochesUtil.toFixed(1)} de las noches) · ` +
+        `(${c.util.toFixed(1)} de los vuelos + ${c.nochesUtil.toFixed(1)} de las noches` +
+        // LA PENALIZACIÓN, DICHA. Una resta que no se ve es una mano invisible:
+        // quien lea el registro tiene que poder sumar los números y que le den.
+        `${c.penalizacion ? ` − ${c.penalizacion.toFixed(1)} por volver a ${c.salida.ciudad}` : ''}) · ` +
         `${comoTexto(c.total)} de vuelo · reparto: ${conQue}` +
         // UN CERO SIEMPRE VIENE CON SU MOTIVO. Sin esto parece un fallo del
         // programa y no lo es: son dos días de extremo que no dan de sí.

@@ -409,6 +409,7 @@ export function migrarEsquema() {
   migracionNombresDeCiudadDelCatalogo();
   migracionRubricaDeCiudades();
   migracionCortesDeBanda();
+  migracionDesandarCuesta();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5748,6 +5749,44 @@ function migracionCortesDeBanda() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: cortes de banda recalibrados (un 5 vuelve a ser excepcional).');
+  return true;
+}
+
+/**
+ * DESANDAR EL CAMINO CUESTA, Y HASTA AHORA ERA GRATIS.
+ *
+ * El ranking de puertas no tenia ninguna opinion sobre entrar y salir por la
+ * misma ciudad. La regla que si la tenia vivia en una funcion muerta y en una
+ * regla de prompt que ya no decide nada. Resultado: Polonia volvia a Varsovia
+ * —parada de cero noches y tren de 3h35 la mañana del vuelo— en vez de salir por
+ * Cracovia, que es donde acaba la ruta y tiene vuelos directos.
+ *
+ * Medio dia util de los trece, ponderado por el peso de la ciudad que se repite.
+ * La calibracion es deliberada: por DEBAJO de una noche entera (13 h x peso), asi
+ * que un reparto de noches mejor sigue ganando —que es cuando retroceder si
+ * compensa—, y muy por ENCIMA de cualquier diferencia de horarios de vuelo, que
+ * es lo que decidio esto con 3,4 puntos sobre 1820.
+ */
+function migracionDesandarCuesta() {
+  const CLAVE = '2026-09-desandar-cuesta';
+  if (yaAplicada(CLAVE)) return false;
+
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n + 1;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run(
+    'desandar_cuesta_horas',
+    '6.5',
+    '6.5',
+    'Horas utiles que se le restan a una puerta que entra y sale por la misma ciudad, cuando hay otra viable que no obliga a volver',
+    'horas',
+    orden
+  );
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: volver a la ciudad de entrada deja de salir gratis.');
   return true;
 }
 
