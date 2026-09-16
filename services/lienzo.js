@@ -604,6 +604,11 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     // Lo que se va MONTADO, solo en un salto. Se declara aquí porque el `push`
     // de abajo está fuera del if y `ocupa` vive dentro de su rama.
     let trayectoMin = null;
+    // A qué hora hay que ESTAR en el aeropuerto, solo en el bloque de vuelta.
+    // Es el límite de verdad de ese día: llegar cuando el avión ya embarca no es
+    // llegar. Se guarda porque el aviso de «el traslado de salida no llega» lo
+    // necesita, y hasta ahora solo existía dentro del texto que se pinta.
+    let horaEnPuerta = null;
 
     if (donde === 'ida') {
       // Se llega el dia en que empieza la primera parada.
@@ -628,6 +633,7 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       // un vuelo de las 19:30, y sí choca: a esa hora ya hay que estar dentro.
       const despegue = horas.salida;
       const enElAeropuerto = sumarMinutos(despegue, -margenes.presentacionVuelo);
+      horaEnPuerta = enElAeropuerto;
       hora = sumarMinutos(despegue, -antelacionDe('vuelo', margenes)) ?? despegue;
       horaFin = null; // desde que se sale, el día ya no es de esta ciudad
       franjaPorDefecto = 'tarde';
@@ -668,6 +674,8 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       // La del billete. La de arriba es cuándo hay que salir de casa, que es lo
       // que ocupa el día; esta es la que se dice en voz alta.
       salidaReal: salidaReal ?? hora,
+      // Solo en la vuelta: la hora de estar dentro del aeropuerto.
+      horaEnPuerta,
       // Hasta cuándo dura y cuándo queda el día libre. Lo usan los avisos —para
       // ver qué se ha puesto encima del viaje— y la fase 6, que necesita saber a
       // qué hora empieza de verdad el día.
@@ -997,6 +1005,7 @@ function calcularAvisos(dias, colocados, fijos, viajeId) {
 
   // 6a) Y si la duración del traslado elegido no se cree.
   avisos.push(...avisosDeTrasladoIncompleto(fijos));
+  avisos.push(...avisosDeLaSalidaQueNoLlega(fijos));
 
   // 6b) Y si algo pisa el vuelo de llegada o el de salida, a la hora exacta.
   avisos.push(...avisosContraFijos(dias, colocados, fijos));
@@ -1283,6 +1292,67 @@ function avisosDeTrasladoIncompleto(fijos) {
   }
 
   return avisos;
+}
+
+/**
+ * EL TRASLADO DE SALIDA QUE NO LLEGA AL VUELO.
+ *
+ * EL CASO QUE ORIGINA ESTO. Polonia, día 7: el tren de Cracovia a Varsovia sale
+ * a las 08:35 y llega a las 12:10, y el vuelo de vuelta despega a las 11:40. El
+ * avión se va media hora antes de que el tren entre en la estación. El viaje no
+ * se puede coger, y el lienzo lo entregaba con CERO avisos.
+ *
+ * Y NO ES QUE FALTARA EL DATO: los dos están en `fijos`, el mismo día, a tres
+ * líneas uno de otro. El validador comprobaba que las VISITAS no se pasaran de
+ * la hora de salir —de ahí el aviso que echó el Palacio de la Cultura— pero
+ * trataba el salto como una ocupación más del día, no como algo que tiene que
+ * LLEGAR a tiempo. Dos datos que existen y que nadie restaba.
+ *
+ * SE MIDE CONTRA LA HORA DE ESTAR EN EL AEROPUERTO, no contra la del despegue:
+ * llegar cuando el avión ya está embarcando no es llegar. Esa hora es la que el
+ * propio bloque de la vuelta ya trae calculada con su antelación.
+ *
+ * NO SE ARREGLA, SE DICE. Arreglarlo de verdad es que la conexión de salida sea
+ * condición para que un reparto de noches sea legal, y eso vive tres fases más
+ * arriba. Aquí lo que se puede hacer —y hasta hoy no se hacía— es no entregar un
+ * viaje imposible en silencio.
+ */
+function avisosDeLaSalidaQueNoLlega(fijos) {
+  const avisos = [];
+
+  const vueltas = fijos.filter((f) => f.donde === 'vuelta');
+  for (const vuelta of vueltas) {
+    // El salto del MISMO día: es el único que puede chocar con este vuelo.
+    const salto = fijos.find((f) => f.donde === 'salto' && f.dia === vuelta.dia);
+    if (!salto) continue;
+
+    const llega = enMinutos(salto.horaFin);
+    // `vuelta.hora` es la hora de salir hacia el aeropuerto; la de estar allí la
+    // trae el bloque. Se compara contra ésa, que es el límite de verdad.
+    const enElAeropuerto = enMinutos(vuelta.horaEnPuerta ?? null) ?? enMinutos(vuelta.hora);
+    if (llega == null || enElAeropuerto == null) continue;
+    if (llega <= enElAeropuerto) continue;
+
+    const tarde = llega - enElAeropuerto;
+    avisos.push({
+      dia: vuelta.dia,
+      tipo: 'salida-que-no-llega',
+      idsAfectados: [],
+      texto:
+        `${salto.ciudades ?? 'El traslado de salida'} llega a las ${salto.horaFin} y para ` +
+        `este vuelo hay que estar en el aeropuerto a las ${comoHoraDelDiaLocal(enElAeropuerto)}: ` +
+        `llegas ${comoRatoCorto(tarde)} tarde. Tal y como está, el vuelo no se coge. ` +
+        'O sales antes, o la última noche tiene que dormirse en la ciudad del aeropuerto.',
+    });
+  }
+
+  return avisos;
+}
+
+/** Minutos del día a «08:25». Local, para no arrastrar el de traslados. */
+function comoHoraDelDiaLocal(min) {
+  const m = Math.max(0, Math.round(min));
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
 function avisosDeTraslado(dias, colocados, fijos) {
