@@ -2194,9 +2194,27 @@ a  { color: var(--acento); }
   justify-content: center;
   flex-shrink: 0;
 }
-.etapa__info { flex: 1; min-width: 0; }
+/* LA COLUMNA DEL MEDIO NO PUEDE ENCOGER MÁS QUE SU FECHA.
+   Estaba en `min-width: 0`, que es lo que deja a un hijo de flex achicarse por
+   debajo de su contenido. Con el nombre de la ciudad, el selector de noches y
+   la píldora del hotel compitiendo por el ancho, esta columna se quedaba tan
+   estrecha que el rango de fechas se partía palabra por palabra: «16 / oct / →
+   / 20 / oct», cinco líneas para quince caracteres.
+   El suelo son los ~100 px que ocupa la cadena más larga que puede salir
+   —«28 sep → 28 sep», con los meses de tres letras de `ruta.js`— y un poco de
+   aire. El nombre de la ciudad sigue pudiendo partirse: es el que sobra cuando
+   falta sitio, y es de longitud variable. */
+.etapa__info { flex: 1; min-width: 116px; }
 .etapa__nombre { display: block; font-weight: 700; font-size: 16px; }
-.etapa__fechas { display: block; font-size: 13px; color: var(--texto-2); margin-top: 2px; }
+/* Y en una línea, como `.etapa__valor` y `.etapa__dormir`, que ya llevaban lo
+   mismo por este motivo: un dato corto y de ancho conocido no se parte. */
+.etapa__fechas {
+  display: block;
+  font-size: 13px;
+  color: var(--texto-2);
+  margin-top: 2px;
+  white-space: nowrap;
+}
 
 .etapa__noches {
   display: flex;
