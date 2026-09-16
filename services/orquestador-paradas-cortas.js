@@ -33,6 +33,7 @@
 import { todas, una, ejecutar } from '../db/index.js';
 import { parametro } from './orquestador.js';
 import { minutosDeVisita, cierraALasMinutos, lienzoDeViaje, horaLibreEn, FRANJAS } from './lienzo.js';
+import { abreEl } from './horarios.js';
 
 /** "07:45" -> 465. */
 function enMinutos(hora) {
@@ -165,7 +166,31 @@ export function imprescindiblesDeParada(etapa) {
     nombre: s.nombre,
     minutos: minutosDeVisita(s.tiempo_visita) ?? parametro('visita_por_defecto_min', 90),
     cierraA: cierraALasMinutos(s),
+    // El TEXTO del horario, no `cierra_dias`. Es la misma fuente que usan los
+    // avisos del lienzo y por la misma razón: una lista guardada se queda vieja
+    // y el texto no. Aquí sirve para saber qué días de la semana cierra.
+    horarios: s.horarios ?? null,
   }));
+}
+
+/**
+ * Los días de la semana que este sitio NO abre, leídos de su texto.
+ *
+ * Sin texto no se devuelve nada, que es distinto de devolver «ninguno»: un sitio
+ * del que no se sabe el horario no puede hacer que una ciudad salga mal juzgada.
+ */
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/** «los lunes», «los sábados». Solo sábado y domingo cambian en plural. */
+function enPlural(dias) {
+  return dias
+    .map((n) => (n === 0 || n === 6 ? `${DIAS_SEMANA[n]}s` : DIAS_SEMANA[n]))
+    .join(' y ');
+}
+
+function diasQueNoAbre(sitio) {
+  if (!sitio.horarios) return [];
+  return [0, 1, 2, 3, 4, 5, 6].filter((d) => abreEl(sitio.horarios, d) === false);
 }
 
 /**
@@ -469,8 +494,14 @@ function estaColocado(viajeId, sitioId) {
  * devuelve un sí/no: devuelve DÓNDE, porque un aviso que dice «cabría el día 5
  * por la tarde» se puede comprobar y uno que dice «cabría» no.
  */
-function huecoDeVerdad(lienzo, dias, duracion, cierraA = null, franjas = FRANJAS) {
+function huecoDeVerdad(lienzo, dias, duracion, cierraA = null, franjas = FRANJAS, cierraDias = null) {
   for (const dia of dias) {
+    // UN DÍA EN QUE EL SITIO CIERRA NO ES UN HUECO, por libre que esté.
+    if (cierraDias?.length) {
+      const fecha = lienzo.dias.find((d) => d.n === dia)?.fecha;
+      const queDia = fecha ? new Date(`${fecha}T12:00:00`).getDay() : null;
+      if (queDia !== null && cierraDias.includes(queDia)) continue;
+    }
     for (const f of franjas) {
       const hora = horaLibreEn(lienzo, { dia, franja: f.clave, duracion, cierraA });
       if (hora) return { dia, franja: f.clave, etiqueta: f.etiqueta, hora };
@@ -554,18 +585,42 @@ export function revisarElReparto(viaje, di = () => {}) {
     const noLlegaron = suyos
       .filter((x) => !estaColocado(viaje.id, x.id))
       .map((x) => {
-        const donde = huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA);
-        const sinSuHorario = donde ? null : huecoDeVerdad(lienzo, dias, x.minutos);
+        // Y UNA CUARTA PREGUNTA, QUE ANTES NO SE HACÍA.
+        //
+        // `horaLibreEn` respeta la hora de cierre pero no el día de la semana, y
+        // eso estaba escrito arriba como «el error prudente»: se deja de gritar
+        // en algún caso. El caso resultó no ser raro. Un imprescindible que se
+        // cayó porque cerraba justo esos días encontraba «hueco» en el día que
+        // cerraba y salía clasificado como «el lienzo eligió otra cosa», que es
+        // la etiqueta más inocente de las cuatro y la que hace que nadie mire.
+        //
+        // Ahora los días de cierre se saben ANTES de repartir, así que esta
+        // pregunta ya se puede hacer sin inventarse nada.
+        const cierraDias = diasQueNoAbre(x);
+        const donde = huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA, FRANJAS, cierraDias);
+        const sinElDia = donde ? null : huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA);
+        const sinSuHorario = donde || sinElDia ? null : huecoDeVerdad(lienzo, dias, x.minutos);
         return {
           ...x,
           donde,
-          // Las tres razones posibles de que no esté, y son distintas:
-          por: donde ? 'el lienzo eligió otra cosa' : sinSuHorario ? 'su horario' : 'falta de tiempo',
+          cierraDias,
+          // Dónde SÍ habría cabido de no cerrar ese día. Es lo que convierte el
+          // aviso en algo comprobable.
+          cabriaEn: sinElDia,
+          // Las cuatro razones posibles de que no esté, y son distintas:
+          por: donde
+            ? 'el lienzo eligió otra cosa'
+            : sinElDia
+              ? 'su día de cierre'
+              : sinSuHorario
+                ? 'su horario'
+                : 'falta de tiempo',
         };
       });
 
     const porTiempo = noLlegaron.filter((x) => x.por === 'falta de tiempo');
     const porHorario = noLlegaron.filter((x) => x.por === 'su horario');
+    const porDiaDeCierre = noLlegaron.filter((x) => x.por === 'su día de cierre');
     const conHueco = noLlegaron.filter((x) => x.donde);
 
     // Y al revés: ¿queda sitio para una visita más? Solo importa si no falta
@@ -575,7 +630,18 @@ export function revisarElReparto(viaje, di = () => {}) {
 
     const que = porTiempo.length ? 'corta' : !noLlegaron.length && sobra ? 'holgada' : 'ajustada';
 
-    veredictos.push({ etapa, que, dias, suyos, noLlegaron, porTiempo, porHorario, conHueco, sobra });
+    veredictos.push({
+      etapa,
+      que,
+      dias,
+      suyos,
+      noLlegaron,
+      porTiempo,
+      porHorario,
+      porDiaDeCierre,
+      conHueco,
+      sobra,
+    });
   }
 
   // --- El registro se lleva TODAS, salgan como salgan --------------------
@@ -614,6 +680,13 @@ export function revisarElReparto(viaje, di = () => {}) {
     conRecorte(
       v.porHorario,
       (x) => `      · ${x.nombre} no entró por su horario (cierra pronto), no por falta de tiempo.`
+    );
+    conRecorte(
+      v.porDiaDeCierre,
+      (x) =>
+        `      · ${x.nombre} no entró porque cierra los ${enPlural(x.cierraDias)} y esta parada ` +
+        `no pisa ningún otro día. Habría cabido el día ${x.cabriaEn.dia} ` +
+        `(${x.cabriaEn.etiqueta.toLowerCase()}, ${x.cabriaEn.hora}) si abriera.`
     );
     conRecorte(
       v.conHueco,
@@ -656,6 +729,57 @@ export function revisarElReparto(viaje, di = () => {}) {
         `mañana a la noche. Eso solo lo arregla más tiempo.${deDonde} ` +
         'Esto solo avisa: no se ha cambiado nada del viaje.'
     );
+  }
+
+  // --- LO QUE SE CAYÓ PORQUE CERRABA ESE DÍA ------------------------------
+  //
+  // Esto no cambia el veredicto de la parada y no tiene por qué: no le falta
+  // tiempo, le falta OTRO DÍA DE LA SEMANA. Es un aviso aparte porque la
+  // decisión también es de otro tipo —mover o añadir una noche, o resignarse— y
+  // la toma quien viaja, no esto.
+  //
+  // LO QUE SE AFIRMA AQUÍ ESTÁ CALCULADO; LO QUE NO, SE DICE COMO SOSPECHA. Que
+  // el sitio habría cabido el día tal está comprobado hueco a hueco. Que una
+  // noche más lo salvaría se sabe seguro solo para la noche añadida AL FINAL de
+  // la parada, que es la única cuyo día de la semana se puede nombrar sin
+  // simular el calendario entero: mover una noche desde otra ciudad desplaza las
+  // fechas de todo lo que viene detrás, y eso todavía no se sabe calcular.
+  for (const v of juzgadas) {
+    if (!v.porDiaDeCierre.length) continue;
+
+    const dias = v.dias.slice().sort((a, b) => a - b);
+    const ultimo = lienzo.dias.find((d) => d.n === dias[dias.length - 1]);
+    const finDeParada = ultimo?.fecha ? new Date(`${ultimo.fecha}T12:00:00`).getDay() : null;
+    const unaMas = finDeParada === null ? null : (finDeParada + 1) % 7;
+
+    for (const x of v.porDiaDeCierre) {
+      const abriria = unaMas !== null && !x.cierraDias.includes(unaMas);
+      const conUnaNoche = abriria
+        ? ` Una noche más en ${v.etapa.nombre_ciudad} añadiría un ${DIAS_SEMANA[unaMas]}, y ese día SÍ abre; ` +
+          'ojo a que eso corre las fechas de todo lo que viene detrás, y a que puede salirse del ' +
+          'rango de noches que se le puso a esta ciudad.'
+        : unaMas !== null
+          ? ` Una noche más añadiría un ${DIAS_SEMANA[unaMas]}, que también cierra: por ahí no se arregla.`
+          : '';
+
+      const moviendo = holgadas.length
+        ? ` ${holgadas.map((h) => h.etapa.nombre_ciudad).join(' y ')} ` +
+          `${holgadas.length === 1 ? 'va holgada' : 'van holgadas'}: de ahí podría salir esa noche, ` +
+          'aunque al mover fechas cambian los días de la semana de toda la ruta y habría que volver a mirarlo.'
+        : '';
+
+      meter(
+        'alerta',
+        `${v.etapa.nombre_ciudad}: ${x.nombre} se cae porque cierra los ${enPlural(x.cierraDias)}`,
+        `${x.nombre} es un imprescindible de ${v.etapa.nombre_ciudad} y no ha entrado en el plan. ` +
+          `No es falta de tiempo: habría cabido el día ${x.cabriaEn.dia} ` +
+          `(${x.cabriaEn.etiqueta.toLowerCase()}, a partir de las ${x.cabriaEn.hora}), pero cierra ` +
+          `los ${enPlural(x.cierraDias)} y esta parada no pisa ningún día en que abra.` +
+          conUnaNoche +
+          moviendo +
+          ' Esto solo avisa: no se ha cambiado nada del viaje.'
+      );
+    }
   }
 
   for (const v of holgadas) {
