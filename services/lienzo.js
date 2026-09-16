@@ -609,6 +609,8 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
     // llegar. Se guarda porque el aviso de «el traslado de salida no llega» lo
     // necesita, y hasta ahora solo existía dentro del texto que se pinta.
     let horaEnPuerta = null;
+    // El aeropuerto REAL del vuelo, que no tiene por que ser el de la ciudad.
+    let aeropuerto = null;
 
     if (donde === 'ida') {
       // Se llega el dia en que empieza la primera parada.
@@ -619,8 +621,9 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       horaFin = sumarMinutos(hora, margenes.salidaAeropuerto);
       franjaPorDefecto = 'manana';
       icono = 'ti-plane-arrival';
+      aeropuerto = horas.hasta ?? null;
       texto =
-        `Llegada a ${destino.nombre_ciudad}` +
+        `Llegada a ${destino.nombre_ciudad}${aeropuerto ? ` (${aeropuerto})` : ''}` +
         (hora ? ` ${hora}` : '') +
         (horaFin ? ` · fuera del aeropuerto ${horaFin}` : '');
     } else if (donde === 'vuelta') {
@@ -639,8 +642,9 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       franjaPorDefecto = 'tarde';
       icono = 'ti-plane-departure';
       salidaReal = despegue;
+      aeropuerto = horas.desde ?? null;
       texto =
-        `Vuelo ${origen.nombre_ciudad} → ${casa}` +
+        `Vuelo ${origen.nombre_ciudad}${aeropuerto ? ` (${aeropuerto})` : ''} → ${casa}` +
         (despegue ? ` ${despegue}` : '') +
         (enElAeropuerto ? ` · en el aeropuerto ${enElAeropuerto}` : '');
     } else {
@@ -676,6 +680,8 @@ function bloquesDeTransporte(viajeId, etapas, dias, diasDeEtapa) {
       salidaReal: salidaReal ?? hora,
       // Solo en la vuelta: la hora de estar dentro del aeropuerto.
       horaEnPuerta,
+      // El codigo IATA del aeropuerto de verdad, en ida y en vuelta.
+      aeropuerto,
       // Hasta cuándo dura y cuándo queda el día libre. Lo usan los avisos —para
       // ver qué se ha puesto encima del viaje— y la fase 6, que necesita saber a
       // qué hora empieza de verdad el día.
@@ -838,8 +844,19 @@ function esfuerzoDelVuelo(datosExtra) {
   return { horas: minutosDeVuelo / 60, husos };
 }
 
+/**
+ * Y DE PASO, EL AEROPUERTO DE VERDAD.
+ *
+ * El candidato se titula con el codigo IATA de la CIUDAD que resolvio la fase 1
+ * —«Wizz Air · vuelta (WAW)»— y el vuelo elegido salia de WMI, que es Modlin, a
+ * cuarenta kilometros del centro de Varsovia. El dato bueno estaba guardado un
+ * nivel mas abajo, en el tramo, y no lo leia nadie.
+ *
+ * No es cosmetico: el acceso al aeropuerto se calcula con un numero generico de
+ * 45 minutos que vale para Chopin y no para Modlin.
+ */
 function horasDelVuelo(datosExtra) {
-  if (!datosExtra) return { llegada: null, salida: null };
+  if (!datosExtra) return { llegada: null, salida: null, desde: null, hasta: null };
   try {
     const extra = JSON.parse(datosExtra);
     const tramos = extra.tramos ?? [];
@@ -853,6 +870,8 @@ function horasDelVuelo(datosExtra) {
       return {
         llegada: normalizarHora(tramos[0].horaLlegada),
         salida: normalizarHora(tramos[0].horaSalida),
+        desde: tramos[0].aeropuertoOrigen ?? null,
+        hasta: tramos[0].aeropuertoDestino ?? null,
       };
     }
 
@@ -863,9 +882,11 @@ function horasDelVuelo(datosExtra) {
     return {
       llegada: normalizarHora(ida?.horaLlegada),
       salida: normalizarHora(vuelta?.horaSalida),
+      desde: vuelta?.aeropuertoOrigen ?? null,
+      hasta: ida?.aeropuertoDestino ?? null,
     };
   } catch {
-    return { llegada: null, salida: null };
+    return { llegada: null, salida: null, desde: null, hasta: null };
   }
 }
 
@@ -1340,9 +1361,11 @@ function avisosDeLaSalidaQueNoLlega(fijos) {
       idsAfectados: [],
       texto:
         `${salto.ciudades ?? 'El traslado de salida'} llega a las ${salto.horaFin} y para ` +
-        `este vuelo hay que estar en el aeropuerto a las ${comoHoraDelDiaLocal(enElAeropuerto)}: ` +
-        `llegas ${comoRatoCorto(tarde)} tarde. Tal y como está, el vuelo no se coge. ` +
-        'O sales antes, o la última noche tiene que dormirse en la ciudad del aeropuerto.',
+        `este vuelo hay que estar en ` +
+        `${vuelta.aeropuerto ? `${vuelta.aeropuerto}` : 'el aeropuerto'} a las ` +
+        `${comoHoraDelDiaLocal(enElAeropuerto)}: llegas ${comoRatoCorto(tarde)} tarde. ` +
+        'Tal y como está, el vuelo no se coge. O sales antes, o la última noche tiene ' +
+        'que dormirse en la ciudad del aeropuerto.',
     });
   }
 
