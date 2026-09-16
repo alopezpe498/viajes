@@ -1666,7 +1666,13 @@ function imponerLaHoraDeLasExcursiones(viajeId, di) {
   return tocadas;
 }
 
-function contarLoDeLaAclimatacion(viajeId, lienzo, di) {
+/**
+ * Lo que queda por decir del día de aclimatación y del siguiente.
+ *
+ * Se exporta por lo mismo que `revisarElReparto`: para poder probarlo sin
+ * montar un viaje entero.
+ */
+export function contarLoDeLaAclimatacion(viajeId, lienzo, di) {
   const a = diaDeAclimatacion(lienzo);
   if (!a) return;
 
@@ -1689,6 +1695,42 @@ function contarLoDeLaAclimatacion(viajeId, lienzo, di) {
       `El día ${a.dia} es de aclimatación y lleva ${conHora.length} cosa(s) con hora fija.`
     );
   }
+
+  // --- Y EL DÍA DE DESPUÉS, CUANDO NO SE HA PODIDO EVITAR -----------------
+  //
+  // El suelo del día siguiente lo pone `horaLibreEn`, y sirve para lo que se
+  // COLOCA. No sirve para lo que ya tiene su hora puesta desde fuera: una
+  // excursión que Civitatis saca a las 08:00 sale a las 08:00, y retrasarla a
+  // las 10:00 para cumplir el suelo sería escribir una hora que no existe.
+  //
+  // Lo único honesto que queda es decirlo. En el viaje a Túnez esto es la
+  // diferencia entre un plan que te pone ocho horas de excursión a la mañana
+  // siguiente de llegar a medianoche sin comentar nada, y uno que te avisa de
+  // que lo sabe y de que no lo ha podido colocar de otra manera.
+  const suelo = enMinutos(parametroTexto('hora_inicio_tras_jetlag', '10:00'));
+  const madrugan = lienzo.colocados.filter((c) => {
+    if (c.dia !== a.dia + 1) return false;
+    const suya = enMinutos(c.hora);
+    return suelo != null && suya != null && suya < suelo;
+  });
+
+  if (!madrugan.length) return;
+
+  for (const c of madrugan) {
+    di(
+      `   OJO: ${c.nombre} empieza a las ${c.hora} el día ${a.dia + 1}, y el día ` +
+        `${a.dia} ${a.deNoche ? 'se llega de noche' : 'es de aclimatación'}.`,
+      ORIGENES.ninguno
+    );
+  }
+  apuntarHueco(
+    viajeId,
+    FASE,
+    `El día ${a.dia + 1} arranca a las ${madrugan[0].hora} (${madrugan[0].nombre}) y ` +
+      `${a.deNoche ? `la noche anterior se llega a la ciudad a las ${a.horaLlegada ?? 'última hora'}` : 'el día anterior es de aclimatación'}. ` +
+      `No he podido empezar más tarde: esa hora la publica quien organiza, no yo. ` +
+      `Si prefieres no madrugar, muévelo de día tú.`
+  );
 }
 
 /**

@@ -403,6 +403,7 @@ export function migrarEsquema() {
   migracionAjustesDeInstalacion();
   migracionCacheDeDistancias();
   migracionDosDuracionesDeTramo();
+  migracionLlegadaNocturna();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5344,6 +5345,41 @@ function migracionDosDuracionesDeTramo() {
       `${limpiados ? `, ${limpiados} con la referencia vacía a la espera de medirse` : ''}.`
   );
   marcarAplicada(CLAVE);
+  return true;
+}
+
+/**
+ * LLEGAR DE NOCHE CANSA, AUNQUE EL VUELO SEA CORTO.
+ *
+ * El dia de aclimatacion se disparaba por dos cosas: vuelo largo o muchos husos.
+ * Madrid-Tunez son 2h15 y cero husos, asi que no era ninguna de las dos... y se
+ * aterriza a las 23:45, se sale del aeropuerto a las 23:59 y al hotel se llega
+ * ya de lunes. A la mañana siguiente el plan abria con una excursion de ocho
+ * horas a las 07:30.
+ *
+ * El cansancio de esa noche no lo mide ni la duracion ni el huso: lo mide la
+ * hora a la que se llega. Ese es el tercer disparador y este es su umbral.
+ */
+function migracionLlegadaNocturna() {
+  const CLAVE = '2026-09-llegada-nocturna';
+  if (yaAplicada(CLAVE)) return false;
+
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run(
+    'hora_llegada_nocturna',
+    '22:00',
+    '22:00',
+    'Llegar a la ciudad a esta hora o mas tarde hace del dia siguiente un dia de aclimatacion',
+    'hora',
+    orden + 1
+  );
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: una llegada nocturna tambien cuenta como dia de aclimatacion.');
   return true;
 }
 

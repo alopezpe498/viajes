@@ -2091,16 +2091,38 @@ export function diaDeAclimatacion(lienzo) {
 
   const esLargo = Number.isFinite(horas) && horas > topeHoras;
   const hayJetlag = Number.isFinite(husos) && Math.abs(husos) > topeHusos;
-  if (!esLargo && !hayJetlag) return null;
+
+  // Y EL TERCERO: LA HORA A LA QUE SE LLEGA.
+  //
+  // Los dos de arriba miden el vuelo; éste mide la noche. Madrid-Túnez son 2h15
+  // y cero husos —no es largo y no hay jet lag— y se sale del aeropuerto a las
+  // 23:59, o sea que al hotel se llega ya del día siguiente. El plan abría la
+  // mañana de después con una excursión de ocho horas a las 07:30 y ninguna de
+  // las dos reglas tenía nada que decir, porque ninguna estaba mirando esto.
+  //
+  // Se mide con `horaFin`, que es cuando se sale del aeropuerto, y no con la
+  // hora de aterrizar: entre una y otra hay una maleta y una cola.
+  const topeHora = enMinutos(parametroTexto('hora_llegada_nocturna', '22:00'));
+  const fuera = enMinutos(llegada.horaFin ?? llegada.hora);
+  const deNoche = topeHora != null && fuera != null && fuera >= topeHora;
+
+  if (!esLargo && !hayJetlag && !deNoche) return null;
+
+  const motivos = [];
+  if (esLargo) motivos.push(`${Math.round(horas)} h de vuelo`);
+  if (hayJetlag) motivos.push(`${Math.abs(husos)} husos de diferencia`);
+  if (deNoche) motivos.push(`se sale del aeropuerto a las ${llegada.horaFin ?? llegada.hora}`);
 
   return {
     dia: llegada.dia,
     horas,
     husos,
+    deNoche,
+    // La hora a la que de verdad se está en la ciudad, para poder decirla.
+    horaLlegada: llegada.horaFin ?? llegada.hora ?? null,
     porQue:
-      `llegada tras vuelo largo: ${esLargo ? `${Math.round(horas)} h de vuelo` : ''}` +
-      `${esLargo && hayJetlag ? ' y ' : ''}` +
-      `${hayJetlag ? `${Math.abs(husos)} husos de diferencia` : ''}` +
+      (deNoche && !esLargo && !hayJetlag ? 'llegada de noche: ' : 'llegada tras vuelo largo: ') +
+      motivos.join(' y ') +
       ' — día de aclimatación',
   };
 }
