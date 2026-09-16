@@ -257,6 +257,10 @@ export async function ajustesDelTextoLibre(viaje, texto, di = () => {}) {
         maxTokens: 500,
         paso: 'traducir los intereses escritos a mano',
         temperatura: temperaturaAlPuntuar(),
+        // Clasificar una frase en categorías es mecánica: la puntuación la hace
+        // el código con el resultado. Corre dentro de la fase 1, que está en
+        // criterio, y sin esto se iba al modelo caro sin ninguna necesidad.
+        modelo: 'rapido',
       }
     );
     ajustes = (Array.isArray(r?.ajustes) ? r.ajustes : [])

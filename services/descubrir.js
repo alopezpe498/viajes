@@ -472,7 +472,13 @@ export async function repasarFotosDeSitios(punto, nombrePais) {
         '"idioma_wikipedia_local": "código del idioma: pl, it, ja…"}]}\n' +
         'Si no estás seguro de un título, deja la cadena VACÍA: un título inventado ' +
         'no encuentra nada y es peor que el hueco.',
-      { maxTokens: 3000, paso: `títulos de Wikipedia de ${punto.nombre}` }
+      {
+        maxTokens: 3000,
+        paso: `títulos de Wikipedia de ${punto.nombre}`,
+        // Buscar el título de un artículo es mecánica. Corre dentro de la fase
+        // «Qué ver», que está en criterio por el ranking, y se la llevaba puesta.
+        modelo: 'rapido',
+      }
     );
     titulos = Array.isArray(r?.sitios) ? r.sitios : [];
   } catch {

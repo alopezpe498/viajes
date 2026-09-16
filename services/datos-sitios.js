@@ -280,6 +280,15 @@ async function unaTanda(ciudad, nombres) {
     // una respuesta cortada por el límite se pierde entera: no es JSON válido.
     maxTokens: 8000,
     paso: `ordenar los datos de los sitios de ${ciudad}`,
+    // SACAR UN PRECIO DE UN TEXTO ES MECÁNICA, Y LA MECÁNICA NO SE PIENSA.
+    //
+    // Ésta es la llamada más grande de la aplicación: entran doce mil caracteres
+    // del resultado de Google y pueden salir ocho mil tokens. Al subir la fase
+    // «Qué ver» al modelo de criterio se la llevó por delante sin que nadie lo
+    // decidiera —el interruptor es de fase, no de llamada— y el viaje a Polonia
+    // pasó de 10-13 llamadas caras a 25. Aquí no hay nada que razonar: el dato
+    // está escrito en el texto o no está.
+    modelo: 'rapido',
   });
 
   const porNombre = new Map();
@@ -905,7 +914,14 @@ export async function interpretarHorario(sitioId) {
       '',
       'Devuelve SOLO: {"abre":[5,6,0]}',
     ].join('\n'),
-    { maxTokens: 200, paso: `interpretar el horario de ${s.nombre}` }
+    {
+      maxTokens: 200,
+      paso: `interpretar el horario de ${s.nombre}`,
+      // Traducir «Mar-Dom: 9:00 - 18:00» a una lista de días no mejora por
+      // pensarlo más despacio, y además solo llega aquí lo que el lector en
+      // código no ha sabido leer: son cuatro o cinco por viaje.
+      modelo: 'rapido',
+    }
   );
 
   const abre = (Array.isArray(r?.abre) ? r.abre : [])
