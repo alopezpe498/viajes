@@ -77,6 +77,108 @@ export function puntosDe(destinoId) {
   );
 }
 
+// =============================================================================
+// LA MISMA CIUDAD, LLAMADA DE DOS MANERAS
+// =============================================================================
+/**
+ * «Túnez capital» Y «Túnez» SON LA MISMA CIUDAD, Y EL MOTOR NO LO SABÍA.
+ *
+ * Hay dos sitios que meten ciudades en `puntos_interes` y no se hablan entre
+ * ellos: la investigación del destino (`descubrir.js`) y la ruta que cierra la
+ * fase 1 (`crearEtapas`). Los dos usan `nombre_norm` como clave, que solo quita
+ * acentos y mayúsculas, así que basta con que el modelo escriba «Túnez capital»
+ * en un sitio y «Túnez» en el otro para que salgan dos ciudades.
+ *
+ * Pasó en el viaje 87, y no entre tiradas: dentro del mismo montaje, con 71
+ * segundos de diferencia. A las 16:23:52 la investigación guardó «Túnez» con su
+ * descripción, sus coordenadas y sus días recomendados; a las 16:25:03 la fase 1
+ * dijo «Túnez capital» y se creó una ficha nueva y vacía. La etapa se colgó de la
+ * vacía y el trabajo de la otra se quedó ahí sin que nadie lo mirara.
+ *
+ * LA COMPARACIÓN ES DELIBERADAMENTE TONTA: paréntesis fuera y un puñado de
+ * palabras que no distinguen una ciudad de otra. Nada de distancia de edición.
+ * Se consideró y se descartó con un motivo concreto: con nombres cortos, una
+ * distancia de 2 junta «El Jem» con «El Djem» —que sí son lo mismo— pero también
+ * junta cosas que no lo son, y confundir dos ciudades no cuesta una
+ * investigación repetida: cuesta planificar el viaje con los sitios de otro
+ * sitio. Un duplicado se ve y se arregla; una fusión equivocada se lee bien y es
+ * falsa.
+ *
+ * Lo que se parece y no se junta se DICE, que para eso está el registro.
+ */
+const PALABRAS_QUE_NO_DISTINGUEN = /\b(capital|ciudad|centro|casco antiguo)\b/g;
+
+/** La clave laxa con la que se comparan dos nombres de ciudad. */
+export function claveDeCiudad(nombre) {
+  return normalizarNombre(
+    String(nombre ?? '')
+      .replace(/\([^)]*\)/g, ' ')
+      .toLowerCase()
+      .replace(PALABRAS_QUE_NO_DISTINGUEN, ' ')
+  ).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * El punto del catálogo que ya es esta ciudad, si lo hay.
+ *
+ * Devuelve la fila entera para que quien llame pueda quedarse con SU nombre, que
+ * es el canónico: el catálogo lo investigó primero y lo escribió con su ficha
+ * detrás. Null si no hay ninguno, que es el caso normal de una ciudad nueva.
+ *
+ * Primero se prueba la clave exacta de siempre. Solo si esa falla se afloja, y
+ * así una base donde los nombres ya cuadran se comporta exactamente igual que
+ * antes de esto.
+ */
+export function puntoDeCiudad(destinoId, nombre) {
+  const clave = claveDeCiudad(nombre);
+  if (!destinoId || !clave) return null;
+  const exacta = normalizarNombre(nombre);
+
+  // Sin filtrar por categoría. El catálogo llama «sitio» a Djerba y a las
+  // Kerkennah —son sitios a los que se va desde una base— y aun así una ruta
+  // puede parar a dormir allí. Filtrar dejaría esas paradas sin su ficha por una
+  // etiqueta que no va de esto.
+  const candidatos = todas(
+    'SELECT * FROM puntos_interes WHERE destino_id = ?',
+    Number(destinoId)
+  ).filter((p) => claveDeCiudad(p.nombre) === clave);
+
+  if (!candidatos.length) return null;
+
+  // GANA EL QUE TIENE FICHA, NO EL QUE COINCIDE LETRA POR LETRA.
+  //
+  // La primera versión de esto probaba el nombre exacto primero y solo aflojaba
+  // si fallaba. Suena prudente y da la respuesta equivocada en cuanto ya existe
+  // un duplicado: pedirle «Túnez capital» devolvía la ficha VACÍA que creó una
+  // ruta anterior con ese mismo nombre, en vez del «Túnez» investigado que
+  // estaba al lado. O sea que el remedio conservaba el problema que venía a
+  // arreglar. Lo que se busca no es el nombre idéntico: es la ciudad con algo
+  // dentro.
+  //
+  // El nombre exacto sigue desempatando —por debajo de la ficha— para que donde
+  // no hay duplicados nada cambie.
+  return candidatos.sort((a, b) => {
+    const ficha = (p) => (p.descripcion_corta ? 1 : 0);
+    const igual = (p) => (normalizarNombre(p.nombre) === exacta ? 1 : 0);
+    return ficha(b) - ficha(a) || igual(b) - igual(a) || a.id - b.id;
+  })[0];
+}
+
+/**
+ * Las ciudades del catálogo de un destino, para poder nombrárselas a la IA.
+ *
+ * Solo las que tienen ficha: una fila vacía creada por una ruta anterior no es
+ * conocimiento, es justo el residuo que esto viene a evitar.
+ */
+export function ciudadesConocidasDe(destinoId) {
+  return todas(
+    `SELECT nombre FROM puntos_interes
+      WHERE destino_id = ? AND categoria = 'ciudad' AND descripcion_corta IS NOT NULL
+      ORDER BY orden, id`,
+    Number(destinoId)
+  ).map((p) => p.nombre);
+}
+
 /** La ficha profunda de un punto: sus templos, barrios y mercados. */
 export function sitiosDe(puntoInteresId) {
   return todas(

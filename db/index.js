@@ -406,6 +406,7 @@ export function migrarEsquema() {
   migracionLlegadaNocturna();
   migracionParametrosHuerfanos();
   migracionPuntuarConCriterio();
+  migracionNombresDeCiudadDelCatalogo();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5499,6 +5500,73 @@ function migracionPuntuarConCriterio() {
   console.log(
     `[bd] Migracion: temperatura al puntuar y modelo_sitios ${movido ? 'a criterio' : '(valor tocado a mano: solo se mueve la fabrica)'}.`
   );
+  return true;
+}
+
+/**
+ * QUE LA FASE 1 LLAME A LAS CIUDADES COMO YA SE LLAMAN.
+ *
+ * El modelo bautiza distinto cada vez: medido con diez tiradas de la misma
+ * pregunta, la capital de Tunez volvio como «Tunez», «Tunez capital» y «Tunez
+ * ciudad». Aguas abajo eso no es cosmetico —puntos_interes es unico por
+ * (destino_id, nombre_norm)— y en el viaje 87 costo una ficha: la investigacion
+ * del destino habia guardado «Tunez» con su descripcion, sus coordenadas y sus
+ * dias recomendados, y la ruta dijo «Tunez capital», asi que la etapa se colgo
+ * de una ficha nueva y vacia.
+ *
+ * El codigo ya lo recoge despues (`puntoDeCiudad`), pero recoger es el remedio.
+ * Esto es lo barato: ensenarle los nombres que ya existen y pedirle que los use.
+ *
+ * La regla contempla que la lista venga vacia, que es lo normal la primera vez
+ * que se toca un destino.
+ */
+function migracionNombresDeCiudadDelCatalogo() {
+  const CLAVE = '2026-09-nombres-de-ciudad-del-catalogo';
+  if (yaAplicada(CLAVE)) return false;
+
+  const viejo = `3. "peso" es cuánto merece la pena, de 1 a 5, y sirve para repartir noches
+   después. No pongas todo a 5: si todo es imprescindible, no has priorizado.`;
+
+  const nuevo = `3. "peso" es cuánto merece la pena, de 1 a 5, y sirve para repartir noches
+   después. No pongas todo a 5: si todo es imprescindible, no has priorizado.
+3 bis. LOS NOMBRES QUE YA CONOZCO, ESCRITOS COMO YO LOS ESCRIBO.
+   Estas ciudades ya están en mi catálogo: {{CIUDADES_CONOCIDAS}}.
+   Si propones una de ellas, cópiala EXACTAMENTE como está ahí, letra por letra.
+   No le añadas "capital" ni "(ciudad)" ni la recortes: para mí "Túnez" y
+   "Túnez capital" son dos ciudades distintas, y si me cambias el nombre pierdo
+   todo lo que ya había investigado de ella y vuelvo a empezar de cero.
+   Para las que no estén en esa lista, escribe su nombre normal en español.
+   Si la lista dice "(ninguna todavía)", es que este destino es nuevo y no hay
+   nada que copiar: entonces esta regla no te afecta.`;
+
+  const fila = db
+    .prepare('SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = ?')
+    .get('ciudades_y_noches');
+
+  if (!fila) {
+    marcarAplicada(CLAVE);
+    console.log('[bd] Migracion: no hay prompt de ciudades_y_noches que retocar.');
+    return true;
+  }
+
+  const cambiar = (t) => (t && t.includes(viejo) ? t.replace(viejo, nuevo) : t);
+  const nuevaFabrica = cambiar(fila.prompt_fabrica);
+  // Lo editado a mano gana: solo se toca el actual si sigue siendo el de fabrica.
+  const nuevoActual =
+    fila.prompt_actual === fila.prompt_fabrica ? nuevaFabrica : cambiar(fila.prompt_actual);
+
+  if (nuevaFabrica === fila.prompt_fabrica && nuevoActual === fila.prompt_actual) {
+    marcarAplicada(CLAVE);
+    console.log('[bd] Migracion: la regla de los nombres no se pudo colocar (texto no encontrado).');
+    return true;
+  }
+
+  db.prepare(
+    'UPDATE prompts_orquestador SET prompt_actual = ?, prompt_fabrica = ? WHERE fase = ?'
+  ).run(nuevoActual, nuevaFabrica, 'ciudades_y_noches');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: la fase 1 ya ve los nombres de ciudad que hay en el catalogo.');
   return true;
 }
 

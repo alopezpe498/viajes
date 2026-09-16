@@ -33,7 +33,12 @@ import { resolverIata } from '../lib/iata.js';
 import { enParalelo } from '../services/paralelo.js';
 import { buscarVuelosKayak } from '../providers/kayak.js';
 import { ocupacionDe, ciudadDeCasa } from '../services/proveedores.js';
-import { asegurarDestino, destinoPorNombre } from '../services/catalogo.js';
+import {
+  asegurarDestino,
+  destinoPorNombre,
+  puntoDeCiudad,
+  ciudadesConocidasDe,
+} from '../services/catalogo.js';
 import { recalcularRuta } from '../services/ruta.js';
 import {
   anotar,
@@ -1553,15 +1558,13 @@ export function nochePorPeso(ruta, candidatas, minimoNoches) {
 // que impide que lo rellene con una hora inventada.
 // =============================================================================
 
-/** El punto del catálogo de una ciudad candidata, si está. */
-function puntoDeCiudad(destinoId, nombre) {
-  if (!destinoId || !nombre) return null;
-  return una(
-    'SELECT id, nombre, lat, lon FROM puntos_interes WHERE destino_id = ? AND nombre_norm = ?',
-    destinoId,
-    normalizarNombre(nombre)
-  );
-}
+// El punto del catálogo de una ciudad candidata lo resuelve `puntoDeCiudad`, de
+// services/catalogo.js. Aquí había una copia propia que buscaba solo por
+// `nombre_norm` exacto, y tenía el mismo agujero que el de crear las etapas: con
+// «Túnez capital» no encontraba el «Túnez» del catálogo, se quedaba sin sus
+// coordenadas y ese tramo entraba en la tabla de tiempos como «sin dato». O sea
+// que el mismo despiste de nombre le quitaba a la IA la ficha de la ciudad Y la
+// distancia por carretera con la que reparte las noches.
 
 /** "2 h 20 min a 3 h · cada 30 o 60 minutos" a partir de una ficha del catálogo. */
 function comoSeLeeLaFicha(f) {
@@ -1748,8 +1751,11 @@ export function validarRuta(ruta, { nochesTotales, entrada, salida, minimoNoches
  * es lo que hace que la fase de «qué ver» tenga dónde guardar los sitios. Una
  * etapa suelta, con solo un nombre escrito, deja esa fase sin sitio donde
  * escribir.
+ *
+ * Se exporta para poder probarla sin montar un viaje entero, igual que
+ * `revisarElReparto` y por el mismo motivo.
  */
-function crearEtapas(viaje, ruta) {
+export function crearEtapas(viaje, ruta, di = () => {}) {
   const destino = asegurarDestino(viaje.destino || ruta[0].ciudad);
 
   const meterPunto = db.prepare(
@@ -1769,17 +1775,28 @@ function crearEtapas(viaje, ruta) {
     ejecutar("DELETE FROM etapas WHERE viaje_id = ? AND tocado_a_mano = 0", viaje.id);
 
     ruta.forEach((p, i) => {
-      let punto = una(
-        'SELECT * FROM puntos_interes WHERE destino_id = ? AND nombre_norm = ?',
-        destino.id,
-        normalizarNombre(p.ciudad)
-      );
+      // EL NOMBRE QUE MANDA ES EL DEL CATÁLOGO.
+      //
+      // `puntoDeCiudad` prueba primero la clave exacta de siempre y solo afloja
+      // si esa falla, así que donde los nombres ya cuadran esto no cambia nada.
+      // Cuando afloja y acierta, la etapa se engancha a la ficha que YA existe
+      // —con su descripción, sus coordenadas y sus días recomendados— en vez de
+      // estrenar una vacía, y se queda con el nombre del catálogo: si dentro de
+      // dos meses vuelve a salir esta ciudad, volverá a cuadrar.
+      let punto = puntoDeCiudad(destino.id, p.ciudad);
+      if (punto && normalizarNombre(punto.nombre) !== normalizarNombre(p.ciudad)) {
+        di(
+          `   «${p.ciudad}» es «${punto.nombre}», que ya está en el catálogo: ` +
+            'reutilizo su ficha y me quedo con ese nombre.'
+        );
+      }
       if (!punto) {
         const r = meterPunto.run(destino.id, p.ciudad, normalizarNombre(p.ciudad), p.ciudad);
         punto = una('SELECT * FROM puntos_interes WHERE id = ?', Number(r.lastInsertRowid));
       }
-      const r = meterEtapa.run(viaje.id, destino.id, punto.id, p.ciudad, i + 1, p.noches);
-      creadas.push({ id: Number(r.lastInsertRowid), ciudad: p.ciudad, noches: p.noches });
+      const nombre = punto.nombre;
+      const r = meterEtapa.run(viaje.id, destino.id, punto.id, nombre, i + 1, p.noches);
+      creadas.push({ id: Number(r.lastInsertRowid), ciudad: nombre, noches: p.noches });
     });
     db.exec('COMMIT');
   } catch (err) {
@@ -1863,6 +1880,18 @@ export function datosDelPaso1(viaje) {
       [auto.intereses, auto.categorias.join(', ')].filter(Boolean).join(' · ') || '(sin especificar)',
     MAX_CIUDADES: maxCiudades,
     MINIMO_NOCHES: minimoNoches,
+    // LAS CIUDADES QUE YA TIENEN FICHA, PARA QUE LAS LLAME COMO SE LLAMAN.
+    //
+    // Sin esto el modelo bautiza cada vez: «Túnez», «Túnez capital», «Túnez
+    // (ciudad)». Aguas abajo cada nombre distinto es otra ficha de catálogo, con
+    // su propia investigación. `puntoDeCiudad` lo recoge después, pero recoger es
+    // el remedio: lo barato es no tirarlo.
+    //
+    // Va vacío la primera vez que se toca un destino, que es el caso normal de
+    // un viaje a un sitio nuevo. La regla del prompt lo contempla.
+    CIUDADES_CONOCIDAS: enCatalogo
+      ? ciudadesConocidasDe(enCatalogo.id).join(', ') || '(ninguna todavía)'
+      : '(ninguna todavía)',
   };
 
   return { datos, auto, maxCiudades, minimoNoches, nochesTotales, dias, viajeros };
@@ -2256,7 +2285,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   }
 
   // --- Guardar -------------------------------------------------------------
-  const creadas = crearEtapas(viaje, ruta);
+  const creadas = crearEtapas(viaje, ruta, di);
 
   // Los tramos acaban de nacer con la ruta: ahora sí se les puede colgar el
   // vuelo, que es lo que deja la ida y la vuelta en verde y le da al lienzo la
