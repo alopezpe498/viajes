@@ -34,6 +34,7 @@ import {
   pareceUnSitio,
 } from '../lib/google.js';
 import { distanciaKm } from './distancias.js';
+import { parametro } from './orquestador.js';
 
 /**
  * De qué puede tener dirección algo, y en qué tabla vive su id.
@@ -617,7 +618,7 @@ export function fuenteQueSeUsara() {
  * Si Google no contesta no pasa nada grave: el sitio se queda sin dirección y
  * se puede escribir a mano. Lo que no se hace es dejarlo a medias en silencio.
  */
-export async function situarLosSitios(punto) {
+export async function situarLosSitios(punto, di = () => {}) {
   const sitios = todas(
     `SELECT s.id, s.nombre, s.lat, s.lon
        FROM sitios_lugar s
@@ -632,10 +633,36 @@ export async function situarLosSitios(punto) {
   if (!sitios.length) return { situados: 0, total: 0 };
 
   const ciudad = punto.ciudad_base || punto.nombre;
+
+  // EL PAÍS VA EN LA CONSULTA, Y NO IBA.
+  //
+  // Se le preguntaba a Google por «Susa» a secas. «Susa» es Sousse en Túnez y
+  // también un pueblo del Piamonte, así que el Anfiteatro de Susa acabó en
+  // Italia. Y con el país delante ni «Mirador de la Torre del Reloj» se va a
+  // Cartagena de Indias ni «Restaurante Dar Hizem» a Miami, que es donde
+  // acabaron los dos.
+  const pais = una(
+    'SELECT COALESCE(d.pais, d.nombre) AS pais FROM destinos d WHERE d.id = ?',
+    punto.destino_id
+  )?.pais ?? null;
+
+  // LA CONSULTA SE COMPONE AQUÍ, ENTERA, Y SE PASA SIN `cerca`.
+  //
+  // `componerConsulta` no repite la ciudad si el nombre ya la lleva, que para
+  // una dirección escrita a mano es lo correcto. Para un sitio es justo lo peor
+  // que puede hacer: «Parque del Olivar de Susa» contiene «Susa», así que se
+  // preguntaba SIN contexto —y Google contestó El Olivar, de Lima—. El
+  // topónimo dentro del nombre no es motivo para quitar el contexto: es la
+  // señal de que hace falta.
+  const donde = [ciudad, pais && pais !== ciudad ? pais : null].filter(Boolean).join(', ');
+  const consultaDe = (nombre) => (donde ? `${nombre}, ${donde}` : nombre);
+
   let situados = 0;
+  let avisados = 0;
+  let descartados = 0;
 
   for (const s of sitios) {
-    const enPlaces = await situarLugarConGoogle(s.nombre, ciudad);
+    const enPlaces = await situarLugarConGoogle(consultaDe(s.nombre), null);
     if (!enPlaces?.direccion) continue;
 
     // SIN ENCOLAR. La dirección ya viene con su punto, así que preguntar otra
@@ -649,9 +676,48 @@ export async function situarLosSitios(punto) {
     // fuese verdad. Si Places trae la dirección pero no el punto, entonces sí
     // se encola: ahí no hay nada que pisar.
     const tienePunto = enPlaces.lat != null && enPlaces.lng != null;
-    guardarDireccion('sitio', s.id, enPlaces.direccion, { encolar: !tienePunto });
 
-    if (tienePunto) {
+    // --- ¿CAE DONDE DEBE? -------------------------------------------------
+    //
+    // Las ciudades tienen esta guarda desde hace tiempo (`caeDondeDebe`, 20 km)
+    // y las excursiones también (300 km). Los sitios no tenían NINGUNA: se
+    // guardaba lo que Google contestara, así que un parque de Lima entraba en un
+    // viaje a Túnez sin que nadie chistara.
+    //
+    // DOS UMBRALES, PORQUE HAY DOS COSAS DISTINTAS. Un sitio a 174 km puede ser
+    // perfectamente real —El Jem lo está, y Dougga a 110— y tirarlo sería
+    // cargarse una excursión de día legítima. Un sitio a 8.000 km no es un
+    // matiz: es otro continente. Así que por encima del primero se AVISA y se
+    // deja puesto, y solo por encima del segundo se descarta la coordenada.
+    //
+    // Se descarta la COORDENADA, no el sitio: la dirección se guarda igual y el
+    // sitio sigue en la ficha. Lo que no se hace es pintar un pin en Perú.
+    const lejos = tienePunto ? kmDesdeLaCiudad(punto, enPlaces) : null;
+    const avisaDesde = parametro('km_sitio_lejos_aviso', 80);
+    const tiraDesde = parametro('km_sitio_lejos_descarte', 300);
+    const disparate = lejos != null && lejos > tiraDesde;
+
+    if (disparate) {
+      descartados += 1;
+      di(
+        `   ✘ «${s.nombre}»: Google lo sitúa a ${Math.round(lejos)} km de ${ciudad} ` +
+          `(«${enPlaces.direccion}»). Eso no está en ${ciudad}: me quedo sin sus coordenadas.`
+      );
+      console.warn(
+        `[direcciones] «${s.nombre}» a ${Math.round(lejos)} km de ${ciudad}: descarto el punto.`
+      );
+    } else if (lejos != null && lejos > avisaDesde) {
+      avisados += 1;
+      di(
+        `   OJO: «${s.nombre}» queda a ${Math.round(lejos)} km de ${ciudad} ` +
+          `(«${enPlaces.direccion}»). Lo dejo puesto —puede ser una excursión de día— ` +
+          'pero míralo.'
+      );
+    }
+
+    guardarDireccion('sitio', s.id, enPlaces.direccion, { encolar: !tienePunto && !disparate });
+
+    if (tienePunto && !disparate) {
       ejecutar(
         `UPDATE direcciones
             SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
@@ -667,7 +733,32 @@ export async function situarLosSitios(punto) {
   }
 
   console.log(`[direcciones] ${situados} de ${sitios.length} sitios de ${ciudad} situados con Places.`);
-  return { situados, total: sitios.length };
+  if (avisados || descartados) {
+    di(
+      `   ${ciudad}: ${descartados} sitio(s) sin coordenadas por caer demasiado lejos` +
+        `${avisados ? ` y ${avisados} avisado(s) por quedar a más de ${parametro('km_sitio_lejos_aviso', 80)} km` : ''}.`
+    );
+  }
+  return { situados, total: sitios.length, avisados, descartados };
+}
+
+/**
+ * Los kilómetros en línea recta entre un sitio y el centro de su ciudad.
+ *
+ * Null cuando la ciudad todavía no tiene punto: sin dato no se acusa a nadie, la
+ * misma regla que usa `caeDondeDebe` con las ciudades.
+ */
+function kmDesdeLaCiudad(punto, hallado) {
+  if (punto?.lat == null || punto?.lon == null) return null;
+  if (hallado?.lat == null || hallado?.lng == null) return null;
+  const R = 6371;
+  const rad = (g) => (g * Math.PI) / 180;
+  const dLat = rad(hallado.lat - punto.lat);
+  const dLon = rad(hallado.lng - punto.lon);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(punto.lat)) * Math.cos(rad(hallado.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
 }
 
 // =============================================================================

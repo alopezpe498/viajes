@@ -410,6 +410,7 @@ export function migrarEsquema() {
   migracionRubricaDeCiudades();
   migracionCortesDeBanda();
   migracionDesandarCuesta();
+  migracionSitiosLejos();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -5787,6 +5788,43 @@ function migracionDesandarCuesta() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: volver a la ciudad de entrada deja de salir gratis.');
+  return true;
+}
+
+/**
+ * UN SITIO QUE CAE A OCHO MIL KILOMETROS NO ES UN SITIO DE ESA CIUDAD.
+ *
+ * Las ciudades tenian guarda de distancia desde hace tiempo (caeDondeDebe, 20 km)
+ * y las excursiones tambien (300 km). Los sitios no tenian ninguna: se guardaba
+ * lo que contestara Google. En el viaje a Tunez eso metio el «Parque del Olivar
+ * de Susa» en Lima, el «Mirador de la Torre del Reloj» en Cartagena de Indias y
+ * el «Restaurante Dar Hizem» en Miami.
+ *
+ * DOS UMBRALES, porque hay dos cosas distintas. El Jem esta de verdad a 174 km
+ * de Tunez y Dougga a 110: tirarlos seria cargarse una excursion de dia
+ * legitima. Ocho mil kilometros no es un matiz. Por encima del primero se avisa
+ * con la distancia y la ciudad y se deja puesto; solo por encima del segundo se
+ * descarta la coordenada —no el sitio, que se queda con su direccion—.
+ */
+function migracionSitiosLejos() {
+  const CLAVE = '2026-09-sitios-lejos-de-su-ciudad';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  meter.run('km_sitio_lejos_aviso', '80', '80',
+    'A partir de estos km del centro de su ciudad, un sitio se avisa pero se deja puesto',
+    'km', ++orden);
+  meter.run('km_sitio_lejos_descarte', '300', '300',
+    'A partir de estos km, la coordenada no se guarda: eso no esta en esa ciudad',
+    'km', ++orden);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: umbrales de «este sitio no cae donde debe».');
   return true;
 }
 

@@ -228,7 +228,7 @@ export async function ejecutarFaseSitios(viaje, prompt) {
 
       // --- 3) Dirección y coordenada, como en el flujo manual ---------------
       try {
-        await situarLosSitios(punto);
+        await situarLosSitios(punto, di);
       } catch (err) {
         // Que Places no conteste no deja la parada sin sitios: solo sin
         // direcciones, que es un hueco menor y se ve en la ficha.
