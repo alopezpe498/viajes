@@ -52,7 +52,7 @@ import {
   diaDeAclimatacion,
   FRANJAS,
 } from '../services/lienzo.js';
-import { datosDeSitio, interpretarHorario } from '../services/datos-sitios.js';
+import { datosDeSitio, interpretarHorariosDelCatalogo } from '../services/datos-sitios.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { alternarApuntado } from '../services/etapa.js';
 import {
@@ -94,14 +94,26 @@ export function rellenar(plantilla, datos) {
   });
 }
 
-/** `cierra_dias` viaja como JSON de números. Vacío es «no cierra», no «no se sabe». */
+/**
+ * `cierra_dias` viaja como JSON de números. VACÍO ES «NO CIERRA»; NULL ES «NO LO
+ * SÉ», Y NO SON LO MISMO.
+ *
+ * El comentario de esta función decía exactamente eso y la primera línea las
+ * machacaba: `if (!valor) return []` convertía el «no lo sé» en «abre los siete
+ * días» y se lo pasaba al prompt como un hecho. Así se repartió el viaje a
+ * Túnez —once sitios con día de cierre, ni una línea de aviso en el prompt— y
+ * así el Museo del Bardo estuvo a un pelo de caer en lunes.
+ *
+ * Ahora la duda se devuelve como duda y quien la reciba decide qué hacer con
+ * ella. Que es lo que decía el comentario desde el principio.
+ */
 function diasDeCierre(valor) {
-  if (!valor) return [];
+  if (valor === null || valor === undefined || valor === '') return null;
   try {
     const lista = JSON.parse(valor);
-    return Array.isArray(lista) ? lista.filter((d) => Number.isInteger(d)) : [];
+    return Array.isArray(lista) ? lista.filter((d) => Number.isInteger(d)) : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -204,6 +216,9 @@ export function colocablesDeEtapa(etapa, lienzo) {
         puntoEncuentro: ficha?.punto_encuentro ?? null,
         cierraDias: [],
         cierraTexto: null,
+        // Una excursión no es un sitio con puerta: se contrata para un día y el
+        // proveedor ya dice si ese día sale. Aquí no hay duda que confesar.
+        cierraSinSaber: false,
       };
     });
 
@@ -257,8 +272,12 @@ export function colocablesDeEtapa(etapa, lienzo) {
         bloque: s.bloque,
         duracion: datos?.tiempoVisita ?? null,
         horarios: datos?.horarios ?? null,
-        cierraDias: cierres,
-        cierraTexto: cierres.length ? cierres.map((d) => DIAS_SEMANA[d]).join(' y ') : null,
+        cierraDias: cierres ?? [],
+        cierraTexto: cierres?.length ? cierres.map((d) => DIAS_SEMANA[d]).join(' y ') : null,
+        // La duda se dice. Tras la pasada de la fase «Qué ver» esto son uno o dos
+        // sitios por viaje —los horarios que ni el lector ni la IA descifran—, y
+        // callarlos los convertiría otra vez en «abre todos los días».
+        cierraSinSaber: cierres === null,
       };
     });
 
@@ -303,37 +322,35 @@ function apuntarYObtener(etapaId, sitioId) {
 // =============================================================================
 
 /**
- * ANTES DE VALIDAR, QUE EL TABLERO ESTÉ COMPLETO.
+ * LA RED, NO LA RED PRINCIPAL.
  *
- * El aviso de «cierra ese día» necesita `cierra_dias`, que se calcula en un
- * trabajo aparte y en diferido. Al terminar la fase todavía no está, así que el
- * validador no tenía nada que decir y la fase escribía «todo cuadra» sobre un
- * museo colocado un martes. Se traducen aquí los horarios de lo que se ha
- * colocado —solo eso, no el catálogo entero— y entonces se pregunta.
+ * Los días de cierre los traduce la fase «Qué ver», con el catálogo entero
+ * delante y antes de que nadie reparta nada. Esto de aquí ya no es quien lo
+ * hace: es quien comprueba que se hizo.
+ *
+ * Antes era al revés y por eso este comentario decía que el campo «se calcula en
+ * un trabajo aparte y en diferido»: se traducía aquí, al terminar la fase, solo
+ * lo que se había colocado. Servía para que el validador tuviera algo que decir,
+ * y llegaba tarde para lo único que importaba —repartir sabiendo qué cierra—.
+ *
+ * Se queda porque un viaje montado antes de este cambio, o una parada que se
+ * añada a mano después, no han pasado por aquella pasada. Cuando todo ha ido
+ * bien no encuentra nada que hacer y no dice nada.
  */
 async function asegurarCierres(viajeId, di) {
-  const pendientes = todas(
-    `SELECT DISTINCT s.id, s.nombre
-       FROM itinerario i
-       JOIN candidatos c ON c.id = i.candidato_id
-       JOIN sitios_lugar s
-         ON s.id = CAST(json_extract(c.datos_extra, '$.deId') AS INTEGER)
-      WHERE i.viaje_id = ?
-        AND json_extract(c.datos_extra, '$.de') = 'sitio'
-        AND s.horarios IS NOT NULL
-        AND s.cierra_dias IS NULL`,
+  const puntos = todas(
+    `SELECT DISTINCT punto_interes_id AS id FROM etapas
+      WHERE viaje_id = ? AND punto_interes_id IS NOT NULL`,
     viajeId
   );
-  if (!pendientes.length) return 0;
 
-  di(`   Traduzco el horario de ${pendientes.length} sitio(s) para poder ver si cierran.`);
   let hechos = 0;
-  for (const s of pendientes) {
+  for (const p of puntos) {
     try {
-      await interpretarHorario(s.id);
-      hechos += 1;
+      const r = await interpretarHorariosDelCatalogo(p.id, di);
+      hechos += r.leidos + r.preguntados;
     } catch (err) {
-      di(`   No pude interpretar el horario de ${s.nombre} (${err.message}).`);
+      di(`   No pude traducir los horarios pendientes (${err.message}).`);
     }
   }
   return hechos;
@@ -2563,7 +2580,8 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
             `${p.bloque === 'ninos' ? ' [para niños]' : ''}\n` +
             `  visita: ${p.duracion ?? 'no lo sé'}` +
             `${p.horarios ? `\n  horario: ${String(p.horarios).slice(0, 120)}` : ''}` +
-            `${p.cierraTexto ? `\n  CIERRA los ${p.cierraTexto}` : ''}`
+            `${p.cierraTexto ? `\n  CIERRA los ${p.cierraTexto}` : ''}` +
+            `${p.cierraSinSaber ? '\n  NO SE SABE qué días cierra: no lo des por abierto' : ''}`
         )
         .join('\n'),
     };

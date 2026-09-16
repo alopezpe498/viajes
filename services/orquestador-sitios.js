@@ -39,7 +39,7 @@ import {
   repasarFotosDeSitios,
 } from '../services/descubrir.js';
 import { situarLosSitios } from '../services/direcciones.js';
-import { buscarDatosDeSitios } from '../services/datos-sitios.js';
+import { buscarDatosDeSitios, interpretarHorariosDelCatalogo } from '../services/datos-sitios.js';
 import { destinoPorNombre } from '../services/catalogo.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { anotar, apuntarHueco, configAuto, parametro, ORIGENES } from '../services/orquestador.js';
@@ -324,6 +324,39 @@ export async function ejecutarFaseSitios(viaje, prompt) {
   // para los cuelgues de verdad, no para esto.
   for (const e of etapas) {
     if (e.punto_interes_id) avisar(avisoDeSitios(viajeId, e.punto_interes_id));
+  }
+
+  // --- LOS DÍAS DE CIERRE, ANTES DE QUE NADIE REPARTA ----------------------
+  //
+  // Va aquí porque aquí es donde el texto del horario acaba de llegar, y porque
+  // quien lo necesita —el reparto del lienzo— es una fase entera más tarde. Se
+  // hacía al revés: el lienzo ya pintado encolaba la traducción y el worker la
+  // resolvía cuando podía, así que la IA repartía los días sin saber qué cerraba
+  // ninguno. En el viaje a Túnez eso fueron once sitios con día de cierre y cero
+  // líneas de aviso en el prompt.
+  //
+  // Y DESPUÉS DE LEVANTAR LAS BANDERAS, no antes: la fase de excursiones espera
+  // a `avisoDeSitios` para arrancar y no tiene por qué esperar también a esto.
+  //
+  // El 90% de los horarios los lee el código sin preguntar a nadie —el catálogo
+  // entero de un viaje son milisegundos—, así que no se filtra por «lo que se
+  // vaya a colocar»: eso era justo lo que dejaba medio catálogo a oscuras.
+  for (const e of etapas) {
+    if (!e.punto_interes_id) continue;
+    try {
+      const r = await interpretarHorariosDelCatalogo(e.punto_interes_id, di);
+      if (r.preguntados || r.fallidos) {
+        di(
+          `   ${e.nombre_ciudad}: ${r.leidos} horario(s) leídos en código, ` +
+            `${r.preguntados} preguntado(s)` +
+            (r.fallidos ? `, ${r.fallidos} sin poder traducir.` : '.')
+        );
+      }
+    } catch (err) {
+      // Que no se sepan los cierres no invalida la fase: el reparto recibirá un
+      // «NO SE SABE qué días cierra», que es la verdad y se puede decir.
+      di(`   ${e.nombre_ciudad}: no pude traducir los horarios (${err.message}).`);
+    }
   }
 
   // UN FALLO EN UNA CIUDAD NO SE TRAGA NI SE LLEVA A LAS DEMÁS.

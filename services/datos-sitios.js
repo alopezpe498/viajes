@@ -768,16 +768,80 @@ function borrarSitios(ciudad, punto, lista) {
 // QUÉ DÍAS CIERRA
 // =============================================================================
 /**
- * Encola la traducción del horario a días de la semana.
+ * TRADUCE EL HORARIO DE TODO EL CATÁLOGO DE UNA CIUDAD, ANTES DE QUE HAGA FALTA.
  *
- * La pide el lienzo la primera vez que necesita saber si un sitio cierra ese
- * día. No se hace al buscar los datos —ahí solo se guarda la frase tal cual—
- * porque la mayoría de los sitios no acaban en ningún día concreto y traducir
- * quince horarios para usar dos sería pagar por trece.
+ * Aquí había un encolado diferido: el lienzo pedía la traducción la primera vez
+ * que necesitaba saber si un sitio cerraba ese día, y el worker la resolvía
+ * cuando podía. El razonamiento era de coste —«la mayoría de los sitios no
+ * acaban en ningún día concreto, traducir quince para usar dos es pagar por
+ * trece»— y era falso por los dos lados:
+ *
+ *   · Llegaba tarde. Quien necesita los días de cierre no es el lienzo ya
+ *     pintado: es el REPARTO, que decide qué día va cada cosa. En el viaje a
+ *     Túnez el Museo del Bardo supo que cerraba los lunes 44 segundos después
+ *     de que la IA lo colocara. De once sitios con día de cierre, el prompt del
+ *     reparto no llevó ni uno.
+ *
+ *   · Y no era caro. El 90,7% de los horarios de la base los lee `diasQueCierra`
+ *     en código, sin preguntar a nadie: el catálogo entero de un viaje se
+ *     traduce en 3 milisegundos. Solo el 8,7% necesita una llamada. Se estaba
+ *     ahorrando un coste que no existía a cambio de decidir a ciegas.
+ *
+ * El texto del horario ya está descargado cuando esto corre —lo trae
+ * `buscarDatosDeSitios` en esta misma fase—, así que aquí no se scrapea nada:
+ * solo se lee lo que ya hay.
+ *
+ * Mira los mismos bloques que acaban en el prompt del reparto. Un sitio fundido
+ * dentro de otro (`cubierto_por`) no se ofrece nunca, así que no se paga.
+ *
+ * EL FILTRO ES `cierra_en`, NO `cierra_dias`: lo pendiente es lo que no se ha
+ * INTENTADO. Un horario que ya se miró y no se dejó descifrar deja `cierra_dias`
+ * en null a propósito, y filtrar por ahí lo volvería a preguntar en cada viaje
+ * que pase por esa ciudad para recibir la misma respuesta.
  */
-export function pedirInterpretarHorario(viajeId, sitioId) {
-  if (trabajoActivo(viajeId, 'horario_cierre', sitioId)) return null;
-  return encolar(viajeId, 'horario_cierre', sitioId);
+export async function interpretarHorariosDelCatalogo(puntoId, di = () => {}) {
+  const pendientes = todas(
+    `SELECT id, nombre, horarios FROM sitios_lugar
+      WHERE punto_interes_id = ?
+        AND bloque IN ('imprescindibles', 'otros', 'ninos')
+        AND cubierto_por IS NULL
+        AND horarios IS NOT NULL
+        AND cierra_en IS NULL`,
+    Number(puntoId)
+  );
+  if (!pendientes.length) return { leidos: 0, preguntados: 0, fallidos: 0 };
+
+  // Los que el lector resuelve solo van primero y salen gratis. Se separan para
+  // poder DECIR cuántas llamadas ha costado esto de verdad.
+  const enCodigo = pendientes.filter((s) => diasQueCierra(s.horarios) !== null);
+  const conIA = pendientes.filter((s) => diasQueCierra(s.horarios) === null);
+
+  if (conIA.length) {
+    di(
+      `   Traduzco el horario de ${pendientes.length} sitio(s): ${enCodigo.length} se leen ` +
+        `en código y ${conIA.length} hay que preguntarlo${conIA.length === 1 ? '' : 's'}.`
+    );
+  } else {
+    di(`   Traduzco el horario de ${pendientes.length} sitio(s), todos leídos en código.`);
+  }
+
+  let leidos = 0;
+  let preguntados = 0;
+  let fallidos = 0;
+  for (const s of [...enCodigo, ...conIA]) {
+    try {
+      await interpretarHorario(s.id);
+      if (diasQueCierra(s.horarios) !== null) leidos += 1;
+      else preguntados += 1;
+    } catch (err) {
+      // Un horario que no se deja traducir deja el campo en NULL, que ahora
+      // significa «no lo sé» y se dice como tal. No se inventa un «abre todos
+      // los días», que es justo lo que hacía daño.
+      fallidos += 1;
+      di(`   No pude interpretar el horario de ${s.nombre} (${err.message}).`);
+    }
+  }
+  return { leidos, preguntados, fallidos };
 }
 
 /**
@@ -849,19 +913,45 @@ export async function interpretarHorario(sitioId) {
     .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
 
   // Sin días abiertos no se concluye que cierre los siete: eso no lo dice ningún
-  // horario del mundo y dejaría el sitio sin un solo día en el que colocarse. Se
-  // trata como «no lo sé», que es el lado seguro de equivocarse.
-  const cierra = abre.length ? TODOS_LOS_DIAS.filter((d) => !abre.includes(d)) : [];
+  // horario del mundo y dejaría el sitio sin un solo día en el que colocarse.
+  //
+  // Y TAMPOCO SE CONCLUYE LO CONTRARIO. Aquí se guardaba la lista vacía, que es
+  // una afirmación —«no cierra ningún día fijo»— puesta en boca de un modelo que
+  // acababa de decir que no sabía. «Horarios variables de culto» salía de esta
+  // función convertido en «abre los siete días». Un «no lo sé» se guarda como
+  // null y se dice como null.
+  const cierra = abre.length ? TODOS_LOS_DIAS.filter((d) => !abre.includes(d)) : null;
 
   return guardarCierres(s, cierra, abre.length ? 'preguntado a la IA' : 'la IA no supo decirlo');
 }
 
 /**
- * Guarda SIEMPRE algo, aunque sea una lista vacía: sin marca, el lienzo volvería
- * a encolar el mismo trabajo en cada pintada. Una lista vacía es una respuesta
- * legítima —«no cierra ningún día fijo»— y hay que poder decirla.
+ * Guarda el veredicto, incluido el de «no lo sé».
+ *
+ * `dias` null es la duda: se marca `cierra_en` para no volver a preguntar lo
+ * mismo en cada viaje, pero `cierra_dias` se queda vacío. Los dos campos juntos
+ * distinguen las tres respuestas que hay —«cierra el lunes», «no cierra ningún
+ * día», «no se ha podido saber»— y antes solo se sabían decir dos.
+ *
+ * La lista vacía sigue siendo legítima: quiere decir que abre los siete días y
+ * que eso se ha comprobado.
  */
 function guardarCierres(sitio, dias, comoSeSupo) {
+  const estructura = horarioPorDias(sitio.horarios);
+
+  if (dias === null) {
+    ejecutar(
+      "UPDATE sitios_lugar SET cierra_dias = NULL, horario_json = ?, cierra_en = datetime('now') WHERE id = ?",
+      JSON.stringify(estructura),
+      sitio.id
+    );
+    console.log(
+      `[datos-sitios] ${sitio.nombre}: no se ha podido saber qué días cierra ` +
+        `(${comoSeSupo}, de «${sitio.horarios.slice(0, 60)}»)`
+    );
+    return null;
+  }
+
   const limpios = [...new Set(dias)].sort((a, b) => a - b);
 
   // EL HORARIO PARSEADO, GUARDADO JUNTO AL SITIO.
@@ -871,8 +961,6 @@ function guardarCierres(sitio, dias, comoSeSupo) {
   // qué ha entendido el lector, día a día y con sus rangos. Cuando un aviso
   // vuelva a decir algo raro, aquí se ve si el fallo fue de la lectura o del
   // dato que trajo Google.
-  const estructura = horarioPorDias(sitio.horarios);
-
   ejecutar(
     "UPDATE sitios_lugar SET cierra_dias = ?, horario_json = ?, cierra_en = datetime('now') WHERE id = ?",
     JSON.stringify(limpios),
@@ -892,7 +980,7 @@ export default {
   pedirDatosDeSitios,
   buscarDatosDeSitios,
   buscandoDatos,
-  pedirInterpretarHorario,
+  interpretarHorariosDelCatalogo,
   interpretarHorario,
   DIAS_PARA_AVISAR,
 };

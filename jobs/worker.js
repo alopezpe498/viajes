@@ -39,7 +39,7 @@ import {
   fichasDeMovilidad,
 } from '../services/movilidad.js';
 import { geocodificarFila } from '../services/direcciones.js';
-import { buscarDatosDeSitios, pedirDatosDeSitios, interpretarHorario } from '../services/datos-sitios.js';
+import { buscarDatosDeSitios, pedirDatosDeSitios } from '../services/datos-sitios.js';
 import { dormir } from '../lib/browser.js';
 import { situarLosSitios } from '../services/direcciones.js';
 import { traerExcursionesSiHacenFalta, esActividadDeVerdad } from '../services/catalogo.js';
@@ -861,7 +861,7 @@ const TIPOS_CONOCIDOS = [
   'transporte_tramo', 'movilidad_ciudad',
   'geocodificar', 'traslado',
   'comer_buscar', 'comer_detalles',
-  'datos_sitios', 'horario_cierre', 'busqueda_sitios',
+  'datos_sitios', 'busqueda_sitios',
   'orquestador',
   'presupuesto',
 ];
@@ -1847,7 +1847,6 @@ async function ejecutarTrabajo(trabajo) {
   if (trabajo.tipo === 'orquestador') return ejecutarOrquestador(trabajo);
   if (trabajo.tipo === 'presupuesto')
     return ejecutarPresupuesto({ id: trabajo.id, viajeId: trabajo.viaje_id });
-  if (trabajo.tipo === 'horario_cierre') return interpretarHorario(trabajo.referencia_id);
   if (trabajo.tipo === 'geocodificar') return ejecutarGeocodificar(trabajo);
   if (trabajo.tipo === 'traslado') return ejecutarTraslado(trabajo);
   if (trabajo.tipo === 'comer_buscar') return ejecutarComerBuscar(trabajo);

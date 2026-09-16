@@ -18,7 +18,6 @@
 
 import { todas, una, ejecutar, nochesEntre } from '../db/index.js';
 import { direccionDe, claveDeCandidato } from './direcciones.js';
-import { pedirInterpretarHorario } from './datos-sitios.js';
 import { abreEl, abiertoA, horarioPorDias } from './horarios.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { parametro, parametroTexto } from './orquestador.js';
@@ -1019,15 +1018,20 @@ function calcularAvisos(dias, colocados, fijos, viajeId) {
 // `horarios` de `sitios_lugar`, que rellena services/datos-sitios.js con lo que
 // devolvió Google.
 //
-// Y SE INTERPRETAN AQUÍ, no al buscarlos. Un horario es una frase en cristiano
-// —"cerrado los lunes", "martes a domingo de 9 a 18"— y traducirla a días de la
-// semana es trabajo de la IA. Se hace la primera vez que hace falta un aviso y
-// se guarda en `cierra_dias`: una llamada por sitio en toda su vida, no una por
-// cada vez que se pinta el lienzo.
+// Y SE INTERPRETAN EN LA FASE «QUÉ VER», no aquí y no al pintar. Un horario es
+// una frase en cristiano —"cerrado los lunes", "martes a domingo de 9 a 18"— y
+// traducirla a días de la semana lo hace `interpretarHorariosDelCatalogo` en
+// cuanto el texto está descargado, con el catálogo entero de la ciudad por
+// delante.
 //
-// Mientras esa interpretación no esté, no se avisa de nada. Es la decisión
-// correcta: callar un día es mejor que soltar un "cierra los lunes" a medio
-// deducir.
+// ANTES SE ENCOLABA DESDE AQUÍ, Y ERA TARDE. Este módulo pinta un lienzo que ya
+// está repartido: pedir los días de cierre en este punto es pedirlos después de
+// que alguien haya decidido qué va cada día. En Túnez el Museo del Bardo supo
+// que cerraba los lunes 44 segundos después de que lo colocaran.
+//
+// Lo de aquí abajo no lee `cierra_dias`: lee el texto del horario, que es la
+// única fuente que no se queda vieja. `cierra_dias` existe para el prompt del
+// reparto, que es quien decide y quien necesitaba saberlo antes.
 // =============================================================================
 
 const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -1091,7 +1095,6 @@ function avisosDeCierre(dias, colocados, viajeId) {
   if (!claves.size) return avisos;
 
   const cierres = cierresDeLosSitios([...claves.values()]);
-  const porInterpretar = new Set();
 
   for (const d of dias) {
     const queDia = diaDeLaSemana(d.fecha);
@@ -1173,7 +1176,6 @@ function avisosDeCierre(dias, colocados, viajeId) {
         //
         // Y una duda no puede costar una expulsión, que era lo que pasaba. El
         // sitio se queda donde está y se avisa flojito para que alguien lo mire.
-        porInterpretar.add(sitioId);
         avisos.push({
           dia: d.n,
           tipo: 'horario-sin-verificar',
@@ -1195,9 +1197,6 @@ function avisosDeCierre(dias, colocados, viajeId) {
       });
     }
   }
-
-  // Lo que falte por interpretar se encola, sin bloquear este pintado.
-  for (const id of porInterpretar) pedirInterpretarHorario(viajeId, id);
 
   return avisos;
 }
