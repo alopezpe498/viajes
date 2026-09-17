@@ -729,12 +729,28 @@ export async function situarLosSitios(punto, di = () => {}) {
     // legítimo. Dos sitios de nombre distinto en el MISMO punto a cinco
     // decimales —un metro— no pasa en la realidad: es la firma del centroide.
     //
-    // Y SE QUEDA EL PRIMERO. El bucle va `ORDER BY s.orden, s.id`, así que
-    // conserva el punto el más importante de los dos: en Kairuan la Gran
-    // Mezquita (#1) y no el Parque (#10).
-    const ocupado = tienePunto
+    // Y DE LOS DOS, SE QUEDA EL PUNTO EL QUE DE VERDAD ES SUYO.
+    //
+    // Primero lo intenté con `orden`: se lo queda el primero del bucle, que va
+    // `ORDER BY s.orden, s.id`. Acierta en 7 de los 8 racimos comprobables —el
+    // punto de Kairuan ES el de la Gran Mezquita (#1), el de Túnez ES el del
+    // Bardo (#2)— y falla justo donde más duele: en Tesalónica ese punto es el
+    // de la TORRE BLANCA, así que las Murallas Bizantinas (#6) se quedaban con
+    // el punto de la Torre Blanca (#7) y la Torre Blanca se quedaba sin el suyo.
+    // Un sitio del top-10 perdiendo su pin para que otro llevase uno falso.
+    //
+    // LO QUE LO DESEMPATA YA VENÍA EN LA RESPUESTA y se estaba tirando: Google
+    // dice el NOMBRE de lo que ha encontrado. Se le pregunta por el «Paseo
+    // Marítimo de Tesalónica» y contesta «Torre Blanca de Tesalónica». Con eso,
+    // comparar los dos candidatos contra ese mismo nombre resuelve el racimo:
+    //
+    //     Murallas Bizantinas 0.00 · Torre Blanca 1.00 · Paseo Marítimo 0.00
+    //
+    // `orden` sigue estando, pero solo para cuando el nombre no enseña nada —los
+    // dos a cero—, que es lo mismo que había antes de esto.
+    const ocupante = tienePunto
       ? una(
-          `SELECT nombre FROM sitios_lugar
+          `SELECT id, nombre FROM sitios_lugar
             WHERE punto_interes_id = ? AND id <> ? AND lat IS NOT NULL
               AND ROUND(lat, 5) = ROUND(?, 5) AND ROUND(lon, 5) = ROUND(?, 5)
             LIMIT 1`,
@@ -742,8 +758,37 @@ export async function situarLosSitios(punto, di = () => {}) {
           s.id,
           enPlaces.lat,
           enPlaces.lng
-        )?.nombre ?? null
+        )
       : null;
+
+    // Los dos contra el MISMO nombre devuelto: si Google contesta en inglés, les
+    // perjudica igual a los dos y el desempate sigue siendo limpio.
+    const miParecido = ocupante ? parecidoDeNombres(s.nombre, enPlaces.nombre, ciudad) : 0;
+    const suParecido = ocupante ? parecidoDeNombres(ocupante.nombre, enPlaces.nombre, ciudad) : 0;
+
+    // PARA QUITARLE EL PUNTO A OTRO NO BASTA CON PARECERSE MÁS: LA RESPUESTA
+    // TIENE QUE NOMBRARTE ENTERO.
+    //
+    // Sin esta condición la primera tirada hizo esto en Sousse:
+    //
+    //     Google contesta «Bou Jaafar Beach»
+    //       «Playa de Boujaffar»    0.00   ← una palabra pegada
+    //       «Barrio de Bou Jaafar»  0.67   ← dos palabras sueltas
+    //
+    // Y le quitó el punto a la playa. Pero Google había contestado «Beach»: el
+    // punto ES de la playa, y perdió por cómo está escrito su nombre, no por lo
+    // que dice. Comparar palabra a palabra no distingue «Boujaffar» de «Bou
+    // Jaafar», y ahí el parecido relativo deja de significar nada.
+    //
+    // No es un número afinado a mano, que sería justo el vicio de arreglar un
+    // caso: es un cambio de pregunta. «¿Se parece más?» admite ganar por un
+    // detalle de ortografía; «¿la respuesta dice todo lo que dice este nombre?»
+    // no. Con esta condición la Torre Blanca —1.00, Google contesta «Torre
+    // Blanca de Tesalónica»— sigue recuperando el suyo, y la playa conserva el
+    // suyo. Quien no llega a eso no toca lo que ya está: se queda sin pin, que
+    // es lo que pasaba antes de todo esto.
+    const seLoQuito = ocupante && miParecido >= 1 && suParecido < 1;
+    const ocupado = ocupante && !seLoQuito ? ocupante.nombre : null;
 
     if (disparate) {
       descartados += 1;
@@ -771,6 +816,30 @@ export async function situarLosSitios(punto, di = () => {}) {
         `   OJO: «${s.nombre}» queda a ${Math.round(lejos)} km de ${ciudad} ` +
           `(«${enPlaces.direccion}»). Lo dejo puesto —puede ser una excursión de día— ` +
           'pero míralo.'
+      );
+    }
+
+    // SI EL PUNTO ERA MÍO, SE LO QUITO AL QUE LO TENÍA.
+    //
+    // Y se queda él sin coordenada, no los dos: el punto es de uno de los dos y
+    // ya sabemos de cuál. Al otro le pasa lo mismo que le habría pasado a este
+    // en el orden contrario —se queda sin pin y con su dirección—, que es la
+    // salida honesta mientras no sepamos dónde está de verdad.
+    if (seLoQuito) {
+      amontonados += 1;
+      ejecutar('UPDATE sitios_lugar SET lat = NULL, lon = NULL WHERE id = ?', ocupante.id);
+      ejecutar(
+        `UPDATE direcciones
+            SET lat = NULL, lng = NULL, estado = 'sin_resultado', fuente = NULL,
+                mensaje = ?, actualizado_en = datetime('now')
+          WHERE tipo_elemento = 'sitio' AND elemento_id = ?`,
+        `Ese punto es de «${s.nombre}»: Google lo devolvía para los dos y el nombre que ` +
+          'contesta es el suyo, no el de este.',
+        ocupante.id
+      );
+      di(
+        `   «${s.nombre}» se queda el punto que tenía «${ocupante.nombre}»: Google contesta ` +
+          `«${enPlaces.nombre}», que es suyo. «${ocupante.nombre}» se queda sin coordenadas.`
       );
     }
 
@@ -804,6 +873,68 @@ export async function situarLosSitios(punto, di = () => {}) {
     );
   }
   return { situados, total: sitios.length, avisados, descartados, amontonados };
+}
+
+// =============================================================================
+// ¿DE QUIÉN ES EL PUNTO QUE GOOGLE DEVUELVE?
+// =============================================================================
+/**
+ * CUÁNTO DE LO QUE SE PREGUNTA APARECE EN LO QUE SE CONTESTA.
+ *
+ * Google devuelve el NOMBRE de lo que ha encontrado, no solo su punto. Si
+ * preguntas por «Paseo Marítimo de Tesalónica» y contesta «Torre Blanca de
+ * Tesalónica», la respuesta no es de quien pregunta. Esa es toda la idea.
+ *
+ * MEDIDA ANTES DE USARLA, y la medición decidió CÓMO se usa. 56 preguntas a
+ * Places sobre el catálogo, separando los sitios que compartían punto de los que
+ * no:
+ *
+ *     parecido medio     control 0.65      racimo 0.24
+ *     ninguna palabra    control 6 de 40   racimo 9 de 16
+ *
+ * Separa, pero NO lo bastante para ser un filtro por sí solo: esos 6 del control
+ * son aciertos, y fallan porque Google contesta en inglés aunque se le pida
+ * `languageCode: 'es'` —«Museo Europeo de la Solidaridad» sale como «European
+ * Solidarity Centre», «Baños de Pasha» como «Paşa Hammam»—. Usarlo para tirar
+ * coordenadas se llevaría por delante el 15 % de las buenas.
+ *
+ * POR ESO SOLO DESEMPATA DENTRO DE UN RACIMO. Ahí la pregunta no es «¿es
+ * correcto?» sino «¿de cuál de estos dos es?», y los dos candidatos se comparan
+ * contra el MISMO nombre devuelto, así que el idioma les afecta igual a los dos.
+ * Si los dos sacan cero, no se ha aprendido nada y decide `orden`, como antes.
+ *
+ * NO ES SIMÉTRICO, a propósito. «Museo de la Acrópolis» contestando a «Museo de
+ * la Acrópolis de Atenas» es correcto aunque la respuesta sea más corta; lo que
+ * no puede pasar es que las palabras de la PREGUNTA falten en la RESPUESTA.
+ */
+const PALABRAS_VACIAS = new Set([
+  'de', 'del', 'la', 'el', 'los', 'las', 'y', 'e', 'en', 'a', 'al', 'un', 'una', 'da', 'do',
+]);
+
+function palabrasDe(texto, ciudad) {
+  const limpia = (t) =>
+    String(t ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+
+  // EL NOMBRE DE LA CIUDAD SE CAE, y hace falta: «Museo Arqueológico de
+  // Nafplio» y «Museo Numismático de Nafplio» comparten «nafplio», así que sin
+  // quitarlo todo casaría a medias solo por el topónimo, que es justo lo que no
+  // distingue a los dos sitios de un racimo.
+  const fuera = new Set(limpia(ciudad));
+  return new Set(limpia(texto).filter((p) => p.length > 2 && !PALABRAS_VACIAS.has(p) && !fuera.has(p)));
+}
+
+export function parecidoDeNombres(preguntado, contestado, ciudad = null) {
+  const a = palabrasDe(preguntado, ciudad);
+  const b = palabrasDe(contestado, ciudad);
+  if (!a.size || !b.size) return 0;
+  let dentro = 0;
+  for (const p of a) if (b.has(p)) dentro += 1;
+  return dentro / a.size;
 }
 
 /**
