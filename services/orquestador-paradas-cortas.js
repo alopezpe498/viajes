@@ -910,7 +910,82 @@ export function revisarElReparto(viaje, di = () => {}) {
     : 'Revisión del reparto: no había ninguna parada con datos suficientes para juzgarla.';
   di(resumen);
 
+  di(densidadDelViaje(viaje.id));
+
   return veredictos;
+}
+
+/**
+ * CUÁNTAS HORAS DE VER COSAS TE LLEVAS POR CADA NOCHE QUE PAGAS.
+ *
+ * NO DECIDE NADA. Es una línea en el registro, y está aquí porque es el número
+ * que separó cuatro viajes de un vistazo cuando nada más lo hacía.
+ *
+ * DE DÓNDE SALE. Al medir qué cuesta una parada de más —contando el itinerario
+ * de verdad, no la puntuación— apareció esto en tres destinos distintos:
+ *
+ *     112  Grecia   2 paradas   7,3 h/noche    3,4 h de traslado
+ *      98  Polonia  2 paradas   6,7 h/noche    3,7 h
+ *     110  Grecia   3 paradas   4,4 h/noche   10,6 h
+ *     103  Túnez    3 paradas   4,4 h/noche    5,0 h
+ *
+ * Los dos de tres paradas dan 4,4 clavado; los dos de dos, casi el doble. Una
+ * parada más se come un tercio del tiempo que pasas viendo algo, y eso no se ve
+ * en ninguna otra parte del registro: el reparto puntúa con `Σ(noches × peso)`,
+ * que premia concentrar, pero nunca dice cuánto.
+ *
+ * POR QUÉ SOLO SE ESCRIBE Y NO SE USA. Cuatro viajes no son una regla, y los
+ * cuatro son de seis o siete noches. En uno de catorce, cuatro días en Atenas
+ * probablemente empiecen a rendir menos y la tercera ciudad pase a compensar;
+ * una regla calibrada solo con viajes cortos se rompería justo ahí. Así que se
+ * escribe el número y cada viaje que se genere suma evidencia solo, que es lo
+ * que hoy no pasaba: el dato había que sacarlo a mano del itinerario.
+ *
+ * Los traslados se cuentan puerta a puerta y solo los SALTOS entre paradas: los
+ * vuelos de ida y vuelta se pagan igual con dos paradas que con cinco, y meterlos
+ * taparía justo lo que se quiere ver.
+ */
+export function densidadDelViaje(viajeId) {
+  const noches = todas(
+    "SELECT COALESCE(SUM(noches), 0) AS n FROM etapas WHERE viaje_id = ? AND estado = 'confirmada'",
+    viajeId
+  )[0].n;
+  if (!noches) return 'Densidad del viaje: sin noches confirmadas, no hay nada que dividir.';
+
+  const paradas = todas(
+    "SELECT COUNT(*) AS n FROM etapas WHERE viaje_id = ? AND estado = 'confirmada'",
+    viajeId
+  )[0].n;
+
+  // Las comidas no son visita: son el hueco entre dos visitas.
+  const minutosVisita = todas(
+    `SELECT COALESCE(SUM(i.duracion_min), 0) AS m
+       FROM itinerario i LEFT JOIN candidatos c ON c.id = i.candidato_id
+      WHERE i.viaje_id = ?
+        AND COALESCE(c.titulo, i.texto_manual, '') NOT LIKE 'Comer%'`,
+    viajeId
+  )[0].m;
+
+  const minutosTraslado = todas(
+    `SELECT datos_extra FROM transportes
+      WHERE viaje_id = ? AND etapa_origen_id IS NOT NULL AND etapa_destino_id IS NOT NULL`,
+    viajeId
+  ).reduce((a, t) => {
+    try {
+      return a + (JSON.parse(t.datos_extra ?? '{}')?.bloque?.total ?? 0);
+    } catch {
+      return a;
+    }
+  }, 0);
+
+  const porNoche = minutosVisita / 60 / noches;
+
+  return (
+    `Densidad del viaje: ${porNoche.toFixed(1)} h de visita por noche ` +
+    `(${(minutosVisita / 60).toFixed(1)} h en ${noches} noches y ${paradas} parada(s), ` +
+    `más ${(minutosTraslado / 60).toFixed(1)} h de traslado entre ellas). ` +
+    'Medido sobre otros viajes: con dos paradas salen 6,7-7,3 y con tres, 4,4. Solo es un dato.'
+  );
 }
 
 export default {
