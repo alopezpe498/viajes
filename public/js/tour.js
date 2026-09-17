@@ -42,12 +42,15 @@ const PASOS = [
     imagen: '/img/tour/configuracion.jpg',
   },
   {
-    clave: 'mapa',
-    titulo: '2 · El mapa',
+    clave: 'destino',
+    titulo: '2 · El mapa: a dónde vas',
     texto:
-      'Dónde cae cada cosa. Sirve para lo que no se ve en una lista: si la ruta hace zigzag, ' +
-      'si un sitio está mucho más lejos de lo que parecía, y cuánto cuesta en tiempo cada salto.',
-    imagen: '/img/tour/mapa.jpg',
+      'Tocas el mapa o escribes, y vale de tres formas. Una CIUDAD: el viaje entero transcurre allí. ' +
+      'Un PAÍS: se eligen las ciudades que caben en tus días y se ordenan en una ruta. ' +
+      'Y VARIOS PAÍSES: ahí se abre una pantalla aparte para decidir contigo cuáles entran, ' +
+      'porque «¿cabe Montenegro?» depende de cuántos días tienes y de cuánta carretera aguantas — ' +
+      'y eso no lo decide sola.',
+    imagen: '/img/tour/destino.jpg',
   },
   {
     clave: 'ruta',
