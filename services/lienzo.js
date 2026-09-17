@@ -1739,12 +1739,30 @@ export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado = null, 
     .filter((c) => c.dia === dia && c.id !== yoMismo && enMinutos(c.hora) != null)
     .sort((a, b) => enMinutos(a.hora) - enMinutos(b.hora));
 
-  // LO QUE ACABA MÁS TARDE SIN PASARSE, que no siempre es el vecino de la lista:
-  // una excursión de ocho horas empieza la primera del día y termina la última.
+  // LO QUE ACABA MÁS TARDE SIN PASARSE **Y SE SABE DÓNDE ESTÁ**.
+  //
+  // EL PUNTO CIEGO QUE ESTO TAPA, y lo enseñó el día 4 del viaje 105:
+  //
+  //     09:00  Yacimiento de Micenas        180 min
+  //     13:30  Comer · Nafplio, zona centro  90 min
+  //     15:30  Fortaleza de Palamidi        120 min   ← a 19,3 km de Micenas
+  //
+  // De Micenas a Palamidi hay 19 km y entre los dos quedan 30 minutos, que no
+  // dan. Y la guarda se callaba: buscaba «lo que acaba justo antes», encontraba
+  // la COMIDA —que es una zona y no tiene coordenada—, y al no poder medir se
+  // callaba. Un bloque sin punto no es que no estorbe: es que no se sabe, y
+  // dejaba ciega la comprobación de todo lo que hubiera detrás.
+  //
+  // Ahora se salta lo que no se puede medir y se sigue hacia atrás hasta
+  // encontrar algo situado. Es más prudente y no menos: la comida se hace EN uno
+  // de los dos sitios, así que el trayecto sigue siendo el mismo con comida en
+  // medio o sin ella. Lo que no se puede es no mirarlo.
   let antes = null;
   for (const c of delDia) {
     const fin = enMinutos(c.hora) + (Number(c.duracionMin) || 0);
-    if (fin <= empieza && (antes == null || fin > antes.fin)) antes = { c, fin };
+    if (fin > empieza) continue;
+    if (!puntoDeTarjeta(c)) continue;
+    if (antes == null || fin > antes.fin) antes = { c, fin };
   }
 
   if (antes) {
@@ -1766,7 +1784,8 @@ export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado = null, 
   // Y LO DE DESPUÉS, por el mismo motivo y en el otro sentido. Meter algo en un
   // hueco de dos horas a cien kilómetros deja tirado a lo que venía detrás, y
   // ese no es problema de lo que venía detrás.
-  const despues = delDia.find((c) => enMinutos(c.hora) >= acaba);
+  // Y por el mismo motivo, el primero de después QUE SE PUEDA MEDIR.
+  const despues = delDia.find((c) => enMinutos(c.hora) >= acaba && puntoDeTarjeta(c));
   if (despues) {
     const suyo = puntoDeTarjeta(despues);
     if (suyo) {

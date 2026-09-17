@@ -431,6 +431,25 @@ function temporadaDelTramo(tramo) {
   const esVerano = /\b(verano|temporada alta|summer|high season|estival)\b/.test(tramo);
   const esInvierno = /\b(invierno|temporada baja|winter|low season|invernal)\b/.test(tramo);
 
+  // «MAR» ES MARTES ANTES QUE MARZO, Y ESO CASI CUESTA UN MUSEO.
+  //
+  // `mesesDeTexto('Mar-Dom: 10:00 - 18:00')` devuelve [3]: lee «Mar» como marzo.
+  // Es la única abreviatura del español que colisiona —«mié», «jue», «vie»,
+  // «sáb», «dom» y «lun» no son meses— pero le toca al horario más común que
+  // existe, «de martes a domingo».
+  //
+  // Convertía ese tramo en «esto solo rige en marzo», y en cuanto se pregunta por
+  // otro mes el tramo deja de aplicar: el Museo del Ámbar de Gdansk salía
+  // «cierra los domingos» citando un horario que dice «Mar-Dom», contradiciéndose
+  // en la misma frase. Es el mismo pecado que ya tiene su comentario en
+  // `avisosDeCierre`, por otra puerta.
+  //
+  // La regla: un tramo que ENUMERA DÍAS DE LA SEMANA no habla de temporadas, por
+  // mucho que una de sus palabras se parezca a un mes. Para ser de temporada
+  // tiene que decirlo con todas las letras —«verano», «invierno»— o dar meses
+  // sin nombrar días.
+  if (!esVerano && !esInvierno && diasDelTramo(tramo).size) return null;
+
   if (!esVerano && !esInvierno) return nombraMeses ? suyos : null;
   if (nombraMeses) return suyos;
 
@@ -490,11 +509,38 @@ export function horarioPorDias(texto, mes = null) {
         ...conTemporada.filter((x) => !x.meses).map((x) => x.tramo),
       ];
     } else {
-      const suyos = conTemporada.filter((x) => x.meses?.includes(Number(mes)));
-      tramos = suyos.length
-        ? [...suyos.map((x) => x.tramo), ...conTemporada.filter((x) => !x.meses).map((x) => x.tramo)]
-        : todos;
-      if (!suyos.length) temporadaDudosa = true;
+      // EL TRAMO DE TEMPORADA ES LA EXCEPCIÓN, Y UNA EXCEPCIÓN VA LA ÚLTIMA.
+      //
+      // EL FALLO QUE ORIGINA ESTO, y lo enseñó el viaje 105 en Tesalónica. Con
+      // «Todo el año: 09:00 - 17:00 (Martes cerrado en invierno)» salía esto:
+      //
+      //     enero      martes ABIERTO    ← y el texto dice que cierra
+      //     septiembre martes CERRADO    ← y septiembre no es invierno
+      //
+      // Invertido en los dos sentidos, y por dos motivos que se sumaban:
+      //
+      //   1. Cuando la temporada SÍ tocaba, el tramo estacional se ponía el
+      //      PRIMERO y el general venía detrás y lo pisaba. Una excepción que se
+      //      lee antes que la regla no es una excepción: es ruido.
+      //   2. Cuando NO tocaba, `tramos = todos` lo dejaba puesto —y encima el
+      //      último, o sea ganando—. Aplicar el horario de invierno en
+      //      septiembre es justo lo que expulsó a Palamidio en su día.
+      //
+      // Y no era cosmético: el aviso decía «cierra los martes» con el sitio
+      // colocado un martes, la recolocación lo movía al mismo martes porque ella
+      // lee sin mes, y los dos avisos sobrevivieron TRES pasadas de revisión sin
+      // converger. El motor peleando consigo mismo.
+      const aplicables = conTemporada.filter((x) => x.meses?.includes(Number(mes)));
+      const generales = conTemporada.filter((x) => !x.meses);
+
+      if (aplicables.length || generales.length) {
+        tramos = [...generales.map((x) => x.tramo), ...aplicables.map((x) => x.tramo)];
+      } else {
+        // Todos hablaban de temporada y ninguno es de este mes: no se sabe qué
+        // rige. Se leen todos —el lector se queda con lo más amplio— y se avisa.
+        tramos = todos;
+        temporadaDudosa = true;
+      }
     }
   }
 

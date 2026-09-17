@@ -952,19 +952,45 @@ function horaLegitima(naturaleza, hora) {
 /**
  * LOS DÍAS EN QUE UN SITIO CIERRA, leídos de su horario publicado.
  *
- * La misma fuente que usa el aviso, y por el mismo motivo: si el aviso dice una
- * cosa y la recolocación otra, el sitio acaba rebotando entre días o saliendo
- * del plan por un cierre que solo existía en una lista vieja.
+ * LA MISMA LECTURA QUE HACE EL AVISO, hasta el último argumento. Si el aviso
+ * dice una cosa y la recolocación otra, el sitio rebota entre días o sale del
+ * plan por un cierre que solo existe en una de las dos lecturas.
  *
- * Un día que el horario no aclara NO cuenta como cierre: aquí se devuelven solo
- * los que el texto dice, y la duda se queda en el aviso flojito.
+ * Un día que el horario no aclara NO cuenta como cierre: solo cuenta lo que el
+ * texto dice, y la duda se queda en el aviso flojito.
  */
-function diasDeCierreDe(colocado) {
+function cierraEseDia(colocado, fecha) {
   const quien = deQuienEs(colocado);
-  if (quien?.de !== 'sitio' || !quien.deId) return [];
+  if (quien?.de !== 'sitio' || !quien.deId || !fecha) return false;
   const ficha = una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId);
-  if (!ficha?.horarios) return [];
-  return [0, 1, 2, 3, 4, 5, 6].filter((d) => abreEl(ficha.horarios, d) === false);
+  if (!ficha?.horarios) return false;
+
+  // EL MES VA DENTRO, Y AQUI ESTABA LA MITAD DEL FALLO.
+  //
+  // Esto era `diasDeCierreDe`, una lista de los siete dias leida SIN el mes:
+  //
+  //     [0..6].filter((d) => abreEl(ficha.horarios, d) === false)
+  //
+  // El aviso si pasa el mes —lo necesita para saber si rige el horario de verano
+  // o el de invierno— asi que los dos leian el mismo texto con reglas distintas.
+  // En el viaje 105, con «Todo el año: 09:00 - 17:00 (Martes cerrado en
+  // invierno)» y un martes de septiembre:
+  //
+  //     el AVISO (con mes)      -> cierra los martes
+  //     el que MUEVE (sin mes)  -> el martes esta bien
+  //
+  // Resultado: «Rotonda de Galerio cerraba ese dia: lo paso al dia 2 a las
+  // 11:30», al MISMO dia 2 que era el problema, y con exito declarado. El aviso
+  // sobrevivio tres pasadas de revision sin converger. Es exactamente lo que
+  // avisaba el comentario que habia aqui —«si el aviso dice una cosa y la
+  // recolocacion otra, el sitio acaba rebotando entre dias»— cumpliendose por
+  // una lista que se leia sin la mitad del dato.
+  //
+  // Se pregunta por el DIA CONCRETO en vez de precalcular los siete, porque los
+  // dias que cierra un sitio pueden depender del mes: una lista de siete
+  // casillas no puede representar eso, y por eso no lo representaba.
+  const mes = Number(String(fecha).slice(5, 7)) || null;
+  return abreEl(ficha.horarios, diaDeLaSemana(fecha), mes) === false;
 }
 
 /** El día de la semana de una fecha «2026-10-16». */
@@ -1042,7 +1068,7 @@ function recolocarConHora(
   const cierre = cierreDe(colocado);
   const naturaleza = naturalezaDe(colocado);
   const duracion = Number(colocado.duracionMin) || 60;
-  const cierra = diasDeCierreDe(colocado);
+
 
   // EL TABLERO SIN ESTA TARJETA.
   //
@@ -1053,7 +1079,7 @@ function recolocarConHora(
   const tablero = sinEl(lienzo, colocado.id);
 
   const puedeEnEsteDia = (d) =>
-    !esDiaDeViaje(lienzo, d.n) && !cierra.includes(diaDeLaSemana(d.fecha));
+    !esDiaDeViaje(lienzo, d.n) && !cierraEseDia(colocado, d.fecha);
 
   // 1) Su propio día, incluida su propia franja.
   //
@@ -1560,7 +1586,7 @@ function colocarImprescindible(
   };
   const naturaleza = naturalezaDe(falso);
   const cierre = cierreDe(falso);
-  const cierra = diasDeCierreDe(falso);
+
 
   // EL DÍA QUE HA QUEDADO LIBRE VA PRIMERO: es el que la excursión ocupaba y el
   // que se ha vaciado para esto. Repescar y mandarlo a otro día sería dejar el
@@ -1576,7 +1602,7 @@ function colocarImprescindible(
 
   for (const d of dias) {
     if (esDiaDeViaje(lienzo, d.n)) continue;
-    if (cierra.includes(diaDeLaSemana(d.fecha))) continue;
+    if (cierraEseDia(falso, d.fecha)) continue;
 
     const hora = huecoValido(lienzo, {
       dia: d.n,
@@ -2005,7 +2031,7 @@ function esDeLosQueNoSePuedenPerder(colocado) {
 function agotarLaParada(viajeId, lienzo, colocado, di) {
   const naturaleza = naturalezaDe(colocado);
   const cierre = cierreDe(colocado);
-  const cierra = diasDeCierreDe(colocado);
+
   const duracion = Number(colocado.duracionMin) || 60;
 
   const diaActual = lienzo.dias.find((d) => d.n === colocado.dia);
@@ -2022,7 +2048,7 @@ function agotarLaParada(viajeId, lienzo, colocado, di) {
       porQueNo.push(`día ${d.n}: es día de viaje`);
       continue;
     }
-    if (cierra.includes(diaDeLaSemana(d.fecha))) {
+    if (cierraEseDia(colocado, d.fecha)) {
       porQueNo.push(`día ${d.n}: el sitio cierra ese día`);
       continue;
     }
