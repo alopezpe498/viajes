@@ -156,6 +156,39 @@ function cuando(iso) {
             </div>
           </li>
         <% }) %>
+
+        <%# ---------- LA FILA QUE PARECE UNA PREFERENCIA Y ES UN BOTÓN ----------
+
+            Tiene la misma pinta que las de arriba —etiqueta, explicación y algo
+            a la derecha— porque es donde uno va a buscarla. Pero no hay nada que
+            escribir: lo único que se puede hacer con un tour es volver a verlo.
+
+            Va al final de la sección a propósito: lo de arriba son claves sin
+            las cuales la aplicación no funciona, y esto es una comodidad. %>
+        <li class="orq-ajuste" data-ajuste="tour">
+          <div class="orq-ajuste__texto">
+            <span class="orq-parametro__nombre">Tour de bienvenida</span>
+            <p class="orq-ajuste__explica">
+              Las burbujas que señalan las partes de la aplicación la primera vez que
+              se pisa cada pantalla. Se lanza solo una vez; desde aquí se vuelve a ver
+              entero, desde la primera parada.
+            </p>
+          </div>
+
+          <div class="orq-ajuste__control">
+            <span class="orq-origen orq-origen--<%= tourVisto ? 'guardado' : 'fabrica' %>">
+              <%= tourVisto ? 'Ya visto' : 'Sin ver' %>
+            </span>
+            <div class="orq-ajuste__fila">
+              <div class="orq-ajuste__botones">
+                <button type="button" class="orq-ajuste__accion" id="tour-relanzar">
+                  <i class="ti ti-player-play" aria-hidden="true"></i> Ver el tour de bienvenida
+                </button>
+              </div>
+            </div>
+            <p class="orq-ajuste__resultado" id="tour-relanzar-resultado" hidden></p>
+          </div>
+        </li>
       </ul>
 
       <p class="orq-ajuste__nota">
@@ -252,4 +285,25 @@ function cuando(iso) {
   </div>
 </main>
 
+<script>
+  // LA FILA CAMUFLADA. Borra los dos flags y devuelve a la portada.
+  //
+  // No hace falta llevar a ninguna pantalla concreta: con los flags limpios, el
+  // tour vuelve a comportarse como el primer día, y cada pantalla suelta su
+  // tramo en cuanto se pisa. Mandar a la fuerza a la configuración de un viaje
+  // que a lo mejor ya está terminado sería peor que dejar que salga solo.
+  document.getElementById('tour-relanzar')?.addEventListener('click', async (e) => {
+    const boton = e.currentTarget;
+    const aviso = document.getElementById('tour-relanzar-resultado');
+    boton.disabled = true;
+    try {
+      await fetch('/api/tour/reiniciar', { method: 'POST' });
+      location.href = '/';
+    } catch {
+      boton.disabled = false;
+      aviso.textContent = 'No he podido reiniciarlo. Inténtalo otra vez.';
+      aviso.hidden = false;
+    }
+  });
+</script>
 <%- include('parciales/pie', { extraPie: pieExtra }) %>

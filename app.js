@@ -18,6 +18,7 @@ import { arrancarWorker } from './jobs/worker.js';
 import { hayClaveIA } from './lib/ia.js';
 import { hayClaveGoogle } from './lib/google.js';
 import { volcarAjustes } from './services/ajustes.js';
+import { estadoDelTour } from './services/tour.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,27 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: false })); // formularios normales
 app.use(express.json());                          // fetch del marcado
+
+// --- EL TOUR DE BIENVENIDA, en todas las pantallas -------------------------
+//
+// Va como middleware y no en cada `res.render` porque cualquier pantalla puede
+// ser la primera que pise el usuario: no hay un orden obligatorio, y el tour
+// tiene que saber en cualquiera de ellas si le toca hablar o callarse. Añadirlo
+// a mano en las veinticinco rutas que renderizan sería garantizar que un dia se
+// olvida en una.
+//
+// Solo en las paginas: una respuesta JSON no tiene tour que enseñar.
+app.use((req, res, next) => {
+  if (!req.accepts('html')) return next();
+  try {
+    res.locals.tour = estadoDelTour();
+  } catch {
+    // Si la base aun no esta lista, el tour simplemente no sale. No es motivo
+    // para tumbar una pagina.
+    res.locals.tour = { visto: true, tramos: [] };
+  }
+  next();
+});
 
 // --- Rutas -----------------------------------------------------------------
 app.use('/', router);

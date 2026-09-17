@@ -208,6 +208,7 @@ import {
   quitarAjuste,
   probarAjuste,
 } from '../services/ajustes.js';
+import { marcarTramo, marcarVisto, reiniciarTour, seHaVisto } from '../services/tour.js';
 import { preguntar, ayudaDisponible } from '../services/ayuda.js';
 import {
   traducirRegistro,
@@ -2877,6 +2878,7 @@ router.get('/orquestador', (req, res) => {
     // Las claves NO viajan aquí: de los secretos solo van `hay` y los cuatro
     // últimos caracteres. Mirar el HTML de esta página no enseña ninguna clave.
     instalacion: ajustesParaLaPantalla(),
+    tourVisto: seHaVisto(),
   });
 });
 
@@ -2887,6 +2889,29 @@ router.get('/orquestador', (req, res) => {
  * Guardar, quitar y probar. Las tres devuelven el ajuste con la misma forma que
  * la pantalla ya sabe pintar, para que no haya dos maneras de describir lo mismo.
  */
+// =============================================================================
+// EL TOUR DE BIENVENIDA
+// =============================================================================
+/**
+ * Tres verbos y ninguna decision: el guion vive en `public/js/tour.js` y quien
+ * decide si toca hablar es el navegador, que es el unico que sabe en que
+ * pantalla esta y si el ancla llego a aparecer.
+ */
+router.post('/api/tour/tramo', (req, res) => {
+  const r = marcarTramo(req.body?.tramo);
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+
+router.post('/api/tour/visto', (req, res) => {
+  const tramos = Array.isArray(req.body?.tramos) ? req.body.tramos.map(String) : [];
+  res.json(marcarVisto(tramos));
+});
+
+router.post('/api/tour/reiniciar', (req, res) => {
+  res.json(reiniciarTour());
+});
+
 router.post('/api/ajustes/:clave', (req, res) => {
   const r = guardarAjuste(req.params.clave, req.body?.valor);
   if (r.error) return res.status(400).json({ error: r.error });

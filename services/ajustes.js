@@ -94,6 +94,36 @@ export const AJUSTES = [
       'sitios de siempre, y si no aparece se usa el Chromium de Playwright.',
     secreto: false,
   },
+
+  // =========================================================================
+  // EL TOUR DE BIENVENIDA — dos ajustes que NO se editan a mano
+  // =========================================================================
+  //
+  // Viven aquí porque son estado del usuario y este es el sitio donde vive el
+  // estado del usuario: nada de `localStorage`, que se pierde al cambiar de
+  // navegador y no se puede mirar desde el servidor.
+  //
+  // `interno` los saca de la pantalla de ajustes. No es que se escondan: es que
+  // un campo de texto donde escribir «1» no es la manera de decir «quiero ver
+  // el tour otra vez». Esa la pone la propia pantalla, con una fila que parece
+  // una preferencia y es un botón.
+  {
+    clave: 'tour_visto',
+    etiqueta: 'Tour de bienvenida visto',
+    explica: 'Se marca solo al terminar el tour o al saltarlo. Entonces deja de salir.',
+    secreto: false,
+    interno: true,
+  },
+  {
+    clave: 'tour_tramos_vistos',
+    etiqueta: 'Tramos del tour ya vistos',
+    explica:
+      'Qué pantallas ya enseñaron su tramo, separadas por comas. Es lo que permite ' +
+      'que cada pantalla suelte el suyo la primera vez que se pisa, en vez de las ' +
+      'nueve burbujas seguidas el primer día.',
+    secreto: false,
+    interno: true,
+  },
 ];
 
 const PORaCLAVE = new Map(AJUSTES.map((a) => [a.clave, a]));
@@ -165,7 +195,8 @@ function pistaDe(valor) {
 export function ajustesParaLaPantalla() {
   const filas = guardados();
 
-  return AJUSTES.map((a) => {
+  // Los internos no se pintan: no son cosas que se escriban a mano.
+  return AJUSTES.filter((a) => !a.interno).map((a) => {
     const fila = filas.get(a.clave);
     const origen = origenDe(a.clave);
     const valor = ajuste(a.clave);

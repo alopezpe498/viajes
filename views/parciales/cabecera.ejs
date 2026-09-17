@@ -67,6 +67,9 @@ const avionPct = typeof pasoActual !== 'undefined' && pasoActual
   <%# Iconos Tabler como webfont. Necesita conexión: si no hay, el resto se ve igual. %>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/estilo.css">
+  <%# El tour de bienvenida. Va aquí porque este es el único <head> de la
+      aplicación y el tour puede arrancar en cualquiera de sus pantallas. %>
+  <link rel="stylesheet" href="/css/tour.css">
   <%# El asistente de ayuda sale en todas las pantallas, así que su hoja va aquí.
       Tiene la suya y no vive en estilo.css a propósito: es un componente que
       aterriza encima de pantallas que ya tienen su propio vocabulario, y sus
@@ -76,6 +79,10 @@ const avionPct = typeof pasoActual !== 'undefined' && pasoActual
   <%- typeof extraCabeza !== 'undefined' && extraCabeza ? extraCabeza : '' %>
 </head>
 <body>
+
+<%# QUÉ SABE EL TOUR AL CARGAR LA PÁGINA: si ya se vio entero y qué tramos han
+    salido ya. El guión —qué se señala y qué se dice— vive en /js/tour.js. %>
+<script type="application/json" id="datos-tour"><%- JSON.stringify(typeof tour !== 'undefined' && tour ? tour : { visto: true, tramos: [] }) %></script>
 
 <% if (typeof pasoActual !== 'undefined' && pasoActual && typeof viaje !== 'undefined' && viaje) { %>
   <%# ---------- TARJETA DE EMBARQUE ---------- %>
