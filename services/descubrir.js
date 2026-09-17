@@ -719,9 +719,30 @@ export function promptDeCiudad(punto, nombreDestino, bloque, { excluir = [], eda
   // este encargo y la cabecera; el formato y las reglas son los mismos, y así
   // el saneado de la respuesta es uno solo.
   const encargos = {
+    // «HASTA», NO «LOS DIEZ». Y ERA EL ÚNICO BLOQUE QUE NO LO DECÍA.
+    //
+    // Los otros dos siempre han traído su salida —«si no llegas a diez buenos,
+    // dame menos», «si en esta ciudad no hay diez de verdad, dame los que
+    // haya»—. Este pedía «los 10» y punto, y se cumplía al pie de la letra: las
+    // OCHO ciudades del catálogo tienen EXACTAMENTE diez imprescindibles. Ocho
+    // de ocho no es casualidad, es una cuota.
+    //
+    // Y no es un detalle de redacción, porque el bloque tiene consecuencias. El
+    // reparto lee `bloque = 'imprescindibles'` como segundo nivel de protección
+    // —`importanciaDe`, nivel 4— y los tres primeros como intocables. Rellenar
+    // hasta diez mete en la categoría protegida cosas como el «Parque de
+    // Kairuan» (#10), el «Restaurante Miód Malina» de Cracovia (#8) o el
+    // «Restaurante Dar Hizem» de Sousse (#8), que entonces pesan MÁS que un
+    // sitio de segundo nivel de verdad.
+    //
+    // Nafplio tiene cuatro o cinco cosas y le salieron diez. El relleno no se
+    // pierde: se le dice dónde va, que es el bloque de segundo nivel.
     imprescindibles:
-      `Dame los ${CUANTOS_SITIOS.max} sitios que NO te puedes perder, los que justifican el viaje, ` +
-      'ordenados de más a menos imprescindible.',
+      `Dame HASTA ${CUANTOS_SITIOS.max} sitios que NO te puedes perder, los que justifican el ` +
+      'viaje, ordenados de más a menos imprescindible. Si esta ciudad no tiene diez que de verdad ' +
+      'lo justifiquen, dame SOLO los que sí: una lista de cuatro verdaderos vale más que una de ' +
+      'diez con seis de relleno, y el resto ya tiene su sitio en el bloque de segundo nivel. ' +
+      'Un restaurante o un parque de barrio no justifican un viaje.',
     otros:
       `Dame otros ${CUANTOS_SITIOS.max} sitios de SEGUNDO NIVEL: los que merecen la pena cuando ya ` +
       'has visto lo principal o tienes un día más. Nada de rellenar con lo obvio ni con sitios menores ' +
