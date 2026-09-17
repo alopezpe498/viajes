@@ -759,34 +759,37 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   // coste — que es exactamente la mentira de «NULL no es cero», y aquí premiando
   // al que menos datos tiene. Mientras no estén TODOS los precios, el término no
   // se aplica a nadie y el registro lo dice.
-  // Y LA CONVERSIÓN VA PONDERADA, QUE ES DONDE ME EQUIVOQUÉ PRIMERO.
+  // EUROS A HORAS, SIN PONDERAR, Y ESTO HAY QUE EXPLICARLO PORQUE LO CAMBIÉ DOS
+  // VECES.
   //
-  // Los otros dos términos no están en horas: están en HORAS × PESO. Una hora en
-  // una ciudad de peso 5 vale 5 puntos. Pasar los euros a horas peladas metía el
-  // precio en otra moneda, cinco veces más pequeña que la de la cuenta, y el
-  // término quedaba inerte: con 30 €/h hacían falta diferencias de 1.218 € (viaje
-  // 93), 2.118 € (viaje 110) y 3.930 € (viaje 103) para mover un ranking, cuando
-  // los vuelos de esos viajes van de 400 a 1.200 €. Un parámetro que no puede
-  // cambiar nada es peor que no tenerlo: parece que el precio cuenta.
+  // Primero lo dejé así. Luego lo «corregí» multiplicando por el peso medio de
+  // las candidatas, razonando que los otros términos están en HORAS × PESO y los
+  // euros entraban en otra moneda. El razonamiento parecía bueno y la medida que
+  // lo justificaba estaba mal hecha: comparé el término del precio contra el
+  // TOTAL de la puntuación, y el total está dominado por el término de las
+  // noches, que en la mayoría de los viajes es EL MISMO para todas las puertas
+  // —en el 112, 1322.1 en las cuatro— y por tanto no discrimina nada.
   //
-  // Se pondera por el peso MEDIO de las candidatas, uno solo para todo el
-  // ranking. Por el medio y no por el de cada puerta a propósito: un vuelo no
-  // cuesta más por salir de una ciudad importante, así que ponderar combinación a
-  // combinación castigaría a las puertas buenas por serlo. Un factor común deja
-  // el precio en la moneda correcta sin tocar las comparaciones entre puertas.
+  // La vara buena es la HORQUILLA entre puertas, no el total. Con los números
+  // reales del viaje 112:
   //
-  // Así «30 €/h» dice lo que parece decir: lo que vale una hora útil en una
-  // ciudad de importancia media.
+  //     horquilla de los vuelos          70.6 pts
+  //     horquilla del precio sin ponderar 18.6 pts   -> 0.26x    desempata
+  //     horquilla del precio con peso     273.9 pts  -> 3.88x    MANDA
+  //
+  // Y el peso no era 1-5 como supuse leyendo `horasUtilesDeLaPuerta`: es
+  // `cuenta.perfil` de la rúbrica de ciudades, que en el 112 promedia 14.7. La
+  // «corrección» hacía el término catorce veces más grande, no cinco.
+  //
+  // En el 112 no cambió la puerta elegida —c2 ganaba con precio y sin él— pero sí
+  // reordenó el resto, y eso es suerte, no diseño. Vuelve a como estaba: el
+  // precio se compara con lo que los vuelos deciden, que es su sitio.
   const tasa = Math.max(0, parametro('euros_por_hora_util', 30));
   const faltaAlgunPrecio = combinaciones.some((c) => c.precio == null);
-  const pesoMedio =
-    candidatas.length
-      ? candidatas.reduce((n, c) => n + (Number(c.peso) || 3), 0) / candidatas.length
-      : 3;
 
   if (tasa > 0 && combinaciones.length && !faltaAlgunPrecio) {
     for (const c of combinaciones) {
-      c.costeEnHoras = (c.precio / tasa) * pesoMedio;
+      c.costeEnHoras = c.precio / tasa;
       c.puntos -= c.costeEnHoras;
     }
   } else if (faltaAlgunPrecio) {
@@ -897,7 +900,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         // Y EL PRECIO CON SU CUENTA AL LADO, POR LO MISMO. Un «− 12.3» a secas no
         // se puede discutir; «− 12.3 por 370 € a 30 €/h» sí, y además enseña la
         // tasa que lo ha producido, que es el número que se ajusta si no gusta.
-        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € a ${parametro('euros_por_hora_util', 30)} €/h (peso medio ${pesoMedio.toFixed(1)})` : ''}) · ` +
+        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € a ${parametro('euros_por_hora_util', 30)} €/h` : ''}) · ` +
         `${comoTexto(c.total)} de vuelo · ` +
         // EL PRECIO SE DICE SIEMPRE, PUNTÚE O NO. Cuando falta alguno el término
         // no se aplica a nadie, y entonces esta línea es lo único que deja ver
