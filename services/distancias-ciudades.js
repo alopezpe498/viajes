@@ -251,7 +251,19 @@ async function asegurarCoordenadas(puntoId) {
         `Dame las coordenadas del centro de esta ciudad: ${consulta}. ` +
           'Responde solo {"lat": numero, "lon": numero}. Si no sabes cual es, ' +
           'responde {"lat": null, "lon": null}: prefiero un hueco a un sitio equivocado.',
-        { maxTokens: 200, paso: `situar ${consulta}` }
+        {
+          maxTokens: 200,
+          paso: `situar ${consulta}`,
+          // LAS COORDENADAS DE UNA CIUDAD SON UN DATO, NO UN JUICIO.
+          //
+          // Misma historia que el código IATA: vive en `ciudades_y_noches`, que
+          // está en criterio por la decisión de la puerta, y heredaba el modelo
+          // caro una vez por ciudad candidata solo para devolver dos números que
+          // se saben o no se saben. El prompt ya pide el hueco antes que el
+          // invento —«prefiero un hueco a un sitio equivocado»—, que es la red
+          // que de verdad protege esto.
+          modelo: 'rapido',
+        }
       );
       const lat = Number(r?.lat);
       const lon = Number(r?.lon);

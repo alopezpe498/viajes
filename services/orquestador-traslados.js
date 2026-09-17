@@ -271,7 +271,17 @@ async function posicionamientoHasta(ciudad, iata) {
         'Devuelve SOLO este JSON:',
         '{"mismaCiudad": false, "ciudadDelAeropuerto": "Tesalónica", "minutos": 180}',
       ].join('\n'),
-      { maxTokens: 300, paso: `situar el aeropuerto ${iata} respecto a ${ciudad}` }
+      {
+        maxTokens: 300,
+        paso: `situar el aeropuerto ${iata} respecto a ${ciudad}`,
+        // DE QUÉ CIUDAD ES UN AEROPUERTO ES UN DATO, COMO SU CÓDIGO.
+        //
+        // Hoy no cuesta nada —`modelo_traslados` está en rápido— y por eso mismo
+        // se declara ahora: es la única forma de que siga sin costar el día que
+        // alguien suba esta fase a criterio por el traslado en sí, que sí se
+        // piensa. Declararlo solo cuando ya duele es llegar tarde dos veces.
+        modelo: 'rapido',
+      }
     );
 
     if (r?.mismaCiudad !== false) return { minutos: 0, ciudad: null };
