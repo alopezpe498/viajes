@@ -2044,8 +2044,29 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
   if (!alDia.has(pareja[0].id) || !alDia.has(pareja[1].id)) return 0;
 
   const finPrimero = (enMinutos(primero.hora) ?? 0) + (Number(primero.duracionMin) || 0);
-  if ((enMinutos(segundo.hora) ?? 0) >= finPrimero) return 0;   // ya no se pisan
 
+  // AQUÍ HABÍA UN «YA NO SE PISAN» QUE MATABA EL «NO LLEGAS».
+  //
+  // La línea era esta, y estaba justo aquí:
+  //
+  //     if ((enMinutos(segundo.hora) ?? 0) >= finPrimero) return 0;
+  //
+  // Escrita para un SOLAPE, donde el segundo siempre empieza antes de que el
+  // primero acabe. Pero en un «no llegas» el segundo empieza DESPUÉS —esa es la
+  // definición—, así que la condición se cumplía SIEMPRE y la función se
+  // rendía en la primera línea, sin decir nada. Se vio en el viaje 102:
+  //
+  //     Día 3: Medina de Kairouan acaba 16:30, Café Halfaouine empieza 16:30  → 16:30 >= 16:30
+  //     Día 4: Zoco de las Alfombras acaba 16:00, Bir Barouta empieza 16:15   → 16:15 >= 16:00
+  //
+  // Los dos avisos salieron en las dos pasadas y acabaron en «ninguno de esos
+  // avisos tiene un arreglo que yo sepa hacer», teniendo el arreglo aquí mismo.
+  // Es el mismo fallo que el aviso muerto de `avisosDeTiempo`: una suposición de
+  // solape colocada en el camino que los dos comparten.
+  //
+  // No hace falta sustituirla por nada: `estorbo <= 0`, doce líneas más abajo,
+  // ya dice «ya no se pisan» para los dos casos, porque se mide contra
+  // `puedeDesde` —que incluye el trayecto— y no contra el final del primero.
   const { mas, menos, impMas, impMenos } = quienPesaMas(primero, segundo);
 
   // A qué hora puede empezar el segundo sin pisar al primero. En un solape es
