@@ -21,7 +21,7 @@ import { direccionDe, claveDeCandidato } from './direcciones.js';
 import {
   distanciaKm,
   minutosMinimosEnLlegar,
-  MINUTOS_QUE_SE_PERDONAN,
+  minutosQueSePerdonan,
 } from './distancias.js';
 import { abreEl, abiertoA, horarioPorDias } from './horarios.js';
 import { ciudadDeCasa } from './proveedores.js';
@@ -1752,7 +1752,7 @@ export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado = null, 
     if (suyo) {
       const km = distanciaKm(suyo, miPunto);
       const falta = minutosMinimosEnLlegar(km);
-      if (antes.fin + falta > empieza + MINUTOS_QUE_SE_PERDONAN) {
+      if (antes.fin + falta > empieza + minutosQueSePerdonan()) {
         return {
           motivo:
             `de «${antes.c.nombre}» a aquí hay ${Math.round(km)} km ` +
@@ -1773,7 +1773,7 @@ export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado = null, 
       const km = distanciaKm(miPunto, suyo);
       const falta = minutosMinimosEnLlegar(km);
       const hueco = enMinutos(despues.hora) - acaba;
-      if (falta > hueco + MINUTOS_QUE_SE_PERDONAN) {
+      if (falta > hueco + minutosQueSePerdonan()) {
         // Retrasar no arregla esto: cuanto más tarde empiece, menos hueco queda.
         return {
           motivo: `de aquí a «${despues.nombre}» hay ${Math.round(km)} km y solo quedan ${hueco} min`,
@@ -1997,7 +1997,7 @@ function avisosDeTiempo(dias, colocados) {
       // EL MISMO MARGEN QUE USA LA GUARDA DEL REPARTO, y no por comodidad: si el
       // aviso señalara lo que la guarda deja pasar, la revisión se pasaría las
       // pasadas persiguiendo un aviso que ella misma no sabe quitar.
-      if (llegaria <= empiezaB + MINUTOS_QUE_SE_PERDONAN) continue;
+      if (llegaria <= empiezaB + minutosQueSePerdonan()) continue;
 
       avisos.push({
         dia: d.n,
@@ -2130,12 +2130,18 @@ export function colocar(
 /**
  * CUÁNTO DURA UN DÍA DE VISITAS, para poder leer «1 día completo».
  *
- * Ocho horas, que es lo que ya usa la casa: una excursión de jornada del
- * catálogo se coloca con 480 minutos. Si aquí se pusiera otro número, la misma
- * frase valdría una cosa dicha por Civitatis y otra dicha por la ficha de un
- * sitio, y eso no se sostiene.
+ * NO ES UN NÚMERO NUEVO: es `excursion_dia_completo_min`, que ya existe en la
+ * tabla desde antes y cuya descripción es literalmente «lo que ocupa una
+ * excursión que dice "día completo" sin dar hora». Es la misma frase dicha por
+ * otra fuente —allí la ficha de Civitatis, aquí la de un sitio— y tiene que
+ * valer lo mismo.
+ *
+ * La primera versión de esto escribió un 480 a mano al lado del parámetro que ya
+ * lo decía. Un número de criterio duplicado se desincroniza el día que alguien
+ * toca uno de los dos, y entonces la misma frase vale dos cosas distintas según
+ * quién la diga.
  */
-const MINUTOS_DE_UNA_JORNADA = 480;
+const minutosDeUnaJornada = () => parametro('excursion_dia_completo_min', 480);
 
 /**
  * LO QUE DURA EL PASEO MÁS CORTO QUE MERECE LLAMARSE VISITA.
@@ -2164,7 +2170,7 @@ export function minutosDeVisita(texto) {
   // una frase perfectamente legible: negarse a entenderla para no tener que
   // decidir sería tirar un dato que la ficha da.
   const medio = /\bmedi[oa]\s+(?:d[ií]a|jornada)\b/.test(t);
-  if (medio) return Math.round(MINUTOS_DE_UNA_JORNADA / 2);
+  if (medio) return Math.round(minutosDeUnaJornada() / 2);
 
   const dias = t.match(/(\d+(?:\.\d+)?)?\s*\b(?:d[ií]as?|jornadas?)\b/);
   if (dias) {
@@ -2172,7 +2178,7 @@ export function minutosDeVisita(texto) {
     if (!Number.isFinite(cuantos) || cuantos <= 0) return null;
     // Más de un día no es una visita: es un viaje dentro del viaje, y el lienzo
     // no sabe colocar eso. Se dice que no se sabe antes que partirlo a ojo.
-    return cuantos > 1 ? null : MINUTOS_DE_UNA_JORNADA;
+    return cuantos > 1 ? null : minutosDeUnaJornada();
   }
 
   // "1h 30", "1 h 30 min", "2 h 15": las dos piezas de la misma medida. El

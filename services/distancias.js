@@ -22,6 +22,7 @@
  */
 
 import { rutasConGoogle } from '../lib/google.js';
+import { parametro } from './orquestador.js';
 
 /** Radio medio de la Tierra, en kilómetros. */
 const RADIO_TIERRA_KM = 6371;
@@ -117,8 +118,10 @@ export function distanciaKm(a, b) {
  *   en ciudad   ·  15 km/h puerta a puerta — metro, bus o taxi con sus esperas.
  *   por carretera· 50 km/h de media más veinte minutos de salir y aparcar.
  *
- * Se toma el MENOR de los dos últimos, que además los empalma sin escalón: el
- * cruce cae sobre los 7 km, donde las dos cuentas dan lo mismo.
+ * Se toma el MENOR de los dos últimos, que además los empalma sin escalón, y las
+ * dos velocidades SALEN DE LA TABLA DE PARÁMETROS: son decisiones, no física, y
+ * un número de criterio escondido en una constante es un número que nadie va a
+ * revisar nunca.
  *
  * VIVE AQUÍ, y no en quien la usa, porque la usan DOS. El aviso del lienzo
  * («no llegas») y la guarda del reparto («ese hueco no vale») tienen que decir
@@ -127,8 +130,24 @@ export function distanciaKm(a, b) {
  */
 export function minutosMinimosEnLlegar(km) {
   if (!Number.isFinite(km) || km <= 1) return 0;
-  return Math.round(Math.min(km * 4, 20 + km * 1.2));
+
+  const enCiudad = parametro('km_h_dentro_de_la_ciudad', 15);
+  const porCarretera = parametro('km_h_por_carretera', 50);
+
+  // De km/h a minutos por kilómetro, que es como se usa aquí.
+  const andando = (km * 60) / (enCiudad > 0 ? enCiudad : 15);
+  const rodando = SALIR_Y_APARCAR_MIN + (km * 60) / (porCarretera > 0 ? porCarretera : 50);
+
+  return Math.round(Math.min(andando, rodando));
 }
+
+/**
+ * El rato de salir de la ciudad y aparcar al llegar, que no depende de los km.
+ *
+ * Se queda como constante a propósito: no es un criterio que se vaya a querer
+ * ajustar por viaje, es el peaje fijo de coger un coche en cualquier sitio.
+ */
+const SALIR_Y_APARCAR_MIN = 20;
 
 /**
  * LO QUE SE LE PERDONA A UN PLAN APRETADO.
@@ -148,9 +167,12 @@ export function minutosMinimosEnLlegar(km) {
  * Los perdonados también van apretados, y decirlo no es cosa de esta cuenta:
  * apretar un día es discutible, cruzar cien kilómetros en cero minutos no. Un
  * aviso que salta en el 29 % de los bloques se deja de leer, y entonces no sirve
- * ninguno.
+ * ninguno. Sale de la tabla: es el mando que decide si la guarda persigue lo
+ * imposible o tambien lo justo.
  */
-export const MINUTOS_QUE_SE_PERDONAN = 20;
+export function minutosQueSePerdonan() {
+  return parametro('margen_entre_bloques_min', 20);
+}
 
 /**
  * La referencia de un tramo: carretera si la hay, línea recta si no.

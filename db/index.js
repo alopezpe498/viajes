@@ -351,6 +351,7 @@ export function migrarEsquema() {
   migracionFase2ConHorario();
   migracionMargenDelCoche();
   migracionMargenesRealistas();
+  migracionNumerosDeSiSeLlega();
   migracionFase3Dormir();
   migracionFase4Sitios();
   migracionFase5Excursiones();
@@ -5806,6 +5807,49 @@ function migracionDesandarCuesta() {
  * con la distancia y la ciudad y se deja puesto; solo por encima del segundo se
  * descarta la coordenada —no el sitio, que se queda con su direccion—.
  */
+/**
+ * LOS NUMEROS DE «SE LLEGA A ESE HUECO?», A LA TABLA.
+ *
+ * La guarda que decide si un bloque del plan es fisicamente alcanzable nacio con
+ * sus tres numeros escritos a mano en `services/distancias.js`. Funcionan, pero
+ * son DECISIONES, no fisica: cuanto se le perdona a un plan apretado y a que
+ * velocidad se supone que uno se mueve son exactamente el tipo de cosa que esta
+ * tabla existe para que se pueda tocar sin editar codigo. Un numero de criterio
+ * escondido en una constante es un numero que nadie va a revisar nunca.
+ *
+ * EL MARGEN es el que decide si la guarda persigue lo imposible o tambien lo
+ * justo. Medido sobre los viajes de la base: sin margen quedaban señalados 18 de
+ * 62 bloques colocados —el reparto los encadena pegados, termina uno a las 11:00
+ * y empieza el siguiente a las 11:00— y con veinte minutos quedan solo los que
+ * de verdad no se pueden hacer. Subirlo hace la guarda mas permisiva; bajarlo,
+ * mas quisquillosa.
+ */
+function migracionNumerosDeSiSeLlega() {
+  const CLAVE = '2026-09-numeros-de-si-se-llega';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+
+  meter.run('margen_entre_bloques_min', '20', '20',
+    'Lo que se le perdona a un dia apretado antes de decir que no se llega de una cosa a la siguiente',
+    'minutos', ++orden);
+  meter.run('km_h_dentro_de_la_ciudad', '15', '15',
+    'Velocidad puerta a puerta que se supone en ciudad, con las esperas del metro o el taxi dentro',
+    'km/h', ++orden);
+  meter.run('km_h_por_carretera', '50', '50',
+    'Velocidad media que se supone fuera de la ciudad, sin contar el rato de salir y aparcar',
+    'km/h', ++orden);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: los numeros de «se llega a ese hueco?» ya se pueden tocar.');
+  return true;
+}
+
 function migracionSitiosLejos() {
   const CLAVE = '2026-09-sitios-lejos-de-su-ciudad';
   if (yaAplicada(CLAVE)) return false;

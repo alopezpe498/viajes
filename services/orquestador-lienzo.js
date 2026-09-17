@@ -39,7 +39,7 @@ import { direccionDe } from '../services/direcciones.js';
 import {
   distanciaKm,
   minutosMinimosEnLlegar,
-  MINUTOS_QUE_SE_PERDONAN,
+  minutosQueSePerdonan,
 } from '../services/distancias.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import {
