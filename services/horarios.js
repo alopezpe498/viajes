@@ -241,6 +241,46 @@ function pareceUnDia(tramo, desde, hasta) {
   return detras || delante;
 }
 
+/**
+ * LOS MESES ABREVIADOS, para poder distinguirlos de los días.
+ *
+ * Solo hace falta para desempatar «mar», que es martes y es marzo. Los demás no
+ * colisionan: «mié», «jue», «vie», «sáb», «dom» y «lun» no son meses.
+ */
+const MESES_CORTOS = 'ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic';
+
+/**
+ * ¿ESE «MAR» ES MARZO EN VEZ DE MARTES?
+ *
+ * EL FALLO QUE ORIGINA ESTO, y es del viaje 106, el Palacio del Gran Maestre de
+ * Rodas:
+ *
+ *     «Abr-Oct: 8:00 - 20:00 Nov-Mar: 8:30 - 15:30 (Cierra martes)»
+ *
+ * El «Mar» de «Nov-Mar» se leía como MARTES. Y como la regla de este fichero es
+ * «la lista es la lista: lo que no está, cierra», el horario acababa diciendo
+ * que el sitio **solo abre los martes** y cierra los otros seis días. Con la
+ * frase «(Cierra martes)» al lado, o sea justo al revés de lo que pone.
+ *
+ * El resultado en el viaje fue más silencioso y peor: el lector se quedaba sin
+ * poder decidir —los siete días en «no lo sé»— y el Palacio y el Museo se
+ * quedaron colocados un martes 22 con un aviso de «no he podido leer su horario»
+ * que nadie podía resolver, repetido en las tres pasadas de revisión.
+ *
+ * LA REGLA: «mar» es marzo cuando está pegado a otro mes con un guion o una «a»
+ * —«nov-mar», «de noviembre a marzo»— o cuando lleva un mes justo detrás. En
+ * cualquier otro sitio es martes, que es lo que es casi siempre.
+ */
+function esMarzoYNoMartes(tramo, desde, hasta) {
+  const antes = tramo.slice(Math.max(0, desde - 14), desde);
+  const despues = tramo.slice(hasta, hasta + 14);
+  const unMes = `(?:${MESES_CORTOS})[a-zé]*`;
+  return (
+    new RegExp(`\\b${unMes}\\s*(?:-|–|a|al|to|hasta)\\s*$`, 'i').test(antes) ||
+    new RegExp(`^\\s*(?:-|–|a|al|to|hasta)\\s*${unMes}\\b`, 'i').test(despues)
+  );
+}
+
 function diasDelTramo(tramo) {
   const encontrados = [];
 
@@ -255,6 +295,8 @@ function diasDelTramo(tramo) {
       const hasta = desde + palabra.length;
       // Si este hueco ya lo ocupa un nombre más largo, no es otro día.
       if (yaVisto.some((v) => desde < v.hasta && hasta > v.desde)) continue;
+      // «Nov-Mar» es un rango de MESES, no el martes.
+      if (palabra === 'mar' && esMarzoYNoMartes(tramo, desde, hasta)) continue;
       yaVisto.push({ desde, hasta });
       encontrados.push({ dia: n, desde, hasta });
     }
