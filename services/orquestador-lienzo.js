@@ -1213,7 +1213,22 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
  *
  * NO SE TOCA una excursión ya reservada: esa tiene billete y dinero dentro.
  */
-function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
+/**
+ * ¿TIENE ESTA EXCURSIÓN UNA HORA PUBLICADA POR QUIEN LA VENDE?
+ *
+ * Sirve para decidir cuál se sacrifica primero cuando hay que echar alguna. Una
+ * excursión con hora de salida en su ficha es un compromiso más concreto —hay un
+ * autobús, una recogida, un punto de encuentro— que una que solo dice «día
+ * completo». Si hay que perder una, que sea la vaga.
+ */
+function horaPublicadaDe(colocado) {
+  const quien = deQuienEs(colocado);
+  if (quien?.candidato?.tipo !== 'actividad') return null;
+  const ficha = fichaDeLaExcursion(quien.candidato);
+  return ficha ? horaDeInicioDeExcursion(ficha.horarios, ficha.descripcion_larga) : null;
+}
+
+export function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
   const etapas = todas(
     "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden",
     viajeId
@@ -1253,10 +1268,43 @@ function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
 
     if (!culpables.length) continue;
 
-    for (const c of culpables) {
+    // DE UNA EN UNA, Y SE PARA CUANDO YA CABEN.
+    //
+    // EL FALLO QUE ORIGINA ESTO, y es Atenas en el viaje 104. Aquí había un
+    // `for` sin condición de parada: se echaban TODAS las excursiones de jornada
+    // de la parada a la vez. Hacía falta UN día para el Museo de la Acrópolis y
+    // se tiraron dos cosas:
+    //
+    //     AVISO GRAVE · «Excursión a Delfos» … deja fuera 1 imprescindible(s)
+    //     AVISO GRAVE · «Crucero por Agistri, Moni y Egina» … deja fuera 1 imprescindible(s)
+    //     Día 5, 6 liberado: repesco Museo de la Acrópolis.
+    //     Museo de la Acrópolis entra en el día 5 a las 09:00
+    //
+    // El Museo entró en el día 5. La segunda expulsión no rescató nada: un día
+    // entero a las islas a cambio de cero. El criterio era bueno —en los otros
+    // tres disparos de la base el imprescindible aterrizó exactamente en el día
+    // liberado, o sea que la excursión era de verdad el tapón— pero la dosis no.
+    //
+    // EL ORDEN IMPORTA, así que primero la que menos se pierde: la que no tiene
+    // hora publicada por quien la vende. Una excursión con hora es un compromiso
+    // más real que una sin ella, y si hay que sacrificar una, que sea la vaga.
+    const conHora = new Map(culpables.map((c) => [c.id, Boolean(horaPublicadaDe(c))]));
+    const porSacrificar = [...culpables].sort(
+      (a, b) => (conHora.get(a.id) ? 1 : 0) - (conHora.get(b.id) ? 1 : 0)
+    );
+    const echadas = new Set();
+
+    const diasLibres = [];
+    const repescados = [];
+    let quedan = [...sinColocar];
+    let tablero = lienzo;
+
+    for (const c of porSacrificar) {
+      if (!quedan.length) break; // Ya caben todos: las demás excursiones se quedan.
+
       di(
         `   AVISO GRAVE · ${etapa.nombre_ciudad}: «${c.nombre}» ocupa un día entero y deja fuera ` +
-          `${sinColocar.length} imprescindible(s) de la ciudad (${sinColocar.map((x) => x.nombre).join(', ')}).`,
+          `${quedan.length} imprescindible(s) de la ciudad (${quedan.map((x) => x.nombre).join(', ')}).`,
         ORIGENES.ninguno
       );
       sacarDelPlan(c, di, `no cabe sin sacrificar lo esencial de ${etapa.nombre_ciudad}`);
@@ -1266,31 +1314,43 @@ function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
         `${etapa.nombre_ciudad}: «${c.nombre}» a la mochila — no cabía sin dejar fuera lo esencial.`
       );
       tocado = true;
-    }
+      echadas.add(c.id);
+      diasLibres.push(c.dia);
 
-    // Y el día que ha quedado libre se usa para lo que de verdad era el motivo.
-    const fresco = lienzoDeViaje(viajeId);
-    const diasLibres = [...new Set(culpables.map((c) => c.dia))];
-    const liberados = diasLibres.join(', ');
-    di(
-      `   Día ${liberados} liberado: repesco ${sinColocar.map((x) => x.nombre).join(', ')}.`,
-      ORIGENES.ninguno
-    );
+      di(
+        `   Día ${c.dia} liberado: repesco ${quedan.map((x) => x.nombre).join(', ')}.`,
+        ORIGENES.ninguno
+      );
 
-    // EL TABLERO SE RELEE ENTRE UNA Y OTRA.
-    //
-    // Con la foto de antes, los tres vieron el mismo hueco de las 09:00 y los
-    // tres se colocaron ahí, encimados. Un hueco deja de estarlo en cuanto lo
-    // ocupa el primero.
-    const repescados = [];
-    let tablero = fresco;
-    for (const x of sinColocar) {
-      if (colocarImprescindible(viajeId, tablero, etapa, x, di, diasLibres)) {
-        repescados.push(x.nombre);
-        tocado = true;
-        tablero = lienzoDeViaje(viajeId);
+      // EL TABLERO SE RELEE ENTRE UNA Y OTRA.
+      //
+      // Con la foto de antes, los tres vieron el mismo hueco de las 09:00 y los
+      // tres se colocaron ahí, encimados. Un hueco deja de estarlo en cuanto lo
+      // ocupa el primero.
+      tablero = lienzoDeViaje(viajeId);
+      const siguen = [];
+      for (const x of quedan) {
+        if (colocarImprescindible(viajeId, tablero, etapa, x, di, diasLibres)) {
+          repescados.push(x.nombre);
+          tocado = true;
+          tablero = lienzoDeViaje(viajeId);
+        } else {
+          siguen.push(x);
+        }
       }
+      quedan = siguen;
     }
+
+    const seQuedan = culpables.filter((c) => !echadas.has(c.id));
+    if (seQuedan.length) {
+      di(
+        `   ${etapa.nombre_ciudad}: con eso ya caben, así que ${seQuedan
+          .map((c) => `«${c.nombre}»`)
+          .join(', ')} se queda${seQuedan.length > 1 ? 'n' : ''} en el plan.`,
+        ORIGENES.ninguno
+      );
+    }
+
     di(
       repescados.length
         ? `   ${etapa.nombre_ciudad}: repescados ${repescados.join(', ')}.`
