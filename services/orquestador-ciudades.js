@@ -1031,6 +1031,49 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
     };
   }
 
+  // --- EL DIARIO, QUE ES LO QUE PERMITIRÁ CALIBRAR ESTO CON DATOS ----------
+  //
+  // Se escriben TODAS las combinaciones, no la ganadora. El agujero apareció al
+  // intentar calibrar `euros_por_hora_util`: de cada viaje solo se guardaba el
+  // vuelo de la puerta que ganó, así que a «¿qué habría cambiado si el precio
+  // hubiera puntuado?» no se podía contestar mirando hacia atrás, y la tasa se
+  // tuvo que declarar a ojo.
+  //
+  // Y SE GUARDAN LOS SUMANDOS, NO SOLO EL TOTAL. Con el total no se puede
+  // recalcular nada con otra tasa; con `util`, `noches_util`, `penalizacion` y
+  // `precio` por separado, la pregunta «¿con 15 €/h habría ganado otra?» es una
+  // consulta. Eso es justamente lo que hoy no se podía hacer.
+  //
+  // No lo lee nadie para decidir: es un diario, se escribe y se consulta luego.
+  // Si falla, el viaje sigue — perder el apunte no puede costar la fase.
+  try {
+    ejecutar('DELETE FROM puertas_probadas WHERE viaje_id = ?', viajeId);
+    for (const c of combinaciones) {
+      ejecutar(
+        `INSERT INTO puertas_probadas
+           (viaje_id, combinacion, entrada, salida, precio, minutos_vuelo, escalas,
+            util, noches_util, penalizacion, coste_precio, puntos, reparto, elegida)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        viajeId,
+        c.id,
+        c.entrada?.ciudad ?? null,
+        c.salida?.ciudad ?? null,
+        c.precio,
+        c.total ?? null,
+        escalasDe(c.entrada?.opcion) + escalasDe(c.salida?.opcion),
+        c.util ?? null,
+        c.nochesUtil ?? null,
+        c.penalizacion ?? 0,
+        c.costeEnHoras ?? null,
+        c.puntos ?? null,
+        c.mejorReparto?.reparto?.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ') ?? null,
+        c.id === elegida.id ? 1 : 0
+      );
+    }
+  } catch (err) {
+    console.warn(`[puertas] no pude apuntar las puertas probadas: ${err.message}`);
+  }
+
   anotar(
     viajeId,
     'ciudades_y_noches',

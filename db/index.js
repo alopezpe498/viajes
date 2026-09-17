@@ -358,6 +358,7 @@ export function migrarEsquema() {
   migracionAvisoDeContradiccion();
   migracionSitiosAmontonados();
   migracionPrecioEnLaPuerta();
+  migracionPuertasProbadas();
   migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
@@ -6115,6 +6116,57 @@ function migracionPrecioEnLaPuerta() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el precio entra en la puntuacion de la puerta.');
+  return true;
+}
+
+/**
+ * TODAS LAS PUERTAS QUE SE PROBARON, NO SOLO LA QUE GANO.
+ *
+ * EL AGUJERO QUE TAPA, y lo destapo al intentar calibrar `euros_por_hora_util`:
+ * de cada viaje solo se guardaba el vuelo de la puerta GANADORA, en `candidatos`.
+ * De las perdedoras no quedaba el precio en ninguna parte, asi que a la pregunta
+ * «¿que habria cambiado si el precio hubiera puntuado?» no habia forma de
+ * contestar mirando hacia atras. La tasa se tuvo que declarar a ojo.
+ *
+ * El registro SI las escribia, pero como texto: «c2: entra por Atenas, sale por
+ * Tesalonica · 1232.2 h utiles...». Para leer eso hay que parsear frases, y una
+ * frase se reescribe cada vez que se mejora un mensaje. Esto es la misma
+ * informacion en columnas, que es lo que se puede consultar.
+ *
+ * ES UN DIARIO, NO UN CACHE. No lo lee el motor para decidir nada: se escribe al
+ * puntuar y se consulta despues, a mano o con una herramienta, para calibrar. Por
+ * eso guarda los sumandos por separado —lo de los vuelos, lo de las noches, la
+ * penalizacion de desandar, lo que resto el precio— y no solo el total: con el
+ * total no se puede recalcular nada con otra tasa, y con los sumandos si.
+ */
+function migracionPuertasProbadas() {
+  const CLAVE = '2026-09-diario-de-puertas-probadas';
+  if (yaAplicada(CLAVE)) return false;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS puertas_probadas (
+      id            INTEGER PRIMARY KEY,
+      viaje_id      INTEGER NOT NULL,
+      combinacion   TEXT,        -- 'c2', tal y como sale en el registro
+      entrada       TEXT,
+      salida        TEXT,
+      precio        REAL,        -- total de la reserva, los dos vuelos; NULL si falta alguno
+      minutos_vuelo INTEGER,
+      escalas       INTEGER,
+      util          REAL,        -- horas utiles ponderadas de los dos extremos
+      noches_util   REAL,        -- las que aporta el mejor reparto de esta puerta
+      penalizacion  REAL,        -- lo que se resto por desandar el camino
+      coste_precio  REAL,        -- lo que resto el precio, NULL si no puntuo
+      puntos        REAL,        -- el total con el que compitio
+      reparto       TEXT,
+      elegida       INTEGER NOT NULL DEFAULT 0,
+      creado_en     TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_puertas_probadas_viaje ON puertas_probadas(viaje_id)');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: diario de puertas probadas.');
   return true;
 }
 
