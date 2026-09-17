@@ -1449,7 +1449,22 @@ function avisosContraFijos(dias, colocados, fijos) {
     if (!delDia.length) continue;
 
     const salida = fijos.find((f) => f.dia === d.n && f.donde === 'vuelta' && f.hora);
-    const llegada = fijos.find((f) => f.dia === d.n && f.donde === 'ida' && f.hora);
+
+    // LLEGAR ES LLEGAR, VENGA DE UN AVIÓN O DE UN TREN.
+    //
+    // Esto solo miraba la `ida` —el vuelo del primer día— y dejaba fuera el
+    // SALTO a la parada siguiente, que es exactamente la misma situación: hasta
+    // que no termina, no se está en esa ciudad. En el viaje 108 el Mercado
+    // Central de Atenas quedó puesto a las 09:00 del día 3 con el tren desde
+    // Tesalónica saliendo a las 12:50, y no saltó ningún aviso.
+    //
+    // La hora de llegada no es la misma en los dos: la `ida` la marca con `hora`
+    // —aterrizar— y el salto con `horaFin`, porque su `hora` es cuando SALE.
+    const llegada = fijos.find(
+      (f) => f.dia === d.n && (f.donde === 'ida' || f.donde === 'salto') && f.hora
+    );
+    const horaDeLlegar =
+      llegada && llegada.donde === 'salto' ? (llegada.horaFin ?? llegada.hora) : llegada?.hora;
 
     if (salida) {
       const arranca = enMinutos(salida.hora);
@@ -1476,17 +1491,19 @@ function avisosContraFijos(dias, colocados, fijos) {
       }
     }
 
-    if (llegada) {
-      const termina = enMinutos(llegada.hora);
+    if (llegada && horaDeLlegar) {
+      const termina = enMinutos(horaDeLlegar);
       const antes = delDia.filter((c) => enMinutos(c.hora) < termina);
       if (antes.length) {
         avisos.push({
           dia: d.n,
           tipo: 'pisa-la-llegada',
           idsAfectados: antes.map((c) => c.id),
-          libreDesde: llegada.hora,
+          libreDesde: horaDeLlegar,
           texto:
-            `Se llega a las ${llegada.hora} y ` +
+            (llegada.donde === 'salto'
+              ? `Se llega de la parada anterior a las ${horaDeLlegar} y `
+              : `Se llega a las ${horaDeLlegar} y `) +
             `${antes.length === 1 ? 'hay algo puesto' : `hay ${antes.length} cosas puestas`} ` +
             'antes de esa hora',
         });
@@ -2503,13 +2520,25 @@ export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = nu
     // CADA BLOQUE FIJO OCUPA LO QUE DE VERDAD OCUPA:
     //
     //  · la llegada, todo el día HASTA su hora (antes no se está en la ciudad);
+    //  · EL SALTO A LA PARADA SIGUIENTE, igual: ese día es ya de la ciudad de
+    //    destino, y hasta que el salto termina no se está en ella;
     //  · la salida, desde su hora hasta el final del día;
-    //  · un traslado, de su salida a su llegada.
+    //  · cualquier otro traslado, de su salida a su llegada.
     //
     // Sin lo primero, el buscador de huecos daba por libre la mañana del día de
     // llegada y la revisión mandaba museos a las 09:00 de un día en el que el
     // avión aterriza a las 13:30.
-    if (f.donde === 'ida') ocupado.push([0, Math.max(inicio, fin)]);
+    //
+    // Y EL SALTO ESTABA EN EL «CUALQUIER OTRO», que es lo que se arregla aquí.
+    // Ocupaba solo el viaje —12:50 a 16:15— y dejaba la mañana por libre, así que
+    // en el viaje 108 la revisión mandó el Mercado Central de ATENAS a las 09:00
+    // de un día en el que a esa hora se estaba en TESALÓNICA, con el tren saliendo
+    // tres horas después. El reloj estaba libre; el viajero no.
+    //
+    // El día de un salto es siempre de la ciudad de destino —comprobado en los
+    // cuatro viajes de la base—, así que lo de antes del salto no es un hueco de
+    // esa ciudad: es el rato de hacer la maleta en la anterior.
+    if (f.donde === 'ida' || f.donde === 'salto') ocupado.push([0, Math.max(inicio, fin)]);
     else if (f.donde === 'vuelta') ocupado.push([inicio, 24 * 60]);
     else ocupado.push([inicio, Math.max(fin, inicio)]);
   }
@@ -2525,8 +2554,13 @@ export function horaLibreEn(lienzo, { dia, franja, duracion = 60, noAntesDe = nu
   // aterrizaba a las 22:25. Dos errores en la misma tarjeta: a esa hora ya no se
   // empieza nada, y menos aún media hora después de recoger las maletas.
   const topeDelDia = enMinutos(parametroTexto('hora_maxima_inicio', '22:00')) ?? 22 * 60;
+  // Y EL MARGEN DE DESPUÉS DE LLEGAR, que vale igual para el avión del primer
+  // día que para el tren de tres horas del salto: bajarse y ponerse a visitar
+  // algo en el mismo minuto no lo hace nadie.
   const trasLlegar = (() => {
-    const llegada = lienzo.fijos.find((f) => f.dia === dia && f.donde === 'ida');
+    const llegada = lienzo.fijos.find(
+      (f) => f.dia === dia && (f.donde === 'ida' || f.donde === 'salto')
+    );
     if (!llegada) return 0;
     const fin = enMinutos(llegada.horaFin) ?? enMinutos(llegada.hora);
     return fin == null ? 0 : fin + parametro('margen_tras_llegada_min', 60);

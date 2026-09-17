@@ -3269,7 +3269,7 @@ export function avisarDeExcursionesSinColocar(viaje, motivos, di) {
   ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'excursion'", viaje.id);
 
   const sueltas = todas(
-    `SELECT c.id, c.titulo, e.nombre_ciudad
+    `SELECT c.id, c.titulo, c.etapa_id AS etapaId, e.nombre_ciudad
        FROM candidatos c
        LEFT JOIN etapas e ON e.id = c.etapa_id
       WHERE c.viaje_id = ? AND c.tipo = 'actividad' AND c.marcado = 1
@@ -3293,9 +3293,58 @@ export function avisarDeExcursionesSinColocar(viaje, motivos, di) {
 
   if (sueltas.length) {
     di(`${sueltas.length} excursión(es) apuntada(s) se han quedado fuera del lienzo.`);
+    rellenarLoQueDejoLaExcursionFantasma(viaje, sueltas, di);
   }
 
   return sueltas.length;
+}
+
+/**
+ * EL DÍA QUE SE PLANIFICÓ ALREDEDOR DE UNA EXCURSIÓN QUE NO LLEGÓ A ENTRAR.
+ *
+ * EL FALLO QUE ORIGINA ESTO, y es Tesalónica en el viaje 108. El reparto montó
+ * el día 2 así:
+ *
+ *     Día 2 (Tesalónica, martes): comida (Durante la excursión, en Édessa o Pozar),
+ *                                 Arco de Galerio, Ladadika
+ *       — «Día completo: excursión a Pozar y Édessa ocupa la jornada entera»
+ *
+ * …y dejó fuera DIECIOCHO sitios justificándose con ella. Después la excursión no
+ * cupo: «quedó apuntada pero sin sitio». La parada acabó con 2 de 10
+ * imprescindibles, un día con una comida «durante la excursión» que no existe y
+ * el Arco de Galerio a las 19:00 durante quince minutos.
+ *
+ * ES EL HERMANO GEMELO DE `liberarLoQueSeComeLaExcursion`, Y AL REVÉS. Aquella
+ * quita una excursión que SÍ está y rellena el hueco que deja. Esta atiende el
+ * caso contrario —una que NO está y a la que el plan le sigue haciendo sitio— y
+ * por eso aquella no podía dispararse aquí: solo mira excursiones colocadas.
+ *
+ * Quitar la excursión invalida sus excusas. Que no llegara a ponerse, también.
+ *
+ * SOLO AÑADE EN LOS HUECOS QUE HAYAN QUEDADO. No mueve ni toca nada de lo que ya
+ * está, y `huecoValido` sigue mandando: si el día está lleno de verdad, no entra
+ * nada y no pasa nada.
+ */
+function rellenarLoQueDejoLaExcursionFantasma(viaje, sueltas, di) {
+  const etapas = [...new Set(sueltas.map((x) => x.etapaId).filter(Boolean))];
+
+  for (const etapaId of etapas) {
+    const etapa = una('SELECT * FROM etapas WHERE id = ?', etapaId);
+    if (!etapa) continue;
+
+    const lienzo = lienzoDeViaje(viaje.id);
+    const dias = lienzo.dias
+      .filter((d) => d.etapaId === etapa.id && !esDiaDeViaje(lienzo, d.n))
+      .map((d) => d.n);
+    if (!dias.length) continue;
+
+    di(
+      `   ${etapa.nombre_ciudad}: la excursión que sostenía el plan no entró, así que ` +
+        'vuelvo a mirar qué cabe en sus días.',
+      ORIGENES.ninguno
+    );
+    rellenarElDiaLiberado(viaje.id, etapa, dias, di);
+  }
 }
 
 export default {
