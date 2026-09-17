@@ -43,13 +43,9 @@ const MUTANT = '0.14.1';
       esta pantalla —lo decide `body.mapa-maestro` en su propia hoja—, porque la
       esquina de abajo a la derecha ya la ocupa la leyenda. %>
   <link rel="stylesheet" href="/css/ayuda.css">
-  <%# Y por lo mismo, la del tour: aquí sale su última parada. %>
-  <link rel="stylesheet" href="/css/tour.css">
 </head>
 <body class="mapa-maestro">
 
-<%# El estado del tour, que en las demás pantallas entra por `parciales/cabecera`. %>
-<script type="application/json" id="datos-tour"><%- JSON.stringify(typeof tour !== 'undefined' && tour ? tour : { visto: true, tramos: [] }) %></script>
 
   <div id="mapa-maestro"
        data-mapa="<%= encodeURIComponent(JSON.stringify(mapa)) %>"
@@ -119,6 +115,5 @@ const MUTANT = '0.14.1';
   <script src="/js/mapa-viaje.js"></script>
   <%# El asistente de ayuda, que en las demás pantallas entra por `parciales/pie`. %>
   <script src="/js/ayuda.js" defer></script>
-  <script src="/js/tour.js" defer></script>
 </body>
 </html>

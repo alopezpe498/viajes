@@ -1,133 +1,137 @@
-/* -----------------------------------------------------------------------------
+/* ===========================================================================
    EL TOUR DE BIENVENIDA
+   ---------------------------------------------------------------------------
+   Una sola ventana, en la portada, con las seis pantallas en orden.
 
-   Sin un solo color nuevo: todo sale de las variables de `estilo.css`
-   —`--acento`, `--superficie`, `--texto`, `--borde`, `--radio`—, que son el
-   mediterráneo fresco de siempre.
-
-   EL VELO NO TAPA LO QUE SEÑALA, y esa es toda la gracia del formato. Se hace
-   con la sombra del halo: un rectángulo transparente sobre el elemento con una
-   sombra enorme alrededor. El agujero queda exactamente sobre lo señalado, y
-   además SE SIGUE VIENDO NÍTIDO, cosa que un `backdrop-filter` no da.
-
-   (En la propuesta dije `clip-path`. Al montarlo se ve que la sombra hace lo
-   mismo con una línea de CSS en vez de recalcular un polígono en cada scroll, y
-   se comporta igual en navegadores viejos. Es el mismo efecto por menos.)
-   -------------------------------------------------------------------------- */
-
-.tour-velo {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: transparent;
-}
-
-.tour-halo {
-  position: fixed;
-  z-index: 9001;
-  border-radius: var(--radio-sm);
-  /* El agujero. La sombra es el velo. */
-  box-shadow: 0 0 0 9999px rgba(18, 48, 62, 0.55);
-  outline: 2px solid var(--acento);
-  outline-offset: 0;
-  pointer-events: none;
-  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
-}
-
-/* Lo señalado se levanta por encima del velo para que se lea bien. */
-.tour-senalado {
-  position: relative;
-  z-index: 9002;
-}
-
-.tour-burbuja {
-  position: fixed;
-  z-index: 9003;
-  width: min(340px, calc(100vw - 24px));
-  box-sizing: border-box;
-  padding: 16px 18px 14px;
+   Usa las variables de `estilo.css` —`--acento`, `--borde`, `--superficie`,
+   `--texto-2`— y no colores propios: el tour es lo primero que se ve de la
+   aplicación y tiene que parecer la aplicación, no un folleto pegado encima.
+   =========================================================================== */
+.tour {
+  width: min(680px, calc(100vw - 28px));
+  max-height: calc(100vh - 40px);
+  padding: 0;
+  overflow: hidden auto;
+  border: 0;
+  border-radius: 18px;
   background: var(--superficie);
   color: var(--texto);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio);
-  box-shadow: 0 12px 32px rgba(18, 48, 62, .22);
-  transition: top .25s ease, left .25s ease;
+  font: inherit;
+  box-shadow: 0 24px 60px rgba(18, 48, 62, 0.28);
+}
+.tour::backdrop {
+  background: rgba(18, 48, 62, 0.55);
+  backdrop-filter: blur(2px);
 }
 
-.tour-burbuja__texto {
-  margin: 0 0 14px;
+/* --- El pantallazo -------------------------------------------------------- */
+/* `aspect-ratio` fijo y no altura automática: sin esto, la caja pega un salto
+   de alto cada vez que cambia de paso —la de documentos es mucho más baja que
+   la del lienzo— y el botón de «Siguiente» se mueve bajo el dedo. */
+.tour__marco {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 1180 / 640;
+  overflow: hidden;
+  background: var(--fondo);
+  border-bottom: 1px solid var(--borde);
+}
+
+/* EL CORTE, DESVANECIDO. La pantalla real es más alta que este marco, así que
+   el recorte cae a mitad de una tarjeta y se lee como un fallo de carga. Con el
+   degradado se lee como lo que es: una ventana que enseña la parte de arriba y
+   sigue por debajo. */
+.tour__marco::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 56px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--superficie));
+  pointer-events: none;
+}
+.tour__imagen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* `top` y no `center`: lo que identifica una pantalla es su cabecera, y
+     centrando se perdía justo el título que dice dónde estás. */
+  object-fit: cover;
+  object-position: top center;
+}
+
+/* --- El texto ------------------------------------------------------------- */
+.tour__cuerpo { padding: 20px 24px 4px; }
+.tour__titulo {
+  margin: 0 0 8px;
+  font-size: 19px;
+  line-height: 1.25;
+}
+.tour__texto {
+  margin: 0;
+  color: var(--texto-2);
   font-size: 14.5px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-.tour-burbuja__pie {
+/* --- El pie --------------------------------------------------------------- */
+.tour__pie {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
+  padding: 16px 24px 20px;
 }
 
-.tour-burbuja__progreso {
-  font-size: 12.5px;
-  color: var(--texto-2);
-  white-space: nowrap;
-}
-
-.tour-burbuja__botones {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.tour-boton {
-  font: inherit;
-  font-size: 14px;
-  padding: 8px 16px;
+.tour__puntos { display: flex; gap: 7px; }
+.tour__puntos span {
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
-  border: 1px solid transparent;
+  background: var(--borde-fuerte);
+  transition: background 0.18s, width 0.18s;
+}
+.tour__puntos span.es-ahora { width: 22px; background: var(--acento); }
+
+.tour__botones { display: flex; align-items: center; gap: 10px; }
+
+.tour__saltar {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-2);
+  font: inherit;
+  font-size: 13.5px;
   cursor: pointer;
 }
+.tour__saltar:hover { color: var(--acento); }
 
-.tour-boton--seguir {
+.tour__seguir {
+  padding: 10px 22px;
+  border: 0;
+  border-radius: 999px;
   background: var(--acento);
   color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
 }
-.tour-boton--seguir:hover { background: var(--acento-hover); }
+.tour__seguir:hover { background: var(--acento-hover); }
+.tour__seguir:focus-visible,
+.tour__saltar:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 
-.tour-boton--saltar {
-  background: transparent;
-  color: var(--texto-2);
-  border-color: var(--borde-fuerte);
-}
-.tour-boton--saltar:hover { color: var(--texto); }
-
-.tour-boton:focus-visible {
-  outline: 3px solid var(--acento);
-  outline-offset: 2px;
-}
-
-/* -----------------------------------------------------------------------------
-   MÓVIL: la burbuja no persigue al elemento, se ancla abajo.
-
-   Con 360 px de ancho, colocar una burbuja «debajo pero que quepa» acaba
-   tapando justo lo que señala. Abajo y a todo lo ancho es lo que ya hace
-   `.barra-final` en el resto de la aplicación, así que no estrena un patrón.
-   -------------------------------------------------------------------------- */
-@media (max-width: 600px) {
-  .tour-burbuja--abajo {
-    top: auto !important;
-    left: 12px !important;
-    right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    width: auto;
-  }
-}
-
-/* -----------------------------------------------------------------------------
-   QUIEN PIDE QUIETO, QUIETO.
-   -------------------------------------------------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  .tour-halo,
-  .tour-burbuja { transition: none; }
+/* --- En el móvil ---------------------------------------------------------- */
+/* El pantallazo es de una pantalla de escritorio: a 400px de ancho el texto de
+   dentro no se lee. Se deja igualmente porque lo que comunica ahí no son las
+   palabras, es la FORMA de la pantalla —un tablero de columnas, un mapa, una
+   lista— y eso sí se distingue. Lo que se recorta es el alto, para que el texto
+   y los botones entren sin hacer scroll. */
+@media (max-width: 560px) {
+  .tour__marco { aspect-ratio: 1180 / 760; }
+  .tour__cuerpo { padding: 16px 18px 4px; }
+  .tour__pie { padding: 14px 18px 18px; }
+  .tour__titulo { font-size: 17px; }
+  .tour__texto { font-size: 14px; }
 }

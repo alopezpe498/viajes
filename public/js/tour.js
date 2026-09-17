@@ -1,399 +1,201 @@
 /**
  * public/js/tour.js
  * -----------------------------------------------------------------------------
- * EL TOUR DE BIENVENIDA.
+ * EL TOUR DE BIENVENIDA: UNA VEZ, AL ENTRAR, Y SE ACABA.
  *
- * Burbujas que señalan un elemento real de la pantalla, una a una, con el resto
- * atenuado. Nueve paradas repartidas en siete pantallas, y CADA PANTALLA SUELTA
- * LA SUYA la primera vez que se pisa: soltar las nueve seguidas el primer día no
- * es enseñar la aplicación, es un examen.
+ * POR QUÉ SE REHIZO. El primero repartía nueve burbujas por las pantallas y cada
+ * una soltaba su tramo la primera vez que la pisabas. Sonaba bien y no lo era:
+ * te interrumpía cuando ya estabas haciendo algo, y nunca llegabas a ver el
+ * CONJUNTO, que es justo lo que no se entiende de esta aplicación al principio.
+ * Aquí no hay seis fases que descubrir por sorpresa: hay un orden, y el orden es
+ * lo que hay que contar.
  *
- * EL GUIÓN ESTÁ AQUÍ Y NO EN EL SERVIDOR, a propósito: cambiar un texto o mover
- * un ancla no debería obligar a tocar una ruta ni a reiniciar nada.
+ * ASÍ QUE AHORA ES UNA SOLA PARADA, en la primera pantalla, con las seis
+ * pantallas en el orden en que se usan y un pantallazo REAL de cada una. Se ve
+ * entero en un minuto o se salta en un clic.
  *
- * LAS ANCLAS SON ELEMENTOS QUE YA EXISTEN. Ninguna pantalla se ha tocado para
- * añadir un `id` de adorno: `#meses`, `#chips-tipo`, `#campo-busqueda`,
- * `#sitio-tipo`, `#carrusel`, `#zona-ruta`, `#pestanas`, `#mochila` y
- * `#mm-vistas` estaban todos ahí antes de esto.
+ * LOS PANTALLAZOS SON DE VERDAD, hechos con Playwright contra la app corriendo
+ * (`public/img/tour/`). Un dibujo idealizado envejece mal y miente: enseña
+ * botones que no están. El de documentos sale vacío porque así es como lo vas a
+ * encontrar tú el primer día, y su propio texto explica de dónde salen los
+ * papeles.
  *
- * DOS DE ELLAS NO ESTÁN AL CARGAR LA PÁGINA. El chip de tipo aparece cuando se
- * toca algo en el mapamundi, y el carrusel de candidatas cuando termina de
- * investigarse el país. Por eso cada parada ESPERA a su ancla en vez de darla
- * por perdida, con un tope; y si aun así no aparece, el tramo NO se marca como
- * visto y se reserva para la próxima vez que se pise esa pantalla. Un tour que
- * se cuelga esperando es peor que uno corto, pero perder la parada que explica
- * los niveles porque alguien tardó en tocar el mapa es peor que las dos cosas.
+ * EL GUIÓN VIVE AQUÍ y no en el servidor, como el anterior y por lo mismo:
+ * cambiar una frase no debería obligar a tocar el backend.
  */
-(() => {
-  'use strict';
 
-  // ===========================================================================
-  // EL GUIÓN
-  // ===========================================================================
-  //
-  // `tramo` es la pantalla: es lo que se marca como visto, de modo que las dos
-  // paradas de configuración van juntas y no se pueden ver a medias.
-  //
-  // `en` decide en qué URL sale. Se compara contra `location.pathname`.
-  const GUION = [
-    {
-      tramo: 'configuracion',
-      en: /^\/viajes\/\d+\/paso\/1\/?$/,
-      ancla: '#meses',
-      texto:
-        'Marca ida y vuelta. De aquí sale el número de noches, y con él cuántas ' +
-        'ciudades caben: no es solo una fecha, es el tamaño del viaje.',
-    },
-    {
-      tramo: 'configuracion',
-      en: /^\/viajes\/\d+\/paso\/1\/?$/,
-      ancla: '#chips-tipo',
-      texto:
-        'Lo que marques aquí cambia qué ciudades se proponen y qué se coloca en ' +
-        'cada día. Si no marcas nada, se reparte a partes iguales.',
-    },
-    {
-      tramo: 'destino',
-      en: /^\/elegir-destino\//,
-      ancla: '#campo-busqueda',
-      texto: 'Escribe un país o una ciudad, o toca el mapa directamente. Sirven las dos cosas.',
-    },
-    {
-      tramo: 'destino',
-      en: /^\/elegir-destino\//,
-      ancla: '#sitio-tipo',
-      // La parada más importante del tour: es la que explica por qué la
-      // aplicación se comporta distinto con «Roma» que con «Grecia».
-      texto:
-        'Fíjate en esta etiqueta. Con un PAÍS te llevo a explorar sus ciudades y ' +
-        'eliges cuáles entran. Con una CIUDAD no hay nada que explorar: vamos ' +
-        'directos a montarla. Y si nombras varios países, te pregunto antes cuáles quieres.',
-    },
-    {
-      tramo: 'descubrir',
-      en: /^\/descubrir\//,
-      ancla: '#carrusel',
-      texto:
-        'Cada tarjeta es una ciudad candidata. Añade a la ruta las que quieras; ' +
-        'el contador de arriba lleva la cuenta.',
-    },
-    {
-      tramo: 'ruta',
-      en: /^\/viaje\/\d+\/ruta\/?$/,
-      ancla: '#zona-ruta',
-      texto:
-        'Este es el esqueleto del viaje. Arrastra para reordenar, ajusta las noches ' +
-        'de cada parada, y toca una para abrirla y trabajarla por dentro.',
-    },
-    {
-      tramo: 'etapa',
-      en: /^\/etapa\/\d+\/?$/,
-      ancla: '#pestanas',
-      texto:
-        'Cada parada se resuelve en tres: Qué ver, Dónde dormir y Cómo llegar. ' +
-        'Lo que apuntes en «Qué ver» es lo que después se reparte por días.',
-    },
-    {
-      tramo: 'lienzo',
-      en: /^\/viaje\/\d+\/lienzo\/?$/,
-      ancla: '#mochila',
-      texto:
-        'Todo lo que apuntaste cae aquí, en la mochila. Arrástralo a un día o deja ' +
-        'que se reparta solo; lo que no entre se queda aquí esperando, no se pierde.',
-    },
-    {
-      tramo: 'mapa',
-      en: /^\/viaje\/\d+\/mapa\/?$/,
-      ancla: '#mm-vistas',
-      texto:
-        'Aquí se ve si el plan se sostiene: cambia entre la ruta completa y cada ' +
-        'día, y mide distancias reales entre dos puntos. Fin del tour.',
-    },
-  ];
+const PASOS = [
+  {
+    clave: 'bienvenida',
+    titulo: 'Esto es un generador de viajes',
+    texto:
+      'Le dices a dónde quieres ir y cuántos días tienes, y te devuelve un viaje entero: ' +
+      'vuelos, hoteles, qué ver cada día y a qué hora. Son seis pantallas y se usan en este orden.',
+    imagen: null,
+  },
+  {
+    clave: 'configuracion',
+    titulo: '1 · Configuración',
+    texto:
+      'Aquí empieza todo: a dónde vas, qué días, cuántos sois y qué os interesa. ' +
+      'Lo que marques aquí no es decoración — decide qué ciudades entran en la ruta y qué se ve en cada una.',
+    imagen: '/img/tour/configuracion.jpg',
+  },
+  {
+    clave: 'mapa',
+    titulo: '2 · El mapa',
+    texto:
+      'Dónde cae cada cosa. Sirve para lo que no se ve en una lista: si la ruta hace zigzag, ' +
+      'si un sitio está mucho más lejos de lo que parecía, y cuánto cuesta en tiempo cada salto.',
+    imagen: '/img/tour/mapa.jpg',
+  },
+  {
+    clave: 'ruta',
+    titulo: '3 · La ruta',
+    texto:
+      'El esqueleto del viaje: en qué ciudades duermes y cuántas noches en cada una. ' +
+      'Puedes mover noches de una a otra y reordenar las paradas, y todo lo demás se recalcula detrás.',
+    imagen: '/img/tour/ruta.jpg',
+  },
+  {
+    clave: 'lienzo',
+    titulo: '4 · El lienzo',
+    texto:
+      'El viaje día a día, con sus horas. Se arrastra de la mochila al día que quieras. ' +
+      'Y avisa cuando algo no cuadra: un museo que cierra ese día, dos cosas que se solapan, un sitio al que no da tiempo a llegar.',
+    imagen: '/img/tour/lienzo.jpg',
+  },
+  {
+    clave: 'documentos',
+    titulo: '5 · Los documentos',
+    texto:
+      'Las tarjetas de embarque, las reservas del hotel y los bonos de las excursiones, todos juntos. ' +
+      'Cada papel se sube donde vive —el billete en su vuelo, la reserva en su hotel— y aquí aparecen reunidos para el día del viaje.',
+    imagen: '/img/tour/documentos.jpg',
+  },
+  {
+    clave: 'presupuesto',
+    titulo: '6 · El presupuesto',
+    texto:
+      'Lo que cuesta, separado en dos: los precios REALES de lo que has planificado, y una estimación ' +
+      'aparte para comer y moverte. No se mezclan a propósito — y si falta algún precio, te dice que el total está incompleto en vez de disimularlo.',
+    imagen: '/img/tour/presupuesto.jpg',
+  },
+];
 
-  const TODOS_LOS_TRAMOS = [...new Set(GUION.map((p) => p.tramo))];
-
-  /**
-   * LO QUE SE ESPERA A UN ANCLA QUE TODAVÍA NO ESTÁ.
-   *
-   * Generoso a propósito: dos de las anclas dependen de que el usuario haga algo
-   * —tocar el mapamundi, esperar a que se investigue el país— y meterle prisa a
-   * eso es meterle prisa a él.
-   */
-  const ESPERA_MAX_MS = 45000;
-
-  // ===========================================================================
-  // ESTADO
-  // ===========================================================================
-  const fuente = document.getElementById('datos-tour');
-  if (!fuente) return;
+(function tourDeBienvenida() {
+  const caja = document.getElementById('datos-tour');
+  if (!caja) return;
 
   let estado;
   try {
-    estado = JSON.parse(fuente.textContent || '{}');
+    estado = JSON.parse(caja.textContent || '{}');
   } catch {
     return;
   }
+  if (estado?.visto) return;
 
-  // `?tour=1` relanza desde cero: es lo que abre la fila de Ajustes.
-  const forzado = new URLSearchParams(location.search).get('tour') === '1';
+  // SOLO EN LA PRIMERA PANTALLA. El tour explica el orden de las seis, así que
+  // sale en la portada y en ningún otro sitio: soltarlo encima de alguien que ya
+  // está dentro del lienzo es la interrupción que este rediseño viene a quitar.
+  if (window.location.pathname !== '/') return;
 
-  const mios = GUION.filter((p) => p.en.test(location.pathname));
-  if (!mios.length) return;
-
-  const tramo = mios[0].tramo;
-  if (!forzado && (estado.visto || (estado.tramos || []).includes(tramo))) return;
-
-  // ===========================================================================
-  // AVISAR AL SERVIDOR
-  // ===========================================================================
-  const avisar = (url, cuerpo) =>
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cuerpo || {}),
-    }).catch(() => {});
-
-  // ===========================================================================
-  // ESPERAR UN ANCLA QUE AÚN NO ESTÁ
-  // ===========================================================================
-  function visible(el) {
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
-  }
-
-  function esperarAncla(selector) {
-    const ya = document.querySelector(selector);
-    if (visible(ya)) return Promise.resolve(ya);
-
-    return new Promise((listo) => {
-      let acabado = false;
-      const terminar = (el) => {
-        if (acabado) return;
-        acabado = true;
-        obs.disconnect();
-        clearTimeout(reloj);
-        listo(el);
-      };
-      const mirar = () => {
-        const el = document.querySelector(selector);
-        if (visible(el)) terminar(el);
-      };
-      const obs = new MutationObserver(mirar);
-      obs.observe(document.body, { childList: true, subtree: true, attributes: true });
-      const reloj = setTimeout(() => terminar(null), ESPERA_MAX_MS);
-      mirar();
-    });
-  }
-
-  // ===========================================================================
-  // LA BURBUJA
-  // ===========================================================================
-  const velo = document.createElement('div');
-  velo.className = 'tour-velo';
-  velo.setAttribute('aria-hidden', 'true');
-
-  const halo = document.createElement('div');
-  halo.className = 'tour-halo';
-  halo.setAttribute('aria-hidden', 'true');
-
-  const burbuja = document.createElement('div');
-  burbuja.className = 'tour-burbuja';
-  burbuja.setAttribute('role', 'dialog');
-  burbuja.setAttribute('aria-modal', 'true');
-  burbuja.setAttribute('aria-labelledby', 'tour-texto');
-  burbuja.innerHTML = `
-    <p class="tour-burbuja__texto" id="tour-texto"></p>
-    <div class="tour-burbuja__pie">
-      <span class="tour-burbuja__progreso" id="tour-progreso"></span>
-      <div class="tour-burbuja__botones">
-        <button type="button" class="tour-boton tour-boton--saltar" id="tour-saltar">Saltar</button>
-        <button type="button" class="tour-boton tour-boton--seguir" id="tour-seguir">Siguiente</button>
-      </div>
-    </div>`;
-
-  const elTexto = burbuja.querySelector('#tour-texto');
-  const elProgreso = burbuja.querySelector('#tour-progreso');
-  const botonSaltar = burbuja.querySelector('#tour-saltar');
-  const botonSeguir = burbuja.querySelector('#tour-seguir');
-
-  let anclaActual = null;
-  let devolverElFoco = null;
-
-  /**
-   * DÓNDE SE PONE LA BURBUJA.
-   *
-   * Debajo del elemento si cabe, encima si no, y centrada en su eje. En móvil no
-   * se calcula nada: se ancla abajo a ancho completo, como ya hace `.barra-final`
-   * en el resto de la aplicación.
-   */
-  function colocar(el) {
-    const r = el.getBoundingClientRect();
-    const margen = 12;
-
-    halo.style.top = `${r.top - 6}px`;
-    halo.style.left = `${r.left - 6}px`;
-    halo.style.width = `${r.width + 12}px`;
-    halo.style.height = `${r.height + 12}px`;
-
-    if (window.innerWidth <= 600) {
-      burbuja.classList.add('tour-burbuja--abajo');
-      burbuja.style.top = '';
-      burbuja.style.left = '';
-      return;
-    }
-    burbuja.classList.remove('tour-burbuja--abajo');
-
-    const alto = burbuja.offsetHeight || 150;
-    const ancho = burbuja.offsetWidth || 320;
-    const cabeDebajo = r.bottom + margen + alto < window.innerHeight;
-
-    const arriba = cabeDebajo ? r.bottom + margen : Math.max(margen, r.top - margen - alto);
-    let izq = r.left + r.width / 2 - ancho / 2;
-    izq = Math.max(margen, Math.min(izq, window.innerWidth - ancho - margen));
-
-    burbuja.style.top = `${arriba}px`;
-    burbuja.style.left = `${izq}px`;
-  }
-
-  function quitar() {
-    velo.remove();
-    halo.remove();
-    burbuja.remove();
-    document.removeEventListener('keydown', teclado, true);
-    window.removeEventListener('resize', recolocar);
-    window.removeEventListener('scroll', recolocar, true);
-    if (anclaActual) {
-      anclaActual.removeAttribute('aria-describedby');
-      anclaActual.classList.remove('tour-senalado');
-    }
-    if (devolverElFoco && document.contains(devolverElFoco)) devolverElFoco.focus();
-  }
-
-  const recolocar = () => { if (anclaActual) colocar(anclaActual); };
-
-  /** Esc sale, y el tabulador no se escapa de la burbuja. */
-  function teclado(e) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      saltar();
-      return;
-    }
-    if (e.key !== 'Tab') return;
-    const focoables = [botonSaltar, botonSeguir];
-    const primero = focoables[0];
-    const ultimo = focoables[focoables.length - 1];
-    if (e.shiftKey && document.activeElement === primero) {
-      e.preventDefault();
-      ultimo.focus();
-    } else if (!e.shiftKey && document.activeElement === ultimo) {
-      e.preventDefault();
-      primero.focus();
-    }
-  }
-
-  function saltar() {
-    quitar();
-    avisar('/api/tour/visto', { tramos: TODOS_LOS_TRAMOS });
-  }
-
-  // ===========================================================================
-  // EL RECORRIDO DE ESTA PANTALLA
-  // ===========================================================================
   let i = 0;
-  // Cuántas paradas de este tramo se han tenido que saltar porque su ancla no
-  // llegó a aparecer. Decide si el tramo se da por visto o se reserva para otra
-  // vez — ver `cerrarTramo`.
-  let saltadas = 0;
 
-  async function siguiente() {
-    if (anclaActual) {
-      anclaActual.removeAttribute('aria-describedby');
-      anclaActual.classList.remove('tour-senalado');
-      anclaActual = null;
+  const dlg = document.createElement('dialog');
+  dlg.className = 'tour';
+  // `autofocus` va en SEGUIR y no es un detalle: `<dialog>` enfoca solo el primer
+  // elemento enfocable, que aquí es «Saltar». Sin esto el anillo de foco señala
+  // el botón equivocado y, peor, pulsar Enter nada más abrirse salta el tour.
+  dlg.innerHTML = `
+    <figure class="tour__marco" id="tour-marco">
+      <img class="tour__imagen" id="tour-imagen" alt="" decoding="async">
+    </figure>
+    <div class="tour__cuerpo">
+      <h2 class="tour__titulo" id="tour-titulo"></h2>
+      <p class="tour__texto" id="tour-texto"></p>
+    </div>
+    <footer class="tour__pie">
+      <div class="tour__puntos" id="tour-puntos" aria-hidden="true"></div>
+      <div class="tour__botones">
+        <button type="button" class="tour__saltar" id="tour-saltar">Saltar</button>
+        <button type="button" class="tour__seguir" id="tour-seguir" autofocus></button>
+      </div>
+    </footer>`;
+  document.body.appendChild(dlg);
+
+  const $ = (id) => dlg.querySelector('#' + id);
+  const puntos = $('tour-puntos');
+  PASOS.forEach(() => puntos.appendChild(document.createElement('span')));
+
+  // LAS IMÁGENES, PRECARGADAS EN CUANTO SE ABRE. Son seis JPEG y sin esto se ve
+  // el salto al pasar de paso: el hueco vacío y luego la foto. Cargarlas de
+  // golpe al abrir cuesta una vez y quita seis parpadeos.
+  for (const p of PASOS) {
+    if (!p.imagen) continue;
+    const pre = new Image();
+    pre.src = p.imagen;
+  }
+
+  function pintar() {
+    const p = PASOS[i];
+    $('tour-titulo').textContent = p.titulo;
+    $('tour-texto').textContent = p.texto;
+
+    const marco = $('tour-marco');
+    const img = $('tour-imagen');
+    if (p.imagen) {
+      img.src = p.imagen;
+      img.alt = `La pantalla de ${p.titulo.replace(/^\d+\s·\s/, '')}`;
+      marco.hidden = false;
+    } else {
+      marco.hidden = true;
+      img.removeAttribute('src');
     }
 
-    if (i >= mios.length) return cerrarTramo();
+    [...puntos.children].forEach((x, n) => x.classList.toggle('es-ahora', n === i));
+    $('tour-seguir').textContent = i === PASOS.length - 1 ? 'Empezar' : 'Siguiente';
+    $('tour-saltar').hidden = i === PASOS.length - 1;
+  }
 
-    const parada = mios[i];
-    const el = await esperarAncla(parada.ancla);
+  async function cerrar() {
+    dlg.close();
+    dlg.remove();
+    // Si la llamada falla, el tour vuelve a salir la próxima vez. Molesto, pero
+    // es lo honesto: decir «visto» sin haberlo guardado sería mentirle al
+    // servidor y perder el único registro que hay.
+    try {
+      await fetch('/api/tour/visto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    } catch {
+      /* se intentará otro día */
+    }
+  }
+
+  $('tour-seguir').addEventListener('click', () => {
+    if (i === PASOS.length - 1) return cerrar();
     i += 1;
+    pintar();
+  });
+  $('tour-saltar').addEventListener('click', cerrar);
 
-    // El ancla no llegó a aparecer. Puede ser que no aplique en este viaje o que
-    // el usuario todavía no haya hecho lo que la saca; aquí no se distingue, y
-    // por eso se cuenta.
-    if (!el) {
-      saltadas += 1;
-      return siguiente();
-    }
+  // Escape cuenta como saltar: `<dialog>` lo cierra solo, y sin esto el tour
+  // volvería a salir la próxima vez porque nadie lo habría marcado.
+  dlg.addEventListener('cancel', (e) => {
+    e.preventDefault();
+    cerrar();
+  });
 
-    if (!document.body.contains(velo)) {
-      document.body.append(velo, halo, burbuja);
-      document.addEventListener('keydown', teclado, true);
-      window.addEventListener('resize', recolocar);
-      window.addEventListener('scroll', recolocar, true);
-      devolverElFoco = document.activeElement;
-    }
+  pintar();
+  dlg.showModal();
 
-    anclaActual = el;
-    el.classList.add('tour-senalado');
-    el.setAttribute('aria-describedby', 'tour-texto');
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-
-    elTexto.textContent = parada.texto;
-
-    // El número es el de la parada dentro del GUIÓN ENTERO, no dentro de esta
-    // pantalla: el tour son nueve paradas aunque hoy solo salgan dos.
-    const nGlobal = GUION.indexOf(parada) + 1;
-    elProgreso.textContent = `Paso ${nGlobal} de ${GUION.length}`;
-    botonSeguir.textContent =
-      i >= mios.length && nGlobal === GUION.length ? 'Terminar' : 'Siguiente';
-
-    colocar(el);
-    botonSeguir.focus();
-  }
-
-  /**
-   * SE DA POR VISTO SOLO LO QUE SE HA VISTO.
-   *
-   * Si alguna parada se quedó sin ancla, el tramo NO se marca: se reserva para
-   * la próxima vez que se pise esta pantalla.
-   *
-   * EL CASO QUE OBLIGA A ESTO es la parada del chip de tipo —país o ciudad—, que
-   * es la más importante del tour y cuya ancla solo existe cuando el usuario ha
-   * tocado algo en el mapamundi. Con la regla simple («se enseñó el tramo, luego
-   * visto»), a quien se quedara mirando el mapa un minuto se le perdía esa
-   * parada para siempre, que es justo la que no se puede perder.
-   *
-   * No hay riesgo de que insista eternamente: en cuanto el ancla aparece una vez,
-   * el tramo se cierra. Y si de verdad no aplica —el carrusel en un viaje de
-   * ciudad—, esa pantalla no se vuelve a pisar.
-   */
-  function cerrarTramo() {
-    quitar();
-    if (saltadas === 0) avisar('/api/tour/tramo', { tramo });
-
-    // El último tramo del guión cierra el tour entero.
-    if (saltadas === 0 && tramo === GUION[GUION.length - 1].tramo) {
-      avisar('/api/tour/visto', { tramos: TODOS_LOS_TRAMOS });
-    }
-  }
-
-  botonSeguir.addEventListener('click', siguiente);
-  botonSaltar.addEventListener('click', saltar);
-
-  // Al relanzar desde Ajustes se llega con `?tour=1`: se limpia de la barra de
-  // direcciones para que recargar no vuelva a forzarlo.
-  if (forzado && window.history?.replaceState) {
-    const u = new URL(location.href);
-    u.searchParams.delete('tour');
-    window.history.replaceState({}, '', u);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', siguiente, { once: true });
-  } else {
-    siguiente();
-  }
+  // EL FOCO SE QUEDA EN «SIGUIENTE», con su anillo y todo.
+  //
+  // Probé a quitárselo con `blur()` para que no pareciera que había algo
+  // seleccionado, y era peor: el foco se iba al `body` y entonces Enter no hacía
+  // nada. Un anillo en el botón principal no es ruido, es la señal correcta —dice
+  // que Enter avanza— y además es lo que necesita quien navega con teclado.
 })();

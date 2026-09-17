@@ -4,8 +4,9 @@
     El dosier NO lo lleva a propósito: es el documento que uno imprime o comparte,
     y una burbuja de ayuda no pinta nada ahí. %>
 <script src="/js/ayuda.js" defer></script>
-<%# El tour de bienvenida. Se calla solo si ya se vio o si esta pantalla no
-    tiene parada; no hace falta condicionarlo desde aquí. %>
+<%# El tour de bienvenida. Se calla solo si ya se vio o si no estamos en la
+    portada, que es la única pantalla donde sale; no hace falta condicionarlo
+    desde aquí. %>
 <script src="/js/tour.js" defer></script>
 <%# Hueco para el JS propio de una pantalla concreta %>
 <%- typeof extraPie !== 'undefined' && extraPie ? extraPie : '' %>
