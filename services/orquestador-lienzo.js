@@ -54,6 +54,8 @@ import {
   enMinutos,
   comoHora,
   diaDeAclimatacion,
+  seLlegaAlHueco,
+  puntoDeTarjeta,
   FRANJAS,
 } from '../services/lienzo.js';
 import { datosDeSitio, interpretarHorariosDelCatalogo } from '../services/datos-sitios.js';
@@ -929,88 +931,6 @@ function horaLegitima(naturaleza, hora) {
   return true;
 }
 
-/**
- * ¿SE LLEGA A ESE HUECO, Y SE SALE DE ÉL?
- *
- * EL FALLO QUE ORIGINA ESTO, y es el día 6 del viaje a Túnez:
- *
- *     08:00  Excursión a Dougga y Bulla Regia   480 min   (110 km al oeste)
- *     16:00  Free tour por Cartago              120 min   (20 km al noreste)
- *
- * Lo montó la propia revisión: «Free tour por Cartago pasa al día 6 a las
- * 16:00». La excursión termina a las 16:00 y a las 16:00 empieza el free tour a
- * ciento y pico kilómetros. No hay solape —el reloj cuadra al minuto— y por eso
- * no saltó ningún aviso: `horaLibreEn` contesta a «¿está libre esa hora?», que
- * es la pregunta de una AGENDA. La de un VIAJE es otra: «¿se llega?».
- *
- * Es la misma familia que el traslado de salida que no llegaba al vuelo. Los dos
- * datos existían —la hora y el sitio— y nadie los cruzaba.
- *
- * SIN COORDENADAS NO SE DICE NADA. Una comida que solo es una zona, un traslado
- * o un sitio sin situar devuelven null en `puntoDeLoColocado`, y entonces esto
- * se calla: inventarse dónde cae algo para prohibir un hueco sería peor que el
- * hueco.
- *
- * Devuelve null si el hueco vale, o el motivo si no. Cuando el problema es lo de
- * ANTES viene además `desdeMinuto`: la primera hora a la que sí se llegaría, que
- * es lo que deja a quien llama volver a probar más tarde en vez de rendirse.
- */
-export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado }) {
-  const miPunto = puntoDeLoColocado(colocado);
-  const empieza = enMinutos(hora);
-  if (!miPunto || empieza == null) return null;
-  const acaba = empieza + (Number(duracion) || 0);
-
-  const delDia = (tablero.colocados ?? [])
-    .filter((c) => c.dia === dia && c.id !== colocado.id && enMinutos(c.hora) != null)
-    .sort((a, b) => enMinutos(a.hora) - enMinutos(b.hora));
-
-  // LO QUE ACABA MÁS TARDE SIN PASARSE, que no siempre es el vecino de la lista:
-  // una excursión de ocho horas empieza la primera del día y termina la última.
-  let antes = null;
-  for (const c of delDia) {
-    const fin = enMinutos(c.hora) + (Number(c.duracionMin) || 0);
-    if (fin <= empieza && (antes == null || fin > antes.fin)) antes = { c, fin };
-  }
-
-  if (antes) {
-    const suyo = puntoDeLoColocado(antes.c);
-    if (suyo) {
-      const km = distanciaKm(suyo, miPunto);
-      const falta = minutosMinimosEnLlegar(km);
-      if (antes.fin + falta > empieza + MINUTOS_QUE_SE_PERDONAN) {
-        return {
-          motivo:
-            `de «${antes.c.nombre}» a aquí hay ${Math.round(km)} km ` +
-            `y solo quedan ${empieza - antes.fin} min`,
-          desdeMinuto: antes.fin + falta,
-        };
-      }
-    }
-  }
-
-  // Y LO DE DESPUÉS, por el mismo motivo y en el otro sentido. Meter algo en un
-  // hueco de dos horas a cien kilómetros deja tirado a lo que venía detrás, y
-  // ese no es problema de lo que venía detrás.
-  const despues = delDia.find((c) => enMinutos(c.hora) >= acaba);
-  if (despues) {
-    const suyo = puntoDeLoColocado(despues);
-    if (suyo) {
-      const km = distanciaKm(miPunto, suyo);
-      const falta = minutosMinimosEnLlegar(km);
-      const hueco = enMinutos(despues.hora) - acaba;
-      if (falta > hueco + MINUTOS_QUE_SE_PERDONAN) {
-        // Retrasar no arregla esto: cuanto más tarde empiece, menos hueco queda.
-        return {
-          motivo: `de aquí a «${despues.nombre}» hay ${Math.round(km)} km y solo quedan ${hueco} min`,
-          desdeMinuto: null,
-        };
-      }
-    }
-  }
-
-  return null;
-}
 
 /**
  * LOS DÍAS EN QUE UN SITIO CIERRA, leídos de su horario publicado.
@@ -1652,7 +1572,7 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
     // algún bloque?»— y por nombre no casa ni el sitio que está a doscientos
     // metros: el bloque se llama «Camini de Oia a Amoudi», no «Oia Caldera».
     const cerca = delaParada.some((c) => {
-      const p = puntoDeLoColocado(c);
+      const p = puntoDeTarjeta(c);
       return p ? distanciaKm(punto, p) <= KM : false;
     });
     if (cerca) continue;
@@ -1689,28 +1609,6 @@ function avisarSiElHotelNoSePisa(viajeId, lienzo, di) {
   }
 }
 
-/**
- * DÓNDE ESTÁ UNA COSA COLOCADA EN EL LIENZO.
- *
- * Un bloque del plan puede ser un sitio de Google —que trae lat/lon de serie— o
- * una excursión, que las tiene en `direcciones` desde que el mapa las sitúa por
- * su nombre. Las dos valen para medir; una comida que solo es una zona, no, y
- * devuelve null sin más.
- */
-function puntoDeLoColocado(colocado) {
-  const quien = deQuienEs(colocado);
-  if (!quien?.deId) return null;
-
-  if (quien.de === 'sitio' || quien.de === 'punto') {
-    const tabla = quien.de === 'punto' ? 'puntos_interes' : 'sitios_lugar';
-    const f = una(`SELECT lat, lon FROM ${tabla} WHERE id = ?`, quien.deId);
-    if (Number.isFinite(Number(f?.lat))) return { lat: Number(f.lat), lon: Number(f.lon) };
-  }
-
-  const d = direccionDe(quien.de, quien.deId);
-  if (d?.situada) return { lat: Number(d.punto.lat), lon: Number(d.punto.lng) };
-  return null;
-}
 
 /**
  * DEJA DICHO POR QUÉ EL PRIMER DÍA VA MEDIO VACÍO.

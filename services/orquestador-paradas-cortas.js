@@ -32,7 +32,14 @@
 
 import { todas, una, ejecutar } from '../db/index.js';
 import { parametro } from './orquestador.js';
-import { minutosDeVisita, cierraALasMinutos, lienzoDeViaje, horaLibreEn, FRANJAS } from './lienzo.js';
+import {
+  minutosDeVisita,
+  cierraALasMinutos,
+  lienzoDeViaje,
+  horaLibreEn,
+  seLlegaAlHueco,
+  FRANJAS,
+} from './lienzo.js';
 import { abreEl } from './horarios.js';
 
 /** "07:45" -> 465. */
@@ -156,7 +163,7 @@ export function imprescindiblesDeParada(etapa) {
   if (!etapa.punto_interes_id) return [];
 
   return todas(
-    `SELECT id, nombre, tiempo_visita, categoria, horarios, cierra_dias
+    `SELECT id, nombre, tiempo_visita, categoria, horarios, cierra_dias, lat, lon
        FROM sitios_lugar
       WHERE punto_interes_id = ? AND bloque = 'imprescindibles' AND cubierto_por IS NULL
       ORDER BY orden, id`,
@@ -164,6 +171,9 @@ export function imprescindiblesDeParada(etapa) {
   ).map((s) => ({
     id: s.id,
     nombre: s.nombre,
+    // DÓNDE ESTÁ, para poder preguntar si al hueco se LLEGA y no solo si está
+    // libre. Sin coordenada va null y la pregunta no se hace.
+    punto: Number.isFinite(Number(s.lat)) ? { lat: Number(s.lat), lon: Number(s.lon) } : null,
     minutos: minutosDeVisita(s.tiempo_visita) ?? parametro('visita_por_defecto_min', 90),
     cierraA: cierraALasMinutos(s),
     // El TEXTO del horario, no `cierra_dias`. Es la misma fuente que usan los
@@ -505,7 +515,15 @@ function estaColocado(viajeId, sitioId) {
  * devuelve un sí/no: devuelve DÓNDE, porque un aviso que dice «cabría el día 5
  * por la tarde» se puede comprobar y uno que dice «cabría» no.
  */
-function huecoDeVerdad(lienzo, dias, duracion, cierraA = null, franjas = FRANJAS, cierraDias = null) {
+function huecoDeVerdad(
+  lienzo,
+  dias,
+  duracion,
+  cierraA = null,
+  franjas = FRANJAS,
+  cierraDias = null,
+  punto = null
+) {
   for (const dia of dias) {
     // UN DÍA EN QUE EL SITIO CIERRA NO ES UN HUECO, por libre que esté.
     if (cierraDias?.length) {
@@ -515,7 +533,29 @@ function huecoDeVerdad(lienzo, dias, duracion, cierraA = null, franjas = FRANJAS
     }
     for (const f of franjas) {
       const hora = horaLibreEn(lienzo, { dia, franja: f.clave, duracion, cierraA });
-      if (hora) return { dia, franja: f.clave, etiqueta: f.etiqueta, hora };
+      if (!hora) continue;
+
+      // NI UN HUECO AL QUE NO SE LLEGA, que es lo que esta función acabó
+      // diciendo en cuanto el reparto empezó a mirar el mapa.
+      //
+      // EL CASO, del viaje 103. El Zoco de las Alfombras de Kairuan está
+      // geocodificado a 20 km del centro, así que la guarda del lienzo le negó
+      // todas las horas y acabó expulsado. Y luego esta revisión escribía:
+      //
+      //     · Zoco de las Alfombras tenía hueco libre (día 3, mañana, 12:00)
+      //       y aun así no se colocó: eso no es cosa del reparto.
+      //
+      // Verdad sobre el reloj y mentira sobre el mapa, y encima con la etiqueta
+      // más inocente de las cuatro —«el lienzo eligió otra cosa»—, que es la que
+      // hace que nadie mire. Dos partes del programa midiendo con reglas
+      // distintas es peor que cualquiera de las dos sola: la que juzga acusa a
+      // la que decide de un capricho que no ha tenido.
+      //
+      // Sin coordenada del sitio, `punto` va null y esto no se pregunta: se
+      // vuelve a comportar exactamente como antes.
+      if (punto && seLlegaAlHueco(lienzo, { dia, hora, duracion, punto })) continue;
+
+      return { dia, franja: f.clave, etiqueta: f.etiqueta, hora };
     }
   }
   return null;
@@ -608,9 +648,34 @@ export function revisarElReparto(viaje, di = () => {}) {
         // Ahora los días de cierre se saben ANTES de repartir, así que esta
         // pregunta ya se puede hacer sin inventarse nada.
         const cierraDias = diasQueNoAbre(x);
-        const donde = huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA, FRANJAS, cierraDias);
-        const sinElDia = donde ? null : huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA);
-        const sinSuHorario = donde || sinElDia ? null : huecoDeVerdad(lienzo, dias, x.minutos);
+        const donde = huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA, FRANJAS, cierraDias, x.punto);
+
+        // Y UNA QUINTA PREGUNTA: ¿Y SI EL MAPA NO CONTARA?
+        //
+        // Va la primera de las que descartan porque es la que AÍSLA una causa.
+        // Si ignorando dónde está el sitio aparece un hueco que con el mapa no
+        // aparecía, lo único que ha cambiado entre las dos preguntas es la
+        // distancia: esa ES la razón, y no hay que seguir buscando.
+        //
+        // Sin ella el Zoco de las Alfombras de Kairuan salía clasificado como
+        // «no entró por su horario», que es verdad a medias y engaña entera: lo
+        // que le pasa es que está geocodificado a 20 km del centro y no se llega
+        // a él desde ningún bloque del día. Decir «horario» manda a mirar la
+        // ficha de apertura; decir «lo lejos que está» manda a mirar la
+        // coordenada, que es donde está el fallo.
+        const sinElMapa =
+          donde || !x.punto
+            ? null
+            : huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA, FRANJAS, cierraDias, null);
+
+        const sinElDia =
+          donde || sinElMapa
+            ? null
+            : huecoDeVerdad(lienzo, dias, x.minutos, x.cierraA, FRANJAS, null, x.punto);
+        const sinSuHorario =
+          donde || sinElMapa || sinElDia
+            ? null
+            : huecoDeVerdad(lienzo, dias, x.minutos, null, FRANJAS, null, x.punto);
         return {
           ...x,
           donde,
@@ -618,18 +683,23 @@ export function revisarElReparto(viaje, di = () => {}) {
           // Dónde SÍ habría cabido de no cerrar ese día. Es lo que convierte el
           // aviso en algo comprobable.
           cabriaEn: sinElDia,
-          // Las cuatro razones posibles de que no esté, y son distintas:
+          // Y dónde habría cabido si estuviera donde dice estar.
+          cabriaSinElMapa: sinElMapa,
+          // Las cinco razones posibles de que no esté, y son distintas:
           por: donde
             ? 'el lienzo eligió otra cosa'
-            : sinElDia
-              ? 'su día de cierre'
-              : sinSuHorario
-                ? 'su horario'
-                : 'falta de tiempo',
+            : sinElMapa
+              ? 'lo lejos que está'
+              : sinElDia
+                ? 'su día de cierre'
+                : sinSuHorario
+                  ? 'su horario'
+                  : 'falta de tiempo',
         };
       });
 
     const porTiempo = noLlegaron.filter((x) => x.por === 'falta de tiempo');
+    const porDistancia = noLlegaron.filter((x) => x.por === 'lo lejos que está');
     const porHorario = noLlegaron.filter((x) => x.por === 'su horario');
     const porDiaDeCierre = noLlegaron.filter((x) => x.por === 'su día de cierre');
     const conHueco = noLlegaron.filter((x) => x.donde);
@@ -650,6 +720,7 @@ export function revisarElReparto(viaje, di = () => {}) {
       porTiempo,
       porHorario,
       porDiaDeCierre,
+      porDistancia,
       conHueco,
       sobra,
     });
@@ -698,6 +769,14 @@ export function revisarElReparto(viaje, di = () => {}) {
         `      · ${x.nombre} no entró porque cierra los ${enPlural(x.cierraDias)} y esta parada ` +
         `no pisa ningún otro día. Habría cabido el día ${x.cabriaEn.dia} ` +
         `(${x.cabriaEn.etiqueta.toLowerCase()}, ${x.cabriaEn.hora}) si abriera.`
+    );
+    conRecorte(
+      v.porDistancia,
+      (x) =>
+        `      · ${x.nombre} no entró por lo lejos que está: no se llega a él desde el resto ` +
+        `del día. Habría cabido el día ${x.cabriaSinElMapa.dia} ` +
+        `(${x.cabriaSinElMapa.etiqueta.toLowerCase()}, ${x.cabriaSinElMapa.hora}) si estuviera ` +
+        'donde dice estar: comprueba su coordenada.'
     );
     conRecorte(
       v.conHueco,

@@ -1649,7 +1649,7 @@ function trayectoEntre(a, b) {
  * `direcciones` desde que el mapa la sitúa. Una comida que solo es una zona, un
  * traslado o algo sin situar devuelven null, y entonces no se mide.
  */
-function puntoDeTarjeta(c) {
+export function puntoDeTarjeta(c) {
   const clave = claveDeTarjeta(c);
   if (!clave?.id) return null;
 
@@ -1690,6 +1690,100 @@ function trayectoOSuelo(a, b) {
   const km = distanciaKm(pa, pb);
   const minutos = minutosMinimosEnLlegar(km);
   return minutos > 0 ? { minutos, modo: 'recta', km: Math.round(km) } : null;
+}
+
+/**
+ * ¿SE LLEGA A ESE HUECO, Y SE SALE DE ÉL?
+ *
+ * EL FALLO QUE ORIGINA ESTO, y es el día 6 del viaje a Túnez:
+ *
+ *     08:00  Excursión a Dougga y Bulla Regia   480 min   (110 km al oeste)
+ *     16:00  Free tour por Cartago              120 min   (20 km al noreste)
+ *
+ * Lo montó la propia revisión. El reloj cuadra al minuto —no hay solape— y por
+ * eso no saltó nada: `horaLibreEn` contesta a «¿está libre esa hora?», que es la
+ * pregunta de una AGENDA. La de un VIAJE es otra: «¿se llega?».
+ *
+ * VIVE AQUÍ, y no en el orquestador donde nació, porque la usan DOS módulos que
+ * no se pueden importar entre sí: `orquestador-lienzo` ya importa de
+ * `orquestador-paradas-cortas`, así que al revés sería un círculo. `lienzo.js`
+ * es de quien los dos tiran.
+ *
+ * Y LA USAN PARA DOS PREGUNTAS DISTINTAS, de ahí que acepte las dos formas:
+ *
+ *   colocado · una tarjeta que ya está en el lienzo. Su punto se saca de ella y
+ *              se excluye a sí misma del día al mirar los vecinos.
+ *   punto    · unas coordenadas sueltas, para preguntar por algo que TODAVÍA no
+ *              está puesto. Es lo que necesita la revisión del reparto para no
+ *              decir «tenía hueco libre y aun así no se colocó» de un sitio al
+ *              que a esa hora no se llega — una frase que era verdad sobre el
+ *              reloj y mentira sobre el mapa.
+ *
+ * SIN COORDENADAS NO SE DICE NADA. Una comida que solo es una zona, un traslado
+ * o un sitio sin situar devuelven null en `puntoDeTarjeta`, y entonces esto se
+ * calla: inventarse dónde cae algo para prohibir un hueco sería peor que el
+ * hueco.
+ *
+ * Devuelve null si el hueco vale, o el motivo si no. Cuando el problema es lo de
+ * ANTES viene además `desdeMinuto`: la primera hora a la que sí se llegaría, que
+ * es lo que deja a quien llama volver a probar más tarde en vez de rendirse.
+ */
+export function seLlegaAlHueco(tablero, { dia, hora, duracion, colocado = null, punto = null }) {
+  const miPunto = punto ?? (colocado ? puntoDeTarjeta(colocado) : null);
+  const empieza = enMinutos(hora);
+  if (!miPunto || empieza == null) return null;
+  const acaba = empieza + (Number(duracion) || 0);
+  const yoMismo = colocado?.id ?? null;
+
+  const delDia = (tablero.colocados ?? [])
+    .filter((c) => c.dia === dia && c.id !== yoMismo && enMinutos(c.hora) != null)
+    .sort((a, b) => enMinutos(a.hora) - enMinutos(b.hora));
+
+  // LO QUE ACABA MÁS TARDE SIN PASARSE, que no siempre es el vecino de la lista:
+  // una excursión de ocho horas empieza la primera del día y termina la última.
+  let antes = null;
+  for (const c of delDia) {
+    const fin = enMinutos(c.hora) + (Number(c.duracionMin) || 0);
+    if (fin <= empieza && (antes == null || fin > antes.fin)) antes = { c, fin };
+  }
+
+  if (antes) {
+    const suyo = puntoDeTarjeta(antes.c);
+    if (suyo) {
+      const km = distanciaKm(suyo, miPunto);
+      const falta = minutosMinimosEnLlegar(km);
+      if (antes.fin + falta > empieza + MINUTOS_QUE_SE_PERDONAN) {
+        return {
+          motivo:
+            `de «${antes.c.nombre}» a aquí hay ${Math.round(km)} km ` +
+            `y solo quedan ${empieza - antes.fin} min`,
+          desdeMinuto: antes.fin + falta,
+        };
+      }
+    }
+  }
+
+  // Y LO DE DESPUÉS, por el mismo motivo y en el otro sentido. Meter algo en un
+  // hueco de dos horas a cien kilómetros deja tirado a lo que venía detrás, y
+  // ese no es problema de lo que venía detrás.
+  const despues = delDia.find((c) => enMinutos(c.hora) >= acaba);
+  if (despues) {
+    const suyo = puntoDeTarjeta(despues);
+    if (suyo) {
+      const km = distanciaKm(miPunto, suyo);
+      const falta = minutosMinimosEnLlegar(km);
+      const hueco = enMinutos(despues.hora) - acaba;
+      if (falta > hueco + MINUTOS_QUE_SE_PERDONAN) {
+        // Retrasar no arregla esto: cuanto más tarde empiece, menos hueco queda.
+        return {
+          motivo: `de aquí a «${despues.nombre}» hay ${Math.round(km)} km y solo quedan ${hueco} min`,
+          desdeMinuto: null,
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 const COMO_SE_VA = {
