@@ -11,6 +11,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AYUDA_DE_PARAMETROS } from './ayuda-parametros.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -360,6 +361,9 @@ export function migrarEsquema() {
   migracionPrecioEnLaPuerta();
   migracionPuertasProbadas();
   migracionAyudaDeParametros();
+  // Va DESPUES de la migracion que crea las columnas, y no es una migracion:
+  // se siembra en cada arranque para que el fichero sea siempre el que manda.
+  sembrarAyudaDeParametros();
   migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
@@ -6202,6 +6206,34 @@ function migracionAyudaDeParametros() {
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: ayuda y ejemplo por parametro.');
   return true;
+}
+
+/**
+ * LOS TEXTOS DE AYUDA, DEL FICHERO A LA BASE, EN CADA ARRANQUE.
+ *
+ * NO ES UNA MIGRACION, y por eso no lleva clave ni se marca como aplicada. Una
+ * migracion corre una vez en la vida; esto tiene que correr siempre, porque el
+ * fichero es el que manda: si se corrige una redaccion o se explica un parametro
+ * nuevo, el cambio entra al desplegar sin tener que inventarse una migracion
+ * nueva cada vez.
+ *
+ * Solo toca `ayuda` y `ejemplo`. El VALOR de cada parametro es tuyo y no se
+ * pisa: lo que has ajustado en la pantalla sigue como lo dejaste.
+ *
+ * Y no crea filas. Si el fichero nombra un parametro que ya no existe, ese
+ * UPDATE no encuentra nada y no pasa nada; asi un parametro retirado no
+ * resucita por la puerta de atras.
+ */
+function sembrarAyudaDeParametros() {
+  const poner = db.prepare(
+    'UPDATE parametros_orquestador SET ayuda = ?, ejemplo = ? WHERE clave = ?'
+  );
+  let n = 0;
+  for (const [clave, ayuda, ejemplo] of AYUDA_DE_PARAMETROS) {
+    n += poner.run(ayuda, ejemplo, clave).changes;
+  }
+  if (n) console.log(`[bd] Ayuda de parametros: ${n} de ${AYUDA_DE_PARAMETROS.length} textos al dia.`);
+  return n;
 }
 
 function migracionFueraHorarioJson() {
