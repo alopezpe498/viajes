@@ -1222,13 +1222,24 @@ function avisosDeCierre(dias, colocados, viajeId) {
         continue;
       }
 
+      // CERRADO TODOS LOS DÍAS NO ES «CIERRA LOS MARTES».
+      //
+      // Es verdad que cierra los martes, y decirlo así manda a buscar otro día
+      // que no existe. Un sitio en obras no se recoloca: se quita o se deja
+      // sabiendo que está cerrado.
+      const cierraSiempre = horarioPorDias(info.horarios, mes).porDia.every(
+        (x) => x.estado === 'cerrado'
+      );
+
       avisos.push({
         dia: d.n,
         tipo: 'sitio-cerrado',
         idsAfectados: [c.id],
-        texto:
-          `${c.nombre} cierra los ${enPlural(queDia)} y lo has puesto en ` +
-          `${d.fechaCorta}. Su horario dice: «${info.horarios}»`,
+        texto: cierraSiempre
+          ? `${c.nombre} no se puede visitar: su horario dice «${info.horarios}», ` +
+            'y aun así está en el plan.'
+          : `${c.nombre} cierra los ${enPlural(queDia)} y lo has puesto en ` +
+            `${d.fechaCorta}. Su horario dice: «${info.horarios}»`,
       });
     }
   }

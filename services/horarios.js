@@ -176,6 +176,30 @@ const SIEMPRE = [
 const CIERRE = ['cerrado', 'cierra', 'cierre', 'closed', 'except', 'excepto', 'salvo'];
 
 /**
+ * CERRADO DEL TODO, NO CERRADO LOS MARTES.
+ *
+ * EL FALLO QUE ORIGINA ESTO, y es del viaje 109. Los Baños de Pasha de
+ * Tesalónica tienen esto por horario:
+ *
+ *     «Cerrado por restauración permanente»
+ *
+ * …y el lector contestaba «no lo sé» a los siete días. Así que el relleno del
+ * día liberado lo dio por un sitio más y lo metió en el plan: diez minutos a las
+ * 12:30 en un edificio que lleva años en obras. El aviso decía la verdad —«no he
+ * podido leer su horario»— pero la frase se entiende perfectamente.
+ *
+ * Es el mismo pecado que «(Cierra martes)» dentro de un horario ilegible: una
+ * afirmación clara que se pierde porque el resto del texto no cuadra.
+ *
+ * LA LISTA ES CORTA A PROPÓSITO. «Cerrado» a secas no basta —«Cerrado los
+ * lunes» también lo lleva— y por eso hace falta la MARCA DE PERMANENCIA: obras,
+ * restauración, temporalmente, definitivamente. Sin una de estas, el texto se
+ * sigue leyendo como siempre.
+ */
+const CERRADO_DEL_TODO =
+  /\b(?:permanente|permanentemente|permanently|definitivamente|temporalmente|clausurad|por\s+(?:obras|reformas?|restauraci[oó]n|renovaci[oó]n)|no\s+se\s+puede\s+visitar)/;
+
+/**
  * LO QUE AVISA DE QUE ESTE TEXTO NO ES UNA LISTA CERRADA DE DÍAS.
  *
  * Un horario que empieza por «Variable» o que dice «consultar» no está
@@ -525,6 +549,8 @@ export function horarioPorDias(texto, mes = null) {
   // Los números ya leídos no los pisa una palabra: ver la guarda de más abajo.
   let porDefectoEsDeNumeros = false;
   let temporadaDudosa = false;
+  // El texto dice, con todas las letras, que el sitio no se puede visitar.
+  let cerradoDeclarado = false;
 
   // LOS TRAMOS QUE HABLAN DE TEMPORADA SE RESUELVEN ANTES DE NADA.
   //
@@ -612,6 +638,19 @@ export function horarioPorDias(texto, mes = null) {
     const dias = diasDelTramo(tramo);
     const rangos = rangosDelTramo(tramo);
 
+    // CERRADO Y PUNTO: los siete días, y con confianza.
+    //
+    // Va lo primero porque no admite matices: si el sitio está en obras, da
+    // igual lo que diga el resto del texto. Y se marca `huboCierre` para que el
+    // horario salga FIABLE: un «no lo sé» aquí es lo que metió los Baños de
+    // Pasha en el plan del viaje 109.
+    if (esDeCierre && CERRADO_DEL_TODO.test(tramo) && !dias.size) {
+      for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'cerrado', rangos: [] };
+      huboCierre = true;
+      cerradoDeclarado = true;
+      continue;
+    }
+
     if (!esDeCierre && SIEMPRE.some((p2) => tramo.includes(p2))) {
       // «SIEMPRE» ES UN HORARIO, NO UN HUECO.
       //
@@ -689,7 +728,15 @@ export function horarioPorDias(texto, mes = null) {
   // que está mal es la lectura, y lo honesto es decir que no se sabe: con
   // «desconocido» el sitio se coloca igual y se avisa flojito, que es la regla de
   // la casa. Marcarlo cerrado lo borra del viaje sin que nadie pueda discutirlo.
-  if (TODOS_LOS_DIAS.every((d) => porDia[d].estado === 'cerrado')) {
+  //
+  // CON UNA EXCEPCIÓN, Y SOLO UNA: que el texto lo DIGA. «Cerrado por
+  // restauración permanente» no es una lectura fallida, es la frase entera, y
+  // convertirla en «no lo sé» es lo que metió los Baños de Pasha de Tesalónica
+  // en el plan del viaje 109 —diez minutos a las 12:30 en un edificio en obras—.
+  //
+  // La regla de oro sigue protegiendo todo lo demás, que es para lo que está:
+  // aquí no se deduce el cierre de la ausencia de datos, se lee de una frase.
+  if (!cerradoDeclarado && TODOS_LOS_DIAS.every((d) => porDia[d].estado === 'cerrado')) {
     return {
       porDia: TODOS_LOS_DIAS.map(() => ({ estado: 'desconocido', rangos: [] })),
       fiable: false,
