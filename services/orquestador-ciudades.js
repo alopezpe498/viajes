@@ -291,6 +291,25 @@ function comoTexto(min) {
 }
 
 /** La opción más corta de las que devolvió Kayak. */
+/**
+ * LO QUE CUESTAN LOS DOS VUELOS DE UNA COMBINACIÓN, O NULL.
+ *
+ * `precio` de Kayak es el TOTAL de la reserva, no el de una persona, y eso es lo
+ * correcto aquí: la ocupación es la misma para todas las puertas, así que los
+ * totales se comparan entre sí sin dividir por nadie.
+ *
+ * NULL SI FALTA CUALQUIERA DE LOS DOS, y no cero. Media combinación sin precio no
+ * es «esta mitad es gratis»: es que no se sabe lo que cuesta, y quien lo llama
+ * tiene que poder distinguir las dos cosas para no premiar a la puerta con menos
+ * datos.
+ */
+function precioDeLaCombinacion(ida, vuelta) {
+  const uno = Number(ida?.opcion?.precio);
+  const otro = Number(vuelta?.opcion?.precio);
+  if (!Number.isFinite(uno) || !Number.isFinite(otro)) return null;
+  return uno + otro;
+}
+
 function laMasCorta(opciones) {
   let mejor = null;
   for (const o of opciones) {
@@ -714,9 +733,70 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         mejorReparto: mejor,
         nochesUtil: deLasNoches,
         puntos: deLosExtremos + deLasNoches,
+        precio: precioDeLaCombinacion(ida, vuelta),
         misma: ida.ciudad === vuelta.ciudad,
       });
     }
+  }
+
+  // --- LO QUE CUESTA, QUE HASTA AHORA NO VALÍA NADA ------------------------
+  //
+  // El ranking puntuaba en horas útiles —lo que te dejan los vuelos más lo que
+  // permite el reparto de noches— y era CIEGO al precio. Dos puertas que dejan
+  // el mismo día empataban aunque una costara el doble, y en el viaje 109 la
+  // vuelta elegida costó 1220 € contra los 222 € de la ida: no es calderilla.
+  //
+  // ES UN PRECIO DECLARADO, NO UNA MEDIDA, y va dicho porque importa. No hay con
+  // qué medirlo: de cada viaje solo se guarda el vuelo de la puerta GANADORA, así
+  // que no existe el histórico de lo que costaban las perdedoras y no se puede
+  // calibrar mirando hacia atrás. `euros_por_hora_util` dice cuántos euros vale
+  // una hora útil, se declara en /orquestador, y con 30 de fábrica un vuelo de
+  // 370 € resta 12,3 puntos cuando la diferencia entre puertas en el viaje 110
+  // era de 70. Desempata; no manda.
+  //
+  // O TODAS O NINGUNA, QUE ES LA PARTE QUE NO SE PUEDE SALTAR. Si a una
+  // combinación le falta el precio y se le cuenta cero, gana por no saberse su
+  // coste — que es exactamente la mentira de «NULL no es cero», y aquí premiando
+  // al que menos datos tiene. Mientras no estén TODOS los precios, el término no
+  // se aplica a nadie y el registro lo dice.
+  // Y LA CONVERSIÓN VA PONDERADA, QUE ES DONDE ME EQUIVOQUÉ PRIMERO.
+  //
+  // Los otros dos términos no están en horas: están en HORAS × PESO. Una hora en
+  // una ciudad de peso 5 vale 5 puntos. Pasar los euros a horas peladas metía el
+  // precio en otra moneda, cinco veces más pequeña que la de la cuenta, y el
+  // término quedaba inerte: con 30 €/h hacían falta diferencias de 1.218 € (viaje
+  // 93), 2.118 € (viaje 110) y 3.930 € (viaje 103) para mover un ranking, cuando
+  // los vuelos de esos viajes van de 400 a 1.200 €. Un parámetro que no puede
+  // cambiar nada es peor que no tenerlo: parece que el precio cuenta.
+  //
+  // Se pondera por el peso MEDIO de las candidatas, uno solo para todo el
+  // ranking. Por el medio y no por el de cada puerta a propósito: un vuelo no
+  // cuesta más por salir de una ciudad importante, así que ponderar combinación a
+  // combinación castigaría a las puertas buenas por serlo. Un factor común deja
+  // el precio en la moneda correcta sin tocar las comparaciones entre puertas.
+  //
+  // Así «30 €/h» dice lo que parece decir: lo que vale una hora útil en una
+  // ciudad de importancia media.
+  const tasa = Math.max(0, parametro('euros_por_hora_util', 30));
+  const faltaAlgunPrecio = combinaciones.some((c) => c.precio == null);
+  const pesoMedio =
+    candidatas.length
+      ? candidatas.reduce((n, c) => n + (Number(c.peso) || 3), 0) / candidatas.length
+      : 3;
+
+  if (tasa > 0 && combinaciones.length && !faltaAlgunPrecio) {
+    for (const c of combinaciones) {
+      c.costeEnHoras = (c.precio / tasa) * pesoMedio;
+      c.puntos -= c.costeEnHoras;
+    }
+  } else if (faltaAlgunPrecio) {
+    anotar(
+      viajeId,
+      'ciudades_y_noches',
+      '   No tengo el precio de todas las combinaciones, así que el precio no puntúa en ' +
+        'ninguna: contarlo solo donde lo sé premiaría a la puerta de la que menos sé.',
+      ORIGENES.ninguno
+    );
   }
 
   // --- DESANDAR EL CAMINO CUESTA, Y HASTA AHORA ERA GRATIS -----------------
@@ -813,8 +893,16 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         `(${c.util.toFixed(1)} de los vuelos + ${c.nochesUtil.toFixed(1)} de las noches` +
         // LA PENALIZACIÓN, DICHA. Una resta que no se ve es una mano invisible:
         // quien lea el registro tiene que poder sumar los números y que le den.
-        `${c.penalizacion ? ` − ${c.penalizacion.toFixed(1)} por volver a ${c.salida.ciudad}` : ''}) · ` +
-        `${comoTexto(c.total)} de vuelo · reparto: ${conQue}` +
+        `${c.penalizacion ? ` − ${c.penalizacion.toFixed(1)} por volver a ${c.salida.ciudad}` : ''}` +
+        // Y EL PRECIO CON SU CUENTA AL LADO, POR LO MISMO. Un «− 12.3» a secas no
+        // se puede discutir; «− 12.3 por 370 € a 30 €/h» sí, y además enseña la
+        // tasa que lo ha producido, que es el número que se ajusta si no gusta.
+        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € a ${parametro('euros_por_hora_util', 30)} €/h (peso medio ${pesoMedio.toFixed(1)})` : ''}) · ` +
+        `${comoTexto(c.total)} de vuelo · ` +
+        // EL PRECIO SE DICE SIEMPRE, PUNTÚE O NO. Cuando falta alguno el término
+        // no se aplica a nadie, y entonces esta línea es lo único que deja ver
+        // cuánto costaba cada puerta.
+        `${c.precio == null ? 'precio desconocido' : `${c.precio} €`} · reparto: ${conQue}` +
         // UN CERO SIEMPRE VIENE CON SU MOTIVO. Sin esto parece un fallo del
         // programa y no lo es: son dos días de extremo que no dan de sí.
         (c.util < 0.05 ? ` — 0 h de vuelos porque ${porQueEsaPuntuacion(c.entrada, c.salida) || 'no tengo las horas de los vuelos'}` : ''),

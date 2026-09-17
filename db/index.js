@@ -357,6 +357,7 @@ export function migrarEsquema() {
   migracionColeccionPorAlcance();
   migracionAvisoDeContradiccion();
   migracionSitiosAmontonados();
+  migracionPrecioEnLaPuerta();
   migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
@@ -6075,6 +6076,45 @@ function migracionSitiosAmontonados() {
 
   marcarAplicada(CLAVE);
   console.log(`[bd] Migracion: ${limpiados} sitio(s) que compartian coordenada, sin punto.`);
+  return true;
+}
+
+/**
+ * LO QUE VALE UNA HORA UTIL EN EUROS, PARA QUE EL PRECIO ENTRE EN LA PUNTUACION.
+ *
+ * El ranking de puertas puntuaba en «horas utiles ponderadas» —lo que te dejan
+ * los vuelos mas lo que permite el reparto de noches— y era CIEGO al precio. Dos
+ * puertas que dejan el mismo dia empataban aunque una costara el doble.
+ *
+ * NO ES UNA MEDIDA, ES UN PRECIO DECLARADO, igual que `desandar_cuesta_horas`, y
+ * por el mismo motivo: no hay con que medirlo. De cada viaje solo se guarda el
+ * vuelo de la puerta GANADORA, asi que no existe el historico de lo que costaban
+ * las perdedoras. Este numero dice cuantos euros estas dispuesto a pagar por una
+ * hora util de viaje, y se ajusta en /orquestador.
+ *
+ * 30 DE FABRICA, Y FLOJO A PROPOSITO. Con esa tasa un vuelo de 370 EUR resta
+ * 12,3 puntos, y en el viaje 110 la diferencia entre la mejor puerta y la
+ * siguiente eran 70. Asi el precio DESEMPATA y no MANDA: rompe un empate ajustado
+ * pero no tumba una puerta que deja medio dia mas en destino. Subirlo hace el
+ * precio menos importante; bajarlo, mas.
+ */
+function migracionPrecioEnLaPuerta() {
+  const CLAVE = '2026-09-precio-en-la-puntuacion-de-la-puerta';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+
+  meter.run('euros_por_hora_util', '30', '30',
+    'Cuantos euros de vuelo equivalen a una hora util de viaje al puntuar las puertas',
+    'euros/hora', orden + 1);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el precio entra en la puntuacion de la puerta.');
   return true;
 }
 
