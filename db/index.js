@@ -353,6 +353,8 @@ export function migrarEsquema() {
   migracionMargenesRealistas();
   migracionNumerosDeSiSeLlega();
   migracionParaguasDeZona();
+  // La última: se lleva una columna, así que va detrás de todo lo que las añade.
+  migracionFueraHorarioJson();
   migracionFase3Dormir();
   migracionFase4Sitios();
   migracionFase5Excursiones();
@@ -389,7 +391,6 @@ export function migrarEsquema() {
   migracionCorrectivoAsia();
   migracionDosModelosYParalelo();
   migracionScrapingEnFila();
-  anadirColumnaSiFalta('sitios_lugar', 'horario_json', 'TEXT');
   // LA HUELLA DE PASADAS DE LA VISTA TRADUCIDA. Va aqui, fuera de su migracion,
   // porque esa ya corrio en las bases que existen: es la forma de añadirla sin
   // inventarse una migracion nueva para una columna.
@@ -5836,6 +5837,42 @@ function migracionDesandarCuesta() {
  * Kilometro y medio, la misma unidad que ya usa el aviso del hotel, y por el
  * mismo motivo: lo que se mide es un PUEBLO o un casco antiguo, no una esquina.
  */
+/**
+ * FUERA `horario_json`, QUE ERA UNA FOTO VIEJA DE UN LECTOR QUE HA CAMBIADO.
+ *
+ * La columna guardaba el desglose dia a dia que habia entendido `horarioPorDias`
+ * en el momento de investigar el sitio. La intencion era poder MIRAR que habia
+ * entendido el lector cuando un aviso dijera algo raro.
+ *
+ * Se escribia en dos sitios y NO SE LEIA EN NINGUNO. Y el efecto era el
+ * contrario del buscado: un texto se lee siempre igual y leerlo es instantaneo,
+ * asi que una copia guardada no aporta un dato, aporta una foto vieja. En una
+ * sola semana se arreglaron cinco fallos del lector —«mar» por marzo, la
+ * temporada invertida, «cerrado por obras», «vier», la coma que separa dos
+ * horarios—, de modo que lo guardado en esa columna era justo el conjunto de
+ * lecturas equivocadas que se acababan de corregir, esperando a que alguien las
+ * creyera.
+ *
+ * Para saber que entiende el lector se le pregunta al lector, que contesta con
+ * lo que sabe hoy. `cierra_dias` SI se queda: esa la lee el reparto.
+ */
+function migracionFueraHorarioJson() {
+  const CLAVE = '2026-09-fuera-horario-json';
+  if (yaAplicada(CLAVE)) return false;
+
+  const hay = db
+    .prepare("SELECT 1 AS hay FROM pragma_table_info('sitios_lugar') WHERE name = 'horario_json'")
+    .get();
+
+  if (hay) {
+    db.prepare('ALTER TABLE sitios_lugar DROP COLUMN horario_json').run();
+    console.log('[bd] Migracion: fuera `horario_json`, que nadie leia.');
+  }
+
+  marcarAplicada(CLAVE);
+  return true;
+}
+
 function migracionParaguasDeZona() {
   const CLAVE = '2026-09-paraguas-de-zona';
   if (yaAplicada(CLAVE)) return false;

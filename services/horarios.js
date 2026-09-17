@@ -45,8 +45,13 @@ const DIAS = [
   ['lunes', 1], ['mondays', 1], ['monday', 1], ['lun', 1], ['mon', 1],
   ['martes', 2], ['tuesdays', 2], ['tuesday', 2], ['tues', 2], ['mar', 2], ['tue', 2],
   ['miercoles', 3], ['wednesdays', 3], ['wednesday', 3], ['mierc', 3], ['mie', 3], ['wed', 3],
-  ['jueves', 4], ['thursdays', 4], ['thursday', 4], ['thurs', 4], ['thur', 4], ['jue', 4], ['thu', 4],
-  ['viernes', 5], ['fridays', 5], ['friday', 5], ['vie', 5], ['fri', 5],
+  // «JUEV» Y «VIER» FALTABAN, y es el mismo agujero que el «Mi-Dom» de abajo.
+  // La IA abrevia como le da la gana, y «Lun-Vier: 06:00 - 18:00» se leía como
+  // el lunes a secas —«vier» no casa con `\bvie\b`— así que de martes a viernes
+  // quedaban CERRADOS por la regla de «la lista es la lista». Un horario de
+  // oficina convertido en un sitio que solo abre los lunes.
+  ['jueves', 4], ['thursdays', 4], ['thursday', 4], ['thurs', 4], ['thur', 4], ['juev', 4], ['jue', 4], ['thu', 4],
+  ['viernes', 5], ['fridays', 5], ['friday', 5], ['vier', 5], ['vie', 5], ['fri', 5],
   ['sabados', 6], ['sabado', 6], ['saturdays', 6], ['saturday', 6], ['sab', 6], ['sat', 6],
 ];
 
@@ -425,7 +430,26 @@ function tramosDe(t) {
   // «10.00», así que mirar hacia atrás no separa nada —primer intento, y no
   // cortaba—. Un punto decimal siempre tiene un dígito DESPUÉS; un punto de
   // frase, no.
-  return [...sinParentesis.split(/[;|\n]+|\.(?!\d)/), ...notas]
+  // Y LA COMA, PERO SOLO CUANDO SEPARA DOS HORARIOS.
+  //
+  // EL FALLO QUE ORIGINA ESTO. La Lonja de los Paños y el Museo Nacional de
+  // Cracovia llevaban toda la semana con «no he podido leer su horario», y su
+  // horario es este:
+  //
+  //     «Lun: Cerrado, Mar-Dom: 10:00 - 18:00»
+  //
+  // Con punto y coma se lee perfectamente —cierra lunes, abre el resto— y con
+  // coma no se lee nada, porque los dos trozos quedan en un solo tramo que a la
+  // vez cierra y abre. El mismo horario, dos signos de puntuación, dos destinos.
+  //
+  // NO SE PARTE POR CUALQUIER COMA, y por eso el corte es estrecho: «Lun, Mar,
+  // Mié: 9-14» es UNA lista de días y partirla se cargaría sus horas. Solo corta
+  // la coma que lleva detrás otro día CON SUS DOS PUNTOS, que es la firma de
+  // «aquí empieza otro horario».
+  const CORTE_DE_COMA =
+    /,(?=\s*(?:lun|mar|mie|jue|vie|sab|dom|mon|tue|wed|thu|fri|sat|sun)[a-z]*\s*(?:[-–a]\s*[a-z]+)?\s*:)/;
+
+  return [...sinParentesis.split(new RegExp(`[;|\\n]+|\\.(?!\\d)|${CORTE_DE_COMA.source}`)), ...notas]
     .map((x) => x.trim())
     .filter(Boolean);
 }

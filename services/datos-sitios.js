@@ -28,7 +28,7 @@ import { encolar, trabajoActivo } from '../jobs/cola.js';
 import { resumenDeSitio, resumirPrecio } from '../lib/resumen-sitio.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { buscarTablaDeSitios, ErrorCaptcha } from '../providers/google-busqueda.js';
-import { diasQueCierra, horarioPorDias, TODOS_LOS_DIAS } from './horarios.js';
+import { diasQueCierra, TODOS_LOS_DIAS } from './horarios.js';
 
 /** A partir de aquí, lo guardado se enseña con un "puede haber cambiado". */
 export const DIAS_PARA_AVISAR = 30;
@@ -953,12 +953,9 @@ export async function interpretarHorario(sitioId) {
  * que eso se ha comprobado.
  */
 function guardarCierres(sitio, dias, comoSeSupo) {
-  const estructura = horarioPorDias(sitio.horarios);
-
   if (dias === null) {
     ejecutar(
-      "UPDATE sitios_lugar SET cierra_dias = NULL, horario_json = ?, cierra_en = datetime('now') WHERE id = ?",
-      JSON.stringify(estructura),
+      "UPDATE sitios_lugar SET cierra_dias = NULL, cierra_en = datetime('now') WHERE id = ?",
       sitio.id
     );
     console.log(
@@ -970,17 +967,25 @@ function guardarCierres(sitio, dias, comoSeSupo) {
 
   const limpios = [...new Set(dias)].sort((a, b) => a - b);
 
-  // EL HORARIO PARSEADO, GUARDADO JUNTO AL SITIO.
+  // SE GUARDAN LOS DÍAS, NO LA LECTURA ENTERA.
   //
-  // La comprobación de «¿abre el día D?» se hace siempre leyendo el texto, que
-  // es la única fuente que no se queda vieja. Esto se guarda para poder MIRARLO:
-  // qué ha entendido el lector, día a día y con sus rangos. Cuando un aviso
-  // vuelva a decir algo raro, aquí se ve si el fallo fue de la lectura o del
-  // dato que trajo Google.
+  // Aquí se guardaba también `horario_json`: el desglose día a día que había
+  // entendido el lector, «para poder mirarlo» cuando un aviso dijera algo raro.
+  // La intención era buena y el efecto, el contrario.
+  //
+  // Un texto se lee siempre igual, la lectura es instantánea y no cuesta nada.
+  // Así que una copia guardada de esa lectura no aporta un dato: aporta una
+  // FOTO VIEJA. Y esta semana se han arreglado cinco fallos del lector —«mar»
+  // por marzo, la temporada invertida, «cerrado por obras», «vier», la coma—,
+  // de modo que lo que había guardado en esa columna era exactamente el
+  // conjunto de lecturas equivocadas que acabamos de corregir, esperando a que
+  // alguien las creyera.
+  //
+  // Para mirar qué entiende el lector se le pregunta al lector, que siempre
+  // contesta con lo que sabe HOY. La columna se va.
   ejecutar(
-    "UPDATE sitios_lugar SET cierra_dias = ?, horario_json = ?, cierra_en = datetime('now') WHERE id = ?",
+    "UPDATE sitios_lugar SET cierra_dias = ?, cierra_en = datetime('now') WHERE id = ?",
     JSON.stringify(limpios),
-    JSON.stringify(estructura),
     sitio.id
   );
 
