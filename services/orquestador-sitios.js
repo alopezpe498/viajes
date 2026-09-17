@@ -48,6 +48,7 @@ import { porParada, avisar, avisoDeSitios } from '../services/paralelo.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
 import { fundirSitiosContenidos } from '../services/contenidos.js';
+import { puntuarLosSitios } from '../services/rubrica-sitios.js';
 
 const FASE = 'sitios';
 
@@ -298,6 +299,21 @@ export async function ejecutarFaseSitios(viaje, prompt) {
         if (fundidos) di(`   ${ciudad}: ${fundidos} sitio(s) se visitan dentro de otro.`);
       } catch (err) {
         di(`   ${ciudad}: no pude fundir los sitios contenidos (${err.message}).`);
+      }
+
+      // CUÁNTO VALE CADA SITIO, CONTADO EN VEZ DE OPINADO.
+      //
+      // Va DESPUÉS de fundir a propósito: así se puntúa lo que de verdad se va a
+      // visitar y no se gasta una casilla en algo que ya se ve dentro de otra
+      // cosa.
+      //
+      // Y no lanza: si falla, los sitios se quedan sin nota —que es «todavía no
+      // se ha medido», no «vale cero»— y el reparto sigue usando el orden de la
+      // lista para ellos. Puntuar es una mejora, no un requisito.
+      try {
+        await puntuarLosSitios(punto, ciudad, di);
+      } catch (err) {
+        di(`   ${ciudad}: no pude puntuar los sitios (${err.message}).`);
       }
 
       di(

@@ -353,6 +353,9 @@ export function migrarEsquema() {
   migracionMargenesRealistas();
   migracionNumerosDeSiSeLlega();
   migracionParaguasDeZona();
+  migracionRubricaDeSitios();
+  migracionColeccionPorAlcance();
+  migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
   migracionFase3Dormir();
@@ -5856,6 +5859,128 @@ function migracionDesandarCuesta() {
  * Para saber que entiende el lector se le pregunta al lector, que contesta con
  * lo que sabe hoy. `cierra_dias` SI se queda: esa la lee el reparto.
  */
+/**
+ * LOS NUMEROS DE LA RUBRICA DE SITIOS.
+ *
+ * Los pesos de las seis casillas y los dos cortes de banda. Van a la tabla por
+ * lo mismo que los de ciudades: son la primera calibracion, se van a quedar
+ * cortos en algo, y un numero de criterio escondido en una constante es un
+ * numero que nadie va a revisar nunca.
+ *
+ * ESTO NO ENCHUFA NADA. `importanciaDe` sigue leyendo `orden`; estos parametros
+ * solo los lee `services/rubrica-sitios.js`, que hoy calcula y no decide. Se
+ * crean ahora para poder mover la calibracion desde la pantalla mientras se
+ * mira la tabla, en vez de editando codigo entre tirada y tirada.
+ */
+function migracionRubricaDeSitios() {
+  const CLAVE = '2026-09-rubrica-de-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+
+  meter.run('rubrica_sitio_peso_motivo', '3', '3',
+    'Lo que suma que un sitio sea una de las razones de primer orden para venir a esa ciudad',
+    'puntos', ++orden);
+  meter.run('rubrica_sitio_peso_unico', '3', '3',
+    'Lo que suma que lo que se ve ahi no exista en ningun otro sitio del mundo',
+    'puntos', ++orden);
+  meter.run('rubrica_sitio_peso_reconocimiento', '2', '2',
+    'Lo que suma una inscripcion o distincion con nombre (UNESCO y similares)',
+    'puntos', ++orden);
+  meter.run('rubrica_sitio_peso_coleccion', '2', '2',
+    'Lo que suma lo que se ve dentro: coleccion o recinto, cuando es bueno pero no irrepetible',
+    'puntos', ++orden);
+  meter.run('rubrica_sitio_peso_barrio', '1', '1',
+    'Lo que suma que el sitio SEA un trozo de la ciudad: un casco, un barrio, un paseo',
+    'puntos', ++orden);
+  meter.run('rubrica_sitio_peso_sabor', '1', '1',
+    'Lo que suma lo que ahi se come, se compra o se ve hacer',
+    'puntos', ++orden);
+  meter.run('banda_sitio_intocable_desde', '8', '8',
+    'Puntos desde los que un sitio es intocable: no se mueve, no se expulsa y dispara avisos graves',
+    'puntos', ++orden);
+  meter.run('banda_sitio_imprescindible_desde', '4', '4',
+    'Puntos desde los que un sitio es imprescindible. Por debajo, segundo nivel',
+    'puntos', ++orden);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: los numeros de la rubrica de sitios.');
+  return true;
+}
+
+/**
+ * LA COLECCION, PARTIDA POR ALCANCE.
+ *
+ * `rubrica_sitio_peso_coleccion` se convirtio en el cajon de sastre de la
+ * rubrica: 41 de los 156 sitios del catalogo sacaban sus unicos 2 puntos por
+ * ahi, y valia lo mismo «la mayor coleccion de arte griego antiguo del mundo»
+ * que «el mausoleo de un santo local». En Kairuan, ocho sitios seguidos
+ * empataban por esa casilla y la rubrica no decidia nada.
+ *
+ * Se parte en dos por ALCANCE, que es lo que faltaba y ademas se puede nombrar:
+ * de referencia mundial o nacional (+3) y local (+1). Son excluyentes.
+ *
+ * El parametro viejo se BORRA en vez de dejarlo: un numero que no lee nadie es
+ * una mina, y esa leccion ya la pago `horario_json` esta misma semana.
+ */
+/**
+ * LAS DOS COLUMNAS DE LA RUBRICA DE SITIOS.
+ *
+ *   puntos    · la nota, de 0 a 13
+ *   evidencia · el desglose en JSON: que casilla, con que frase y cuanto suma
+ *
+ * LA EVIDENCIA SE GUARDA, y no es adorno: un numero que no se puede leer no se
+ * puede discutir. Con el desglose, el motor puede decir «dejo fuera esto» y
+ * enseñar la cuenta; sin el, solo puede sentenciar.
+ *
+ * NULL NO ES CERO, y esa distincion es la que hace que enchufar la rubrica no
+ * hunda nada. Los 156 sitios que ya estan en el catalogo no tienen evidencia
+ * —se investigaron antes de que existiera— y `importanciaDe` seguira usando su
+ * `orden` para ellos. Un cero escrito diria «medido y no vale nada»; NULL dice
+ * «todavia no se ha medido», que es la verdad.
+ */
+function migracionColumnasDeRubricaDeSitios() {
+  const CLAVE = '2026-09-columnas-rubrica-sitios';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('sitios_lugar', 'puntos', 'INTEGER');
+  anadirColumnaSiFalta('sitios_lugar', 'evidencia', 'TEXT');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: sitios_lugar.puntos y .evidencia, para la rubrica.');
+  return true;
+}
+
+function migracionColeccionPorAlcance() {
+  const CLAVE = '2026-09-rubrica-sitios-coleccion-por-alcance';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  let orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+
+  meter.run('rubrica_sitio_peso_coleccion_referencia', '3', '3',
+    'Lo que suma que la coleccion o el recinto sean una referencia mundial o nacional en su materia',
+    'puntos', ++orden);
+  meter.run('rubrica_sitio_peso_coleccion_local', '1', '1',
+    'Lo que suma lo que se ve dentro cuando su alcance es la ciudad o la region',
+    'puntos', ++orden);
+
+  db.prepare("DELETE FROM parametros_orquestador WHERE clave = 'rubrica_sitio_peso_coleccion'").run();
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: la coleccion de la rubrica de sitios, partida por alcance.');
+  return true;
+}
+
 function migracionFueraHorarioJson() {
   const CLAVE = '2026-09-fuera-horario-json';
   if (yaAplicada(CLAVE)) return false;
