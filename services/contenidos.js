@@ -27,6 +27,7 @@
 import { todas, una, ejecutar } from '../db/index.js';
 import { consultarJSON, hayClaveIA } from '../lib/ia.js';
 import { distanciaKm } from './distancias.js';
+import { parametro } from './orquestador.js';
 
 /** A cuánto puede estar un sitio de su recinto para creernos que está dentro. */
 const METROS_DE_MARGEN = 200;
@@ -195,4 +196,86 @@ function avisarDeLosQueSonElMismoSitio(sitios, di) {
         'puede que sean el mismo sitio con dos nombres. Los dejo puestos, míralo.'
     );
   }
+}
+
+// =============================================================================
+// LA ZONA QUE CONTIENE AL PLAN NO ES UNA VISITA MÁS DEL PLAN
+// =============================================================================
+
+/**
+ * A CUÁNTO LLEGA UNA ZONA A PIE.
+ *
+ * Kilómetro y medio, la misma unidad que ya usa el aviso del hotel: lo que se
+ * mide aquí es un PUEBLO o un casco antiguo, no una esquina. Sale de la tabla
+ * porque es un criterio, no una medida.
+ */
+const kmDeUnaZona = () => parametro('km_paraguas_de_zona', 1.5);
+
+/**
+ * LO MENOS QUE TIENE QUE CONTENER PARA SER UN PARAGUAS.
+ *
+ * Dos. Con uno solo no se distingue una zona de dos sitios que están al lado, y
+ * eso es una pareja, no un paraguas. No va a la tabla porque no es un mando que
+ * se quiera girar: es la definición de «contiene a varios».
+ */
+const LO_MENOS_QUE_AGRUPA = 2;
+
+/**
+ * ¿ESTE SITIO ES EL PARAGUAS DE LOS DEMÁS, EN VEZ DE UNA VISITA?
+ *
+ * EL CASO QUE ORIGINA ESTO, del viaje 104. El catálogo de Rodas trae:
+ *
+ *     Ciudad Medieval de Rodas · «1 día completo» · y DENTRO de ella, a menos de
+ *     kilómetro y medio: el Palacio del Gran Maestre, el Museo Arqueológico, las
+ *     Murallas, el Barrio Turco, Calle Sócrates, el Mercado Central… once.
+ *
+ * La Ciudad Medieval no es una visita que compita con el Palacio: ES el sitio
+ * donde están el Palacio y los otros diez. Un día «en la ciudad medieval» se
+ * pasa viendo el Palacio, el Museo y callejeando — eso ya está en el plan, con
+ * nombre y hora, y poner encima un bloque de ocho horas llamado «Ciudad
+ * Medieval» no añade un plan, tapa el que hay.
+ *
+ * Y NO SE FUNDE, que es la diferencia con el resto de este fichero. Fundir marca
+ * `cubierto_por` y hace desaparecer al contenido: aquí el contenido es
+ * precisamente lo que queremos ver. Lo que sobra es el paraguas, y lo que se
+ * hace con él es no ofrecerlo como bloque — ni contarlo después como un
+ * imprescindible que se quedó fuera, porque no se ha quedado fuera: estás ahí
+ * todo el día.
+ *
+ * DOS CONDICIONES, Y LAS DOS HACEN FALTA:
+ *
+ *   1. Su ficha dice que dura un día o medio día. Un yacimiento aislado que de
+ *      verdad pide la jornada entera —Delfos, Pompeya— cumple esta…
+ *   2. …pero no la segunda: que el plan tenga OTROS sitios dentro de su radio.
+ *      Sin eso no hay nada a lo que hacer de paraguas y sigue siendo una visita.
+ *
+ * Medido contra el catálogo entero: lo cumplen dos fichas, la Ciudad Medieval de
+ * Rodas (11 dentro) y el Pueblo de Lindos (2: la Acrópolis de Lindos y su
+ * restaurante). Ninguna otra.
+ */
+export function esParaguasDeZona(sitio, hermanos) {
+  if (!/\bd[ií]as?\b|\bjornadas?\b/i.test(String(sitio?.tiempo_visita ?? ''))) return false;
+  if (sitio.lat == null || sitio.lon == null) return false;
+
+  const radio = kmDeUnaZona();
+  const dentro = (hermanos ?? []).filter(
+    (h) =>
+      h.id !== sitio.id &&
+      h.lat != null &&
+      h.lon != null &&
+      distanciaKm(
+        { lat: Number(sitio.lat), lon: Number(sitio.lon) },
+        { lat: Number(h.lat), lon: Number(h.lon) }
+      ) <= radio
+  );
+
+  return dentro.length >= LO_MENOS_QUE_AGRUPA;
+}
+
+/**
+ * Los que son paraguas de entre una lista de sitios de la misma ciudad.
+ * Se compara cada uno contra todos los demás, que es lo que hace falta saber.
+ */
+export function paraguasDeZona(sitios) {
+  return (sitios ?? []).filter((s) => esParaguasDeZona(s, sitios));
 }

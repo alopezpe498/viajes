@@ -352,6 +352,7 @@ export function migrarEsquema() {
   migracionMargenDelCoche();
   migracionMargenesRealistas();
   migracionNumerosDeSiSeLlega();
+  migracionParaguasDeZona();
   migracionFase3Dormir();
   migracionFase4Sitios();
   migracionFase5Excursiones();
@@ -5824,6 +5825,35 @@ function migracionDesandarCuesta() {
  * de verdad no se pueden hacer. Subirlo hace la guarda mas permisiva; bajarlo,
  * mas quisquillosa.
  */
+/**
+ * EL RADIO DE UNA ZONA QUE HACE DE PARAGUAS.
+ *
+ * «Ciudad Medieval de Rodas · 1 dia completo» no es una visita que compita con
+ * el Palacio del Gran Maestre: es el sitio donde ESTA el Palacio, y otros diez.
+ * Para reconocerlas hace falta saber hasta donde llega una zona a pie, y eso es
+ * un criterio, no una medida: va a la tabla.
+ *
+ * Kilometro y medio, la misma unidad que ya usa el aviso del hotel, y por el
+ * mismo motivo: lo que se mide es un PUEBLO o un casco antiguo, no una esquina.
+ */
+function migracionParaguasDeZona() {
+  const CLAVE = '2026-09-paraguas-de-zona';
+  if (yaAplicada(CLAVE)) return false;
+
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run('km_paraguas_de_zona', '1.5', '1.5',
+    'Hasta donde llega una zona («casco antiguo», «pueblo») para considerar que los sitios de dentro son ella',
+    'km', orden + 1);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el radio de una zona que hace de paraguas.');
+  return true;
+}
+
 function migracionNumerosDeSiSeLlega() {
   const CLAVE = '2026-09-numeros-de-si-se-llega';
   if (yaAplicada(CLAVE)) return false;

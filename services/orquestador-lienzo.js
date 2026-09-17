@@ -60,6 +60,7 @@ import {
   FRANJAS,
 } from '../services/lienzo.js';
 import { datosDeSitio, interpretarHorariosDelCatalogo } from '../services/datos-sitios.js';
+import { paraguasDeZona } from '../services/contenidos.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import { alternarApuntado } from '../services/etapa.js';
 import {
@@ -183,7 +184,7 @@ function fichaDeLaExcursion(candidato) {
   );
 }
 
-export function colocablesDeEtapa(etapa, lienzo) {
+export function colocablesDeEtapa(etapa, lienzo, di = () => {}) {
   const yaColocados = new Set(lienzo.colocados.map((c) => c.candidatoId).filter(Boolean));
 
   // --- Las excursiones, que ya son candidatos y son anclas ----------------
@@ -245,6 +246,20 @@ export function colocablesDeEtapa(etapa, lienzo) {
       )
     : [];
 
+  // LA ZONA QUE CONTIENE AL PLAN NO SE OFRECE COMO BLOQUE DEL PLAN.
+  //
+  // «Ciudad Medieval de Rodas · 1 día completo», con el Palacio del Gran
+  // Maestre, el Museo Arqueologico y otros nueve DENTRO de ella. Ofrecerla es
+  // ofrecer ocho horas que tapan el dia entero donde estan los once.
+  const paraguas = paraguasDeZona(sitios);
+  for (const p of paraguas) {
+    di(
+      `   «${p.nombre}» dura ${p.tiempo_visita} y el plan de ${etapa.nombre_ciudad} ya pasa por ` +
+        'dentro: es la zona, no una visita aparte. No la ofrezco como bloque.'
+    );
+  }
+  const sinLosParaguas = new Set(paraguas.map((p) => p.id));
+
   // Un sitio ya apuntado y colocado no se ofrece otra vez.
   const apuntados = new Map(
     todas(
@@ -262,6 +277,7 @@ export function colocablesDeEtapa(etapa, lienzo) {
   );
 
   const delCatalogo = sitios
+    .filter((s) => !sinLosParaguas.has(s.id))
     .filter((s) => {
       const cand = apuntados.get(s.id);
       return !cand || !yaColocados.has(cand);
@@ -2783,7 +2799,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
       continue;
     }
 
-    const piezas = colocablesDeEtapa(etapa, lienzo).map((p, i) => ({
+    const piezas = colocablesDeEtapa(etapa, lienzo, di).map((p, i) => ({
       ...p,
       // Una referencia propia y no el id del candidato: un sitio generado
       // todavía no tiene candidato, y no lo tendrá hasta que se coloque.

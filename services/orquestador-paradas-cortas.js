@@ -41,6 +41,7 @@ import {
   FRANJAS,
 } from './lienzo.js';
 import { abreEl } from './horarios.js';
+import { esParaguasDeZona } from './contenidos.js';
 
 /** "07:45" -> 465. */
 function enMinutos(hora) {
@@ -162,13 +163,30 @@ export function tiempoUtilDeParada(viajeId, etapaId) {
 export function imprescindiblesDeParada(etapa) {
   if (!etapa.punto_interes_id) return [];
 
+  // Los hermanos son TODO el catálogo de la ciudad, no solo los imprescindibles:
+  // para saber si algo hace de paraguas hay que mirar todo lo que tiene debajo.
+  const hermanos = todas(
+    `SELECT id, nombre, tiempo_visita, lat, lon FROM sitios_lugar
+      WHERE punto_interes_id = ? AND cubierto_por IS NULL AND bloque <> 'busqueda'`,
+    etapa.punto_interes_id
+  );
+
   return todas(
     `SELECT id, nombre, tiempo_visita, categoria, horarios, cierra_dias, lat, lon
        FROM sitios_lugar
       WHERE punto_interes_id = ? AND bloque = 'imprescindibles' AND cubierto_por IS NULL
       ORDER BY orden, id`,
     etapa.punto_interes_id
-  ).map((s) => ({
+  )
+    // LA ZONA NO CUENTA COMO IMPRESCINDIBLE PENDIENTE.
+    //
+    // No se coloca como bloque —el reparto ya no la ofrece— así que contarla
+    // aquí la dejaría eternamente «sin colocar»: un AVISO GRAVE de imprescindible
+    // perdido por algo que no se ha perdido, porque estás dentro todo el día. Y
+    // sus 480 minutos inflaban la cuenta de si la parada da de sí: Rodas pedía
+    // «21h de imprescindibles» con ocho horas que son el envoltorio de las otras.
+    .filter((s) => !esParaguasDeZona(s, hermanos))
+    .map((s) => ({
     id: s.id,
     nombre: s.nombre,
     // DÓNDE ESTÁ, para poder preguntar si al hueco se LLEGA y no solo si está
