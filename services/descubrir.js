@@ -706,7 +706,10 @@ export const NOMBRE_DE_BLOQUE = {
  * enciclopedia — para eso ya está Wikipedia y el enlace — sino lo que te diría
  * alguien que ha estado: a qué hora ir, qué no perderse, dónde está la trampa.
  */
-function promptDeCiudad(punto, nombreDestino, bloque, { excluir = [], edades = [], sesgo = null } = {}) {
+// Se exporta para poder MEDIRLA: `tools/baile-del-orden.js` la tira N veces y
+// compara si la lista sale igual. De ese orden sale hoy la jerarquia entera de
+// sitios del reparto, y nunca se habia comprobado si baila.
+export function promptDeCiudad(punto, nombreDestino, bloque, { excluir = [], edades = [], sesgo = null } = {}) {
   const queEs =
     punto.categoria === 'sitio'
       ? `${punto.nombre}, que se visita desde ${punto.ciudad_base || 'la ciudad más cercana'}`
