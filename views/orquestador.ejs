@@ -215,7 +215,30 @@ function cuando(iso) {
               <li class="orq-parametro <%= p.esDeFabrica ? '' : 'orq-parametro--tocado' %>"
                   data-parametro="<%= p.clave %>">
                 <div class="orq-parametro__texto">
-                  <label class="orq-parametro__nombre" for="p-<%= p.clave %>"><%= p.descripcion %></label>
+                  <label class="orq-parametro__nombre" for="p-<%= p.clave %>">
+                    <%= p.descripcion %>
+
+                    <%# EL SÍMBOLO VA DENTRO DEL LABEL, PEGADO AL TEXTO.
+                        Puesto fuera se separaba del nombre al hacer wrap la fila
+                        —el `li` es flex con `flex-wrap`— y quedaba un interrogante
+                        huérfano a media altura. Aquí viaja con su frase siempre.
+
+                        No es un `<label>` anidado: es un botón dentro del label,
+                        y por eso lleva su propio `type="button"` y para la
+                        propagación en el JS, para que pulsarlo no ponga el foco
+                        en el input como haría un clic en la etiqueta. %>
+                    <button class="orq-parametro__ayuda" type="button" data-ayuda
+                            aria-label="Qué es «<%= p.descripcion %>»"
+                            title="Qué es y para qué sirve"
+                            data-clave="<%= p.clave %>"
+                            data-titulo="<%= p.descripcion %>"
+                            data-unidad="<%= p.unidad || '' %>"
+                            data-fabrica="<%= p.valor_fabrica %>"
+                            data-texto="<%= p.ayuda || '' %>"
+                            data-ejemplo="<%= p.ejemplo || '' %>">
+                      <i class="ti ti-help-circle" aria-hidden="true"></i>
+                    </button>
+                  </label>
                   <code class="orq-parametro__clave"><%= p.clave %></code>
                 </div>
 
@@ -284,6 +307,98 @@ function cuando(iso) {
     </div>
   </div>
 </main>
+
+<%# ===========================================================================
+    LA VENTANA DE AYUDA
+    ---------------------------------------------------------------------------
+    UNA SOLA PARA LAS 116, y se rellena al abrirla desde los `data-` del botón
+    que la llama. Pintar un diálogo por parámetro serían 116 bloques en el HTML
+    de una pantalla que ya es larga, y todos ocultos menos uno.
+
+    `<dialog>` nativo y no un div a mano: trae el fondo, el foco atrapado dentro,
+    el cierre con Escape y la vuelta del foco al botón sin una línea de JS. Es la
+    primera de la app —no había ninguna— así que queda como el patrón para las
+    que vengan.
+    =========================================================================== %>
+<dialog class="orq-ayuda" id="ayuda-parametro">
+  <form method="dialog" class="orq-ayuda__cerrar-form">
+    <button class="orq-ayuda__cerrar" type="submit" aria-label="Cerrar">
+      <i class="ti ti-x" aria-hidden="true"></i>
+    </button>
+  </form>
+
+  <h3 class="orq-ayuda__titulo" id="ayuda-titulo"></h3>
+  <code class="orq-ayuda__clave" id="ayuda-clave"></code>
+
+  <div class="orq-ayuda__cuerpo">
+    <p class="orq-ayuda__texto" id="ayuda-texto"></p>
+
+    <div class="orq-ayuda__ejemplo" id="ayuda-ejemplo-caja" hidden>
+      <span class="orq-ayuda__etiqueta">Un ejemplo</span>
+      <p id="ayuda-ejemplo"></p>
+    </div>
+
+    <%# EL HUECO HONESTO. 116 parámetros no se explican de un tirón sin
+        inventarse la mitad, así que los que aún no tienen texto lo dicen en vez
+        de enseñar un relleno que suene bien. %>
+    <p class="orq-ayuda__pendiente" id="ayuda-pendiente" hidden>
+      Este número todavía no está explicado. Prefiero dejar el hueco a escribir
+      algo que suene bien y no sea exacto: su nombre en clave está aquí arriba y
+      en el código se ve qué hace.
+    </p>
+  </div>
+
+  <p class="orq-ayuda__pie">
+    <span>De fábrica: <strong id="ayuda-fabrica"></strong> <span id="ayuda-unidad"></span></span>
+  </p>
+</dialog>
+
+<script>
+  // LA VENTANA DE AYUDA DE CADA NÚMERO.
+  //
+  // Un solo listener en el documento en vez de uno por botón: son 116 y la lista
+  // no cambia, pero delegar cuesta lo mismo de escribir y no hay que acordarse
+  // de enganchar nada si mañana se pintan por JS.
+  const dlgAyuda = document.getElementById('ayuda-parametro');
+
+  document.addEventListener('click', (e) => {
+    const boton = e.target.closest('[data-ayuda]');
+    if (!boton || !dlgAyuda) return;
+
+    // El botón vive DENTRO del `<label>`: sin esto, el clic llega a la etiqueta,
+    // el navegador enfoca el input del parámetro y la ventana se abre con el
+    // número ya seleccionado detrás. Se ve raro y se toca sin querer.
+    e.preventDefault();
+    e.stopPropagation();
+
+    const texto = boton.dataset.texto?.trim();
+    const ejemplo = boton.dataset.ejemplo?.trim();
+
+    document.getElementById('ayuda-titulo').textContent = boton.dataset.titulo || '';
+    document.getElementById('ayuda-clave').textContent = boton.dataset.clave || '';
+    document.getElementById('ayuda-fabrica').textContent = boton.dataset.fabrica || '—';
+    document.getElementById('ayuda-unidad').textContent = boton.dataset.unidad || '';
+
+    document.getElementById('ayuda-texto').textContent = texto || '';
+    document.getElementById('ayuda-texto').hidden = !texto;
+    document.getElementById('ayuda-ejemplo').textContent = ejemplo || '';
+    document.getElementById('ayuda-ejemplo-caja').hidden = !ejemplo;
+    document.getElementById('ayuda-pendiente').hidden = Boolean(texto);
+
+    dlgAyuda.showModal();
+  });
+
+  // Pulsar en el fondo cierra, que es lo que todo el mundo intenta. `<dialog>`
+  // no lo trae: el clic en el backdrop llega al propio diálogo, así que se mira
+  // si cayó fuera de su caja.
+  dlgAyuda?.addEventListener('click', (e) => {
+    if (e.target !== dlgAyuda) return;
+    const c = dlgAyuda.getBoundingClientRect();
+    const fuera =
+      e.clientX < c.left || e.clientX > c.right || e.clientY < c.top || e.clientY > c.bottom;
+    if (fuera) dlgAyuda.close();
+  });
+</script>
 
 <script>
   // LA FILA CAMUFLADA. Borra los dos flags y devuelve a la portada.

@@ -359,6 +359,7 @@ export function migrarEsquema() {
   migracionSitiosAmontonados();
   migracionPrecioEnLaPuerta();
   migracionPuertasProbadas();
+  migracionAyudaDeParametros();
   migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
@@ -6167,6 +6168,39 @@ function migracionPuertasProbadas() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: diario de puertas probadas.');
+  return true;
+}
+
+/**
+ * SITIO PARA EXPLICAR CADA NUMERO, QUE HOY NO LO HAY.
+ *
+ * La pantalla de ajustes usa `descripcion` como etiqueta, y una etiqueta tiene
+ * que caber en una linea: «Cuantos euros de vuelo equivalen a una hora util».
+ * Eso dice QUE es, no PARA QUE sirve ni QUE pasa si lo tocas, que es lo que de
+ * verdad hace falta para atreverse a moverlo.
+ *
+ * Dos columnas y no una, porque son dos cosas distintas y se leen distinto:
+ *
+ *   · `ayuda`   — para que sirve y que cambia en el viaje si lo mueves.
+ *   · `ejemplo` — el mismo numero contado sobre un caso concreto. Es la parte
+ *                 que hace que se entienda: «con 30, un vuelo de 370 EUR resta
+ *                 12,3 puntos, y la diferencia entre la mejor puerta y la
+ *                 siguiente eran 70».
+ *
+ * VAN VACIAS Y SE LLENAN DESPUES, a mano y comprobando cada una contra el codigo
+ * que la usa. Son 116 parametros: rellenarlos de un tiron seria inventarse lo
+ * que hace la mitad, y un texto de ayuda que miente es peor que no tenerlo. La
+ * pantalla ensena un hueco honesto en los que todavia no tienen texto.
+ */
+function migracionAyudaDeParametros() {
+  const CLAVE = '2026-09-ayuda-por-parametro';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('parametros_orquestador', 'ayuda', 'TEXT');
+  anadirColumnaSiFalta('parametros_orquestador', 'ejemplo', 'TEXT');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: ayuda y ejemplo por parametro.');
   return true;
 }
 

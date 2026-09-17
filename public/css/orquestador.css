@@ -662,3 +662,103 @@
 }
 .orq-ajuste__nota i { color: var(--texto-3); margin-top: 1px; }
 .orq-ajuste__nota code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ===========================================================================
+   LA AYUDA DE CADA NÚMERO
+   ---------------------------------------------------------------------------
+   Los valores NO son nuevos: el radio de 10, el borde de `--borde` y el acento
+   al pasar por encima son los mismos que ya usan `.orq-parametro__control input`
+   y `.orq-parametro__restaurar`. Una ventana que se abre desde esta pantalla
+   tiene que parecer de esta pantalla.
+   =========================================================================== */
+.orq-parametro__ayuda {
+  /* Pegado al final de la frase, no en una esquina: el `li` hace wrap y un
+     interrogante suelto se quedaba flotando lejos de su etiqueta. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-3);
+  font-size: 15px;
+  line-height: 1;
+  vertical-align: -3px;
+  cursor: pointer;
+}
+.orq-parametro__ayuda:hover { color: var(--acento); }
+.orq-parametro__ayuda:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+.orq-ayuda {
+  width: min(460px, calc(100vw - 32px));
+  padding: 22px 24px 18px;
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  background: var(--superficie);
+  color: inherit;
+  font: inherit;
+}
+.orq-ayuda::backdrop { background: rgba(0, 0, 0, 0.42); }
+
+.orq-ayuda__cerrar-form { float: right; margin: -6px -8px 0 8px; }
+.orq-ayuda__cerrar {
+  display: inline-flex;
+  padding: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--texto-3);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.orq-ayuda__cerrar:hover { color: var(--acento); }
+
+.orq-ayuda__titulo { margin: 0; font-size: 16px; line-height: 1.35; }
+.orq-ayuda__clave {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--texto-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.orq-ayuda__cuerpo { margin-top: 14px; }
+.orq-ayuda__texto { margin: 0; font-size: 14px; line-height: 1.55; }
+
+.orq-ayuda__ejemplo {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--fondo);
+}
+.orq-ayuda__ejemplo p { margin: 5px 0 0; font-size: 13.5px; line-height: 1.55; }
+.orq-ayuda__etiqueta {
+  color: var(--texto-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.orq-ayuda__pendiente {
+  margin: 0;
+  color: var(--texto-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.orq-ayuda__pie {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--borde);
+  color: var(--texto-3);
+  font-size: 12.5px;
+}
