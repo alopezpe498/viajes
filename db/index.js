@@ -355,6 +355,7 @@ export function migrarEsquema() {
   migracionParaguasDeZona();
   migracionRubricaDeSitios();
   migracionColeccionPorAlcance();
+  migracionAvisoDeContradiccion();
   migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
@@ -5978,6 +5979,34 @@ function migracionColeccionPorAlcance() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: la coleccion de la rubrica de sitios, partida por alcance.');
+  return true;
+}
+
+/**
+ * EL UMBRAL DEL AVISO DE CONTRADICCION, A LA TABLA.
+ *
+ * Es el numero que decide cuanto ruido hace este aviso, y no hay forma de
+ * acertarlo a la primera: con <= 1 punto caza dos sitios en las cuatro ciudades
+ * puntuadas del catalogo, que es util; subirlo a 3 llenaria la pantalla de
+ * avisos que nadie leeria. Va aqui para poder apretarlo sin tocar codigo.
+ */
+function migracionAvisoDeContradiccion() {
+  const CLAVE = '2026-09-aviso-contradiccion-rubrica';
+  if (yaAplicada(CLAVE)) return false;
+
+  const meter = db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  );
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+
+  meter.run('rubrica_aviso_contradiccion_hasta', '1', '1',
+    'Con esta nota o menos, un sitio que el orden pone entre los intocables se marca para mirarlo a mano',
+    'puntos', orden + 1);
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el umbral del aviso de contradiccion de la rubrica.');
   return true;
 }
 

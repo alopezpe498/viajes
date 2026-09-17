@@ -48,9 +48,58 @@ import { porParada, avisar, avisoDeSitios } from '../services/paralelo.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
 import { fundirSitiosContenidos } from '../services/contenidos.js';
-import { puntuarLosSitios } from '../services/rubrica-sitios.js';
+import { puntuarLosSitios, contradiccionesDe } from '../services/rubrica-sitios.js';
 
 const FASE = 'sitios';
+
+// =============================================================================
+// EL AVISO DE CONTRADICCIÓN
+// =============================================================================
+/**
+ * CUANDO EL ORDEN Y LA RÚBRICA DICEN LO CONTRARIO, SE DICE. NO SE ELIGE.
+ *
+ * El reparto sigue usando `orden` y solo `orden`: esta función no toca ninguna
+ * ficha, no cambia ningún puesto y no echa nada del plan. Escribe una línea en
+ * la pantalla de avisos y se va.
+ *
+ * Y es a propósito. La rúbrica se midió contra el viaje de control y NO sirve
+ * para repartir —bajaba 26 sitios y subía 1, y tiraba de banda a la Torre Blanca
+ * y a Ano Poli—, porque mide valor absoluto y el reparto necesita valor relativo
+ * a la ciudad. Pero para señalar un desacuerdo grande entre dos lecturas sí
+ * sirve: si el orden pone un sitio entre los intocables y la rúbrica no le
+ * encuentra ni un hecho que nombrar, una de las dos se ha equivocado y quien
+ * decide cuál es quien mira el viaje, no el motor.
+ *
+ * Severidad `info`, que es lo que es: una cosa para mirar, no un problema.
+ */
+function avisarDeContradicciones(viajeId, punto, ciudad, di) {
+  const casos = contradiccionesDe(punto);
+  if (!casos.length) return 0;
+
+  const linea = (c) =>
+    `#${c.orden} ${c.nombre} (${c.puntos} ${c.puntos === 1 ? 'punto' : 'puntos'}` +
+    (c.casillas.length ? `: ${c.casillas.join(', ')}` : ', sin ningún hecho que nombrar') +
+    ')';
+
+  ejecutar(
+    `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+     VALUES (?, 'rubrica', 'info', ?, ?)`,
+    viajeId,
+    `En ${ciudad} hay ${casos.length === 1 ? 'un sitio' : `${casos.length} sitios`} de primera fila con nota baja`,
+    casos.length === 1
+      ? `${linea(casos[0])}. Está entre los primeros de la lista de ${ciudad}, así que el plan lo ` +
+        'protege como si fuera el motivo del viaje, pero al medirlo no se le encontró casi nada ' +
+        'que contar. Puede que la lista se pasara, o que la medición se quedara corta. ' +
+        'No se ha cambiado nada: míralo y decide tú.'
+      : `${casos.map(linea).join('. ')}. Están entre los primeros de la lista de ${ciudad}, así que ` +
+        'el plan los protege como si fueran el motivo del viaje, pero al medirlos no se les ' +
+        'encontró casi nada que contar. Puede que la lista se pasara, o que la medición se quedara ' +
+        'corta. No se ha cambiado nada: míralos y decide tú.'
+  );
+
+  di(`   ${ciudad}: ${casos.length} sitio(s) de primera fila con nota baja. Avisado, sin tocar nada.`);
+  return casos.length;
+}
 
 // =============================================================================
 // EL SESGO
@@ -108,6 +157,13 @@ export async function ejecutarFaseSitios(viaje, prompt) {
   } else {
     di('Sin intereses declarados: se generan los sitios como en el flujo manual.');
   }
+
+  // LOS AVISOS DE LA VEZ ANTERIOR SE VAN AHORA, Y SOLO AQUÍ.
+  //
+  // Cada parada escribe el suyo dentro del bucle en paralelo, así que borrar
+  // dentro sería que la última en entrar se llevara por delante los de las
+  // otras. Se limpia una vez, antes de empezar, como hacen las demás fases.
+  ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'rubrica'", viajeId);
 
   const aLaVez = Math.max(1, parametro('concurrencia_paradas', 3));
   di(
@@ -193,6 +249,28 @@ export async function ejecutarFaseSitios(viaje, prompt) {
         } catch (err) {
           di(`   ${ciudad}: no pude repasar las fotos (${err.message}).`);
         }
+        // Y SE PUNTÚAN, AUNQUE SEAN DE ANTES.
+        //
+        // AQUÍ ESTABA EL FALLO, y lo destapó el viaje de control 110: el
+        // enganche de la rúbrica estaba DESPUÉS de este `return`, así que solo
+        // alcanzaba a las ciudades recién investigadas. Atenas, Nafplio y
+        // Tesalónica ya existían del viaje anterior, tomaron esta salida y
+        // ninguna se puntuó.
+        //
+        // Peor que perder un viaje: así la rúbrica NUNCA habría llegado a los
+        // 156 sitios que ya estaban en el catálogo, que es exactamente el
+        // agujero que la red del NULL venía a tapar. Se habría quedado
+        // enchufada y sin nada que leer.
+        //
+        // `puntuarLosSitios` no pregunta si ya están todos puntuados, así que
+        // esto rellena una vez y después no cuesta nada.
+        try {
+          await puntuarLosSitios(punto, ciudad, di);
+          avisarDeContradicciones(viajeId, punto, ciudad, di);
+        } catch (err) {
+          di(`   ${ciudad}: no pude puntuar los sitios (${err.message}).`);
+        }
+
         // ESTA PARADA CUENTA COMO RESUELTA: los sitios están, solo que de antes.
         //
         // Aquí estaba el «Cannot access 'generadas' before initialization» de
@@ -312,6 +390,7 @@ export async function ejecutarFaseSitios(viaje, prompt) {
       // lista para ellos. Puntuar es una mejora, no un requisito.
       try {
         await puntuarLosSitios(punto, ciudad, di);
+        avisarDeContradicciones(viajeId, punto, ciudad, di);
       } catch (err) {
         di(`   ${ciudad}: no pude puntuar los sitios (${err.message}).`);
       }

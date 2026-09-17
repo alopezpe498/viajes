@@ -453,13 +453,40 @@ export function encargoDeEvidencia(ciudad, sitios) {
 export async function puntuarLosSitios(punto, ciudad, di = () => {}) {
   if (!punto?.id || !hayClaveIA()) return 0;
 
+  // SIN FILTRAR POR `cubierto_por`, Y ESTO YA ME LO ENSEÑÓ EL BANCO DE PRUEBAS.
+  //
+  // Que un sitio esté tapado por una excursión —«la visita guiada incluye la
+  // Acrópolis y el Ágora»— es un hecho de UN VIAJE, no una propiedad del sitio.
+  // La nota va al CATÁLOGO y se hereda entre viajes, así que filtrar aquí deja
+  // sin puntuar para siempre a los que una excursión cualquiera tapó una vez.
+  //
+  // Pasó, y con los dos peores posibles: la Acrópolis de Atenas y el Ágora
+  // Antigua se quedaron en NULL porque una excursión del viaje anterior las
+  // incluía. Es el mismo filtro que ya había quitado en `tools/puntuar-sitios.js`
+  // al ver esa tabla salir sin la Acrópolis, y lo volví a escribir aquí.
   const sitios = todas(
     `SELECT id, nombre, categoria FROM sitios_lugar
-      WHERE punto_interes_id = ? AND cubierto_por IS NULL AND bloque <> 'busqueda'
+      WHERE punto_interes_id = ? AND bloque <> 'busqueda'
       ORDER BY orden, id`,
     punto.id
   );
   if (!sitios.length) return 0;
+
+  // SI YA ESTÁN TODOS PUNTUADOS, NI SE PREGUNTA.
+  //
+  // La nota es un hecho del sitio, no del viaje: se calcula una vez y se hereda,
+  // igual que la de las ciudades. Sin esto, cada viaje al mismo destino pagaría
+  // otra vez la misma llamada para obtener la misma respuesta.
+  //
+  // Y es lo que permite llamar a esto TAMBIÉN en las ciudades que ya tenían
+  // sitios: la primera vez rellena las que se investigaron antes de que la
+  // rúbrica existiera, y a partir de ahí no cuesta nada.
+  const sinNota = todas(
+    `SELECT COUNT(*) AS n FROM sitios_lugar
+      WHERE punto_interes_id = ? AND bloque <> 'busqueda' AND puntos IS NULL`,
+    punto.id
+  )[0].n;
+  if (!sinNota) return 0;
 
   let r;
   try {
@@ -508,4 +535,68 @@ export async function puntuarLosSitios(punto, ciudad, di = () => {}) {
   }
 
   return puestos;
+}
+
+// =============================================================================
+// CUANDO LAS DOS VARAS SE CONTRADICEN
+// =============================================================================
+/**
+ * DÓNDE EL ORDEN DICE UNA COSA Y LA RÚBRICA DICE LA CONTRARIA.
+ *
+ * ESTO NO DECIDE NADA, Y ES TODO EL DISEÑO. Quedó acordado después de medir las
+ * dos varas y ver qué sabe cada una:
+ *
+ *   · `orden` DECIDE. Se midió con cinco tiradas de la misma pregunta y su
+ *     top-3 sale clavado —Atenas, idéntico 5 de 5—. Es una vara relativa: dice
+ *     qué es lo primero DE ESTA CIUDAD, que es justo lo que el reparto necesita.
+ *   · La RÚBRICA INFORMA. Mide valor ABSOLUTO, y por eso no sirve para repartir:
+ *     enchufada al reparto en el viaje de control bajaba 26 sitios y subía 1, y
+ *     tiraba de banda a la Torre Blanca y a Ano Poli, que son de primer orden en
+ *     su ciudad aunque no lo sean en el mundo.
+ *
+ * Pero dos varas que miden cosas distintas siguen sirviendo para una cosa: si se
+ * contradicen de lado a lado, una de las dos está equivocada. Un sitio que el
+ * orden pone entre los intocables —la categoría que el reparto protege más— y al
+ * que la rúbrica no le encuentra NINGÚN hecho que nombrar es un sitio que hay
+ * que mirar a mano. No se toca, no se degrada, no se echa: se avisa.
+ *
+ * Es la aplicación de la regla de oro a las notas: cuando dos lecturas honestas
+ * dicen lo contrario, la salida no es elegir una en silencio, es decirlo.
+ *
+ * QUÉ CAZA HOY, medido sobre las cuatro ciudades puntuadas del catálogo:
+ *
+ *     Kairuan  #3  Mezquita de las Tres Puertas        1 pt · coleccion_local
+ *     Nafplio  #3  Acrópolis de Nafplio (Akronafplia)  1 pt · coleccion_local
+ *
+ * Dos en cuatro ciudades: suficiente para ser útil y poco para ser ruido. Si el
+ * umbral se sube, esto se llena y deja de leerlo nadie; por eso va a la tabla de
+ * parámetros, para poder apretarlo o aflojarlo sin tocar código.
+ *
+ * LOS SITIOS SIN NOTA NO SALEN. `puntos IS NULL` es «todavía no se ha medido»,
+ * no «vale cero»: avisar por ellos sería inventarse una contradicción donde solo
+ * hay una casilla vacía.
+ */
+export function contradiccionesDe(punto) {
+  if (!punto?.id) return [];
+
+  return todas(
+    `SELECT id, nombre, orden, puntos, evidencia FROM sitios_lugar
+      WHERE punto_interes_id = ?
+        AND bloque = 'imprescindibles'
+        AND orden <= ?
+        AND puntos IS NOT NULL
+        AND puntos <= ?
+      ORDER BY orden`,
+    punto.id,
+    parametro('puestos_intocables_del_sitio', 3),
+    parametro('rubrica_aviso_contradiccion_hasta', 1)
+  ).map((s) => {
+    let casillas = [];
+    try {
+      casillas = JSON.parse(s.evidencia ?? '[]').map((d) => d.casilla);
+    } catch {
+      casillas = [];
+    }
+    return { ...s, casillas };
+  });
 }
