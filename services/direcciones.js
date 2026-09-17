@@ -660,6 +660,7 @@ export async function situarLosSitios(punto, di = () => {}) {
   let situados = 0;
   let avisados = 0;
   let descartados = 0;
+  let amontonados = 0;
 
   for (const s of sitios) {
     const enPlaces = await situarLugarConGoogle(consultaDe(s.nombre), null);
@@ -697,6 +698,53 @@ export async function situarLosSitios(punto, di = () => {}) {
     const tiraDesde = parametro('km_sitio_lejos_descarte', 300);
     const disparate = lejos != null && lejos > tiraDesde;
 
+    // --- ¿ES SU PUNTO, O EL DE OTRO? --------------------------------------
+    //
+    // ESTA GUARDA YA EXISTÍA, Y SOLO PARA LAS EXCURSIONES. Está escrita cuarenta
+    // líneas más abajo: si Google devuelve un ÁREA —`locality`, `route`,
+    // `neighborhood`— su coordenada es un centroide, y clavar ahí un pin es
+    // «la coordenada del centro para disimular». Los sitios no la tenían.
+    //
+    // LO QUE PASA CUANDO NO ESTÁ, medido sobre los 156 sitios del catálogo: 27
+    // (el 17 %) comparten coordenada EXACTA con otro. No son duplicados, son
+    // sitios distintos amontonados en el centroide de la zona que Google supo
+    // devolver:
+    //
+    //     Kairuan     5 sitios en un punto: la Gran Mezquita, el Parque, la
+    //                 Mezquita de Sidi el-Ghariani, el Barrio de los Tintoreros
+    //                 y las Murallas.
+    //     Tesalónica  3: las Murallas Bizantinas, la Torre Blanca y el Paseo
+    //                 Marítimo. Están a más de un kilómetro unas de otras.
+    //     Túnez       2: el Bardo —que está a 4 km— y el Museo de la Ciudad.
+    //
+    // Y ES PEOR QUE NO TENER EL DATO, que es lo que decide hacer esto. El lienzo
+    // calcula con las coordenadas si da tiempo a ir de un sitio a otro: con dos
+    // sitios en el mismo punto le salen CERO minutos y da por bueno un salto que
+    // en Tesalónica es de kilómetro y medio. Sin coordenada, `trayectoOSuelo`
+    // devuelve `null` y no afirma nada. Un hueco honesto contra un cero falso.
+    //
+    // NO SE MIRA EL TIPO, SE MIRA LA COLISIÓN, y es a propósito: hay sitios que
+    // SON un área de verdad —la Medina de Kairuan, el Casco Antiguo, un paseo
+    // marítimo— y tirar su centroide sería perder la posición buena de un sitio
+    // legítimo. Dos sitios de nombre distinto en el MISMO punto a cinco
+    // decimales —un metro— no pasa en la realidad: es la firma del centroide.
+    //
+    // Y SE QUEDA EL PRIMERO. El bucle va `ORDER BY s.orden, s.id`, así que
+    // conserva el punto el más importante de los dos: en Kairuan la Gran
+    // Mezquita (#1) y no el Parque (#10).
+    const ocupado = tienePunto
+      ? una(
+          `SELECT nombre FROM sitios_lugar
+            WHERE punto_interes_id = ? AND id <> ? AND lat IS NOT NULL
+              AND ROUND(lat, 5) = ROUND(?, 5) AND ROUND(lon, 5) = ROUND(?, 5)
+            LIMIT 1`,
+          punto.id,
+          s.id,
+          enPlaces.lat,
+          enPlaces.lng
+        )?.nombre ?? null
+      : null;
+
     if (disparate) {
       descartados += 1;
       di(
@@ -705,6 +753,17 @@ export async function situarLosSitios(punto, di = () => {}) {
       );
       console.warn(
         `[direcciones] «${s.nombre}» a ${Math.round(lejos)} km de ${ciudad}: descarto el punto.`
+      );
+    } else if (ocupado) {
+      amontonados += 1;
+      di(
+        `   ✘ «${s.nombre}»: Google devuelve el MISMO punto que «${ocupado}»` +
+          `${(enPlaces.tipos ?? []).length ? ` (${enPlaces.tipos.join(', ')})` : ''}. ` +
+          'Eso es el centroide de la zona, no su sitio: me quedo sin sus coordenadas antes ' +
+          'que decir que están pegados.'
+      );
+      console.warn(
+        `[direcciones] «${s.nombre}» cae en el punto de «${ocupado}»: descarto la coordenada.`
       );
     } else if (lejos != null && lejos > avisaDesde) {
       avisados += 1;
@@ -715,9 +774,13 @@ export async function situarLosSitios(punto, di = () => {}) {
       );
     }
 
-    guardarDireccion('sitio', s.id, enPlaces.direccion, { encolar: !tienePunto && !disparate });
+    // LA DIRECCIÓN SE GUARDA IGUAL, como en el caso del disparate: el sitio
+    // sigue en la ficha con su calle, lo único que no se escribe es el pin.
+    guardarDireccion('sitio', s.id, enPlaces.direccion, {
+      encolar: !tienePunto && !disparate && !ocupado,
+    });
 
-    if (tienePunto && !disparate) {
+    if (tienePunto && !disparate && !ocupado) {
       ejecutar(
         `UPDATE direcciones
             SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
@@ -733,13 +796,14 @@ export async function situarLosSitios(punto, di = () => {}) {
   }
 
   console.log(`[direcciones] ${situados} de ${sitios.length} sitios de ${ciudad} situados con Places.`);
-  if (avisados || descartados) {
+  if (avisados || descartados || amontonados) {
     di(
       `   ${ciudad}: ${descartados} sitio(s) sin coordenadas por caer demasiado lejos` +
+        `${amontonados ? `, ${amontonados} por caer en el punto de otro` : ''}` +
         `${avisados ? ` y ${avisados} avisado(s) por quedar a más de ${parametro('km_sitio_lejos_aviso', 80)} km` : ''}.`
     );
   }
-  return { situados, total: sitios.length, avisados, descartados };
+  return { situados, total: sitios.length, avisados, descartados, amontonados };
 }
 
 /**

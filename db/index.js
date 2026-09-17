@@ -356,6 +356,7 @@ export function migrarEsquema() {
   migracionRubricaDeSitios();
   migracionColeccionPorAlcance();
   migracionAvisoDeContradiccion();
+  migracionSitiosAmontonados();
   migracionColumnasDeRubricaDeSitios();
   // La última: se lleva una columna, así que va detrás de todo lo que las añade.
   migracionFueraHorarioJson();
@@ -6007,6 +6008,73 @@ function migracionAvisoDeContradiccion() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el umbral del aviso de contradiccion de la rubrica.');
+  return true;
+}
+
+/**
+ * LOS SITIOS AMONTONADOS EN UN PUNTO SE QUEDAN SIN PUNTO.
+ *
+ * La guarda nueva de `situarLosSitios` impide que esto vuelva a entrar, pero no
+ * limpia lo que ya estaba: 27 de los 156 sitios situados del catalogo (el 17 %)
+ * comparten coordenada EXACTA con otro. Cinco sitios de Kairuan en un punto, tres
+ * de Tesalonica —Murallas Bizantinas, Torre Blanca y Paseo Maritimo, que estan a
+ * mas de un kilometro unas de otras—, el Bardo encima del Museo de la Ciudad.
+ *
+ * Y NO ES UN DATO FEO, ES UN DATO QUE MIENTE. El lienzo calcula con estas
+ * coordenadas si da tiempo a ir de un sitio a otro. Con dos sitios en el mismo
+ * punto le salen CERO minutos, y da por bueno un salto que no lo es. Es la misma
+ * clase de fallo que el aviso de «no llegas» que se acaba de arreglar: el plan
+ * afirma algo fisicamente imposible.
+ *
+ * SE QUEDA EL PRIMERO POR `orden`, que es el mas importante del racimo: en
+ * Kairuan la Gran Mezquita (#1) y no el Parque (#10). Los demas pierden la
+ * coordenada y conservan su direccion y su ficha: el mapa dira «sin ubicar», que
+ * es la verdad, en vez de pintar cinco pines uno encima de otro.
+ */
+function migracionSitiosAmontonados() {
+  const CLAVE = '2026-09-sitios-amontonados-en-un-punto';
+  if (yaAplicada(CLAVE)) return false;
+
+  const sitios = db
+    .prepare(
+      `SELECT id, punto_interes_id, nombre, orden, lat, lon FROM sitios_lugar
+        WHERE lat IS NOT NULL AND lon IS NOT NULL
+        ORDER BY punto_interes_id, orden, id`
+    )
+    .all();
+
+  const racimos = new Map();
+  for (const s of sitios) {
+    const clave = `${s.punto_interes_id}|${s.lat.toFixed(5)},${s.lon.toFixed(5)}`;
+    if (!racimos.has(clave)) racimos.set(clave, []);
+    racimos.get(clave).push(s);
+  }
+
+  const quitarSitio = db.prepare('UPDATE sitios_lugar SET lat = NULL, lon = NULL WHERE id = ?');
+  const quitarDireccion = db.prepare(
+    `UPDATE direcciones
+        SET lat = NULL, lng = NULL, estado = 'sin_resultado', fuente = NULL,
+            mensaje = ?, actualizado_en = datetime('now')
+      WHERE tipo_elemento = 'sitio' AND elemento_id = ?`
+  );
+
+  let limpiados = 0;
+  for (const lista of racimos.values()) {
+    if (lista.length < 2) continue;
+    // El primero ya viene ordenado por `orden`: se queda con el punto.
+    for (const s of lista.slice(1)) {
+      quitarSitio.run(s.id);
+      quitarDireccion.run(
+        `Google devolvia el mismo punto que «${lista[0].nombre}»: es el centroide de la zona, ` +
+          'no su sitio. Mejor sin coordenada que con la de otro.',
+        s.id
+      );
+      limpiados += 1;
+    }
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(`[bd] Migracion: ${limpiados} sitio(s) que compartian coordenada, sin punto.`);
   return true;
 }
 
