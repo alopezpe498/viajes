@@ -2127,9 +2127,53 @@ export function colocar(
  * Devuelve null si no hay nada que entender, que es distinto de cero: cero
  * significaría que la visita no ocupa, y entonces todo cabe en todas partes.
  */
+/**
+ * CUÁNTO DURA UN DÍA DE VISITAS, para poder leer «1 día completo».
+ *
+ * Ocho horas, que es lo que ya usa la casa: una excursión de jornada del
+ * catálogo se coloca con 480 minutos. Si aquí se pusiera otro número, la misma
+ * frase valdría una cosa dicha por Civitatis y otra dicha por la ficha de un
+ * sitio, y eso no se sostiene.
+ */
+const MINUTOS_DE_UNA_JORNADA = 480;
+
+/**
+ * LO QUE DURA EL PASEO MÁS CORTO QUE MERECE LLAMARSE VISITA.
+ *
+ * La red de seguridad del parser, y viene de un fallo concreto. «Ciudad Medieval
+ * de Rodas · 1 día completo» acabó colocada como un bloque de **1 minuto**: el
+ * lector cogía el 1, no reconocía «día» como unidad y —esta es la raíz— daba por
+ * hecho que un número sin unidad son minutos.
+ *
+ * Que un imprescindible se visite en un minuto no lo cree nadie, así que en vez
+ * de arreglar solo «día» se pone también el suelo: lo que salga por debajo de
+ * esto no es una duración, es una lectura fallida, y una lectura fallida se dice
+ * que no se sabe. Así el próximo formato raro —«1 turno», «1 mañana»— cae en un
+ * hueco honesto y no en un bloque de un minuto que nadie mira.
+ */
+const LO_MINIMO_QUE_ES_UNA_VISITA = 5;
+
 export function minutosDeVisita(texto) {
   const t = String(texto ?? '').toLowerCase().replace(',', '.');
   if (!t.trim()) return null;
+
+  // EL DÍA COMO UNIDAD, ANTES QUE NADA.
+  //
+  // Va primero porque «1 día completo» lleva un número que el lector de abajo
+  // se comería como minutos. Y se lee, en vez de devolver «no lo sé», porque es
+  // una frase perfectamente legible: negarse a entenderla para no tener que
+  // decidir sería tirar un dato que la ficha da.
+  const medio = /\bmedi[oa]\s+(?:d[ií]a|jornada)\b/.test(t);
+  if (medio) return Math.round(MINUTOS_DE_UNA_JORNADA / 2);
+
+  const dias = t.match(/(\d+(?:\.\d+)?)?\s*\b(?:d[ií]as?|jornadas?)\b/);
+  if (dias) {
+    const cuantos = Number(dias[1] ?? 1);
+    if (!Number.isFinite(cuantos) || cuantos <= 0) return null;
+    // Más de un día no es una visita: es un viaje dentro del viaje, y el lienzo
+    // no sabe colocar eso. Se dice que no se sabe antes que partirlo a ojo.
+    return cuantos > 1 ? null : MINUTOS_DE_UNA_JORNADA;
+  }
 
   // "1h 30", "1 h 30 min", "2 h 15": las dos piezas de la misma medida. El
   // "min" del final es opcional porque casi nunca viene: "2 h 15" se leia por
@@ -2160,7 +2204,9 @@ export function minutosDeVisita(texto) {
   );
 
   const techo = Math.max(...minutos);
-  return techo > 0 && techo <= 24 * 60 ? techo : null;
+  if (techo > 24 * 60) return null;
+  // Y EL SUELO. Por debajo de esto no se ha leído una duración, se ha leído mal.
+  return techo >= LO_MINIMO_QUE_ES_UNA_VISITA ? techo : null;
 }
 
 /**

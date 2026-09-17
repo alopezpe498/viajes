@@ -54,6 +54,7 @@ import {
   enMinutos,
   comoHora,
   diaDeAclimatacion,
+  minutosDeVisita,
   seLlegaAlHueco,
   puntoDeTarjeta,
   FRANJAS,
@@ -1296,6 +1297,8 @@ function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
         : `   ${etapa.nombre_ciudad}: no cupo ninguno ni con el día libre.`,
       ORIGENES.ninguno
     );
+
+    rellenarElDiaLiberado(viajeId, etapa, diasLibres, di);
   }
 
   return tocado ? lienzoDeViaje(viajeId) : lienzo;
@@ -1305,7 +1308,133 @@ function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
  * Coloca un imprescindible que se había quedado fuera, en el primer hueco válido
  * de su parada. Devuelve true si lo ha conseguido.
  */
-function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = []) {
+/**
+ * EL DÍA LIBERADO NO SE QUEDA EN CRÁTER.
+ *
+ * EL FALLO QUE ORIGINA ESTO, y es el viaje 104, Grecia. El reparto montó Atenas
+ * apoyándose en dos excursiones de jornada:
+ *
+ *     Día 5 (viernes): Excursión a Delfos                — día completo fuera
+ *     Día 6 (sábado):  Crucero por Agistri, Moni y Egina — ocupan el día entero
+ *
+ * Un solo bloque cada día. Y dejó fuera DOCE sitios de Atenas justificándose con
+ * ellas, con estas palabras: «los días 5 y 6 son excursiones completas», «el
+ * sábado (día 6) es crucero», «el mercado especial del domingo coincide con el
+ * crucero». Después la regla de arriba —vieja, correcta y que ya había disparado
+ * en tres viajes— echó las dos excursiones por dejar fuera un imprescindible.
+ *
+ * Resultado: el día 5 con una sola visita y el **día 6 entero vacío**, con doce
+ * sitios sin colocar cuya única razón de estar fuera acababa de desaparecer.
+ *
+ * La repesca de arriba solo mira los IMPRESCINDIBLES. Es lo correcto para lo que
+ * fue escrita —rescatar el motivo de la parada— pero se queda a medias: cuando
+ * los imprescindibles se acaban, o solo había uno, el cráter sigue ahí. Quitar
+ * la excursión invalida las doce excusas, no una.
+ *
+ * SOLO RELLENA LOS DÍAS LIBERADOS, y por eso `soloEsosDias`. Derramarse a los
+ * demás no taparía el agujero y sí apretaría días que estaban bien.
+ *
+ * Y NO TOCA LO QUE YA ESTÁ: solo añade en el hueco que quedó. Si no cabe nada
+ * —porque los que faltan cierran ese día o no tienen hora— el día se queda vacío
+ * y se dice, que es mejor que rellenarlo con cualquier cosa.
+ */
+export function rellenarElDiaLiberado(viajeId, etapa, diasLibres, di) {
+  if (!etapa.punto_interes_id || !diasLibres.length) return;
+
+  // TODO lo del catálogo de esa ciudad, no solo los imprescindibles. Los
+  // fundidos dentro de otro (`cubierto_por`) quedan fuera: ya se visitan.
+  const delCatalogo = todas(
+    `SELECT id, nombre, tiempo_visita, bloque
+       FROM sitios_lugar
+      WHERE punto_interes_id = ? AND cubierto_por IS NULL AND bloque <> 'busqueda'
+      ORDER BY CASE WHEN bloque = 'imprescindibles' THEN 0 ELSE 1 END, orden, id`,
+    etapa.punto_interes_id
+  );
+
+  const puestos = new Set(
+    todas(
+      `SELECT c.datos_extra FROM itinerario i JOIN candidatos c ON c.id = i.candidato_id
+        WHERE i.viaje_id = ? AND c.tipo = 'sitio'`,
+      viajeId
+    )
+      .map((c) => {
+        try {
+          return JSON.parse(c.datos_extra ?? '{}')?.deId ?? null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+  );
+
+  const pendientes = delCatalogo.filter((s) => !puestos.has(s.id));
+  if (!pendientes.length) return;
+
+  // LA COMIDA SE RESERVA ANTES DE RELLENAR, Y ESTO LO ENSEÑÓ LA PRUEBA.
+  //
+  // La primera versión llenaba el día de visitas y luego la pasada de repaso
+  // decía «Día 6: no hay hueco a una hora de comer; lo dejo dicho»: el relleno
+  // se había comido el mediodía. Un día de ocho horas de museos sin sitio para
+  // comer no es un día mejor que el día vacío, es otro día mal.
+  //
+  // Así que primero se pone el plato y después se rellena alrededor, que es el
+  // orden en que lo haría cualquiera.
+  let tablero = lienzoDeViaje(viajeId);
+  const duracionComida = parametro('duracion_comida_min', 90);
+
+  for (const dia of diasLibres) {
+    if (tablero.colocados.some((c) => c.dia === dia && esComida(c))) continue;
+    const hora =
+      horaLibreEn(tablero, { dia, franja: 'mediodia', duracion: duracionComida }) ??
+      horaLibreEn(tablero, { dia, franja: 'tarde', duracion: duracionComida });
+    if (!hora || Number(hora.split(':')[0]) >= 16) continue;
+
+    colocar(viajeId, {
+      textoManual: 'Comer',
+      dia,
+      franja: franjaDesde(hora) ?? 'mediodia',
+      hora,
+      duracionMin: duracionComida,
+    });
+    di(`   Día ${dia}: le reservo la comida a las ${hora} antes de rellenarlo.`, ORIGENES.ninguno);
+    tablero = lienzoDeViaje(viajeId);
+  }
+
+  const entraron = [];
+
+  for (const s of pendientes) {
+    const sitio = {
+      id: s.id,
+      nombre: s.nombre,
+      minutos: minutosDeVisita(s.tiempo_visita) ?? parametro('visita_por_defecto_min', 90),
+    };
+    const puesto = colocarImprescindible(viajeId, tablero, etapa, sitio, di, diasLibres, {
+      soloEsosDias: true,
+      comoSeDice: 'rellena el día %d a las %h, que se quedó libre al quitar la excursión',
+    });
+    if (!puesto) continue;
+    entraron.push(s.nombre);
+    // El tablero se relee: un hueco deja de serlo en cuanto lo ocupa el primero.
+    tablero = lienzoDeViaje(viajeId);
+  }
+
+  di(
+    entraron.length
+      ? `   ${etapa.nombre_ciudad}: el día ${diasLibres.join(', ')} se rellena con ${entraron.join(', ')}.`
+      : `   ${etapa.nombre_ciudad}: el día ${diasLibres.join(', ')} se queda vacío — no hay nada del catálogo que quepa en él.`,
+    ORIGENES.ninguno
+  );
+}
+
+function colocarImprescindible(
+  viajeId,
+  lienzo,
+  etapa,
+  sitio,
+  di,
+  diasLibres = [],
+  { soloEsosDias = false, comoSeDice = 'entra en el día %d a las %h, en el hueco que deja la excursión' } = {}
+) {
   let candidato = una(
     `SELECT id FROM candidatos
       WHERE viaje_id = ? AND etapa_id = ? AND tipo = 'sitio' AND datos_extra LIKE ?`,
@@ -1362,6 +1491,11 @@ function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = [
   // día vacío igual, que es justo lo que se quería evitar.
   const dias = lienzo.dias
     .filter((x) => x.etapaId === etapa.id)
+    // EL RELLENO NO SE DERRAMA. Repescar un imprescindible sí puede acabar en
+    // otro día —lo que importa es que entre—, pero rellenar el cráter que dejó
+    // la excursión NO: si lo que se mete para tapar el día 6 aterriza en el 4, el
+    // día 6 sigue vacío y encima el 4 queda más apretado.
+    .filter((x) => !soloEsosDias || diasLibres.includes(x.n))
     .sort((a, b) => (diasLibres.includes(b.n) ? 1 : 0) - (diasLibres.includes(a.n) ? 1 : 0));
 
   for (const d of dias) {
@@ -1384,11 +1518,13 @@ function colocarImprescindible(viajeId, lienzo, etapa, sitio, di, diasLibres = [
       hora,
       duracionMin: sitio.minutos,
     });
-    di(`   ${sitio.nombre} entra en el día ${d.n} a las ${hora}, en el hueco que deja la excursión.`);
+    di(`   ${sitio.nombre} ${comoSeDice.replace('%d', d.n).replace('%h', hora)}.`);
     return true;
   }
 
-  di(`   ${sitio.nombre} sigue sin hueco en ${etapa.nombre_ciudad} ni quitando la excursión.`);
+  if (!soloEsosDias) {
+    di(`   ${sitio.nombre} sigue sin hueco en ${etapa.nombre_ciudad} ni quitando la excursión.`);
+  }
   return false;
 }
 
@@ -2922,6 +3058,23 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // Se hace aquí, con el lienzo ya montado, y no antes: hasta ahora no se sabía
   // qué había quedado dentro y qué fuera.
   final = liberarLoQueSeComeLaExcursion(viajeId, viaje, final, di);
+
+  // UNA PASADA MÁS, PORQUE ACABAMOS DE CAMBIAR EL PLAN.
+  //
+  // El bucle de revisiones de arriba ya ha terminado, y justo después esto quita
+  // excursiones y rellena el día que dejan. Lo que se mete ahí no lo mira nadie:
+  // en la prueba de Grecia el día 6 pasó de vacío a cinco visitas y se quedó
+  // SIN COMIDA, porque el aviso de «este día no tiene dónde comer» nace después
+  // de que su único arreglo haya pasado de largo.
+  //
+  // Es una sola pasada y solo si hay algo que mirar: no se reabre el bucle, se
+  // le da al plan nuevo el mismo repaso que tuvo el viejo.
+  if (final.avisos.length) {
+    di(`Tras liberar el día: quedan ${final.avisos.length} aviso(s); los repaso.`);
+    if (corregirAvisos(viajeId, final, di, sacados, duracionComida, horaTope)) {
+      final = lienzoDeViaje(viajeId);
+    }
+  }
 
   // LO QUE LA IA COLOCÓ FUERA DE HORARIO, ANTES DE QUE LA REVISIÓN SE PELEE.
   //
