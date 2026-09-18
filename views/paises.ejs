@@ -25,11 +25,12 @@ const pieExtra = '<script src="/js/paises.js" defer></script>';
       viaje: null,
       pasoActual: null,
       titulo: `Países · ${viaje.nombre}`,
-      extraCabeza: '',
+      // La tarjeta de progreso sale encima de esta ventana al confirmar la lista.
+      extraCabeza: '<link rel="stylesheet" href="/css/progreso.css">',
     }) %>
 
 <main class="envoltorio envoltorio--simple">
-  <div class="contenido" data-viaje="<%= viaje.id %>">
+  <div class="contenido" data-viaje="<%= viaje.id %>" data-destino="<%= viaje.destino || '' %>">
 
     <header class="ruta-cabecera">
       <p class="ruta-cabecera__miga">

@@ -154,6 +154,22 @@
       });
       const cuerpo = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(cuerpo.porQueNoCabe || cuerpo.error || `Error ${r.status}`);
+
+      // CONFIRMADA LA LISTA, LA ESPERA SE QUEDA AQUÍ.
+      //
+      // Es el mismo cambio que en el mapa: el orquestador ya está en marcha y
+      // antes se navegaba al log en crudo. La tarjeta sale encima de esta misma
+      // ventana —que es la de viabilidad, el sitio donde acabas de decidir qué
+      // países entran— y al terminar salta al registro traducido.
+      //
+      // Solo cuando de verdad ha arrancado: si el servidor manda de vuelta al
+      // mapa —porque no quedó ningún país— se navega como siempre.
+      if (/\/orquestador$/.test(String(cuerpo.url ?? ''))) {
+        const { abrirProgreso } = await import('/js/progreso.js');
+        abrirProgreso(viajeId, raiz.dataset.destino || '');
+        return;
+      }
+
       window.location.href = cuerpo.url;
     } catch (err) {
       decir(err.message, true);

@@ -18,7 +18,10 @@ const LEAFLET = '1.9.4';
 const MUTANT = '0.14.1';
 
 const cabezaExtra =
-  `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">`;
+  `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.css">` +
+  // La tarjeta de progreso sale ENCIMA de este mapa al lanzar un viaje
+  // automático, así que su hoja tiene que estar cargada antes de que aparezca.
+  '<link rel="stylesheet" href="/css/progreso.css">';
 const pieExtra =
   `<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/${LEAFLET}/leaflet.min.js"></script>` +
   `<script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@${MUTANT}/dist/Leaflet.GoogleMutant.min.js"></script>` +

@@ -288,6 +288,20 @@
       //    está buscando y, cuando está, se entra directamente en su parada.
       // 'explorar' (país o región) y 'ruta' (la ciudad ya está más de una vez en
       // el viaje) se resuelven igual: se va a donde diga el servidor.
+      // EL VIAJE AUTOMÁTICO SE ESPERA AQUÍ, ENCIMA DEL MAPA.
+      //
+      // Antes se navegaba a `/viajes/:id/orquestador`, que es el log en crudo de
+      // las seis fases: una pantalla para diagnosticar, no para esperar. Ahora la
+      // tarjeta sale sobre el mapa que ya estabas mirando y, al terminar, salta
+      // sola al registro traducido. A la pantalla del log se sigue llegando
+      // —hay un enlace dentro de la tarjeta— pero deja de ser lo primero que ve
+      // alguien que acaba de elegir un destino.
+      if (datos.modo === 'orquestador') {
+        const { abrirProgreso } = await import('/js/progreso.js');
+        abrirProgreso(viajeId, elegido.nombre);
+        return;
+      }
+
       if (datos.modo !== 'ciudad') {
         location.href = datos.url;
         return;

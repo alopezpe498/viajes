@@ -1,0 +1,113 @@
+/* ===========================================================================
+   LA TARJETA DE PROGRESO DEL VIAJE AUTOMÁTICO
+   ---------------------------------------------------------------------------
+   Sale ENCIMA de donde estabas —el mapa del mundo, o la ventana de países si el
+   viaje es de varios— en vez de llevarte a la pantalla del log en crudo. Esa
+   pantalla sigue existiendo y se llega desde aquí: lo que cambia es que ya no es
+   lo primero que ves al elegir destino.
+
+   Los colores salen de `estilo.css` y no se declaran aquí. Lo único propio es la
+   sombra de la tarjeta, que necesita ser más profunda que las de la aplicación
+   porque flota sobre un mapa y tiene que despegarse de él.
+   =========================================================================== */
+.prog {
+  width: min(360px, calc(100vw - 32px));
+  padding: 34px 30px 26px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--superficie);
+  color: var(--texto);
+  font: inherit;
+  text-align: center;
+  box-shadow: 0 18px 50px -12px rgba(18, 48, 62, 0.32);
+}
+.prog::backdrop {
+  background: rgba(18, 48, 62, 0.28);
+  backdrop-filter: blur(2.5px);
+}
+
+/* --- El anillo ------------------------------------------------------------ */
+.prog__anillo { position: relative; width: 88px; height: 88px; margin: 0 auto 20px; }
+/* Empieza arriba y no a las tres en punto, que es donde lo pone el SVG. */
+.prog__anillo svg { transform: rotate(-90deg); }
+.prog__aro { transition: stroke-dashoffset 0.6s ease; }
+.prog__pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--texto);
+}
+
+/* --- El texto ------------------------------------------------------------- */
+.prog__titulo { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
+.prog__fase {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+  color: var(--acento);
+  font-size: 15px;
+  font-weight: 700;
+}
+.prog__giro {
+  width: 15px;
+  height: 15px;
+  border: 2.5px solid var(--tinte);
+  border-top-color: var(--acento);
+  border-radius: 50%;
+  animation: prog-giro 0.8s linear infinite;
+}
+@keyframes prog-giro { to { transform: rotate(360deg); } }
+
+/* `min-height` para que la tarjeta no pegue un salto cada vez que cambia de
+   fase: las descripciones no miden lo mismo y el anillo bailaría. */
+.prog__desc {
+  min-height: 38px;
+  margin: 7px 0 0;
+  color: var(--texto-2);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+/* --- Los puntos ----------------------------------------------------------- */
+.prog__puntos { display: flex; justify-content: center; gap: 8px; margin-top: 22px; }
+.prog__punto {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--borde);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.prog__punto--hecho { background: var(--verde-tx); }
+.prog__punto--ahora { background: var(--acento); box-shadow: 0 0 0 4px var(--tinte); }
+/* Una fase con huecos terminó, pero no del todo bien: ni verde ni gris. */
+.prog__punto--huecos { background: var(--prec-tx); }
+.prog__punto--error { background: var(--alerta-tx); }
+
+/* --- El pie --------------------------------------------------------------- */
+.prog__pie { margin: 18px 0 0; color: var(--texto-2); font-size: 12px; }
+.prog__pie b { color: var(--texto); }
+
+.prog__salida { margin: 14px 0 0; font-size: 12px; }
+.prog__salida a { color: var(--texto-2); }
+.prog__salida a:hover { color: var(--acento); }
+
+.prog__fallo {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--alerta-bg);
+  color: var(--alerta-tx);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prog__giro { animation: none; }
+  .prog__aro { transition: none; }
+}
