@@ -55,7 +55,7 @@ import {
   parametro,
   parametroTexto,
   promptDeFase,
-  configAuto,
+  configAutoDelMotor,
   ORIGENES,
 } from '../services/orquestador.js';
 import { fichasDeTramo } from '../services/movilidad.js';
@@ -2107,7 +2107,7 @@ export function calendarioDelViaje(desde, hasta) {
 }
 
 export function datosDelPaso1(viaje) {
-  const auto = configAuto(viaje);
+  const auto = configAutoDelMotor(viaje);
   const nochesTotales = nochesEntre(viaje.fecha_inicio, viaje.fecha_fin);
   const dias = nochesTotales + 1;
   const { adultos, edadesNinos } = ocupacionDe(viaje);

@@ -20,8 +20,8 @@ abajo —no se reescribe la historia— y aquí se dice en qué quedó cada cosa
 | 1.2 | Los niños: 0 de 11 ciudades con bloque | **ARREGLADO.** Si viajan niños y la ciudad no tiene el cajón, se pide solo ese. No se regenera nada. |
 | 1.3 | `habitacionFamiliar` no se usa en ningún sitio | **ARREGLADO.** Llega a quien elige el alojamiento. NO como filtro de Booking: los códigos de ese fichero están comprobados uno a uno contra el panel real y no me invento uno. |
 | 1.4 | Los intereses no llegan al lienzo | **ARREGLADO** a medias y a propósito. `{{INTERESES}}` y la regla 13 del prompt: entre dos cosas que compiten por el mismo hueco, entra la que va con el perfil. NO se tocó `importanciaDe` —a quién se expulsa en un choque— porque es el corazón del reparto y pide medirlo antes. |
-| 1.5 | `tipo_viaje` solo sirve para elegir ciudades | **ABIERTO.** Es una decisión de producto: o significa lo mismo que las categorías y se unifica, o tiene que llegar a sitios y excursiones. |
-| 1.6 | El ritmo no llega a las reglas fijas | **ABIERTO y dormido.** El día útil es siempre 9:00-22:00 y 13 horas para todos. Tocarlo mueve el reparto entero: esperando viajes largos, igual que la densidad. |
+| 1.5 | `tipo_viaje` solo sirve para elegir ciudades | **CERRADO: se traduce a categorías.** `configAutoDelMotor` lo convierte (cultural → monumentos y museos; gastronómico → gastronomía; naturaleza → naturaleza y miradores; relax y mixto → nada, porque «relax» es ritmo y «mixto» es no preferir) y lo UNE con las categorías marcadas, sin sumar dos veces. Así llega a la rúbrica y a sitios, excursiones y lienzo. Medido sobre los 7 viajes: en 5 no cambia nada; cambia en Hungría (naturaleza como tipo y no como categoría: paisaje 1,35 → 1,70) y en París (sin categorías marcadas). |
+| 1.6 | El ritmo no llega a las reglas fijas | **CERRADO en el veredicto, congelado en el día útil.** En ritmo tranquilo, para que una parada salga «holgada» tienen que caber `holgada_tranquilo_veces` visitas (2 de fábrica), no una: el hueco de una es el que el ritmo deja a propósito. Solo cambia el juicio y sus avisos. El día útil de 9:00 a 22:00 sigue igual para todos, porque tocarlo mueve el reparto, y eso espera a tener viajes largos, igual que la densidad. Hoy los 7 viajes son de ritmo normal: no cambia ninguno. |
 | 1.7 | El presupuesto no decide nada | **CERRADO: se deja de preguntar.** Campo oculto, columna intacta, las pantallas que lo enseñan lo siguen enseñando. |
 | 1.8 | El nivel de precio solo mira hoteles | **DESCARTADO CON DATOS.** Un tope no habría cambiado ni un viaje: de las 121 excursiones que caben en un día la mediana son 39 € y lo elegido en cuatro viajes fue 0-76 €. Lo que sí había era el mismo plan al quíntuple (Wieliczka 76 € contra 410 € privada) y lo cubre la regla 4b del prompt. |
 | 2 | `{{CALENDARIO}}` llega vacío | **ARREGLADO.** Y apareció otro que el repaso no tenía: `{{HOTEL}}` en el prompt del lienzo. |
@@ -247,3 +247,22 @@ Sin tocar nada: esto es solo el diagnóstico.
    discutibles. El ritmo ya llega a la IA; el presupuesto es un orientativo que
    quizá deba quedarse solo como aviso. Los dejaría para cuando haya datos de
    los viajes que estás generando.
+
+
+## Cierre (2026-09-18)
+
+**Los ocho `visita_*_min` no estaban muertos.** Se ocultaron como parámetros que
+no leía nadie, y sí los lee `duracionDeLoColocado` (services/lienzo.js) cuando
+la ficha de un sitio no trae tiempo de visita: a 26 de los 282 sitios, y en
+«ocio y parques» a 6 de 8. La búsqueda que los dio por muertos buscó el nombre
+entre comillas y solo encontró la lista; la lectura de verdad va por un mapa de
+categoría a clave. Vuelven a la pantalla con una ayuda que dice lo que hacen.
+Siguen ocultos solo `dias_caducidad_datos_sitios` y `concurrencia_scraping`,
+comprobados con cero lecturas.
+
+**`euros_por_hora_util` se queda en 30.** Pasado `tools/calibrar-euros-por-hora.js`
+sobre los viajes con diario de puertas: con 30, en ninguno el precio le quita el
+puesto a la puerta mejor puntuada; a 20 empieza a mover alguno y a 15 los mueve
+todos. Pero tres de los cuatro viajes son el mismo destino (Singapur y
+Malasia), o sea dos destinos independientes. Con eso no se mueve el corazón del
+motor. Volver a pasarlo cuando haya cuatro o cinco destinos distintos.

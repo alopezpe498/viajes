@@ -68,7 +68,7 @@ import {
   apuntarHueco,
   parametro,
   parametroTexto,
-  configAuto,
+  configAutoDelMotor,
   ORIGENES,
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
@@ -2823,7 +2823,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
-  const auto = configAuto(viaje);
+  const auto = configAutoDelMotor(viaje);
   const { adultos, edadesNinos } = ocupacionDe(viaje);
   const duracionComida = parametro('duracion_comida_min', 90);
   const ritmoDelViaje = viaje.ritmo || 'normal';

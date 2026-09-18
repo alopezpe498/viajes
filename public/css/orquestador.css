@@ -212,8 +212,8 @@
   margin: 0 0 var(--esp-7);
   padding: var(--esp-4) var(--esp-6);
   border-radius: var(--radio-xs);
-  background: #E7F4EE;
-  color: #245B43;
+  background: var(--verde-bg);
+  color: var(--verde-tx);
   font-size: var(--texto-base);
 }
 .orq-aviso--malo { background: var(--alerta-bg); color: var(--alerta-tx); }

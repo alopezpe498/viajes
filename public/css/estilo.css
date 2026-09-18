@@ -27,6 +27,12 @@
   --texto: #12303E;
   --texto-2: #5E7A87;         /* secundario */
   --texto-3: #8FA9B4;         /* deshabilitado / pendiente */
+  /* Lo DESACTIVADO, que eran dos hex sueltos en configuración. Dos papeles y
+     por eso dos tokens: el texto o el icono de un control que no se puede usar,
+     y el fondo de un botón lleno que no se puede pulsar. No es `--texto-3`, que
+     es más oscuro y dice «pendiente», no «no se puede». */
+  --desactivado-tx: #C3D2DA;
+  --desactivado-bg: #B6CBD5;
 
   /* Verde SOLO para "Gratis" y confirmaciones */
   --verde-bg: #E1F2E7;
@@ -4082,10 +4088,12 @@ a  { color: var(--acento); }
   background: none;
   padding: 2px 4px;
   color: var(--acento);
-  /* Aquí había `font: 600 13px/1 inherit` — inválida: en el atajo `font` la familia no
-     puede ser `inherit`, así que el navegador tiraba la declaración entera y
-     este elemento nunca se pintó con esa letra. Se quita para que el fichero
-     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
+  /* Aquí había `font: 600 13px/1 inherit`, inválida —la familia no puede ser `inherit`
+     dentro del atajo— y el navegador la tiraba entera. Se escribe bien. No se
+     podía ver en ninguna pantalla por falta de datos; se comprobó inyectando
+     su marcado real en una página con los estilos cargados. */
+  font-size: var(--texto-base);
+  font-weight: 600;
   font-family: inherit;
   text-decoration: none;
   cursor: pointer;
@@ -4143,10 +4151,12 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
-  /* Aquí había `font: 600 13px/1 inherit` — inválida: en el atajo `font` la familia no
-     puede ser `inherit`, así que el navegador tiraba la declaración entera y
-     este elemento nunca se pintó con esa letra. Se quita para que el fichero
-     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
+  /* Aquí había `font: 600 13px/1 inherit`, inválida —la familia no puede ser `inherit`
+     dentro del atajo— y el navegador la tiraba entera. Se escribe bien. No se
+     podía ver en ninguna pantalla por falta de datos; se comprobó inyectando
+     su marcado real en una página con los estilos cargados. */
+  font-size: var(--texto-base);
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
 }
@@ -4278,10 +4288,13 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-pill);
   padding: 2px 9px;
-  /* Aquí había `font: 700 11px/1.6 inherit` — inválida: en el atajo `font` la familia no
-     puede ser `inherit`, así que el navegador tiraba la declaración entera y
-     este elemento nunca se pintó con esa letra. Se quita para que el fichero
-     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
+  /* Aquí había `font: 700 11px/1.6 inherit`, inválida —la familia no puede ser `inherit`
+     dentro del atajo— y el navegador la tiraba entera. Se escribe bien. No se
+     podía ver en ninguna pantalla por falta de datos; se comprobó inyectando
+     su marcado real en una página con los estilos cargados. */
+  font-size: var(--texto-xs);
+  font-weight: 700;
+  line-height: 1.6;
   color: var(--texto-2);
   white-space: nowrap;
   box-shadow: var(--sombra-sm);
@@ -5946,9 +5959,9 @@ body.con-antes { overflow: hidden; }
    verde que un vuelo elegido. Un ámbar que no se puede apagar acaba siendo
    ruido que se ignora, y entonces deja de avisar de nada. */
 .antes-boton--hecho {
-  background: var(--exito-bg, #E1F2E7);
+  background: var(--exito-bg, var(--verde-bg));
   border-color: #C4E3D0;
-  color: var(--exito-tx, #1E6B3C);
+  color: var(--exito-tx, var(--verde-tx));
 }
 .antes-boton--hecho:hover { box-shadow: 0 6px 18px rgba(30, 107, 60, .16); }
 
@@ -5979,8 +5992,8 @@ body.con-antes { overflow: hidden; }
   font-size: var(--texto-lg);
 }
 .antes-check input:checked + .antes-check__marca {
-  background: var(--exito-tx, #1E6B3C);
-  border-color: var(--exito-tx, #1E6B3C);
+  background: var(--exito-tx, var(--verde-tx));
+  border-color: var(--exito-tx, var(--verde-tx));
   color: #fff;
 }
 .antes-check input:focus-visible + .antes-check__marca { outline: 2px solid var(--acento); outline-offset: 2px; }
@@ -6312,7 +6325,7 @@ body.con-antes { overflow: hidden; }
   text-overflow: ellipsis;
 }
 .etapa__dormir i { flex: none; font-size: var(--texto-lg); }
-.etapa__dormir--ok { background: #E7F4EE; color: #245B43; font-weight: 600; }
+.etapa__dormir--ok { background: var(--verde-bg); color: var(--verde-tx); font-weight: 600; }
 
 /* ---------------------------------------------------------------------------
    LAS RESERVAS

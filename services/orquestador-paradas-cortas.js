@@ -615,6 +615,17 @@ export function revisarElReparto(viaje, di = () => {}) {
   // cuánto dura algo.
   const tipica = parametro('visita_por_defecto_min', 90);
 
+  // EL RITMO ENTRA EN EL VEREDICTO (§1.6 del repaso). Con un hueco para una
+  // visita más, la parada salía «holgada», y el aviso proponía quitarle una
+  // noche. En un viaje tranquilo ese hueco no sobra: es el que el ritmo deja
+  // a propósito, y llamarlo holgura es juzgar un viaje tranquilo con las horas
+  // de uno intenso. Así que en tranquilo, para decir que sobra, tiene que
+  // caber más de una visita. Solo cambia el juicio y sus avisos; el reparto y
+  // el día útil de 9:00 a 22:00 no se tocan, que eso está congelado hasta tener
+  // viajes largos con que medirlo.
+  const vecesParaSobrar =
+    (viaje.ritmo || 'normal') === 'tranquilo' ? parametro('holgada_tranquilo_veces', 2) : 1;
+
   const veredictos = [];
 
   for (const etapa of etapas) {
@@ -725,7 +736,9 @@ export function revisarElReparto(viaje, di = () => {}) {
     // Y al revés: ¿queda sitio para una visita más? Solo importa si no falta
     // nada, porque una ciudad a la que le sobra tiempo Y le faltan cosas es una
     // contradicción que significa otra cosa (ver arriba).
-    const sobra = noLlegaron.length ? null : huecoDeVerdad(lienzo, dias, tipica, null, FRANJAS_DE_VISITA);
+    const sobra = noLlegaron.length
+      ? null
+      : huecoDeVerdad(lienzo, dias, Math.round(tipica * vecesParaSobrar), null, FRANJAS_DE_VISITA);
 
     const que = porTiempo.length ? 'corta' : !noLlegaron.length && sobra ? 'holgada' : 'ajustada';
 

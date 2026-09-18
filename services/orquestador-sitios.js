@@ -42,7 +42,7 @@ import { situarLosSitios } from '../services/direcciones.js';
 import { buscarDatosDeSitios, interpretarHorariosDelCatalogo } from '../services/datos-sitios.js';
 import { destinoPorNombre } from '../services/catalogo.js';
 import { ocupacionDe } from '../services/proveedores.js';
-import { anotar, apuntarHueco, configAuto, parametro, ORIGENES } from '../services/orquestador.js';
+import { anotar, apuntarHueco, configAutoDelMotor, parametro, ORIGENES } from '../services/orquestador.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 import { porParada, avisar, avisoDeSitios } from '../services/paralelo.js';
 import { enFase } from '../services/fase-actual.js';
@@ -268,7 +268,7 @@ export async function ejecutarFaseSitios(viaje, prompt) {
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
-  const auto = configAuto(viaje);
+  const auto = configAutoDelMotor(viaje);
   const { edadesNinos } = ocupacionDe(viaje);
   const sesgo = sesgoDeIntereses(prompt, auto);
 

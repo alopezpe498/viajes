@@ -35,7 +35,7 @@ import {
 } from '../services/catalogo.js';
 import { alternarApuntado } from '../services/etapa.js';
 import { ocupacionDe } from '../services/proveedores.js';
-import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
+import { anotar, apuntarHueco, parametro, configAutoDelMotor, ORIGENES } from '../services/orquestador.js';
 import { lienzoDeViaje } from '../services/lienzo.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
 import { porParada, esperarAviso, avisoDeSitios } from '../services/paralelo.js';
@@ -110,7 +110,7 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
 
-  const auto = configAuto(viaje);
+  const auto = configAutoDelMotor(viaje);
   const { adultos, edadesNinos } = ocupacionDe(viaje);
   const maxLargasPorDia = parametro('max_excursiones_largas_por_dia', 1);
   const maxPorViaje = parametro('max_excursiones_por_viaje', 0); // 0 = sin límite

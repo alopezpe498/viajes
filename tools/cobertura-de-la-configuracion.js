@@ -67,10 +67,19 @@ const ESPERADO = [
   { clave: 'edadesNinos', hueco: 'VIAJEROS',
     fases: ['traslados', 'excursiones', 'lienzo'],
     codigo: ['services/orquestador-sitios.js'] },
+  // El ritmo llega además al veredicto de «holgada» de la revisión del reparto
+  // (§1.6). El día útil de 9 a 22 sigue fijo a propósito: congelado hasta tener
+  // viajes largos con que medirlo, igual que la densidad.
   { clave: 'ritmo', hueco: 'RITMO',
     fases: ['ciudades_y_noches', 'traslados', 'excursiones', 'lienzo'],
-    codigo: ['services/orquestador-traslados.js'] },
-  { clave: 'tipo_viaje', hueco: 'TIPO_VIAJE', fases: ['ciudades_y_noches'] },
+    codigo: ['services/orquestador-traslados.js', 'services/orquestador-paradas-cortas.js'] },
+  // Ya no es solo un prompt: se traduce a categorías en `configAutoDelMotor` y
+  // con ellas llega a la rúbrica y a sitios, excursiones y lienzo (§1.5).
+  { clave: 'tipo_viaje', hueco: 'TIPO_VIAJE', fases: ['ciudades_y_noches'],
+    codigo: ['services/orquestador.js'] },
+  { clave: 'configAutoDelMotor',
+    codigo: ['services/orquestador-ciudades.js', 'services/orquestador-sitios.js',
+             'services/orquestador-excursiones.js', 'services/orquestador-lienzo.js'] },
 
   // --- Intereses ------------------------------------------------------------
   { clave: 'intereses', hueco: 'INTERESES', fases: ['ciudades_y_noches', 'sitios', 'excursiones'],

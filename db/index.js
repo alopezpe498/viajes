@@ -429,6 +429,7 @@ export function migrarEsquema() {
   migracionCortesDeBanda();
   migracionDesandarCuesta();
   migracionSitiosLejos();
+  migracionRitmoEnElVeredicto();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6485,6 +6486,27 @@ function migracionSitiosLejos() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: umbrales de «este sitio no cae donde debe».');
+  return true;
+}
+
+/**
+ * EL RITMO EN EL VEREDICTO DE «HOLGADA» (§1.6 del repaso de la configuración).
+ * En un viaje tranquilo, para decir que a una parada le sobra tiempo tiene que
+ * caber más de una visita: el hueco de una es el que el ritmo deja a propósito.
+ */
+function migracionRitmoEnElVeredicto() {
+  const CLAVE = '2026-09-ritmo-en-el-veredicto';
+  if (yaAplicada(CLAVE)) return false;
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (clave) DO NOTHING`
+  ).run('holgada_tranquilo_veces', '2', '2',
+    'En un viaje tranquilo, cuantas visitas tienen que caber para decir que a una parada le sobra tiempo',
+    'visitas', orden + 1);
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el ritmo entra en el veredicto de «holgada».');
   return true;
 }
 

@@ -81,7 +81,7 @@
   background: var(--superficie); color: var(--acento); cursor: pointer; font-size: var(--texto-xl);
 }
 .config .cal-nav button:hover { background: var(--tinte); }
-.config .cal-nav button:disabled { color: #C3D2DA; cursor: default; background: var(--superficie); }
+.config .cal-nav button:disabled { color: var(--desactivado-tx); cursor: default; background: var(--superficie); }
 .config .meses { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
 .config .mes { min-width: 0; }
 .config .mes h3 { text-align: center; font-size: var(--texto-lg); font-weight: 600; margin-bottom: 10px; text-transform: capitalize; }
@@ -96,7 +96,7 @@
   position: relative; font-family: inherit;
 }
 .config .dias button:hover:not(:disabled):not(.extremo) { background: var(--tinte); }
-.config .dias button:disabled { color: #C3D2DA; cursor: default; }
+.config .dias button:disabled { color: var(--desactivado-tx); cursor: default; }
 .config .dias .relleno { visibility: hidden; }
 .config .dias button.en-rango { background: var(--tinte); border-radius: 0; }
 .config .dias button.extremo { background: var(--acento); color: #fff; font-weight: 600; }
@@ -127,7 +127,7 @@
   background: var(--superficie); color: var(--acento); font-size: var(--icono-sm); cursor: pointer;
 }
 .config .contador button:hover:not(:disabled) { background: var(--tinte); }
-.config .contador button:disabled { color: #C3D2DA; cursor: default; }
+.config .contador button:disabled { color: var(--desactivado-tx); cursor: default; }
 .config .contador .num { font-size: var(--texto-xl); font-weight: 600; min-width: 22px; text-align: center; }
 
 .config .edades { display: flex; flex-wrap: wrap; gap: var(--esp-3); margin-top: 12px; }
@@ -251,7 +251,7 @@
   gap: 7px;
 }
 .config .btn-plantilla:hover:not(:disabled) { background: var(--acento-hover); border-color: var(--acento-hover); }
-.config .btn-plantilla:disabled { background: #B6CBD5; border-color: #B6CBD5; cursor: not-allowed; }
+.config .btn-plantilla:disabled { background: var(--desactivado-bg); border-color: var(--desactivado-bg); cursor: not-allowed; }
 
 /* El de borrar: redondo y del tamaño del control, como el de volver de la
    cabecera. Un icono solo, sin texto, porque se explica con el `title`. */
@@ -269,7 +269,7 @@
   border-color: var(--borde);
   color: var(--acento);
 }
-.config .btn-plantilla--icono:disabled { background: var(--superficie); border-color: var(--borde); color: #C3D2DA; }
+.config .btn-plantilla--icono:disabled { background: var(--superficie); border-color: var(--borde); color: var(--desactivado-tx); }
 
 /* La etiqueta del guardado va en línea con el campo: es una frase, no un título
    de bloque, y partirla en dos renglones la convertía en otra sección. */
@@ -346,7 +346,7 @@
 .config .btn-guardar:hover:not(:disabled) { background: var(--acento-hover); }
 /* Sin fechas no se puede guardar: el servidor lo rechazaría y hay que decirlo
    antes, no después. El resumen de al lado explica qué falta. */
-.config .btn-guardar:disabled { background: #B6CBD5; cursor: not-allowed; }
+.config .btn-guardar:disabled { background: var(--desactivado-bg); cursor: not-allowed; }
 
 @media (max-width: 640px) {
   .config .meses { grid-template-columns: 1fr; }

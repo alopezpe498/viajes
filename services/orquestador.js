@@ -234,6 +234,51 @@ export function configAuto(viaje) {
 }
 
 /**
+ * EL TIPO DE VIAJE, TRADUCIDO A LAS CATEGORÍAS QUE SÍ PESAN (§1.5 del repaso).
+ *
+ * Había dos preguntas casi iguales en dos pantallas: «¿Qué tipo de viaje os
+ * apetece?» en configuración (`tipo_viaje`, cinco valores) y las categorías del
+ * mapa de destino (`auto.categorias`, ocho). Solo las segundas llegaban a algo:
+ * a la rúbrica de ciudades como multiplicadores y a los prompts de sitios,
+ * excursiones y lienzo como intereses. El tipo de viaje llegaba a un único
+ * prompt y no pesaba en ninguna cuenta, aunque la pantalla promete «nos ayudará
+ * a proponerte sitios». Marcar «Naturaleza» como tipo no subía el paisaje.
+ *
+ * Se traduce aquí a categorías y se UNE —no se suma— con las marcadas: quien
+ * marque naturaleza en las dos pantallas no la cuenta dos veces.
+ *
+ * `relax` y `mixto` no traducen a nada, y es a propósito. «Mixto» es no
+ * preferir; «relax» habla de cuánto se aprieta el día, que es el ritmo, no de
+ * qué se ve.
+ */
+const CATEGORIAS_DEL_TIPO = {
+  cultural: ['monumentos', 'museos'],
+  gastronomico: ['gastronomía'],
+  naturaleza: ['naturaleza', 'miradores'],
+  relax: [],
+  mixto: [],
+};
+
+export function categoriasDelTipo(tipoViaje) {
+  return String(tipoViaje ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .flatMap((t) => CATEGORIAS_DEL_TIPO[t] ?? []);
+}
+
+/**
+ * `configAuto` tal como la usa el MOTOR: con el tipo de viaje ya dentro de las
+ * categorías. No se toca `configAuto`, porque la pantalla y las plantillas la
+ * leen para enseñar y guardar lo marcado, y ahí las derivadas se colarían como
+ * casillas que nadie marcó.
+ */
+export function configAutoDelMotor(viaje) {
+  const auto = configAuto(viaje);
+  const union = [...new Set([...auto.categorias, ...categoriasDelTipo(viaje?.tipo_viaje)])];
+  return { ...auto, categorias: union };
+}
+
+/**
  * Valida y limpia lo que llega del formulario.
  *
  * Con el check activado TODO es obligatorio, que es lo que se pidió: el
@@ -370,6 +415,7 @@ export const FASE_DE_PARAMETRO = {
   visita_compras_min: 'lienzo',
   visita_por_defecto_min: 'lienzo',
   max_revisiones_lienzo: 'lienzo',
+  holgada_tranquilo_veces: 'lienzo',
   presentacion_vuelo_min: 'lienzo',
   presentacion_tren_min: 'lienzo',
   acceso_por_defecto_min: 'lienzo',
@@ -477,9 +523,13 @@ export const PROMPTS_SUELTOS = [
  * Uno de ellos —la antelación del vuelo internacional— resultó tener
  * consecuencia y se arregló; estos diez no la tienen.
  *
- *   · Los ocho `visita_*_min` por categoría: la duración de una visita sale del
- *     campo «tiempo de visita» de la ficha de cada sitio, y cuando falta se usa
- *     `visita_por_defecto_min`. Los de categoría no los consulta nadie.
+ *   · (Aquí estaban también los ocho `visita_*_min` por categoría, dados por
+ *     muertos. NO LO ESTABAN: `duracionDeLoColocado` en services/lienzo.js los
+ *     lee cuando la ficha de un sitio no trae tiempo de visita, que le pasa a
+ *     26 de 282 sitios. Se vuelven a enseñar. Se buscó `'visita_museos_min'`
+ *     entre comillas y se encontró solo la lista; la lectura de verdad va por
+ *     un mapa de categoría a clave. Buscar el uso de un parámetro solo por su
+ *     nombre literal no basta.)
  *   · `dias_caducidad_datos_sitios`: los datos de un sitio se buscan cuando la
  *     ficha no los tiene, no por antigüedad.
  *   · `concurrencia_scraping`: quien pone el freno de verdad es
@@ -489,18 +539,10 @@ export const PROMPTS_SUELTOS = [
  * SE OCULTAN, NO SE BORRAN, igual que el presupuesto. La fila sigue en la base
  * con su valor y su ayuda, así que si algún día se decide conectar alguno está
  * entero y con su explicación al lado. Lo que se quita es la invitación a
- * ajustar diez números que no hacen nada — que es peor que no tenerlos: quien
+ * ajustar números que no hacen nada — que es peor que no tenerlos: quien
  * los toca cree que está cambiando algo.
  */
 const NO_SE_ENSENAN = new Set([
-  'visita_museos_min',
-  'visita_monumentos_min',
-  'visita_naturaleza_min',
-  'visita_miradores_min',
-  'visita_barrios_min',
-  'visita_gastronomia_min',
-  'visita_ocio_min',
-  'visita_compras_min',
   'dias_caducidad_datos_sitios',
   'concurrencia_scraping',
 ]);
