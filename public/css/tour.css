@@ -17,7 +17,7 @@
   background: var(--superficie);
   color: var(--texto);
   font: inherit;
-  box-shadow: 0 24px 60px rgba(18, 48, 62, 0.28);
+  box-shadow: var(--sombra-lg);
 }
 .tour::backdrop {
   background: rgba(18, 48, 62, 0.55);

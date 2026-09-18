@@ -1251,7 +1251,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   border-radius: var(--radio);
   overflow: hidden;
-  box-shadow: 0 3px 14px rgba(18, 48, 62, .12);
+  box-shadow: var(--sombra-sm);
   transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
 /* La seleccionada tiene que cantar a la primera: borde grueso, fondo con
@@ -1410,7 +1410,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   border-radius: var(--radio);
   padding: 26px 24px;
-  box-shadow: 0 8px 30px rgba(18, 48, 62, .14);
+  box-shadow: var(--sombra-md);
 }
 .velo__icono { font-size: 32px; color: var(--acento); }
 .velo__icono--malo { color: var(--alerta-tx); }
@@ -1921,7 +1921,7 @@ a  { color: var(--acento); }
 /* --- Controles de zoom de Leaflet, vestidos como la app ------------------- */
 .leaflet-control-zoom {
   border: 0 !important;
-  box-shadow: 0 2px 10px rgba(18, 48, 62, .12) !important;
+  box-shadow: var(--sombra-sm) !important;
   border-radius: var(--radio-sm) !important;
   overflow: hidden;
 }
@@ -1948,7 +1948,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   border-bottom: 0;
   border-radius: 18px 18px 0 0;
-  box-shadow: 0 -4px 22px rgba(18, 48, 62, .13);
+  box-shadow: var(--sombra-md);
   /* Escondida abajo del todo; sube al ponerle la clase. El translateX del 50%
      va aquí también, o el centrado se pierde durante la animación. */
   transform: translate(-50%, 105%);
@@ -2162,7 +2162,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio-sm);
-  box-shadow: 0 10px 30px rgba(18, 48, 62, .13);
+  box-shadow: var(--sombra-md);
 }
 
 /* --- La línea de estado ---------------------------------------------------- */
@@ -2557,7 +2557,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border-radius: var(--radio);
   padding: 22px 24px;
-  box-shadow: 0 10px 34px rgba(18, 48, 62, .22);
+  box-shadow: var(--sombra-md);
 }
 .modal__titulo { margin: 0 0 8px; font-size: 18px; font-weight: 700; }
 .modal__texto { margin: 0; font-size: 14px; line-height: 1.55; color: var(--texto-2); }
@@ -3343,7 +3343,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio-sm);
-  box-shadow: 0 6px 20px rgba(18, 48, 62, .16);
+  box-shadow: var(--sombra-md);
 }
 .poner-en-dia select {
   border: 1px solid var(--borde);
@@ -3381,7 +3381,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 10px rgba(18, 48, 62, .16);
+  box-shadow: var(--sombra-sm);
 }
 .flecha-carrusel[hidden] { display: none; }
 .flecha-carrusel i { font-size: 20px; }
@@ -3849,7 +3849,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio-sm);
-  box-shadow: 0 8px 26px rgba(18, 48, 62, .16);
+  box-shadow: var(--sombra-md);
   text-align: left;
 }
 .dosier-desplegable__fecha {
@@ -4152,7 +4152,7 @@ a  { color: var(--acento); }
   font: 700 11px/1.6 inherit;
   color: var(--texto-2);
   white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(18, 48, 62, .14);
+  box-shadow: var(--sombra-sm);
 }
 .etiqueta-distancia--aviso { border-color: var(--prec-tx); color: var(--prec-tx); }
 .etiqueta-distancia--mucho { border-color: var(--alerta-tx); color: var(--alerta-tx); }
@@ -4163,7 +4163,7 @@ a  { color: var(--acento); }
   opacity: .68;
   font-weight: 600;
   padding: 1px 7px;
-  box-shadow: 0 1px 4px rgba(18, 48, 62, .10);
+  box-shadow: var(--sombra-sm);
   border-style: dashed;
 }
 
@@ -4775,7 +4775,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(18, 48, 62, .14);
+  box-shadow: var(--sombra-md);
   display: grid;
   gap: 4px;
 }
@@ -5526,7 +5526,7 @@ body.con-ventana { overflow: hidden; }
   max-height: 88vh;
   border-radius: var(--radio);
   background: var(--superficie);
-  box-shadow: 0 24px 60px rgba(18, 48, 62, .3);
+  box-shadow: var(--sombra-lg);
   overflow: hidden;
 }
 

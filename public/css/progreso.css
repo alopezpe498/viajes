@@ -19,7 +19,7 @@
   color: var(--texto);
   font: inherit;
   text-align: center;
-  box-shadow: 0 18px 50px -12px rgba(18, 48, 62, 0.32);
+  box-shadow: var(--sombra-lg);
 }
 .prog::backdrop {
   background: rgba(18, 48, 62, 0.28);

@@ -36,7 +36,7 @@ html:has(.mapa-maestro) { height: 100%; }
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--borde);
-  box-shadow: 0 8px 30px rgba(18, 48, 62, .16);
+  box-shadow: var(--sombra-md);
   color: var(--texto);
 }
 
@@ -251,7 +251,7 @@ html:has(.mapa-maestro) { height: 100%; }
   color: var(--texto-2);
   border: 1px solid var(--borde);
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(18, 48, 62, .16);
+  box-shadow: var(--sombra-sm);
 }
 .mm-etq--suave .ti { color: var(--acento); }
 
