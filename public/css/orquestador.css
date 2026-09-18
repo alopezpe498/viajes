@@ -182,7 +182,7 @@
   margin: 0 0 24px;
   padding: 16px 18px;
   border: 1px solid #E8D9BF;
-  border-radius: 14px;
+  border-radius: var(--radio-sm);
   background: #FDF8EF;
 }
 .orq-resumen-huecos h2 {
@@ -234,7 +234,7 @@
   margin: 0 0 28px;
   padding: 14px;
   border: 1px solid var(--borde);
-  border-radius: 14px;
+  border-radius: var(--radio-sm);
   background: var(--fondo);
 }
 .orq-indice__enlace {
@@ -367,7 +367,7 @@
   margin: 0 0 18px;
   padding: 16px 18px;
   border: 1px solid var(--borde);
-  border-radius: 14px;
+  border-radius: var(--radio-sm);
   background: var(--tarjeta, #fff);
 }
 .orq-prompt--tocado { border-color: var(--acento); }

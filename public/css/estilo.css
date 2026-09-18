@@ -3154,7 +3154,7 @@ a  { color: var(--acento); }
   flex-shrink: 0;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 14px;
+  border-radius: var(--radio-sm);
   overflow: hidden;
 }
 .dia__cabecera { padding: 10px 12px 8px; border-bottom: 1px solid var(--borde); }
@@ -6104,7 +6104,7 @@ body.con-antes { overflow: hidden; }
   margin: 0 0 18px;
   padding: 14px;
   border: 1px solid var(--borde);
-  border-radius: 14px;
+  border-radius: var(--radio-sm);
   background: var(--fondo);
 }
 /* La que espera a que elijas se distingue: es la única que pide algo. */
