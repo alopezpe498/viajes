@@ -234,6 +234,51 @@ export async function ejecutarFaseSitios(viaje, prompt) {
       if (cuantos) {
         di(`${ciudad}: ya existían ${cuantos} sitios. No los regenero.`);
 
+        // PERO SI VIAJAN NIÑOS Y NO HAY BLOQUE DE NIÑOS, SE PIDE.
+        //
+        // EL AGUJERO. El bloque de niños solo se pedía si había edades EN EL
+        // MOMENTO de investigar la ciudad. Y el catálogo de sitios se comparte
+        // entre viajes, así que una ciudad investigada por un viaje de dos
+        // adultos se quedaba sin él PARA SIEMPRE: el siguiente viaje, en
+        // familia, salía sin un solo sitio pensado para críos y nadie lo decía.
+        // Medido cuando se encontró: 0 de 11 ciudades del catálogo lo tenían.
+        //
+        // Es lo contrario de regenerar: no se toca nada de lo que hay, solo se
+        // añade el cajón que falta. Y se le pasan los nombres que ya existen
+        // para que no devuelva uno de ellos — el guardado es un upsert por
+        // nombre y le habría cambiado el bloque a un imprescindible.
+        if (edadesNinos.length) {
+          const hayNinos = una(
+            "SELECT COUNT(*) AS n FROM sitios_lugar WHERE punto_interes_id = ? AND bloque = 'ninos'",
+            punto.id
+          ).n;
+
+          if (!hayNinos) {
+            try {
+              const yaEstan = todas(
+                'SELECT nombre FROM sitios_lugar WHERE punto_interes_id = ?',
+                punto.id
+              ).map((x) => x.nombre);
+
+              const ficha = await investigarCiudadConIA(punto, ciudad, {
+                edadesNinos,
+                sesgo,
+                soloBloques: ['ninos'],
+                yaEnElCatalogo: yaEstan,
+              });
+              const puestos = (ficha.sitios ?? []).length;
+              if (puestos) {
+                guardarFichaProfunda(punto, ficha);
+                di(`   ${ciudad}: le faltaba el bloque de niños. Añadidos ${puestos} sitio(s).`);
+              } else {
+                di(`   ${ciudad}: pedí sitios para niños y no salió ninguno. Lo dejo dicho.`);
+              }
+            } catch (err) {
+              di(`   ${ciudad}: no pude añadir el bloque de niños (${err.message}).`);
+            }
+          }
+        }
+
         // PERO SÍ SE REPASAN LAS FOTOS QUE FALTEN.
         //
         // Las fichas viejas se guardaron cuando solo se miraba la Wikipedia en

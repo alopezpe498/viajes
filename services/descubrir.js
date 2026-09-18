@@ -917,12 +917,30 @@ async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
 export async function investigarCiudadConIA(
   punto,
   nombreDestino,
-  { edadesNinos = [], sesgo = null } = {}
+  { edadesNinos = [], sesgo = null, soloBloques = null, yaEnElCatalogo = [] } = {}
 ) {
-  const quiero = ['imprescindibles', 'otros'];
-  if (edadesNinos.length) quiero.push('ninos');
+  // QUÉ BLOQUES SE PIDEN.
+  //
+  // Lo normal es la ficha entera. `soloBloques` existe para un caso concreto y
+  // real: una ciudad que ya se investigó SIN niños y a la que ahora viaja una
+  // familia. El bloque de niños solo se pedía si había edades en el momento de
+  // investigar, y como el catálogo se comparte entre viajes, esas ciudades se
+  // quedaban sin él para siempre. Medido: 0 de 11 ciudades del catálogo lo
+  // tienen. Un viaje familiar a cualquiera de ellas salía sin nada para críos.
+  const quiero = soloBloques?.length
+    ? soloBloques
+    : edadesNinos.length
+      ? ['imprescindibles', 'otros', 'ninos']
+      : ['imprescindibles', 'otros'];
 
-  const vistos = new Set();
+  // LO QUE YA ESTÁ EN EL CATÁLOGO CUENTA COMO VISTO.
+  //
+  // La regla dura contra duplicados compara `nombre_norm` contra lo que se ha
+  // cogido EN ESTA MISMA tanda. Al pedir un bloque suelto no hay tanda previa, y
+  // sin esto el modelo podía devolver un sitio que ya existe: el guardado es un
+  // upsert por nombre, así que le habría cambiado el `bloque` y el `orden` y
+  // habría movido un imprescindible al cajón de los niños.
+  const vistos = new Set(yaEnElCatalogo.map((n) => normalizarNombre(n)));
   const sitios = [];
   let parrafoPorQue = null;
   let comoMoverse = null;
@@ -931,7 +949,7 @@ export async function investigarCiudadConIA(
     let tanda;
     try {
       tanda = await pedirUnBloque(punto, nombreDestino, bloque, {
-        excluir: sitios.map((s) => s.nombre),
+        excluir: [...yaEnElCatalogo, ...sitios.map((s) => s.nombre)],
         edades: edadesNinos,
         // Lo que le interesa a quien viaja. Llega solo desde el orquestador: en
         // el flujo manual nadie ha declarado intereses todavía, y va vacío.
@@ -1015,10 +1033,20 @@ export function guardarFichaProfunda(punto, ficha) {
   try {
     ejecutar(
       'UPDATE puntos_interes SET datos_extra = ? WHERE id = ?',
+      // NO SE PISA CON NULL LO QUE YA ESTABA ESCRITO.
+      //
+      // Antes se asignaba tal cual, y funcionaba porque la única forma de llegar
+      // aquí era una investigación COMPLETA, que siempre trae los dos textos. Al
+      // poder pedir un bloque suelto —el de niños de una ciudad ya investigada—
+      // esa llamada no los trae, y asignar `null` habría borrado el párrafo y el
+      // cómo moverse que ya estaban bien.
+      //
+      // Es la misma regla que la categoría dos líneas más abajo, y por lo mismo:
+      // «no lo traigo» no es «bórralo».
       JSON.stringify({
         ...anterior,
-        parrafoPorQue: ficha.parrafoPorQue,
-        comoMoverse: ficha.comoMoverse,
+        parrafoPorQue: ficha.parrafoPorQue ?? anterior.parrafoPorQue ?? null,
+        comoMoverse: ficha.comoMoverse ?? anterior.comoMoverse ?? null,
       }),
       punto.id
     );
