@@ -470,6 +470,14 @@ a  { color: var(--acento); }
   padding: 11px 22px;
   border-radius: var(--radio-pill);
   font-size: 16px;
+  /* EL BOTÓN NO PUEDE MEDIR LO QUE LE DIGA LA CAJA DONDE CAIGA.
+     Sin esta línea, `.boton` heredaba el interlineado de su contenedor y la
+     misma clase salía de 48px dentro de `.contenido` (que da 24px de línea) y
+     de 44px en cualquier otro sitio, donde ganaba el `min-height`. Nadie eligió
+     esa diferencia: era una propiedad que faltaba. Medido en 400, 768 y 1280px
+     de ancho, esto mueve exactamente dos botones —los dos que estaban a 48— y
+     los deja a 44, que es lo que miden los otros catorce. */
+  line-height: 1.2;
   font-family: inherit;
   font-weight: 600;
   cursor: pointer;
