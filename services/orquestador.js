@@ -469,8 +469,44 @@ export const PROMPTS_SUELTOS = [
   },
 ];
 
+/**
+ * LOS QUE NO SE ENSEÑAN PORQUE NO LOS LEE NADIE.
+ *
+ * Salieron al escribir la ayuda de los 116 parámetros: para poder explicar cada
+ * uno hubo que ir a ver dónde se usaba, y once no se usaban en ninguna línea.
+ * Uno de ellos —la antelación del vuelo internacional— resultó tener
+ * consecuencia y se arregló; estos diez no la tienen.
+ *
+ *   · Los ocho `visita_*_min` por categoría: la duración de una visita sale del
+ *     campo «tiempo de visita» de la ficha de cada sitio, y cuando falta se usa
+ *     `visita_por_defecto_min`. Los de categoría no los consulta nadie.
+ *   · `dias_caducidad_datos_sitios`: los datos de un sitio se buscan cuando la
+ *     ficha no los tiene, no por antigüedad.
+ *   · `concurrencia_scraping`: quien pone el freno de verdad es
+ *     `concurrencia_por_dominio` más el semáforo del navegador, que tiene un
+ *     único perfil de Chrome y los pone en fila solos.
+ *
+ * SE OCULTAN, NO SE BORRAN, igual que el presupuesto. La fila sigue en la base
+ * con su valor y su ayuda, así que si algún día se decide conectar alguno está
+ * entero y con su explicación al lado. Lo que se quita es la invitación a
+ * ajustar diez números que no hacen nada — que es peor que no tenerlos: quien
+ * los toca cree que está cambiando algo.
+ */
+const NO_SE_ENSENAN = new Set([
+  'visita_museos_min',
+  'visita_monumentos_min',
+  'visita_naturaleza_min',
+  'visita_miradores_min',
+  'visita_barrios_min',
+  'visita_gastronomia_min',
+  'visita_ocio_min',
+  'visita_compras_min',
+  'dias_caducidad_datos_sitios',
+  'concurrencia_scraping',
+]);
+
 export function seccionesDelOrquestador() {
-  const todosLosParametros = parametros();
+  const todosLosParametros = parametros().filter((p) => !NO_SE_ENSENAN.has(p.clave));
   const todosLosPrompts = new Map(prompts().map((p) => [p.fase, p]));
 
   const deLaSeccion = (clave) =>
