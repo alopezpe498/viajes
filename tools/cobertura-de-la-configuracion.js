@@ -105,8 +105,14 @@ const ESPERADO = [
   // la del precio y la de elegir.
   { clave: 'edadesNinos_en_dormir', hueco: 'VIAJEROS', fases: ['dormir'],
     codigo: ['services/orquestador-dormir.js'] },
-  { clave: 'nivelPrecio_en_excursiones', codigo: ['services/orquestador-excursiones.js'],
-    pendiente: 'las excursiones se eligen sin mirar lo que cuestan' },
+  // DESCARTADO CON DATOS, no pendiente. Un tope por nivel de precio no habría
+  // cambiado ni un viaje: de las 121 excursiones que caben en un día la mediana
+  // son 39 € y el 79 % está por debajo de 100, y lo elegido en cuatro viajes fue
+  // 0, 0, 0, 21,88, 26, 29, 70 y 76 €. Lo que sí había era el mismo plan al
+  // quíntuple —Wieliczka 76 € contra 410 € privada— y eso lo resuelve la regla
+  // 4b del prompt, no un número subjetivo.
+  { clave: 'nivelPrecio_en_excursiones',
+    pendiente: 'DESCARTADO: medido, un tope no cambiaba nada. La regla 4b cubre el caso real' },
   { clave: 'intereses_en_dormir', hueco: 'INTERESES', fases: ['dormir'],
     pendiente: 'el perfil no influye en qué hotel ni en qué barrio' },
   // Ya no es pendiente: el perfil llega al prompt del lienzo y la regla 13 dice

@@ -363,6 +363,7 @@ export function migrarEsquema() {
   migracionAyudaDeParametros();
   migracionInteresesEnElLienzo();
   migracionPlaceIdDeGoogle();
+  migracionPrecioEnLasExcursiones();
   // Va DESPUES de la migracion que crea las columnas, y no es una migracion:
   // se siembra en cada arranque para que el fichero sea siempre el que manda.
   sembrarAyudaDeParametros();
@@ -1630,6 +1631,15 @@ EL RESTO DE CRITERIOS:
 3. CON NIÑOS, mira la duración y la hora: una salida de doce horas o a las seis
    de la mañana no funciona con niños pequeños, por buena que sea.
 4. Los intereses declarados desempatan, pero no mandan sobre lo anterior.
+4b. MISMO PLAN AL QUÍNTUPLE: MIRA EL PRECIO. Cuando dos de la lista llevan a lo
+   MISMO y una cuesta varias veces más —casi siempre por ser "privada"— elige la
+   normal. No estás renunciando a nada: es la misma visita. En Cracovia conviven
+   "Minas de Sal de Wieliczka" a 76 € y la privada a 410 €, y Auschwitz con guía
+   a 55 € contra la privada a 677 €.
+   Elige la cara SOLO si te lo han pedido —lo verás en lo que les interesa— o si
+   de verdad hace algo que la otra no hace: recogida en el hotel con niños
+   pequeños, un idioma que la normal no tiene, movilidad reducida. Dilo en el
+   "por_que" cuando la elijas.
 5. Justifica cada elegida y cada descartada que estuviera cerca de entrar. Las
    que no vengan a cuento no hace falta ni mencionarlas.
 6. Devuelve los identificadores tal cual ("ex1", "ex2"…).`;
@@ -6332,6 +6342,66 @@ function migracionPlaceIdDeGoogle() {
 
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el place_id de Google se guarda.');
+  return true;
+}
+
+/**
+ * QUE EL PRECIO PESE AL ELEGIR EXCURSIONES.
+ *
+ * MEDIDO ANTES, Y LA MEDIDA CAMBIO EL ARREGLO. La idea de partida era un tope
+ * por nivel de precio —«economico» no gasta mas de X en una excursion— y los
+ * datos la tiraron: de las 121 excursiones del catalogo que caben en un dia, la
+ * mediana son 39 EUR y el 79 % esta por debajo de 100. Y lo que el motor eligio
+ * de verdad en cuatro viajes fue 0, 0, 0, 21,88, 26, 29, 70 y 76 EUR. Un tope no
+ * habria cambiado ni un viaje. Las de 2.512 EUR que asustaban son tours de OCHO
+ * DIAS: no compiten por un hueco porque no caben.
+ *
+ * LO QUE SI HAY ES OTRA COSA, y es el mismo plan al quintuple:
+ *
+ *     Wieliczka     76 EUR normal   contra   410 EUR privada
+ *     Auschwitz  55,04 EUR con guia contra   677 EUR privada
+ *
+ * Ahi no se renuncia a nada eligiendo la barata: es la MISMA visita. Y el motor
+ * no tenia ninguna regla que lo dijera. Que hasta ahora haya elegido bien es
+ * suerte —ira por valoracion y numero de opiniones, y los privados tienen pocas
+ * resenas—, no criterio.
+ *
+ * EL PRECIO YA LLEGABA. Cada candidata se lista con su `precio: N EUR` dentro de
+ * `{{EXCURSIONES}}`; lo comprobe pensando que faltaba el dato y estaba. Lo que
+ * faltaba era la regla, que es la regla 4b.
+ *
+ * ES LA MISMA FORMA QUE LA REGLA DEL AHORRO GRANDE de los traslados, que nacio
+ * de los 160 EUR contra 15,70 EUR de Nafplio-Atenas. Aqui es mas limpia todavia,
+ * porque alli se perdia una hora y aqui no se pierde nada.
+ *
+ * Y CON SU PUERTA DE SALIDA: la privada se elige si se ha pedido o si hace algo
+ * que la otra no hace —recogida en el hotel con ninos pequenos, un idioma que la
+ * normal no tiene, movilidad reducida—, y se dice en el porque.
+ */
+function migracionPrecioEnLasExcursiones() {
+  const CLAVE = '2026-09-precio-en-las-excursiones';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDeExcursiones();
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'excursiones'")
+    .get();
+  const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'excursiones'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: el precio pesa al elegir excursiones.' +
+      (loEdito
+        ? ' OJO: tu prompt de excursiones esta editado y NO se ha tocado; para coger la regla nueva, pulsa «Restaurar de fabrica».'
+        : '')
+  );
   return true;
 }
 
