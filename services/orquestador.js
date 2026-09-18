@@ -157,6 +157,22 @@ export const OPCIONES_AUTO = {
     { valor: '8', etiqueta: '8 o más' },
     { valor: '9', etiqueta: '9 o más' },
   ],
+  // LAS QUE EL MODO AUTOMÁTICO NO SABÍA PEDIR Y BOOKING SÍ SABE FILTRAR.
+  //
+  // La pestaña manual de hoteles guardaba estrellas, piscina, wifi y parking
+  // desde siempre, y el orquestador no leía ninguna: `filtros_hoteles` no
+  // aparece en una sola línea suya. O sea que en automático no había forma de
+  // pedir lo que en manual se pide con una casilla, y la maquinaria para
+  // mandarlo a Booking ya estaba hecha y comprobada.
+  //
+  // «Me da igual» es el primero y el de fábrica a propósito: son preferencias,
+  // no requisitos, y un filtro de más es un hotel bueno menos.
+  estrellas: [
+    { valor: 'indiferente', etiqueta: 'Me da igual' },
+    { valor: '3', etiqueta: '3 o más' },
+    { valor: '4', etiqueta: '4 o más' },
+    { valor: '5', etiqueta: '5' },
+  ],
   escalas: [
     { valor: 'directos', etiqueta: 'Solo directos' },
     { valor: 'max1', etiqueta: 'Una escala como mucho' },
@@ -233,6 +249,11 @@ export function validarConfigAuto(body, { viajeros = 2, categoriasValidas = [] }
     desayuno: pide(dame('auto_desayuno'), 'siNo'),
     cancelacionGratis: pide(dame('auto_cancelacion'), 'siNo'),
     notaMinima: pide(dame('auto_nota_minima'), 'notaMinima'),
+    // Opcionales: no entran en OBLIGATORIOS. Quien no las toque viaja como hasta
+    // hoy, y quien las quiera ya no tiene que irse a la pestaña manual.
+    estrellas: pide(dame('auto_estrellas'), 'estrellas'),
+    piscina: pide(dame('auto_piscina'), 'siNo'),
+    parking: pide(dame('auto_parking'), 'siNo'),
     escalas: pide(dame('auto_escalas'), 'escalas'),
     franjaIda: pide(dame('auto_franja_ida'), 'franja'),
     franjaVuelta: pide(dame('auto_franja_vuelta'), 'franja'),

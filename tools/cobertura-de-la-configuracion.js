@@ -115,8 +115,12 @@ const ESPERADO = [
   // con viajes de verdad antes de moverlo.
   { clave: 'intereses_en_lienzo', hueco: 'INTERESES', fases: ['lienzo'],
     codigo: ['services/orquestador-lienzo.js'] },
-  { clave: 'filtros_hoteles', codigo: ['services/orquestador-dormir.js'],
-    pendiente: 'piscina, estrellas y distancia máxima no se pueden pedir en automático' },
+  // Ya no es pendiente: estrellas, piscina y parking se piden en automático y
+  // viajan a Booking por `nflt`. El wifi se deja fuera a propósito — hoy no hay
+  // hotel sin wifi y sería un filtro que solo quita opciones.
+  { clave: 'estrellas', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
+  { clave: 'piscina', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
+  { clave: 'parking', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
 ];
 
 // =============================================================================

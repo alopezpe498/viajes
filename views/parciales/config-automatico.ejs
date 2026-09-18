@@ -103,6 +103,34 @@ const hayNinos = viajerosTotales >= viajerosParaFamiliar;
         <div class="auto-opciones"><%- grupo('auto_nota_minima', opcionesAuto.notaMinima, auto.notaMinima) %></div>
       </div>
 
+      <%# LAS TRES OPCIONALES.
+
+          La pestaña manual de hoteles las guardaba desde siempre y el
+          orquestador no leía ninguna, así que en automático no había forma de
+          pedir lo que en manual se pide con una casilla. Y la maquinaria para
+          mandarlas a Booking ya estaba hecha y comprobada una a una contra su
+          panel: solo faltaba preguntarlas.
+
+          NO son obligatorias, al revés que las de arriba: son preferencias, no
+          requisitos. Quien no las toque viaja exactamente como hasta hoy. %>
+      <div class="auto-campo">
+        <label>Estrellas</label>
+        <div class="auto-opciones"><%- grupo('auto_estrellas', opcionesAuto.estrellas, auto.estrellas) %></div>
+        <div class="auto-nota">Opcional. Cuantas más pidas, menos sitios quedan donde elegir</div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Piscina</label>
+        <div class="auto-opciones"><%- grupo('auto_piscina', opcionesAuto.siNo, auto.piscina) %></div>
+        <div class="auto-nota">Opcional</div>
+      </div>
+
+      <div class="auto-campo">
+        <label>Parking</label>
+        <div class="auto-opciones"><%- grupo('auto_parking', opcionesAuto.siNo, auto.parking) %></div>
+        <div class="auto-nota">Opcional. Solo cuenta si vais en coche</div>
+      </div>
+
       <%# --- VUELOS ------------------------------------------------------ %>
       <h3 class="auto-titulo"><i class="ti ti-plane-departure" aria-hidden="true"></i> Vuelos</h3>
 

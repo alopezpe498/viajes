@@ -101,10 +101,23 @@ export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
     precioMax: rango?.max ?? null,
     // La valoración mínima va SIEMPRE y no se afloja nunca.
     notaMinima: auto.notaMinima ? Number(auto.notaMinima) : null,
-    estrellas: null,
-    piscina: false,
+    // LAS TRES QUE EL MODO AUTOMÁTICO NO SABÍA PEDIR.
+    //
+    // Estaban a `null`/`false` fijos desde que existe esta función, y no por
+    // decisión: es que no había de dónde sacarlas. La pestaña manual las
+    // guardaba en `filtros_hoteles` y el orquestador no lee esa columna en
+    // ninguna línea, así que en automático no se podía pedir lo que en manual
+    // se pide con una casilla — y `construirNflt` ya sabía mandarlas a Booking,
+    // con los códigos comprobados uno a uno contra su panel.
+    //
+    // Las estrellas SÍ se aflojan con la zona y el precio: es una preferencia y,
+    // si por pedir cuatro estrellas no sale ningún hotel, vale más un hotel de
+    // tres que ninguno. La piscina y el parking no se aflojan porque o están o
+    // no están: un hotel sin piscina no es «casi» lo que se pidió.
+    estrellas: aflojado.zona ? null : Number(auto.estrellas) || null,
+    piscina: auto.piscina === 'si',
     wifi: false,
-    parking: false,
+    parking: auto.parking === 'si',
     desayuno: aflojado.desayuno ? false : auto.desayuno === 'si',
     cancelacionGratis: aflojado.condiciones ? false : auto.cancelacionGratis === 'si',
     tipoAlojamiento: oNulo(auto.tipoAlojamiento),
