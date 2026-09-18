@@ -78,9 +78,9 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-migas__sep { margin: 0 4px; opacity: .45; }
 .mm-migas__actual { color: var(--texto-2); font-weight: 600; }
 
-.mm-titulo__texto b { font-size: 14px; display: block; line-height: 1.25; }
+.mm-titulo__texto b { font-size: var(--texto-lg); display: block; line-height: 1.25; }
 .mm-titulo__texto small {
-  font-size: 12px; color: var(--texto-2); font-weight: 500;
+  font-size: var(--texto-sm); color: var(--texto-2); font-weight: 500;
   display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -94,7 +94,7 @@ html:has(.mapa-maestro) { height: 100%; }
 }
 .mm-barra button {
   border: 0; background: transparent; font: inherit;
-  font-size: 13px; font-weight: 600; color: var(--texto-2);
+  font-size: var(--texto-base); font-weight: 600; color: var(--texto-2);
   padding: 8px 16px; border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
 }
 .mm-barra button:hover { color: var(--texto); }
@@ -117,7 +117,7 @@ html:has(.mapa-maestro) { height: 100%; }
   position: absolute; top: 9px; right: 9px;
   width: 26px; height: 26px; border-radius: var(--radio-xs);
   border: 0; background: transparent; color: var(--texto-2);
-  font-size: 14px; cursor: pointer;
+  font-size: var(--texto-lg); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
 .mm-cerrar:hover { background: var(--tinte); color: var(--texto); }
@@ -134,12 +134,12 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-selector { display: flex; gap: 6px; flex-wrap: wrap; }
 .mm-selector button {
   border: 1px solid var(--borde-fuerte); background: rgba(255, 255, 255, .7);
-  font: inherit; font-size: 12px; font-weight: 600; color: var(--texto);
+  font: inherit; font-size: var(--texto-sm); font-weight: 600; color: var(--texto);
   border-radius: var(--radio-xs); padding: 5px 10px; cursor: pointer;
 }
 .mm-selector button:hover { border-color: var(--acento); }
 .mm-selector button.on { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 700; }
-.mm-selector__nota { font-size: 12px; color: var(--texto-2); font-weight: 600; }
+.mm-selector__nota { font-size: var(--texto-sm); color: var(--texto-2); font-weight: 600; }
 
 /* --- Los checks ----------------------------------------------------------- */
 .mm-capas { padding: 10px 14px; border-bottom: 1px solid var(--borde); }
@@ -166,7 +166,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-capa input:checked::after {
   content: '\2713'; position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 11px; font-weight: 800;
+  color: #fff; font-size: var(--texto-xs); font-weight: 800;
 }
 .mm-capa input:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 
@@ -190,12 +190,12 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-item__ic {
   width: 28px; height: 28px; border-radius: var(--radio-xs); flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 14px; font-weight: 800;
+  color: #fff; font-size: var(--texto-lg); font-weight: 800;
 }
 /* `min-width: 0` para que el nombre se encoja en vez de saltar debajo del
    icono: el icono y el texto van SIEMPRE en la misma línea. */
 .mm-item__txt { flex: 1 1 0; min-width: 0; }
-.mm-item__txt b { font-size: 13px; font-weight: 600; display: block; }
+.mm-item__txt b { font-size: var(--texto-base); font-weight: 600; display: block; }
 .mm-item__txt small { font-size: var(--texto-sm); color: var(--texto-2); display: block; }
 .mm-item__hora {
   margin-left: auto; font-size: var(--texto-sm); font-weight: 700;
@@ -210,7 +210,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-item__aviso {
   flex: 1 0 100%;
   margin: 2px 0 0 38px;
-  font-size: 11px; font-weight: 700; color: var(--prec-tx);
+  font-size: var(--texto-xs); font-weight: 700; color: var(--prec-tx);
   background: var(--prec-bg); border-radius: var(--radio-mini); padding: 1px 6px;
   align-self: flex-start; width: fit-content;
 }
@@ -221,7 +221,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-pin {
   display: flex; align-items: center; justify-content: center;
   width: 29px; height: 29px; border-radius: var(--radio-xs);
-  color: #fff; font-size: 14px;
+  color: #fff; font-size: var(--texto-lg);
   border: 2px solid #fff; box-shadow: 0 3px 10px rgba(18, 48, 62, .3);
 }
 .mm-pin--num { border-radius: var(--radio-circulo); font-weight: 800; font-size: var(--texto-base); }

@@ -63,7 +63,7 @@
 .tour__cuerpo { padding: 20px 24px 4px; }
 .tour__titulo {
   margin: 0 0 8px;
-  font-size: 19px;
+  font-size: var(--texto-2xl);
   line-height: 1.25;
 }
 .tour__texto {
@@ -114,7 +114,7 @@
   background: var(--acento);
   color: #fff;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--texto-lg);
   font-weight: 700;
   cursor: pointer;
 }
@@ -133,5 +133,5 @@
   .tour__cuerpo { padding: 16px 18px 4px; }
   .tour__pie { padding: 14px 18px 18px; }
   .tour__titulo { font-size: 17px; }
-  .tour__texto { font-size: 14px; }
+  .tour__texto { font-size: var(--texto-lg); }
 }

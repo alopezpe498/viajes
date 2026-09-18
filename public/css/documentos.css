@@ -46,7 +46,7 @@
   letter-spacing: .04em;
   color: var(--texto-2);
 }
-.docs-grupo__titulo i { color: var(--acento); font-size: 16px; }
+.docs-grupo__titulo i { color: var(--acento); font-size: var(--texto-xl); }
 .docs-grupo__titulo span:first-of-type { flex: 1; min-width: 0; }
 
 /* El contador del grupo: un dato, no un adorno, así que se lee sin gritar. */
@@ -82,7 +82,7 @@
 .doc.activo { background: var(--tinte); }
 .doc.activo .doc__nombre { color: var(--tinte-texto); }
 
-.doc__icono { flex: none; font-size: 19px; color: var(--texto-2); margin-top: 1px; }
+.doc__icono { flex: none; font-size: var(--texto-2xl); color: var(--texto-2); margin-top: 1px; }
 .doc.activo .doc__icono { color: var(--acento); }
 
 /* `min-width:0` es lo que permite que el texto largo se corte en vez de estirar
@@ -109,7 +109,7 @@
   overflow: hidden;
 }
 
-.doc__peso { flex: none; font-size: 11px; color: var(--texto-3); margin-top: 2px; }
+.doc__peso { flex: none; font-size: var(--texto-xs); color: var(--texto-3); margin-top: 2px; }
 
 /* --- El visor ------------------------------------------------------------ */
 .docs__visor {
@@ -137,7 +137,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.visor__quien span { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visor__quien span { font-size: var(--texto-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .visor__acciones { flex: none; display: flex; gap: 8px; }
 
 .visor__lienzo {
@@ -184,11 +184,11 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 4px 12px;
-  font-size: 13px;
+  font-size: var(--texto-base);
 }
 .correo__campo { color: var(--texto-2); font-weight: 600; }
 .correo__valor { min-width: 0; overflow-wrap: anywhere; }
-.correo__asunto { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+.correo__asunto { font-size: var(--texto-xl); font-weight: 700; margin: 0 0 10px; }
 
 /* El cuerpo con los saltos de línea que traía: un correo sin ellos es un ladrillo. */
 .correo__cuerpo,
