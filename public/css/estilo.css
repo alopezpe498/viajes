@@ -3791,7 +3791,10 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
-  font: 600 13px/1 inherit;
+  /* Aquí había `font: 600 13px/1 inherit` — inválida: en el atajo `font` la familia no
+     puede ser `inherit`, así que el navegador tiraba la declaración entera y
+     este elemento nunca se pintó con esa letra. Se quita para que el fichero
+     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   font-family: inherit;
   cursor: pointer;
 }
@@ -3898,7 +3901,10 @@ a  { color: var(--acento); }
   border-radius: 9px;
   background: none;
   color: var(--texto);
-  font: 600 14px/1 inherit;
+  /* Aquí había `font: 600 14px/1 inherit` — inválida: en el atajo `font` la familia no
+     puede ser `inherit`, así que el navegador tiraba la declaración entera y
+     este elemento nunca se pintó con esa letra. Se quita para que el fichero
+     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   font-family: inherit;
   text-align: left;
   text-decoration: none;
@@ -3927,7 +3933,10 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
-  font: 600 13px/1 inherit;
+  /* Aquí había `font: 600 13px/1 inherit` — inválida: en el atajo `font` la familia no
+     puede ser `inherit`, así que el navegador tiraba la declaración entera y
+     este elemento nunca se pintó con esa letra. Se quita para que el fichero
+     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   font-family: inherit;
   cursor: pointer;
 }
@@ -3988,7 +3997,10 @@ a  { color: var(--acento); }
   background: none;
   padding: 2px 4px;
   color: var(--acento);
-  font: 600 13px/1 inherit;
+  /* Aquí había `font: 600 13px/1 inherit` — inválida: en el atajo `font` la familia no
+     puede ser `inherit`, así que el navegador tiraba la declaración entera y
+     este elemento nunca se pintó con esa letra. Se quita para que el fichero
+     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   font-family: inherit;
   text-decoration: none;
   cursor: pointer;
@@ -4046,7 +4058,10 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
-  font: 600 13px/1 inherit;
+  /* Aquí había `font: 600 13px/1 inherit` — inválida: en el atajo `font` la familia no
+     puede ser `inherit`, así que el navegador tiraba la declaración entera y
+     este elemento nunca se pintó con esa letra. Se quita para que el fichero
+     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   font-family: inherit;
   cursor: pointer;
 }
@@ -4116,8 +4131,16 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-2);
-  font: 600 13px/1 inherit;
+  /* Escrito a mano y no con el atajo `font`, porque aquí había
+     `font: 600 13px/1 inherit` y esa declaración es inválida: el navegador la
+     tiraba entera. Estos dos valores llegaban de rebote desde el bloque de
+     `.etapa__abrir`, 1.600 líneas más arriba, donde `.etapa__clonar` estaba
+     de más. Puestos aquí, el bloque se basta solo y se ve exactamente igual.
+     NO se pone `line-height: 1`, que es lo que pedía el atajo: hoy hereda
+     `normal` y fijarlo cambiaría la altura. */
   font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -4163,7 +4186,10 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-pill);
   padding: 2px 9px;
-  font: 700 11px/1.6 inherit;
+  /* Aquí había `font: 700 11px/1.6 inherit` — inválida: en el atajo `font` la familia no
+     puede ser `inherit`, así que el navegador tiraba la declaración entera y
+     este elemento nunca se pintó con esa letra. Se quita para que el fichero
+     no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   color: var(--texto-2);
   white-space: nowrap;
   box-shadow: var(--sombra-sm);
@@ -5822,7 +5848,10 @@ body.con-antes { overflow: hidden; }
   box-shadow: 0 3px 12px rgba(18, 48, 62, .38);
 }
 /* El número del recorrido de un día, cuando lo haya. */
-.marca-mapa__n { font: 700 14px/1 inherit; }
+/* Aquí había `font: 700 14px/1 inherit`, inválida por lo mismo que las otras
+   siete: el navegador la tiraba entera. Se queda sin nada porque el bloque
+   `.marca-mapa` no lo usa nadie —cero referencias fuera del CSS—, así que ni
+   siquiera sabemos cómo se vería. Si algún día se usa, ahí está la decisión. */
 
 /* --- El globo ------------------------------------------------------------- */
 .globo-mapa { display: grid; gap: 4px; min-width: 170px; }
