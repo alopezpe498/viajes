@@ -143,8 +143,17 @@ export const OPCIONES_AUTO = {
     { valor: 'medio', etiqueta: 'Medio' },
     { valor: 'alto', etiqueta: 'Alto' },
   ],
+  // EL RADIO, ELEGIBLE, QUE ERA UN SÍ/NO.
+  //
+  // «Céntrico» ya viajaba a Booking como `nflt=distance` con 1 km, pero el radio
+  // estaba escrito a fuego y la pestaña manual SÍ deja elegirlo. Un kilómetro es
+  // el centro de verdad en una ciudad pequeña y se queda corto en una grande, y
+  // esa es justo la decisión que uno quiere tomar al reservar.
+  //
+  // Booking solo entiende 1, 3 y 5 km: no hay más escalones que ofrecer.
   zona: [
-    { valor: 'centrico', etiqueta: 'Céntrico' },
+    { valor: 'centrico', etiqueta: 'Céntrico (1 km)' },
+    { valor: 'cerca', etiqueta: 'Cerca del centro (3 km)' },
     { valor: 'indiferente', etiqueta: 'Me da igual' },
   ],
   tipoAlojamiento: [
@@ -254,6 +263,7 @@ export function validarConfigAuto(body, { viajeros = 2, categoriasValidas = [] }
     estrellas: pide(dame('auto_estrellas'), 'estrellas'),
     piscina: pide(dame('auto_piscina'), 'siNo'),
     parking: pide(dame('auto_parking'), 'siNo'),
+    wifi: pide(dame('auto_wifi'), 'siNo'),
     escalas: pide(dame('auto_escalas'), 'escalas'),
     franjaIda: pide(dame('auto_franja_ida'), 'franja'),
     franjaVuelta: pide(dame('auto_franja_vuelta'), 'franja'),

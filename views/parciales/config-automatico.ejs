@@ -73,6 +73,7 @@ const hayNinos = viajerosTotales >= viajerosParaFamiliar;
       <div class="auto-campo">
         <label>Zona</label>
         <div class="auto-opciones"><%- grupo('auto_zona', opcionesAuto.zona, auto.zona) %></div>
+        <div class="auto-nota">Se mide desde el centro de la ciudad. Si no sale nada, se amplía solo antes de soltarlo</div>
       </div>
 
       <div class="auto-campo">
@@ -129,6 +130,12 @@ const hayNinos = viajerosTotales >= viajerosParaFamiliar;
         <label>Parking</label>
         <div class="auto-opciones"><%- grupo('auto_parking', opcionesAuto.siNo, auto.parking) %></div>
         <div class="auto-nota">Opcional. Solo cuenta si vais en coche</div>
+      </div>
+
+      <div class="auto-campo">
+        <label>WiFi gratis</label>
+        <div class="auto-opciones"><%- grupo('auto_wifi', opcionesAuto.siNo, auto.wifi) %></div>
+        <div class="auto-nota">Opcional. Casi todos lo tienen, así que filtrar por esto quita más de lo que añade</div>
       </div>
 
       <%# --- VUELOS ------------------------------------------------------ %>

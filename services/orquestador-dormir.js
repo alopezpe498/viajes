@@ -116,7 +116,7 @@ export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
     // no están: un hotel sin piscina no es «casi» lo que se pidió.
     estrellas: aflojado.zona ? null : Number(auto.estrellas) || null,
     piscina: auto.piscina === 'si',
-    wifi: false,
+    wifi: auto.wifi === 'si',
     parking: auto.parking === 'si',
     desayuno: aflojado.desayuno ? false : auto.desayuno === 'si',
     cancelacionGratis: aflojado.condiciones ? false : auto.cancelacionGratis === 'si',
@@ -125,12 +125,15 @@ export function filtrosDesdeAuto(auto, rango, aflojado = {}) {
     // `nflt`, que es la única forma de que las 20 tarjetas que leemos sean de
     // verdad las del centro. `aflojado.zona` puede ser un número (radio
     // ampliado, en km: Booking solo tiene 1, 3 y 5) o `true` (soltar la zona).
+    // EL RADIO SALE DE LO QUE SE PIDIÓ, y ya no es un 1 escrito a fuego.
+    // `aflojado.zona` manda cuando la búsqueda va aflojando: un número es el
+    // radio ampliado y `true` es soltarlo del todo.
     distanciaMax:
-      auto.zona !== 'centrico'
-        ? null
-        : aflojado.zona === true
+      auto.zona === 'centrico' || auto.zona === 'cerca'
+        ? aflojado.zona === true
           ? null
-          : Number(aflojado.zona) || 1,
+          : Number(aflojado.zona) || (auto.zona === 'cerca' ? 3 : 1)
+        : null,
   };
 }
 
@@ -412,18 +415,22 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
       // uno quiere encontrar cuando ya está aflojando.
       const escalones = [{ rango, aflojado: {}, comoSeLlama: null }];
 
-      const esCentrico = auto.zona === 'centrico';
-      if (esCentrico) {
+      // SE AMPLÍA DESDE LO QUE SE PIDIÓ. Quien pidió 1 km pasa a 3; quien ya
+      // pidió 3 pasa a 5, que es el último escalón que Booking entiende. Antes
+      // esto era «de 1 a 3» fijo porque el radio de partida siempre era 1.
+      const pidioRadio = auto.zona === 'centrico' || auto.zona === 'cerca';
+      const radioAncho = auto.zona === 'cerca' ? 5 : 3;
+      if (pidioRadio) {
         escalones.push({
           rango,
-          aflojado: { zona: 3 },
-          comoSeLlama: 'ampliando el radio a 3 km del centro',
+          aflojado: { zona: radioAncho },
+          comoSeLlama: `ampliando el radio a ${radioAncho} km del centro`,
         });
       }
 
       // A partir de aquí se sigue buscando con el radio ya ampliado: sería absurdo
       // volver a estrecharlo justo cuando estamos ampliando lo demás.
-      const zonaAncha = esCentrico ? { zona: 3 } : {};
+      const zonaAncha = pidioRadio ? { zona: radioAncho } : {};
       for (let v = 1; rango && v <= maxVeces; v += 1) {
         const techo = Math.round(rango.max * (1 + (pasoPct / 100) * v));
         const suelo = Math.max(0, Math.round(rango.min * (1 - (pasoPct / 100) * v)));
@@ -435,11 +442,11 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
       }
 
       const ultimoRango = escalones[escalones.length - 1].rango;
-      if (esCentrico) {
+      if (pidioRadio) {
         escalones.push({
           rango: ultimoRango,
           aflojado: { zona: true },
-          comoSeLlama: 'soltando lo de céntrico',
+          comoSeLlama: 'soltando el radio del centro',
         });
       }
       escalones.push({

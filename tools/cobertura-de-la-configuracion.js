@@ -113,8 +113,11 @@ const ESPERADO = [
   // 4b del prompt, no un número subjetivo.
   { clave: 'nivelPrecio_en_excursiones',
     pendiente: 'DESCARTADO: medido, un tope no cambiaba nada. La regla 4b cubre el caso real' },
-  { clave: 'intereses_en_dormir', hueco: 'INTERESES', fases: ['dormir'],
-    pendiente: 'el perfil no influye en qué hotel ni en qué barrio' },
+  // DECIDIDO QUE NO. El perfil no debe mover el hotel: es demasiado profundo y
+  // puede darte un hotel peor por estar en «la zona correcta». Lo que decide
+  // dónde se duerme es el radio del centro, que ahora se elige.
+  { clave: 'zona_radio', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
+  { clave: 'wifi', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
   // Ya no es pendiente: el perfil llega al prompt del lienzo y la regla 13 dice
   // qué hacer con él. Lo que NO se ha tocado es `importanciaDe`, que decide a
   // quién se expulsa en un choque: eso es el corazón del reparto y pide medirlo
