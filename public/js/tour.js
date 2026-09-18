@@ -7,10 +7,10 @@
  * una soltaba su tramo la primera vez que la pisabas. Sonaba bien y no lo era:
  * te interrumpía cuando ya estabas haciendo algo, y nunca llegabas a ver el
  * CONJUNTO, que es justo lo que no se entiende de esta aplicación al principio.
- * Aquí no hay seis fases que descubrir por sorpresa: hay un orden, y el orden es
+ * Aquí no hay siete pantallas que descubrir por sorpresa: hay un orden, y el orden es
  * lo que hay que contar.
  *
- * ASÍ QUE AHORA ES UNA SOLA PARADA, en la primera pantalla, con las seis
+ * ASÍ QUE AHORA ES UNA SOLA PARADA, en la primera pantalla, con las siete
  * pantallas en el orden en que se usan y un pantallazo REAL de cada una. Se ve
  * entero en un minuto o se salta en un clic.
  *
@@ -30,7 +30,7 @@ const PASOS = [
     titulo: 'Esto es un generador de viajes',
     texto:
       'Le dices a dónde quieres ir y cuántos días tienes, y te devuelve un viaje entero: ' +
-      'vuelos, hoteles, qué ver cada día y a qué hora. Son seis pantallas y se usan en este orden.',
+      'vuelos, hoteles, qué ver cada día y a qué hora. Son siete pantallas y se usan en este orden.',
     imagen: null,
   },
   {
@@ -69,8 +69,17 @@ const PASOS = [
     imagen: '/img/tour/lienzo.jpg',
   },
   {
+    clave: 'mapa-viaje',
+    titulo: '5 · El mapa del viaje',
+    texto:
+      'Todo el viaje sobre el mapa: las ciudades, los sitios, las comidas, los hoteles y las líneas de cada traslado ' +
+      'con su tiempo y su precio. Se ve por día, por etapa o la ruta entera, y enseña lo que una lista no: ' +
+      'si la ruta hace zigzag o si un sitio está mucho más lejos de lo que parecía.',
+    imagen: '/img/tour/mapa-viaje.jpg',
+  },
+  {
     clave: 'documentos',
-    titulo: '5 · Los documentos',
+    titulo: '6 · Los documentos',
     texto:
       'Las tarjetas de embarque, las reservas del hotel y los bonos de las excursiones, todos juntos. ' +
       'Cada papel se sube donde vive —el billete en su vuelo, la reserva en su hotel— y aquí aparecen reunidos para el día del viaje.',
@@ -78,7 +87,7 @@ const PASOS = [
   },
   {
     clave: 'presupuesto',
-    titulo: '6 · El presupuesto',
+    titulo: '7 · El presupuesto',
     texto:
       'Lo que cuesta, separado en dos: los precios REALES de lo que has planificado, y una estimación ' +
       'aparte para comer y moverte. No se mezclan a propósito — y si falta algún precio, te dice que el total está incompleto en vez de disimularlo.',
@@ -98,7 +107,7 @@ const PASOS = [
   }
   if (estado?.visto) return;
 
-  // SOLO EN LA PRIMERA PANTALLA. El tour explica el orden de las seis, así que
+  // SOLO EN LA PRIMERA PANTALLA. El tour explica el orden de las siete, así que
   // sale en la portada y en ningún otro sitio: soltarlo encima de alguien que ya
   // está dentro del lienzo es la interrupción que este rediseño viene a quitar.
   if (window.location.pathname !== '/') return;
@@ -136,9 +145,9 @@ const PASOS = [
   const puntos = $('tour-puntos');
   PASOS.forEach(() => puntos.appendChild(document.createElement('span')));
 
-  // LAS IMÁGENES, PRECARGADAS EN CUANTO SE ABRE. Son seis JPEG y sin esto se ve
+  // LAS IMÁGENES, PRECARGADAS EN CUANTO SE ABRE. Son siete JPEG y sin esto se ve
   // el salto al pasar de paso: el hueco vacío y luego la foto. Cargarlas de
-  // golpe al abrir cuesta una vez y quita seis parpadeos.
+  // golpe al abrir cuesta una vez y quita siete parpadeos.
   for (const p of PASOS) {
     if (!p.imagen) continue;
     const pre = new Image();
