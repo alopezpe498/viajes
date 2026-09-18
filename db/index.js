@@ -361,6 +361,7 @@ export function migrarEsquema() {
   migracionPrecioEnLaPuerta();
   migracionPuertasProbadas();
   migracionAyudaDeParametros();
+  migracionInteresesEnElLienzo();
   // Va DESPUES de la migracion que crea las columnas, y no es una migracion:
   // se siembra en cada arranque para que el fichero sea siempre el que manda.
   sembrarAyudaDeParametros();
@@ -2386,6 +2387,7 @@ function promptDelLienzo() {
 
 CÓMO ES ESTE VIAJE
 - Ritmo: {{RITMO}} · Viajeros: {{VIAJEROS}}
+- Les interesa: {{INTERESES}}
 - Franjas del día: {{FRANJAS}}
 - La comida ocupa {{DURACION_COMIDA}} minutos.
 
@@ -2459,7 +2461,13 @@ LAS REGLAS:
     son excursiones y las que empiezan por "s", sitios. Si te inventas una que no
     está en la lista, esa colocación se pierde.
 12. Los sitios marcados como [segundo nivel] entran DESPUÉS de los demás: son el
-    relleno de los huecos que queden, no la primera opción.`;
+    relleno de los huecos que queden, no la primera opción.
+13. CUANDO NO QUEPA TODO, QUE DECIDA LO QUE LES INTERESA. Entre dos cosas que
+    compiten por el mismo hueco y pesan parecido, entra la que va con "{{INTERESES}}"
+    y se queda fuera la otra. Esto NO toca a los de arriba de la lista: los
+    primeros imprescindibles de una ciudad se ven aunque no encajen con el perfil
+    —nadie va a Atenas a no ver la Acrópolis—. Es para el montón de en medio, que
+    es donde de verdad se elige.`;
 }
 
 /**
@@ -6234,6 +6242,57 @@ function sembrarAyudaDeParametros() {
   }
   if (n) console.log(`[bd] Ayuda de parametros: ${n} de ${AYUDA_DE_PARAMETROS.length} textos al dia.`);
   return n;
+}
+
+/**
+ * LOS INTERESES LLEGAN AL LIENZO, QUE ES DONDE SE DECIDE QUE SE VE.
+ *
+ * El repaso de la configuracion lo dejo dicho: el sesgo por intereses decide que
+ * entra en la LISTA de sitios de una ciudad, pero cuando el dia no da para todo,
+ * lo que se cae se elegia sin mirar el perfil. Con perfil «gastronomia», un
+ * mercado del puesto 8 se caia antes que un museo del puesto 5.
+ *
+ * DOS COSAS, Y LAS DOS HACEN FALTA. Anadir `{{INTERESES}}` a la cabecera sin mas
+ * seria poner un dato que nadie usa —de eso iba justamente `{{CALENDARIO}}`—, asi
+ * que va con su regla: la 13, que dice que entre dos cosas que compiten por el
+ * mismo hueco y pesan parecido, entre la que va con el perfil.
+ *
+ * Y CON SU FRENO. La regla dice expresamente que NO toca a los primeros de la
+ * lista: nadie va a Atenas a no ver la Acropolis porque haya marcado
+ * «gastronomia». Es para el monton de en medio, que es donde de verdad se elige.
+ *
+ * NO SE TOCA `importanciaDe`, que es lo otro que el repaso proponia. Ahi se
+ * decide a quien se expulsa en un choque, y es el corazon del reparto: cambiarlo
+ * pide medirlo antes con viajes de verdad, no una corazonada. Esto llega a la
+ * decision antes del choque, que es donde se puede hacer sin riesgo.
+ *
+ * Solo pisa el prompt de quien no lo haya editado, como todas las de su familia.
+ */
+function migracionInteresesEnElLienzo() {
+  const CLAVE = '2026-09-intereses-en-el-lienzo';
+  if (yaAplicada(CLAVE)) return false;
+
+  const texto = promptDelLienzo();
+  const fila = db
+    .prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'lienzo'")
+    .get();
+  const loEdito = fila && fila.prompt_actual !== fila.prompt_fabrica;
+
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'lienzo'`
+  ).run(texto, texto);
+
+  marcarAplicada(CLAVE);
+  console.log(
+    '[bd] Migracion: los intereses llegan al lienzo.' +
+      (loEdito
+        ? ' OJO: tu prompt del lienzo esta editado y NO se ha tocado; para coger la regla nueva, pulsa «Restaurar de fabrica».'
+        : '')
+  );
+  return true;
 }
 
 function migracionFueraHorarioJson() {

@@ -2900,6 +2900,11 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
           return lineas.join('\n');
         })
         .join('\n'),
+      // EL PERFIL, PARA LA REGLA 13 DEL PROMPT. Sin esto la regla estaría
+      // escrita y sin dato, que es el fallo que acabamos de arreglar dos veces.
+      INTERESES:
+        [auto.intereses, (auto.categorias ?? []).join(', ')].filter(Boolean).join(' · ') ||
+        '(sin especificar)',
       HOTEL: dondeSeDuerme(etapa.id),
       COLOCABLES: piezas
         .map(

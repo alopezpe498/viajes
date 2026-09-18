@@ -106,8 +106,12 @@ const ESPERADO = [
     pendiente: 'las excursiones se eligen sin mirar lo que cuestan' },
   { clave: 'intereses_en_dormir', hueco: 'INTERESES', fases: ['dormir'],
     pendiente: 'el perfil no influye en qué hotel ni en qué barrio' },
+  // Ya no es pendiente: el perfil llega al prompt del lienzo y la regla 13 dice
+  // qué hacer con él. Lo que NO se ha tocado es `importanciaDe`, que decide a
+  // quién se expulsa en un choque: eso es el corazón del reparto y pide medirlo
+  // con viajes de verdad antes de moverlo.
   { clave: 'intereses_en_lienzo', hueco: 'INTERESES', fases: ['lienzo'],
-    pendiente: 'cuando el día no da para todo, lo que se cae se elige sin mirar tu perfil' },
+    codigo: ['services/orquestador-lienzo.js'] },
   { clave: 'filtros_hoteles', codigo: ['services/orquestador-dormir.js'],
     pendiente: 'piscina, estrellas y distancia máxima no se pueden pedir en automático' },
 ];
