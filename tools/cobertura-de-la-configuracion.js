@@ -116,7 +116,11 @@ const ESPERADO = [
   // DECIDIDO QUE NO. El perfil no debe mover el hotel: es demasiado profundo y
   // puede darte un hotel peor por estar en «la zona correcta». Lo que decide
   // dónde se duerme es el radio del centro, que ahora se elige.
-  { clave: 'zona_radio', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
+  // `zona` ya está declarada más arriba y es la misma variable: el radio salió
+  // de dejar de escribirla a fuego, no de una clave nueva. Inventarme
+  // `zona_radio` para que se notara el cambio dio un fallo que no existía — el
+  // MISMO error que ya cometí con `edades_ninos`. La comprobación busca texto en
+  // el código: si el nombre no está ahí, no vale.
   { clave: 'wifi', codigo: ['services/orquestador-dormir.js', 'services/orquestador.js'] },
   // Ya no es pendiente: el perfil llega al prompt del lienzo y la regla 13 dice
   // qué hacer con él. Lo que NO se ha tocado es `importanciaDe`, que decide a
