@@ -100,13 +100,19 @@
       return;
     }
 
+    // `aria-pressed` además de la clase: estos chips no ejecutan nada, eligen qué
+    // se ve, y son los únicos de la aplicación que no lo decían. La clase pinta
+    // el activo pero un lector de pantalla no la ve, así que quien no mire la
+    // pantalla no sabía cuál estaba puesto. Todos los demás selectores de estado
+    // —los chips de configuración, los segmentos, el interruptor— ya lo llevan.
     zona.innerHTML =
       `<button class="tipo-chip ${filtroTipo === 'todo' ? 'tipo-chip--activo' : ''}"
-               type="button" data-tipo="todo">Todo</button>` +
+               type="button" aria-pressed="${filtroTipo === 'todo'}" data-tipo="todo">Todo</button>` +
       lienzo.tiposPresentes
         .map(
           (t) => `<button class="tipo-chip ${filtroTipo === t.clave ? 'tipo-chip--activo' : ''}"
-                          type="button" data-tipo="${t.clave}">
+                          type="button" aria-pressed="${filtroTipo === t.clave}"
+                          data-tipo="${t.clave}">
                     <i class="ti ${t.icono}" aria-hidden="true"></i> ${esc(t.etiqueta)}
                   </button>`
         )
