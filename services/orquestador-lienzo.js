@@ -2900,6 +2900,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
           return lineas.join('\n');
         })
         .join('\n'),
+      HOTEL: dondeSeDuerme(etapa.id),
       COLOCABLES: piezas
         .map(
           (p) =>

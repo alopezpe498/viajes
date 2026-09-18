@@ -59,7 +59,12 @@ const ESPERADO = [
     codigo: ['services/proveedores.js'] },
   { clave: 'adultos', hueco: 'VIAJEROS',
     fases: ['ciudades_y_noches', 'traslados', 'dormir', 'excursiones', 'lienzo'] },
-  { clave: 'edades_ninos', hueco: 'VIAJEROS',
+  // El nombre va como lo escribe el CÓDIGO, no como lo escribe la base. La
+  // columna es `edades_ninos` y la variable `edadesNinos`, y declararla en
+  // snake_case dio un fallo que no existía: la comprobación busca texto, no
+  // sabe de equivalencias. Un fallo inventado gasta la misma confianza que uno
+  // real que se escape.
+  { clave: 'edadesNinos', hueco: 'VIAJEROS',
     fases: ['traslados', 'excursiones', 'lienzo'],
     codigo: ['services/orquestador-sitios.js'] },
   { clave: 'ritmo', hueco: 'RITMO',
@@ -92,7 +97,7 @@ const ESPERADO = [
     pendiente: 'se pregunta —obligatoria con más de dos viajeros— y no la lee la búsqueda de Booking' },
   { clave: 'presupuesto', codigo: ['services/orquestador-dormir.js'],
     pendiente: 'solo se enseña; ninguna decisión lo mira' },
-  { clave: 'edades_ninos_en_dormir', hueco: 'VIAJEROS', fases: ['dormir'],
+  { clave: 'edadesNinos_en_dormir', hueco: 'VIAJEROS', fases: ['dormir'],
     pendiente: 'al prompt del hotel llega «N niño(s)» sin las edades: un bebé y uno de 14 no piden lo mismo' },
   { clave: 'nivelPrecio_en_excursiones', codigo: ['services/orquestador-excursiones.js'],
     pendiente: 'las excursiones se eligen sin mirar lo que cuestan' },

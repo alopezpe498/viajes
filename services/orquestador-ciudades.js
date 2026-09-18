@@ -2061,6 +2061,51 @@ export function crearEtapas(viaje, ruta, di = () => {}) {
  *
  * No decide nada: junta datos y los deja listos para `rellenar()`.
  */
+/**
+ * QUÉ DÍA DE LA SEMANA ES CADA DÍA DEL VIAJE.
+ *
+ * EL PROMPT LO PEDÍA Y LLEGABA VACÍO. `{{CALENDARIO}}` estaba en la cabecera
+ * —«- Calendario: {{CALENDARIO}}»— y ninguna parte del código rellenaba esa
+ * clave, así que el modelo recibía «Calendario: » en blanco y, más abajo, esta
+ * instrucción:
+ *
+ *     «AL DESEMPATAR ENTRE VARIANTES DE NOCHES, MIRA EL DÍA DE LA SEMANA. Tienes
+ *      el calendario arriba: úsalo, no lo calcules de memoria. Una noche extra
+ *      vale más donde el día que ganas NO sea lunes —museos cerrados—.»
+ *
+ * Es el peor de los fallos silenciosos: no revienta nada, no sale en el
+ * registro, y lo único que pasa es que la regla del lunes se cumple cuando el
+ * modelo acierta la fecha de memoria. Lo encontró la comprobación de cobertura.
+ *
+ * SE ESCRIBE ENTERO Y NO SOLO LOS EXTREMOS. Con «del 21 al 27» el modelo tiene
+ * que contar días, que es justo lo que la instrucción le pide que NO haga.
+ *
+ * Mediodía y no medianoche al construir la fecha: con `T00:00:00` un cambio de
+ * huso se lleva el día al anterior, y aquí el día de la semana es todo el dato.
+ */
+const DIAS_DE_LA_SEMANA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const MESES_DEL_ANO = [
+  'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+];
+
+export function calendarioDelViaje(desde, hasta) {
+  if (!desde || !hasta) return '(sin fechas)';
+
+  const ini = new Date(`${desde}T12:00:00`);
+  const fin = new Date(`${hasta}T12:00:00`);
+  if (Number.isNaN(ini.getTime()) || Number.isNaN(fin.getTime()) || fin < ini) {
+    return '(sin fechas)';
+  }
+
+  const dias = [];
+  // Tope de seguridad: un viaje de dos años sería un error de datos, y llenar el
+  // prompt con setecientas fechas lo estropearía sin decir por qué.
+  for (let d = new Date(ini); d <= fin && dias.length < 120; d.setDate(d.getDate() + 1)) {
+    dias.push(`${DIAS_DE_LA_SEMANA[d.getDay()]} ${d.getDate()} ${MESES_DEL_ANO[d.getMonth()]}`);
+  }
+  return dias.join(' · ');
+}
+
 export function datosDelPaso1(viaje) {
   const auto = configAuto(viaje);
   const nochesTotales = nochesEntre(viaje.fecha_inicio, viaje.fecha_fin);
@@ -2109,6 +2154,7 @@ export function datosDelPaso1(viaje) {
     NOCHES: nochesTotales,
     FECHA_INICIO: viaje.fecha_inicio,
     FECHA_FIN: viaje.fecha_fin,
+    CALENDARIO: calendarioDelViaje(viaje.fecha_inicio, viaje.fecha_fin),
     ORIGEN: ciudadDeCasa(viaje),
     VIAJEROS: viajeros,
     RITMO: viaje.ritmo || 'normal',
