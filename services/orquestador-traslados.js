@@ -120,7 +120,25 @@ export function aPrecio(texto) {
  * hotel, no cuánto dura la cosa: con la hora de salida del tren y la antelación
  * puede dejar la mañana libre de verdad.
  */
-export function puertaAPuerta(modo, minutosTrayecto, params, posicionamiento = 0) {
+/**
+ * ¿ESTE SALTO CRUZA UNA FRONTERA?
+ *
+ * Se mira el código de país de las dos etapas, que está guardado desde que
+ * existen los viajes multipaís. Si falta en alguna de las dos, se contesta que
+ * NO: sin dato no se acusa a nadie, y equivocarse por aquí solo cuesta una hora
+ * de más en el aeropuerto.
+ */
+export function cruzaFrontera(desde, hasta) {
+  const a = String(desde?.codigo_pais ?? '').trim().toUpperCase();
+  const b = String(hasta?.codigo_pais ?? '').trim().toUpperCase();
+  if (!a || !b) return false;
+  return a !== b;
+}
+
+/**
+ * @param {boolean} [internacional] Si el vuelo cruza frontera, pide más antelación.
+ */
+export function puertaAPuerta(modo, minutosTrayecto, params, posicionamiento = 0, internacional = false) {
   const esVuelo = modo === 'vuelo' || modo === 'avion';
   // Un coche de alquiler y un viaje compartido te llevan de puerta a puerta: no
   // hay estación a la que ir. Pero eso NO los hace más rápidos, y en la primera
@@ -145,8 +163,27 @@ export function puertaAPuerta(modo, minutosTrayecto, params, posicionamiento = 0
   // Y no es lo mismo un alquiler que un viaje compartido: uno hay que recogerlo,
   // revisarlo, devolverlo con gasolina y aparcarlo; el otro es esperar a alguien
   // en un punto de encuentro. Se separan porque la diferencia son horas.
+  // LA ANTELACIÓN DE UN VUELO DEPENDE DE SI CRUZA FRONTERA, Y NO LO HACÍA.
+  //
+  // `antelacion_vuelo_internacional_min` lleva en la pantalla de ajustes desde
+  // siempre, con 120 minutos puestos, y NADIE LA LEÍA: aquí se cogía siempre la
+  // europea. Puedes poner 300 en esa casilla y no cambiar nada. Se descubrió al
+  // escribir la ayuda de los 116 parámetros, buscando dónde se usaba cada uno.
+  //
+  // NO ES SOLO UN NÚMERO QUE SOBRA: este bloque entra ENTERO en el lienzo como
+  // el hueco que ocupa el día del traslado. Una antelación corta es un día que
+  // parece tener más horas de las que tiene.
+  //
+  // Nunca ha mordido —los cuatro saltos internos en avión que han salido de
+  // verdad son de 55 a 70 minutos de trayecto, dentro del mismo país, donde 60
+  // de antelación es lo correcto— pero la app soporta viajes de varios países y
+  // ahí un salto entre capitales sí cruza frontera.
+  //
+  // «Internacional» se decide mirando el código de país de las dos etapas, que
+  // ya está guardado. No hace falta inventarse una definición por duración ni
+  // por distancia, que era lo que me frenaba para arreglarlo.
   const antelacion = esVuelo
-    ? params.antelacionVuelo
+    ? (internacional ? params.antelacionVueloInternacional : params.antelacionVuelo)
     : modo === 'coche'
       ? params.margenCoche
       : modo === 'traslado'
@@ -957,6 +994,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     accesoAeropuerto: parametro('acceso_aeropuerto_min', 45),
     accesoEstacion: parametro('acceso_estacion_min', 25),
     antelacionVuelo: parametro('antelacion_vuelo_europeo_min', 60),
+    antelacionVueloInternacional: parametro('antelacion_vuelo_internacional_min', 120),
     antelacionTren: parametro('antelacion_tren_min', 30),
     margenCoche: parametro('margen_coche_min', 120),
     margenCompartido: parametro('margen_viaje_compartido_min', 45),
@@ -1046,7 +1084,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     // también el que compite después.
     const medidasTierra = porTierra.map((o) => ({
       ...o,
-      bloque: puertaAPuerta(o.modo, o.trayecto, params),
+      bloque: puertaAPuerta(o.modo, o.trayecto, params, 0, cruzaFrontera(desde, hasta)),
     }));
     const mejorTierra = medidasTierra.length
       ? Math.min(...medidasTierra.map((o) => o.bloque.total))
@@ -1098,7 +1136,9 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       return {
         ...o,
         id: `op${n + 1}`,
-        bloque: o.bloque ?? puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0),
+        bloque:
+          o.bloque ??
+          puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0, cruzaFrontera(desde, hasta)),
         // El ámbito viaja con la opción y el precio por cabeza va calculado: de
         // aquí para abajo se compara y se enseña SIEMPRE `precioPersona`.
         ambito,
