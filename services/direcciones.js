@@ -748,18 +748,40 @@ export async function situarLosSitios(punto, di = () => {}) {
     //
     // `orden` sigue estando, pero solo para cuando el nombre no enseña nada —los
     // dos a cero—, que es lo mismo que había antes de esto.
-    const ocupante = tienePunto
+    // PRIMERO POR IDENTIDAD, DESPUÉS POR COORDENADA.
+    //
+    // El `place_id` es exacto: si otro sitio de esta ciudad ya lo tiene, Google
+    // está diciendo que son EL MISMO LUGAR, con otro nombre. La coordenada sigue
+    // detrás como respaldo porque las filas de antes de guardar el identificador
+    // no lo tienen, y porque hay colisiones que no son identidad —dos sitios
+    // distintos a los que Google da el mismo centroide de zona—, que es justo lo
+    // que esa guarda vino a cazar.
+    const mismoLugar = enPlaces.placeId
       ? una(
-          `SELECT id, nombre FROM sitios_lugar
-            WHERE punto_interes_id = ? AND id <> ? AND lat IS NOT NULL
-              AND ROUND(lat, 5) = ROUND(?, 5) AND ROUND(lon, 5) = ROUND(?, 5)
+          `SELECT s.id, s.nombre FROM sitios_lugar s
+             JOIN direcciones d ON d.tipo_elemento = 'sitio' AND d.elemento_id = s.id
+            WHERE s.punto_interes_id = ? AND s.id <> ? AND d.place_id = ?
             LIMIT 1`,
           punto.id,
           s.id,
-          enPlaces.lat,
-          enPlaces.lng
+          enPlaces.placeId
         )
       : null;
+
+    const ocupante =
+      mismoLugar ??
+      (tienePunto
+        ? una(
+            `SELECT id, nombre FROM sitios_lugar
+              WHERE punto_interes_id = ? AND id <> ? AND lat IS NOT NULL
+                AND ROUND(lat, 5) = ROUND(?, 5) AND ROUND(lon, 5) = ROUND(?, 5)
+              LIMIT 1`,
+            punto.id,
+            s.id,
+            enPlaces.lat,
+            enPlaces.lng
+          )
+        : null);
 
     // Los dos contra el MISMO nombre devuelto: si Google contesta en inglés, les
     // perjudica igual a los dos y el desempate sigue siendo limpio.
@@ -801,11 +823,21 @@ export async function situarLosSitios(punto, di = () => {}) {
       );
     } else if (ocupado) {
       amontonados += 1;
+      // SE DICE CUÁL DE LAS DOS SEÑALES HA SALTADO, porque no significan lo
+      // mismo y lo que hay que hacer después es distinto. Si coincide el
+      // identificador, Google está diciendo que es EL MISMO LUGAR con otro
+      // nombre, y eso es un duplicado del catálogo que conviene fundir. Si solo
+      // coincide la coordenada, son dos sitios distintos a los que no supo
+      // separar, y ahí no hay nada que fundir: falta un dato.
       di(
-        `   ✘ «${s.nombre}»: Google devuelve el MISMO punto que «${ocupado}»` +
-          `${(enPlaces.tipos ?? []).length ? ` (${enPlaces.tipos.join(', ')})` : ''}. ` +
-          'Eso es el centroide de la zona, no su sitio: me quedo sin sus coordenadas antes ' +
-          'que decir que están pegados.'
+        mismoLugar
+          ? `   ✘ «${s.nombre}» y «${ocupado}» son EL MISMO LUGAR para Google ` +
+            `(mismo identificador). Están guardados dos veces con nombres distintos; ` +
+            'me quedo sin las coordenadas de este. Míralo: sobra uno de los dos.'
+          : `   ✘ «${s.nombre}»: Google devuelve el MISMO punto que «${ocupado}»` +
+            `${(enPlaces.tipos ?? []).length ? ` (${enPlaces.tipos.join(', ')})` : ''}. ` +
+            'Eso es el centroide de la zona, no su sitio: me quedo sin sus coordenadas antes ' +
+            'que decir que están pegados.'
       );
       console.warn(
         `[direcciones] «${s.nombre}» cae en el punto de «${ocupado}»: descarto la coordenada.`
@@ -852,11 +884,16 @@ export async function situarLosSitios(punto, di = () => {}) {
     if (tienePunto && !disparate && !ocupado) {
       ejecutar(
         `UPDATE direcciones
-            SET lat = ?, lng = ?, estado = 'ok', fuente = 'places',
+            SET lat = ?, lng = ?, place_id = ?, estado = 'ok', fuente = 'places',
                 buscada_en = datetime('now'), actualizado_en = datetime('now')
           WHERE tipo_elemento = 'sitio' AND elemento_id = ?`,
         enPlaces.lat,
         enPlaces.lng,
+        // EL IDENTIFICADOR DE GOOGLE, QUE VENÍA EN LA RESPUESTA Y SE TIRABA.
+        // Dos sitios con el mismo `place_id` no «se parecen»: SON el mismo
+        // lugar. Es el único dato exacto que hay para cazar el mismo sitio
+        // guardado con dos nombres.
+        enPlaces.placeId ?? null,
         s.id
       );
       ejecutar('UPDATE sitios_lugar SET lat = ?, lon = ? WHERE id = ?', enPlaces.lat, enPlaces.lng, s.id);

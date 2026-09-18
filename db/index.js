@@ -362,6 +362,7 @@ export function migrarEsquema() {
   migracionPuertasProbadas();
   migracionAyudaDeParametros();
   migracionInteresesEnElLienzo();
+  migracionPlaceIdDeGoogle();
   // Va DESPUES de la migracion que crea las columnas, y no es una migracion:
   // se siembra en cada arranque para que el fichero sea siempre el que manda.
   sembrarAyudaDeParametros();
@@ -6292,6 +6293,45 @@ function migracionInteresesEnElLienzo() {
         ? ' OJO: tu prompt del lienzo esta editado y NO se ha tocado; para coger la regla nueva, pulsa «Restaurar de fabrica».'
         : '')
   );
+  return true;
+}
+
+/**
+ * EL IDENTIFICADOR DE GOOGLE, QUE LO TENIAMOS Y LO TIRABAMOS.
+ *
+ * `situarLugarConGoogle` devuelve `placeId` desde siempre y nadie lo guardaba.
+ * Es el unico dato EXACTO que tenemos para saber si dos fichas son el mismo
+ * sitio: mismo `place_id` no es «se parecen», es «son el mismo lugar».
+ *
+ * POR QUE HACE FALTA. El catalogo acumula el mismo sitio con nombres distintos
+ * —«Mercado Central de Atenas» y «Mercado de Varvakios», «Mausoleo de Sidi Abid
+ * el-Ghariani» y «Zaouia de Sidi Abid el-Ghariani»— y las dos formas de cazarlo
+ * que se han probado fallan:
+ *
+ *   · POR NOMBRE no se puede. Medido sobre el catalogo entero con solape de
+ *     palabras: 20 parejas sospechosas y 19 eran falsos positivos —«Museo
+ *     Arqueologico de Tesalonica» y «Museo Bizantino de Tesalonica» son museos
+ *     distintos—, y el caso que sabemos que existe, Varvakios, NO aparece porque
+ *     los dos nombres no comparten ni una palabra.
+ *   · POR COORDENADA es un proxy. Caza el amontonamiento —y para eso se dejo la
+ *     guarda de la coordenada compartida— pero no distingue «el mismo sitio» de
+ *     «dos sitios que Google no supo separar».
+ *
+ * `place_id` no es un parecido, es una identidad, y ya viene en la respuesta.
+ *
+ * SE LLENA SOLO HACIA DELANTE. Las filas que ya estan se quedan sin el: volver a
+ * preguntar por los 156 sitios costaria 156 llamadas para rellenar un dato que
+ * se va a rellenar solo la proxima vez que se situe cada uno.
+ */
+function migracionPlaceIdDeGoogle() {
+  const CLAVE = '2026-09-place-id-de-google';
+  if (yaAplicada(CLAVE)) return false;
+
+  anadirColumnaSiFalta('direcciones', 'place_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_direcciones_place ON direcciones(place_id)');
+
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el place_id de Google se guarda.');
   return true;
 }
 
