@@ -39,7 +39,7 @@
 .config .contenedor { max-width: 880px; margin: 0 auto; }
 
 /* Cabecera */
-.config .cabecera { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.config .cabecera { display: flex; align-items: center; gap: var(--esp-6); margin-bottom: 22px; }
 .config .btn-volver {
   width: 44px; height: 44px; border-radius: var(--radio-circulo); border: 1px solid var(--borde);
   background: var(--superficie); color: var(--acento); font-size: var(--titulo-sm); cursor: pointer;
@@ -55,14 +55,14 @@
   background: var(--superficie); border: 1px solid var(--borde);
   border-radius: var(--radio); padding: 22px 24px; margin-bottom: 16px;
 }
-.config .tarjeta h2 { font-size: var(--texto-xl); font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.config .tarjeta h2 { font-size: var(--texto-xl); font-weight: 600; display: flex; align-items: center; gap: var(--esp-4); }
 .config .tarjeta h2 svg { color: var(--acento); flex: none; }
 .config .tarjeta .sub { color: var(--texto-2); font-size: var(--texto-base); margin-top: 3px; margin-left: 32px; }
 .config .cuerpo { margin-top: 18px; }
 
 /* ====== Calendario de rango ====== */
 .config .cal-resumen {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: var(--esp-5); flex-wrap: wrap;
   background: var(--fondo); border: 1px solid var(--borde); border-radius: var(--radio-pill);
   padding: 10px 18px; margin-bottom: 18px; font-size: var(--texto-lg);
 }
@@ -70,7 +70,7 @@
 .config .cal-resumen .flecha { color: var(--texto-2); }
 .config .cal-resumen .noches {
   margin-left: auto; background: var(--verde-bg); color: var(--verde-tx);
-  border-radius: var(--radio-pill); padding: 4px 14px; font-size: var(--texto-base); font-weight: 600;
+  border-radius: var(--radio-pill); padding: var(--esp-1) var(--esp-6); font-size: var(--texto-base); font-weight: 600;
 }
 .config .cal-resumen .noches.vacio { background: var(--prec-bg); color: var(--ambar-tx); font-weight: 500; }
 
@@ -106,8 +106,8 @@
 
 /* El aviso de fechas del servidor, cuando vuelve con error. */
 .config .cal-error {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 14px; padding: 10px 16px;
+  display: flex; align-items: center; gap: var(--esp-3);
+  margin-bottom: 14px; padding: var(--esp-4) var(--esp-7);
   border-radius: var(--radio); background: var(--prec-bg); color: var(--ambar-tx);
   font-size: var(--texto-base);
 }
@@ -115,12 +115,12 @@
 /* ====== Viajeros ====== */
 .config .fila-viajero {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 0; border-bottom: 1px solid var(--borde);
+  padding: var(--esp-5) 0; border-bottom: 1px solid var(--borde);
 }
 .config .fila-viajero:last-of-type { border-bottom: none; }
 .config .fila-viajero .nombre { font-size: var(--texto-lg); font-weight: 600; }
 .config .fila-viajero .detalle { font-size: var(--texto-base); color: var(--texto-2); margin-top: 2px; }
-.config .contador { display: flex; align-items: center; gap: 14px; }
+.config .contador { display: flex; align-items: center; gap: var(--esp-6); }
 .config .contador button {
   width: 36px; height: 36px; border-radius: var(--radio-circulo); border: 1px solid var(--borde);
   background: var(--superficie); color: var(--acento); font-size: var(--icono-sm); cursor: pointer;
@@ -129,11 +129,11 @@
 .config .contador button:disabled { color: #C3D2DA; cursor: default; }
 .config .contador .num { font-size: var(--texto-xl); font-weight: 600; min-width: 22px; text-align: center; }
 
-.config .edades { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.config .edades { display: flex; flex-wrap: wrap; gap: var(--esp-3); margin-top: 12px; }
 .config .edad {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: var(--esp-3);
   background: var(--fondo); border: 1px solid var(--borde); border-radius: var(--radio-pill);
-  padding: 6px 8px 6px 14px; font-size: var(--texto-base);
+  padding: var(--esp-2) var(--esp-3) var(--esp-2) var(--esp-6); font-size: var(--texto-base);
 }
 .config .edad select {
   border: none; background: transparent; font-size: var(--texto-base); font-weight: 600;
@@ -141,7 +141,7 @@
 }
 
 /* ====== Chips tipo de viaje ====== */
-.config .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.config .chips { display: flex; flex-wrap: wrap; gap: var(--esp-4); }
 .config .chip {
   border: 1px solid var(--borde); background: var(--superficie); border-radius: var(--radio-pill);
   padding: 9px 18px; font-size: var(--texto-lg); cursor: pointer; color: var(--texto);
@@ -155,7 +155,7 @@
 .config .campo label { font-size: var(--texto-lg); font-weight: 600; display: block; margin-bottom: 10px; }
 .config .segmentos { display: flex; border: 1px solid var(--borde); border-radius: var(--radio-pill); overflow: hidden; }
 .config .segmentos button {
-  flex: 1; border: none; background: var(--superficie); padding: 10px 0;
+  flex: 1; border: none; background: var(--superficie); padding: var(--esp-4) 0;
   font-size: var(--texto-lg); cursor: pointer; color: var(--texto); font-family: inherit;
 }
 .config .segmentos button + button { border-left: 1px solid var(--borde); }
@@ -199,7 +199,7 @@
 .config .plantillas__fila {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--esp-4);
   flex-wrap: wrap;
 }
 .config .plantillas__fila + .plantillas__fila { margin-top: 16px; }
@@ -299,7 +299,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 10px 16px;
+  padding: var(--esp-4) var(--esp-7);
   margin-bottom: 16px;
   border-radius: var(--radio);
   background: var(--tinte);
@@ -326,11 +326,11 @@
 .config .barra-final {
   position: fixed; left: 0; right: 0; bottom: 0;
   background: var(--superficie); border-top: 1px solid var(--borde);
-  padding: 12px 16px;
+  padding: var(--esp-5) var(--esp-7);
   z-index: 40;
 }
 .config .barra-final .interior {
-  max-width: 880px; margin: 0 auto; display: flex; align-items: center; gap: 16px;
+  max-width: 880px; margin: 0 auto; display: flex; align-items: center; gap: var(--esp-7);
 }
 .config .barra-final .resumen { font-size: var(--texto-lg); color: var(--texto-2); flex: 1; min-width: 0; }
 .config .barra-final .resumen b { color: var(--texto); }

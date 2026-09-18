@@ -23,7 +23,7 @@
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
-  padding: 6px;
+  padding: var(--esp-2);
   /* Se queda a la vista al desplazar el visor largo: la lista es la navegación
      y perderla obliga a subir cada vez que se cambia de documento. */
   position: sticky;
@@ -37,9 +37,9 @@
 .docs-grupo__titulo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--esp-3);
   margin: 0;
-  padding: 12px 12px 8px;
+  padding: var(--esp-5) var(--esp-5) var(--esp-3);
   font-size: var(--texto-base);
   font-weight: 700;
   text-transform: uppercase;
@@ -68,7 +68,7 @@
   width: 100%;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--esp-4);
   padding: 9px 12px;
   border: none;
   background: none;
@@ -125,8 +125,8 @@
 .visor__barra {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
+  gap: var(--esp-6);
+  padding: var(--esp-5) var(--esp-7);
   border-bottom: 1px solid var(--borde);
   background: var(--superficie);
 }
@@ -138,7 +138,7 @@
   white-space: nowrap;
 }
 .visor__quien span { font-size: var(--texto-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.visor__acciones { flex: none; display: flex; gap: 8px; }
+.visor__acciones { flex: none; display: flex; gap: var(--esp-3); }
 
 .visor__lienzo {
   flex: 1;
@@ -154,7 +154,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--esp-3);
   color: var(--texto-3);
   font-size: var(--texto-lg);
   margin: 0;
@@ -183,12 +183,12 @@
   margin-bottom: 14px;
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
+  gap: var(--esp-1) var(--esp-5);
   font-size: var(--texto-base);
 }
 .correo__campo { color: var(--texto-2); font-weight: 600; }
 .correo__valor { min-width: 0; overflow-wrap: anywhere; }
-.correo__asunto { font-size: var(--texto-xl); font-weight: 700; margin: 0 0 10px; }
+.correo__asunto { font-size: var(--texto-xl); font-weight: 700; margin: 0 0 var(--esp-4); }
 
 /* El cuerpo con los saltos de línea que traía: un correo sin ellos es un ladrillo. */
 .correo__cuerpo,
@@ -202,8 +202,8 @@
 }
 
 .visor__nota {
-  margin: 0 0 12px;
-  padding: 8px 12px;
+  margin: 0 0 var(--esp-5);
+  padding: var(--esp-3) var(--esp-5);
   background: var(--info-bg);
   color: var(--info-tx);
   border-radius: var(--radio);
@@ -215,7 +215,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--esp-4);
   padding: 50px 30px;
   text-align: center;
   color: var(--texto-2);

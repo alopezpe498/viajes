@@ -57,7 +57,7 @@
 .panel__titulo span { font-weight: 300; opacity: .85; }
 
 .panel__lema {
-  margin: 14px 0 0;
+  margin: var(--esp-6) 0 0;
   font-size: var(--texto-lg);
   line-height: 1.5;
   opacity: .85;
@@ -123,7 +123,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--esp-7);
   margin: 0 0 18px;
   position: relative;
   z-index: 1;
@@ -163,7 +163,7 @@
 .billetes {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--esp-6);
   max-width: 640px;
 }
 
@@ -197,7 +197,7 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 16px 8px;
+  padding: var(--esp-7) var(--esp-3);
 }
 .talon__mes {
   font-size: var(--texto-xs);
@@ -232,16 +232,16 @@
   margin: 3px 0 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--esp-2);
   flex-wrap: wrap;
 }
 .billete__flecha { color: var(--texto-3); font-size: var(--texto-sm); }
 
-.billete__chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.billete__chips { display: flex; gap: var(--esp-2); margin-top: 10px; flex-wrap: wrap; }
 .chip-billete {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--esp-1);
   font-size: var(--texto-sm);
   font-weight: 700;
   border-radius: var(--radio-pill);
@@ -287,7 +287,7 @@
   text-align: left;
   border: 0;
   background: none;
-  padding: 10px 14px;
+  padding: var(--esp-4) var(--esp-6);
   font-family: inherit;
   font-size: var(--texto-lg);
   cursor: pointer;
@@ -337,7 +337,7 @@
    apagado. El verde al acertar es la única señal de que ya se puede. */
 .modal__etiqueta {
   display: block;
-  margin: 14px 0 6px;
+  margin: var(--esp-6) 0 var(--esp-2);
   font-size: var(--texto-base);
   color: var(--texto-2);
 }

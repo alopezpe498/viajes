@@ -12,8 +12,8 @@
 .orq__titulo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 6px;
+  gap: var(--esp-4);
+  margin: 0 0 var(--esp-2);
   font-size: var(--titulo);
 }
 .orq__titulo i { color: var(--acento); }
@@ -22,7 +22,7 @@
 /* --- La barra de progreso --------------------------------------------- */
 .orq-barra {
   height: 8px;
-  margin: 0 0 24px;
+  margin: 0 0 var(--esp-9);
   border-radius: var(--radio-pill);
   background: var(--borde);
   overflow: hidden;
@@ -35,12 +35,12 @@
 }
 
 /* --- Las fases --------------------------------------------------------- */
-.orq-fases { margin: 0 0 24px; padding: 0; list-style: none; }
+.orq-fases { margin: 0 0 var(--esp-9); padding: 0; list-style: none; }
 
 .orq-fase {
   display: flex;
-  gap: 14px;
-  padding: 16px 0;
+  gap: var(--esp-6);
+  padding: var(--esp-7) 0;
   border-bottom: 1px solid var(--borde);
 }
 .orq-fase:last-child { border-bottom: 0; }
@@ -65,7 +65,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--esp-5);
   flex-wrap: wrap;
 }
 .orq-fase__nombre {
@@ -79,12 +79,12 @@
 .orq-fase__estado { color: var(--texto-2); font-size: var(--texto-base); font-weight: 600; }
 .orq-fase--en_curso .orq-fase__estado { color: var(--acento); }
 
-.orq-fase__explica { margin: 4px 0 0; color: var(--texto-2); font-size: var(--texto-lg); line-height: 1.45; }
+.orq-fase__explica { margin: var(--esp-1) 0 0; color: var(--texto-2); font-size: var(--texto-lg); line-height: 1.45; }
 
 /* El log: monoespaciado porque son líneas sueltas de máquina, no prosa. */
 .orq-fase__log {
-  margin: 10px 0 0;
-  padding: 10px 12px;
+  margin: var(--esp-4) 0 0;
+  padding: var(--esp-4) var(--esp-5);
   border-radius: var(--radio-xs);
   background: var(--fondo);
   color: var(--texto-2);
@@ -103,8 +103,8 @@
    etiqueta pertenezca a la línea y no flote en un bloque de texto.
    --------------------------------------------------------------------------- */
 .orq-log {
-  margin: 10px 0 0;
-  padding: 10px 12px;
+  margin: var(--esp-4) 0 0;
+  padding: var(--esp-4) var(--esp-5);
   list-style: none;
   border-radius: var(--radio-xs);
   background: var(--fondo);
@@ -166,7 +166,7 @@
   opacity: 0.85;
 }
 
-.orq-fase__huecos { margin: 10px 0 0; padding: 0; list-style: none; }
+.orq-fase__huecos { margin: var(--esp-4) 0 0; padding: 0; list-style: none; }
 .orq-fase__huecos li {
   display: flex;
   align-items: flex-start;
@@ -179,7 +179,7 @@
 
 /* --- Los huecos, todos juntos ------------------------------------------ */
 .orq-resumen-huecos {
-  margin: 0 0 24px;
+  margin: 0 0 var(--esp-9);
   padding: 16px 18px;
   border: 1px solid #E8D9BF;
   border-radius: var(--radio);
@@ -188,8 +188,8 @@
 .orq-resumen-huecos h2 {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 10px;
+  gap: var(--esp-3);
+  margin: 0 0 var(--esp-4);
   font-size: var(--texto-xl);
   color: #6B4A12;
 }
@@ -197,20 +197,20 @@
 .orq-resumen-huecos li { padding: 2px 0; line-height: 1.45; }
 
 .orq-fallo {
-  margin: 0 0 20px;
-  padding: 12px 16px;
+  margin: 0 0 var(--esp-8);
+  padding: var(--esp-5) var(--esp-7);
   border-radius: var(--radio);
   background: var(--alerta-bg);
   color: var(--error-tx);
   font-size: var(--texto-lg);
 }
 
-.orq-pie { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.orq-pie { display: flex; flex-wrap: wrap; gap: var(--esp-4); margin-top: 24px; }
 
 /* --- El aviso de guardado ---------------------------------------------- */
 .orq-aviso {
-  margin: 0 0 16px;
-  padding: 10px 14px;
+  margin: 0 0 var(--esp-7);
+  padding: var(--esp-4) var(--esp-6);
   border-radius: var(--radio-xs);
   background: #E7F4EE;
   color: #245B43;
@@ -230,9 +230,9 @@
 .orq-indice {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--esp-3);
   margin: 0 0 28px;
-  padding: 14px;
+  padding: var(--esp-6);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
   background: var(--fondo);
@@ -240,7 +240,7 @@
 .orq-indice__enlace {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--esp-2);
   padding: 6px 13px;
   border-radius: var(--radio-pill);
   background: var(--tarjeta, #fff);
@@ -266,18 +266,18 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 0 0 4px;
+  margin: 0 0 var(--esp-1);
   font-size: var(--texto-2xl);
 }
 .orq-seccion__titulo i { color: var(--acento); font-size: var(--icono); }
 .orq-seccion__explica {
-  margin: 0 0 14px;
+  margin: 0 0 var(--esp-6);
   color: var(--texto-2);
   font-size: var(--texto-lg);
   line-height: 1.45;
 }
 .orq-seccion__sin {
-  margin: 0 0 14px;
+  margin: 0 0 var(--esp-6);
   padding: 11px 14px;
   border-radius: var(--radio-xs);
   background: var(--fondo);
@@ -302,9 +302,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--esp-7);
   flex-wrap: wrap;
-  padding: 14px 0;
+  padding: var(--esp-6) 0;
   border-bottom: 1px solid var(--borde);
 }
 .orq-parametro:last-child { border-bottom: 0; }
@@ -319,7 +319,7 @@
   font-size: var(--texto-sm);
 }
 
-.orq-parametro__control { display: flex; align-items: center; gap: 10px; }
+.orq-parametro__control { display: flex; align-items: center; gap: var(--esp-4); }
 .orq-parametro__control input {
   width: 92px;
   padding: 9px 12px;
@@ -381,23 +381,23 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--esp-5);
   flex-wrap: wrap;
 }
 .orq-prompt__nombre {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--esp-3);
   margin: 0;
   font-size: var(--texto-xl);
 }
 .orq-prompt__nombre i { color: var(--acento); font-size: var(--icono-sm); }
 .orq-prompt__cuando { color: var(--texto-3); font-size: var(--texto-sm); }
-.orq-prompt__explica { margin: 6px 0 10px; color: var(--texto-2); font-size: var(--texto-base); line-height: 1.45; }
+.orq-prompt__explica { margin: var(--esp-2) 0 var(--esp-4); color: var(--texto-2); font-size: var(--texto-base); line-height: 1.45; }
 
 .orq-prompt__texto {
   width: 100%;
-  padding: 12px 14px;
+  padding: var(--esp-5) var(--esp-6);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
   background: var(--fondo);
@@ -408,7 +408,7 @@
 }
 .orq-prompt__texto:focus { outline: none; border-color: var(--acento); background: var(--tarjeta, #fff); }
 
-.orq-prompt__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.orq-prompt__acciones { display: flex; flex-wrap: wrap; gap: var(--esp-4); margin-top: 12px; }
 
 /* ===========================================================================
    LA SECCIÓN AUTOMÁTICA DE LA CONFIGURACIÓN
@@ -420,8 +420,8 @@
 .auto-interruptor {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 4px 0;
+  gap: var(--esp-5);
+  padding: var(--esp-1) 0;
   cursor: pointer;
 }
 .auto-interruptor input { margin-top: 3px; flex: none; width: 18px; height: 18px; }
@@ -458,7 +458,7 @@
 .auto-titulo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--esp-3);
   margin: 22px 0 12px;
   font-size: var(--texto-lg);
   text-transform: uppercase;
@@ -468,7 +468,7 @@
 .auto-titulo:first-of-type { margin-top: 0; }
 .auto-titulo i { color: var(--acento); font-size: var(--icono-sm); }
 
-.auto-campo { margin: 0 0 16px; }
+.auto-campo { margin: 0 0 var(--esp-7); }
 .auto-campo > label {
   display: block;
   margin-bottom: 7px;
@@ -488,7 +488,7 @@
 
 /* Las opciones excluyentes, como píldoras. El radio se esconde pero sigue ahí:
    el teclado y los lectores de pantalla lo necesitan. */
-.auto-opciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.auto-opciones { display: flex; flex-wrap: wrap; gap: var(--esp-3); }
 .auto-opcion { cursor: pointer; }
 .auto-opcion input {
   position: absolute;
@@ -514,7 +514,7 @@
 .auto-opcion input:focus-visible + span { outline: 2px solid var(--acento); outline-offset: 2px; }
 .auto-opcion input:not(:checked) + span:hover { border-color: var(--acento); color: var(--acento); }
 
-.auto-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.auto-chips { display: flex; flex-wrap: wrap; gap: var(--esp-3); }
 .auto-chip { cursor: pointer; }
 .auto-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
 .auto-chip span {
@@ -538,10 +538,10 @@
    Dos botones, y el segundo tiene que dar un poco de respeto: corta en seco y
    despues hay que barrer lo que quedo escrito a medias. */
 .orq-parada {
-  margin: 0 0 16px;
+  margin: 0 0 var(--esp-7);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--esp-4);
   flex-wrap: wrap;
 }
 
@@ -572,24 +572,24 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--esp-8);
   flex-wrap: wrap;
-  padding: 16px 0;
+  padding: var(--esp-7) 0;
   border-bottom: 1px solid var(--borde);
 }
 .orq-ajuste:last-child { border-bottom: 0; }
 
 .orq-ajuste__texto { flex: 1 1 260px; min-width: 240px; }
 .orq-ajuste__explica {
-  margin: 6px 0 0;
+  margin: var(--esp-2) 0 0;
   font-size: var(--texto-base);
   line-height: 1.45;
   color: var(--texto-2);
   max-width: 46ch;
 }
 
-.orq-ajuste__control { flex: 1 1 320px; min-width: 280px; display: flex; flex-direction: column; gap: 8px; }
-.orq-ajuste__fila { display: flex; align-items: center; gap: 10px; }
+.orq-ajuste__control { flex: 1 1 320px; min-width: 280px; display: flex; flex-direction: column; gap: var(--esp-3); }
+.orq-ajuste__fila { display: flex; align-items: center; gap: var(--esp-4); }
 
 /* EXACTAMENTE EL CAMPO DE ESTA PANTALLA, no uno nuevo.
    Los mismos valores que `.orq-parametro__control input`: radio de 10, borde
@@ -644,7 +644,7 @@
   margin: 0;
   font-size: var(--texto-base);
   line-height: 1.45;
-  padding: 8px 12px;
+  padding: var(--esp-3) var(--esp-5);
   border-radius: var(--radio);
   background: var(--fondo);
   color: var(--texto-2);
@@ -657,7 +657,7 @@
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  margin: 16px 0 0;
+  margin: var(--esp-7) 0 0;
   padding: 11px 14px;
   border-radius: var(--radio);
   background: var(--fondo);
@@ -715,7 +715,7 @@
 .orq-ayuda__cerrar-form { float: right; margin: -6px -8px 0 8px; }
 .orq-ayuda__cerrar {
   display: inline-flex;
-  padding: 6px;
+  padding: var(--esp-2);
   border: 0;
   border-radius: var(--radio-pill);
   background: none;
@@ -740,7 +740,7 @@
 
 .orq-ayuda__ejemplo {
   margin-top: 14px;
-  padding: 12px 14px;
+  padding: var(--esp-5) var(--esp-6);
   border-radius: var(--radio-xs);
   background: var(--fondo);
 }
@@ -761,7 +761,7 @@
 }
 
 .orq-ayuda__pie {
-  margin: 16px 0 0;
+  margin: var(--esp-7) 0 0;
   padding-top: 12px;
   border-top: 1px solid var(--borde);
   color: var(--texto-3);

@@ -60,9 +60,9 @@
 }
 
 /* --- El texto ------------------------------------------------------------- */
-.tour__cuerpo { padding: 20px 24px 4px; }
+.tour__cuerpo { padding: var(--esp-8) var(--esp-9) var(--esp-1); }
 .tour__titulo {
-  margin: 0 0 8px;
+  margin: 0 0 var(--esp-3);
   font-size: var(--texto-2xl);
   line-height: 1.25;
 }
@@ -78,9 +78,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--esp-7);
   flex-wrap: wrap;
-  padding: 16px 24px 20px;
+  padding: var(--esp-7) var(--esp-9) var(--esp-8);
 }
 
 .tour__puntos { display: flex; gap: 7px; }
@@ -93,7 +93,7 @@
 }
 .tour__puntos span.es-ahora { width: 22px; background: var(--acento); }
 
-.tour__botones { display: flex; align-items: center; gap: 10px; }
+.tour__botones { display: flex; align-items: center; gap: var(--esp-4); }
 
 .tour__saltar {
   padding: 9px 14px;
