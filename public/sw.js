@@ -28,7 +28,8 @@
  * Para publicar cambios, subir VERSION. Al activarse borra las cachés viejas.
  */
 
-const VERSION = 'v23';
+// v24: vacia la cache donde se habia quedado el pantallazo viejo del tour.
+const VERSION = 'v24';
 const CACHE_ESTATICA = `viajes-estatica-${VERSION}`;
 const CACHE_VIVA = `viajes-viva-${VERSION}`;
 

@@ -7,7 +7,7 @@
 <%# El tour de bienvenida. Se calla solo si ya se vio o si no estamos en la
     portada, que es la única pantalla donde sale; no hace falta condicionarlo
     desde aquí. %>
-<script src="/js/tour.js" defer></script>
+<script src="/js/tour.js?v=<%= typeof versionEstaticos !== 'undefined' ? versionEstaticos : '' %>" defer></script>
 <%# Hueco para el JS propio de una pantalla concreta %>
 <%- typeof extraPie !== 'undefined' && extraPie ? extraPie : '' %>
 </body>

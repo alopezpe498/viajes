@@ -43,14 +43,23 @@ app.use(express.json());                          // fetch del marcado
 // olvida en una.
 //
 // Solo en las paginas: una respuesta JSON no tiene tour que enseñar.
+//
+// Y LLEVA UNA VERSION, QUE CAMBIA EN CADA ARRANQUE. El service worker sirve las
+// imagenes de su cache sin volver a preguntar, asi que al cambiar un pantallazo
+// del tour el navegador seguia enseñando el de antes: el paso 2 salia con el
+// mapa del viaje un dia despues de haberlo cambiado por el de elegir destino.
+// Con `?v=` distinto la URL es otra y ninguna cache la tiene. Cada despliegue
+// reinicia la app, asi que no hay que acordarse de subir nada a mano.
+const VERSION_ESTATICOS = String(Date.now());
 app.use((req, res, next) => {
   if (!req.accepts('html')) return next();
+  res.locals.versionEstaticos = VERSION_ESTATICOS;
   try {
-    res.locals.tour = estadoDelTour();
+    res.locals.tour = { ...estadoDelTour(), v: VERSION_ESTATICOS };
   } catch {
     // Si la base aun no esta lista, el tour simplemente no sale. No es motivo
     // para tumbar una pagina.
-    res.locals.tour = { visto: true, tramos: [] };
+    res.locals.tour = { visto: true };
   }
   next();
 });

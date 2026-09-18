@@ -105,6 +105,11 @@ const PASOS = [
 
   let i = 0;
 
+  // LA VERSION DEL ARRANQUE EN CADA IMAGEN. El service worker sirve las imagenes
+  // de cache sin revalidar; sin esto, un pantallazo cambiado seguia saliendo con
+  // la foto vieja indefinidamente.
+  const conVersion = (url) => (estado?.v ? `${url}?v=${estado.v}` : url);
+
   const dlg = document.createElement('dialog');
   dlg.className = 'tour';
   // `autofocus` va en SEGUIR y no es un detalle: `<dialog>` enfoca solo el primer
@@ -137,7 +142,7 @@ const PASOS = [
   for (const p of PASOS) {
     if (!p.imagen) continue;
     const pre = new Image();
-    pre.src = p.imagen;
+    pre.src = conVersion(p.imagen);
   }
 
   function pintar() {
@@ -148,7 +153,7 @@ const PASOS = [
     const marco = $('tour-marco');
     const img = $('tour-imagen');
     if (p.imagen) {
-      img.src = p.imagen;
+      img.src = conVersion(p.imagen);
       img.alt = `La pantalla de ${p.titulo.replace(/^\d+\s·\s/, '')}`;
       marco.hidden = false;
     } else {
