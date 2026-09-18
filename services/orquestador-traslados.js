@@ -33,6 +33,7 @@
 import { db, todas, una, ejecutar } from '../db/index.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
 import { resolverIata } from '../lib/iata.js';
+import { paisesDelViaje } from '../services/ficha-pais.js';
 import { buscarVuelosKayak } from '../providers/kayak.js';
 import { ocupacionDe } from '../services/proveedores.js';
 import {
@@ -980,6 +981,27 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
   const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
 
   if (!hayClaveIA()) throw new Error(SIN_CLAVE);
+
+  // DE QUÉ PAÍS ES CADA PARADA, ANTES DE MEDIR NINGÚN SALTO.
+  //
+  // `paisesDelViaje` rellena `pais` y `codigo_pais` de cada etapa como efecto
+  // —un geocode por ciudad, una sola vez en la vida de la parada— y hasta hoy
+  // solo se llamaba al abrir «Antes de viajar» o al generar el dosier, o sea
+  // DESPUÉS de que esta fase ya hubiera calculado todos los traslados.
+  //
+  // Por eso `cruzaFrontera` nunca tenía el dato: se añadió para que un salto en
+  // avión entre dos países pidiera 120 minutos de antelación en vez de 60, y al
+  // probarlo en el primer viaje multipaís de verdad —Singapur y Malasia— las
+  // cuatro etapas tenían el país a NULL. La guarda hacía lo correcto (sin dato
+  // no se acusa a nadie) y por eso no se notó: simplemente no se aplicaba nunca.
+  //
+  // No lanza: si el geocode falla, las etapas se quedan sin país y la antelación
+  // vuelve a ser la europea, que es lo que había antes de todo esto.
+  try {
+    await paisesDelViaje(viajeId);
+  } catch (err) {
+    di(`   No pude averiguar de qué país es cada parada (${err.message}). Sigo sin ese dato.`);
+  }
 
   const etapas = todas(
     "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' ORDER BY orden, id",
