@@ -37,8 +37,83 @@
   --prec-bg: #FAEEDA;   --prec-tx: #854F0B;
   --alerta-bg: #FCEBEB; --alerta-tx: #A32D2D;
 
+  /* --- LOS COLORES QUE ESTABAN A PELO Y NO ERAN NINGUNO DE LOS DE ARRIBA ---
+
+     Estaban escritos en hexadecimal repartidos por cuatro hojas. Se les da
+     nombre AQUÍ y con SU VALOR EXACTO: esto es fontanería, no rediseño, y
+     ninguno cambia ni un tono.
+
+     Y no se mapearon a los de avisos aunque se parezcan, porque NO son los
+     mismos: #8A5A16 no es --prec-tx (#854F0B) y #8A2020 no es --alerta-tx
+     (#A32D2D). Sustituirlos habría recoloreado media aplicación en silencio,
+     que es justo lo que no se quería.
+
+     Si algún día se decide que sobra un ámbar o sobra un rojo, se decide MIRANDO
+     los dos juntos; hoy solo dejan de ser un hex suelto. */
+
+  /* Ámbar de aviso: el de la configuración, la portada y el orquestador. */
+  --ambar-bg: #FBEED6;  --ambar-tx: #8A5A16;
+  /* El tercer ámbar, más saturado: filete de «comer» y su icono. */
+  --ambar-fuerte: #C98A2B;
+
+  /* Rojo de acción destructiva: botón de peligro, quitar, exceso de noches. */
+  --peligro: #C0563B;   --peligro-hover: #A8452C;  --peligro-bg: #F9E3DC;
+
+  /* Rojo de error: el de una fase que ha fallado. Más oscuro que el anterior. */
+  --error-tx: #8A2020;  --error-bg: #FDECEC;
+
+  /* Verde de «hecho» del orquestador, distinto del verde de las píldoras. */
+  --verde-medio: #2E7D5B;
+  /* Azul aún más suave que --tinte, solo para degradados y un fondo. */
+  --tinte-suave: #EAF4F8;
+
+  /* --- LAS ESCALAS -------------------------------------------------------
+
+     Creadas a partir de los valores que YA estaban en las hojas, agrupando los
+     cercanos alrededor del más usado. Ninguna cifra es inventada: todas salen
+     de contar lo que había.
+
+     SE CREAN AQUÍ Y SE APLICAN DESPUÉS. Enchufarlas de golpe a las 251 cajas
+     sería cambiar el aspecto de media aplicación en un commit que se anuncia
+     como fontanería. Hoy solo existen, y se usan donde no hay riesgo ninguno
+     —un `16px` a pelo que ya era `var(--radio)`—. */
+
+  /* RADIOS. Había 25 valores distintos; estos cuatro cubren el 90 % de los
+     usos. Los sueltos (18px del embarque, 22px del progreso, 6/8/9/10/12px)
+     siguen a pelo hasta que se decida a cuál de estos se acercan. */
   --radio: 16px;
   --radio-sm: 14px;
+  --radio-pill: 999px;    /* lo usan las 9 hojas: botones, chips, píldoras */
+  --radio-circulo: 50%;   /* botones redondos: volver, stepper, contador */
+
+  /* SOMBRAS. Había 42 declaraciones y ninguna repetida más de tres veces: cada
+     una se ajustó a ojo en su momento. Todas son el mismo azul oscuro
+     (18,48,62) con distinta opacidad y desenfoque, así que se reducen a tres
+     alturas. Los valores son los de las que más se repetían. */
+  --sombra-sm: 0 2px 10px rgba(18, 48, 62, .10);
+  --sombra-md: 0 10px 34px rgba(18, 48, 62, .20);
+  --sombra-lg: 0 20px 50px rgba(18, 48, 62, .28);
+
+  /* TIPOGRAFÍA. 30 tamaños distintos, con medios puntos (11.5, 12.5, 13.5,
+     14.5) que delatan ajuste a ojo. La escala colapsa cada medio punto al
+     entero de al lado y se queda con los seis que de verdad cargan el peso:
+     13px sale 133 veces, 14px 113, 12px 109. */
+  --texto-xs: 11px;
+  --texto-sm: 12px;
+  --texto-base: 13px;     /* el más usado de toda la aplicación */
+  --texto-lg: 14px;
+  --texto-xl: 16px;
+  --texto-2xl: 19px;
+
+  /* ESPACIADO. 179 combinaciones de padding y ninguna escala. Estos seis
+     escalones salen de los valores sueltos más repetidos (16, 20, 14, 12, 8, 6)
+     ordenados. */
+  --esp-1: 6px;
+  --esp-2: 8px;
+  --esp-3: 12px;
+  --esp-4: 14px;
+  --esp-5: 16px;
+  --esp-6: 20px;
   --lateral: 220px;
   --barra-alto: 78px;         /* hueco para la barra fija del móvil */
 }
@@ -1205,7 +1280,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--tinte), #EAF4F8);
+  background: linear-gradient(135deg, var(--tinte), var(--tinte-suave));
 }
 .tarjeta-punto__hueco i { font-size: 34px; color: var(--acento); opacity: .55; }
 
@@ -1400,7 +1475,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--tinte), #EAF4F8);
+  background: linear-gradient(135deg, var(--tinte), var(--tinte-suave));
 }
 .ficha__foto--hueco i { font-size: 64px; color: var(--acento); opacity: .5; }
 
@@ -2118,10 +2193,10 @@ a  { color: var(--acento); }
   height: 100%;
   background: var(--acento);
 }
-.ruta-estado__lleno--exceso { background: #C0563B; }
+.ruta-estado__lleno--exceso { background: var(--peligro); }
 .ruta-estado__veredicto { font-weight: 700; white-space: nowrap; }
 .ruta-estado__veredicto--exacto { color: var(--verde-tx); }
-.ruta-estado__veredicto--exceso { color: #C0563B; }
+.ruta-estado__veredicto--exceso { color: var(--peligro); }
 .ruta-estado__veredicto--faltan { color: var(--texto-2); }
 .ruta-estado__fechas { color: var(--texto-2); white-space: nowrap; }
 .ruta-estado__fechas a { color: var(--acento); font-weight: 600; }
@@ -2268,7 +2343,7 @@ a  { color: var(--acento); }
   flex: none;
 }
 .etapa__quitar i { font-size: 17px; }
-.etapa__quitar:hover { color: #C0563B; background: var(--fondo); }
+.etapa__quitar:hover { color: var(--peligro); background: var(--fondo); }
 
 .etapa__fila {
   display: flex;
@@ -2421,7 +2496,7 @@ a  { color: var(--acento); }
 .btn-mini--confirmar { background: var(--acento); color: #fff; }
 .btn-mini--confirmar:hover { background: var(--acento-hover); }
 .btn-mini--quitar { background: transparent; color: var(--texto-2); }
-.btn-mini--quitar:hover { color: #C0563B; }
+.btn-mini--quitar:hover { color: var(--peligro); }
 
 .ruta-vacia {
   margin: 0;
@@ -2489,11 +2564,11 @@ a  { color: var(--acento); }
 }
 
 .boton--peligro {
-  background: #C0563B;
+  background: var(--peligro);
   color: #fff;
   border: 1px solid transparent;
 }
-.boton--peligro:hover { background: #A8452C; }
+.boton--peligro:hover { background: var(--peligro-hover); }
 
 @media (max-width: 560px) {
   .etapa { flex-wrap: wrap; }
@@ -2551,8 +2626,8 @@ a  { color: var(--acento); }
 }
 
 .chip-ambito--pendiente {
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -2737,8 +2812,8 @@ a  { color: var(--acento); }
   gap: 5px;
   padding: 4px 11px;
   border-radius: 999px;
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   font-size: 12px;
   font-weight: 700;
 }
@@ -2981,8 +3056,8 @@ a  { color: var(--acento); }
   gap: 6px;
   font-size: 12px;
   line-height: 1.4;
-  color: #8A5A16;
-  background: #FBEED6;
+  color: var(--ambar-tx);
+  background: var(--ambar-bg);
   border-radius: 10px;
   padding: 9px 11px;
   margin: 0 0 10px;
@@ -3037,7 +3112,7 @@ a  { color: var(--acento); }
 /* Una raya de color a la izquierda dice de que tipo es sin leer nada. */
 .item--actividad { border-left: 3px solid var(--acento); }
 .item--sitio     { border-left: 3px solid var(--texto-3); }
-.item--comer     { border-left: 3px solid #C98A2B; }
+.item--comer     { border-left: 3px solid var(--ambar-fuerte); }
 .item--manual    { border-left: 3px solid var(--verde-tx); }
 .item--manual .item__fila > i { color: var(--verde-tx); }
 
@@ -3052,11 +3127,11 @@ a  { color: var(--acento); }
   flex-shrink: 0;
 }
 .item__quitar i { font-size: 14px; }
-.item__quitar:hover { color: #C0563B; }
+.item__quitar:hover { color: var(--peligro); }
 
-.item--conflicto { border-color: #C0563B; background: #F9E3DC; }
-.item--conflicto .item__hora { color: #C0563B; }
-.item--recolocar { border-style: dashed; border-color: #8A5A16; }
+.item--conflicto { border-color: var(--peligro); background: var(--peligro-bg); }
+.item--conflicto .item__hora { color: var(--peligro); }
+.item--recolocar { border-style: dashed; border-color: var(--ambar-tx); }
 
 /* --- Los dias ------------------------------------------------------------- */
 .lienzo-dias {
@@ -3095,8 +3170,8 @@ a  { color: var(--acento); }
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  background: #F9E3DC;
-  color: #C0563B;
+  background: var(--peligro-bg);
+  color: var(--peligro);
   border-radius: 10px;
   padding: 7px 10px;
   font-size: 12px;
@@ -3142,8 +3217,8 @@ a  { color: var(--acento); }
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   border-radius: 10px;
   padding: 8px 10px;
   font-size: 12.5px;
@@ -4239,7 +4314,7 @@ a  { color: var(--acento); }
 .ficha-movilidad__acciones .apuntar { flex: 1 1 auto; min-width: 0; justify-content: center; }
 .ficha-transporte__acciones .apuntar--peligro,
 .ficha-movilidad__acciones .apuntar--peligro { flex: 0 0 auto; }
-.apuntar--peligro:hover { border-color: #C0563B; color: #C0563B; }
+.apuntar--peligro:hover { border-color: var(--peligro); color: var(--peligro); }
 
 /* --- Lo tecleado en el medio elegido -------------------------------------- */
 .ficha-transporte__mios {
@@ -4444,8 +4519,8 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   gap: 5px;
   padding: 2px 9px;
   border-radius: 999px;
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -4525,7 +4600,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   cursor: pointer;
   padding: 0;
 }
-.direccion__quitar:hover { color: #C0563B; }
+.direccion__quitar:hover { color: var(--peligro); }
 .direccion__pista { font-size: 11px; margin: 0; }
 
 .boton--pequeno { padding: 6px 12px; font-size: 12px; }
@@ -4817,7 +4892,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   font-size: 13px;
   color: var(--texto-2);
 }
-.ficha-comer__nota i { color: #C98A2B; align-self: center; }
+.ficha-comer__nota i { color: var(--ambar-fuerte); align-self: center; }
 .ficha-comer__nota strong { color: var(--texto); font-size: 14px; }
 
 .ficha-comer__texto, .ficha-comer__horarios {
@@ -4943,7 +5018,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   cursor: pointer;
   line-height: 1;
 }
-.distancia__quitar:hover { color: #C0563B; }
+.distancia__quitar:hover { color: var(--peligro); }
 
 .distancias__form {
   display: flex;
@@ -5391,7 +5466,7 @@ body.con-ventana { overflow: hidden; }
    ANTES DE VIAJAR
    -----------------------------------------------------------------------------
    La ficha práctica de cada país, en "Mi ruta". El botón lleva el ámbar de los
-   avisos de la casa (#FBEED6 sobre #8A5A16) porque es exactamente eso: algo que
+   avisos de la casa (var(--ambar-bg) sobre var(--ambar-tx)) porque es exactamente eso: algo que
    hay que mirar y que, si no se mira a tiempo, se convierte en un problema.
 
    Se llama `antes-*` y no `modal-*` a propósito: en esa pantalla ya vive un
@@ -5407,8 +5482,8 @@ body.con-ventana { overflow: hidden; }
   padding: 14px 18px;
   border: 1px solid #EBD5AE;
   border-radius: var(--radio);
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   font-family: inherit;
   font-size: 15px;
   text-align: left;
@@ -5456,8 +5531,8 @@ body.con-ventana { overflow: hidden; }
   justify-content: space-between;
   gap: 12px;
   padding: 18px 20px 14px;
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
 }
 .antes__titulo {
   display: flex;
@@ -5512,7 +5587,7 @@ body.con-ventana { overflow: hidden; }
   height: 7px;
   margin-left: 6px;
   border-radius: 999px;
-  background: #8A5A16;
+  background: var(--ambar-tx);
   vertical-align: middle;
 }
 
@@ -5529,8 +5604,8 @@ body.con-ventana { overflow: hidden; }
   margin: 0 0 16px;
   padding: 11px 14px;
   border-radius: 10px;
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   font-size: 13px;
 }
 
@@ -5589,7 +5664,7 @@ body.con-ventana { overflow: hidden; }
   font-size: 12px;
   font-weight: 700;
 }
-.antes-marca--si { background: #FBEED6; color: #8A5A16; }
+.antes-marca--si { background: var(--ambar-bg); color: var(--ambar-tx); }
 .antes-marca--no { background: var(--tinte); color: var(--acento); }
 
 .antes-festivos { margin: 0 0 8px; padding: 0; list-style: none; font-size: 14px; }
@@ -5611,7 +5686,7 @@ body.con-ventana { overflow: hidden; }
   background: var(--tinte);
   color: var(--acento);
 }
-.antes-sev--precaucion { background: #FBEED6; color: #8A5A16; }
+.antes-sev--precaucion { background: var(--ambar-bg); color: var(--ambar-tx); }
 .antes-sev--alerta { background: var(--alerta-bg, #FBE0DC); color: var(--alerta-tx, #A33A28); }
 
 .antes-enlace { color: var(--acento); font-size: 13px; font-weight: 650; }
@@ -5808,8 +5883,8 @@ body.con-antes { overflow: hidden; }
   margin: 8px 0 0;
   padding: 7px 10px;
   border-radius: 8px;
-  background: #FBEED6;
-  color: #8A5A16;
+  background: var(--ambar-bg);
+  color: var(--ambar-tx);
   font-size: 11.5px;
   line-height: 1.45;
 }
@@ -5910,7 +5985,7 @@ body.con-antes { overflow: hidden; }
 }
 .datos-sitio__pie i { font-size: 13px; }
 /* Discreto, no alarmante: el dato sigue sirviendo, solo tiene sus semanas. */
-.datos-sitio__pie--viejo { color: #8A5A16; }
+.datos-sitio__pie--viejo { color: var(--ambar-tx); }
 
 /* ===========================================================================
    LOS BLOQUES DE SITIOS (tercer nivel de pestañas)
@@ -6014,8 +6089,8 @@ body.con-antes { overflow: hidden; }
   margin: 0 0 14px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: #FDECEC;
-  color: #8A2020;
+  background: var(--error-bg);
+  color: var(--error-tx);
   font-size: 13px;
 }
 
@@ -6065,7 +6140,7 @@ body.con-antes { overflow: hidden; }
   cursor: pointer;
 }
 .busqueda__borrar:hover { background: rgba(0, 0, 0, .06); color: var(--texto); }
-.busqueda__fallo { margin: 8px 0 0; color: #8A2020; font-size: 13px; }
+.busqueda__fallo { margin: 8px 0 0; color: var(--error-tx); font-size: 13px; }
 /* El aviso de "esto ya lo tenías": informa, no alarma. */
 .busqueda__nota {
   display: flex;

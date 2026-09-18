@@ -50,9 +50,9 @@
 
 /* Cada estado tiene su color, y solo uno: el que está pasando ahora. */
 .orq-fase--en_curso   .orq-fase__marca i { color: var(--acento); }
-.orq-fase--hecho      .orq-fase__marca i { color: #2E7D5B; }
-.orq-fase--con_huecos .orq-fase__marca i { color: #8A5A16; }
-.orq-fase--error      .orq-fase__marca i { color: #8A2020; }
+.orq-fase--hecho      .orq-fase__marca i { color: var(--verde-medio); }
+.orq-fase--con_huecos .orq-fase__marca i { color: var(--ambar-tx); }
+.orq-fase--error      .orq-fase__marca i { color: var(--error-tx); }
 
 /* La rueda del "en marcha". Se para sola cuando cambia el estado porque la
    clase se quita: no hace falta apagarla a mano. */
@@ -172,7 +172,7 @@
   align-items: flex-start;
   gap: 7px;
   padding: 3px 0;
-  color: #8A5A16;
+  color: var(--ambar-tx);
   font-size: 13px;
 }
 .orq-fase__huecos i { flex: none; margin-top: 2px; }
@@ -200,8 +200,8 @@
   margin: 0 0 20px;
   padding: 12px 16px;
   border-radius: 12px;
-  background: #FDECEC;
-  color: #8A2020;
+  background: var(--error-bg);
+  color: var(--error-tx);
   font-size: 13.5px;
 }
 
@@ -216,7 +216,7 @@
   color: #245B43;
   font-size: 13px;
 }
-.orq-aviso--malo { background: #FDECEC; color: #8A2020; }
+.orq-aviso--malo { background: var(--error-bg); color: var(--error-tx); }
 
 /* ===========================================================================
    LA PANTALLA DE AJUSTES: una sección por fase
@@ -444,7 +444,7 @@
   margin: 0 0 18px;
   padding: 11px 14px;
   border-radius: 10px;
-  background: #EAF4F8;
+  background: var(--tinte-suave);
   color: #14536B;
   font-size: 13px;
   line-height: 1.45;
@@ -700,7 +700,7 @@
   width: min(460px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: 1px solid var(--borde);
-  border-radius: 16px;
+  border-radius: var(--radio);
   background: var(--superficie);
   color: inherit;
   font: inherit;

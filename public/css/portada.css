@@ -166,7 +166,7 @@
 .billete {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 16px;
+  border-radius: var(--radio);
   display: flex;
   position: relative;
   transition: transform .12s ease, border-color .12s ease;
@@ -180,7 +180,7 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  border-radius: 16px;
+  border-radius: var(--radio);
 }
 
 .talon {
@@ -245,7 +245,7 @@
 .chip-billete i { font-size: 13px; }
 .chip-billete--etapas { background: var(--tinte); color: var(--acento); }
 .chip-billete--cuadra { background: var(--verde-bg); color: var(--verde-tx); }
-.chip-billete--faltan { background: #FBEED6; color: #8A5A16; }
+.chip-billete--faltan { background: var(--ambar-bg); color: var(--ambar-tx); }
 
 /* --- El menu de tres puntos ----------------------------------------------- */
 .menu-btn {
@@ -289,7 +289,7 @@
   color: var(--texto);
 }
 .menu button:hover { background: var(--fondo); }
-.menu__peligro { color: #C0563B; }
+.menu__peligro { color: var(--peligro); }
 
 /* --- La tarjeta de "empezar uno nuevo" ------------------------------------ */
 .billete-nuevo-form { display: flex; }
@@ -300,7 +300,7 @@
   justify-content: center;
   gap: 7px;
   border: 2px dashed var(--borde);
-  border-radius: 16px;
+  border-radius: var(--radio);
   padding: 22px;
   background: none;
   color: var(--texto-3);

@@ -10,23 +10,26 @@
    con la ropa de otra o le cambia la ropa a media aplicación. Con él, ni una
    regla de aquí sale de esta pantalla.
    ========================================================================== */
+/* ESTA PANTALLA TENÍA SU PROPIA PALETA, Y ERA LA MISMA.
+ *
+ * Aquí se redeclaraban doce variables. Diez de ellas con EXACTAMENTE el mismo
+ * valor que las de `:root` —`--fondo`, `--superficie`, `--borde`, `--acento`,
+ * `--acento-hover`, `--tinte`— o con otro nombre para el mismo color:
+ * `--texto-acento` era `--texto`, `--secundario` era `--texto-2`, `--verde-f/-t`
+ * eran `--verde-bg/-tx`. Todas fuera: se heredan de `:root` como el resto.
+ *
+ * LAS DOS DEL ÁMBAR NO ERAN UN DUPLICADO y por eso siguen, pero ya no viven
+ * aquí: `var(--ambar-bg)` y `var(--ambar-tx)` NO son `--prec-bg` (#FAEEDA) ni `--prec-tx`
+ * (#854F0B). Son un ámbar distinto, y además el que usan estilo.css, portada.css
+ * y orquestador.css. Así que tienen su propio token global, `--ambar-bg` y
+ * `--ambar-tx`, con esos valores exactos: renombrar no es recolorear.
+ *
+ * El aislamiento por `.config` se queda como estaba. Lo que se va es la paleta,
+ * no el prefijo. */
 .config {
-  --fondo: #F4F8FA;
-  --superficie: #FFFFFF;
-  --borde: #E2ECF1;
-  --acento: #1B7FA6;
-  --acento-hover: #16688A;
-  --tinte: #D3E8F0;
-  --texto-acento: #12303E;
-  --secundario: #5E7A87;
-  --verde-f: #E1F2E7;
-  --verde-t: #1E6B3C;
-  --ambar-f: #FBEED6;
-  --ambar-t: #8A5A16;
-
   background: var(--fondo);
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  color: var(--texto-acento);
+  color: var(--texto);
   min-height: 100vh;
   padding: 28px 16px 90px;
   display: block;
@@ -45,16 +48,16 @@
 }
 .config .btn-volver:hover { background: var(--tinte); }
 .config .cabecera h1 { font-size: 26px; font-weight: 600; }
-.config .cabecera p { color: var(--secundario); font-size: 14px; margin-top: 2px; }
+.config .cabecera p { color: var(--texto-2); font-size: 14px; margin-top: 2px; }
 
 /* Tarjetas de sección */
 .config .tarjeta {
   background: var(--superficie); border: 1px solid var(--borde);
-  border-radius: 16px; padding: 22px 24px; margin-bottom: 16px;
+  border-radius: var(--radio); padding: 22px 24px; margin-bottom: 16px;
 }
 .config .tarjeta h2 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
 .config .tarjeta h2 svg { color: var(--acento); flex: none; }
-.config .tarjeta .sub { color: var(--secundario); font-size: 13px; margin-top: 3px; margin-left: 32px; }
+.config .tarjeta .sub { color: var(--texto-2); font-size: 13px; margin-top: 3px; margin-left: 32px; }
 .config .cuerpo { margin-top: 18px; }
 
 /* ====== Calendario de rango ====== */
@@ -64,12 +67,12 @@
   padding: 10px 18px; margin-bottom: 18px; font-size: 14px;
 }
 .config .cal-resumen b { font-weight: 600; }
-.config .cal-resumen .flecha { color: var(--secundario); }
+.config .cal-resumen .flecha { color: var(--texto-2); }
 .config .cal-resumen .noches {
-  margin-left: auto; background: var(--verde-f); color: var(--verde-t);
+  margin-left: auto; background: var(--verde-bg); color: var(--verde-tx);
   border-radius: 999px; padding: 4px 14px; font-size: 13px; font-weight: 600;
 }
-.config .cal-resumen .noches.vacio { background: var(--ambar-f); color: var(--ambar-t); font-weight: 500; }
+.config .cal-resumen .noches.vacio { background: var(--ambar-bg); color: var(--ambar-tx); font-weight: 500; }
 
 .config .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .config .cal-nav button {
@@ -83,12 +86,12 @@
 .config .mes h3 { text-align: center; font-size: 14.5px; font-weight: 600; margin-bottom: 10px; text-transform: capitalize; }
 .config .semana, .config .dias { display: grid; grid-template-columns: repeat(7, 1fr); }
 .config .semana span {
-  text-align: center; font-size: 11.5px; color: var(--secundario);
+  text-align: center; font-size: 11.5px; color: var(--texto-2);
   padding-bottom: 6px; font-weight: 600;
 }
 .config .dias button {
   aspect-ratio: 1; border: none; background: transparent; font-size: 13.5px;
-  color: var(--texto-acento); cursor: pointer; border-radius: 50%;
+  color: var(--texto); cursor: pointer; border-radius: 50%;
   position: relative; font-family: inherit;
 }
 .config .dias button:hover:not(:disabled):not(.extremo) { background: var(--tinte); }
@@ -99,13 +102,13 @@
 .config .dias button.inicio.con-rango { border-radius: 50% 0 0 50%; }
 .config .dias button.fin { border-radius: 0 50% 50% 0; }
 .config .dias button.inicio.fin { border-radius: 50%; }
-.config .cal-pista { color: var(--secundario); font-size: 12.5px; margin-top: 12px; text-align: center; }
+.config .cal-pista { color: var(--texto-2); font-size: 12.5px; margin-top: 12px; text-align: center; }
 
 /* El aviso de fechas del servidor, cuando vuelve con error. */
 .config .cal-error {
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 14px; padding: 10px 16px;
-  border-radius: 12px; background: var(--ambar-f); color: var(--ambar-t);
+  border-radius: 12px; background: var(--ambar-bg); color: var(--ambar-tx);
   font-size: 13px;
 }
 
@@ -116,7 +119,7 @@
 }
 .config .fila-viajero:last-of-type { border-bottom: none; }
 .config .fila-viajero .nombre { font-size: 14.5px; font-weight: 600; }
-.config .fila-viajero .detalle { font-size: 12.5px; color: var(--secundario); margin-top: 2px; }
+.config .fila-viajero .detalle { font-size: 12.5px; color: var(--texto-2); margin-top: 2px; }
 .config .contador { display: flex; align-items: center; gap: 14px; }
 .config .contador button {
   width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--borde);
@@ -141,7 +144,7 @@
 .config .chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .config .chip {
   border: 1px solid var(--borde); background: var(--superficie); border-radius: 999px;
-  padding: 9px 18px; font-size: 13.5px; cursor: pointer; color: var(--texto-acento);
+  padding: 9px 18px; font-size: 13.5px; cursor: pointer; color: var(--texto);
   display: flex; align-items: center; gap: 7px; font-family: inherit;
 }
 .config .chip:hover { border-color: var(--acento); }
@@ -153,7 +156,7 @@
 .config .segmentos { display: flex; border: 1px solid var(--borde); border-radius: 999px; overflow: hidden; }
 .config .segmentos button {
   flex: 1; border: none; background: var(--superficie); padding: 10px 0;
-  font-size: 13.5px; cursor: pointer; color: var(--texto-acento); font-family: inherit;
+  font-size: 13.5px; cursor: pointer; color: var(--texto); font-family: inherit;
 }
 .config .segmentos button + button { border-left: 1px solid var(--borde); }
 .config .segmentos button.activo { background: var(--acento); color: #fff; font-weight: 600; }
@@ -161,14 +164,14 @@
 .config .presupuesto input {
   width: 100%; border: 1px solid var(--borde); border-radius: 999px;
   padding: 10px 44px 10px 18px; font-size: 14px; font-family: inherit; outline: none;
-  color: var(--texto-acento); background: var(--superficie);
+  color: var(--texto); background: var(--superficie);
 }
 .config .presupuesto input:focus { border-color: var(--acento); }
 .config .presupuesto .euro {
   position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
-  color: var(--secundario); font-size: 14px;
+  color: var(--texto-2); font-size: 14px;
 }
-.config .campo .nota { font-size: 12px; color: var(--secundario); margin-top: 8px; }
+.config .campo .nota { font-size: 12px; color: var(--texto-2); margin-top: 8px; }
 
 /* El interruptor de la revisión final cuelga DEBAJO de la rejilla de dos
    columnas, no dentro: es un sí/no y en una columna quedaba como medio campo.
@@ -212,7 +215,7 @@
   padding: 10px 18px;
   font-size: 13.5px;
   font-family: inherit;
-  color: var(--texto-acento);
+  color: var(--texto);
   background: var(--superficie);
   outline: none;
   appearance: none;
@@ -258,7 +261,7 @@
   justify-content: center;
   background: var(--superficie);
   border-color: var(--borde);
-  color: var(--secundario);
+  color: var(--texto-2);
 }
 .config .btn-plantilla--icono:hover:not(:disabled) {
   background: var(--tinte);
@@ -279,15 +282,15 @@
    se tropezó una vez: la global es un flex centrado. */
 .config .plantillas__pista {
   font-size: 12px;
-  color: var(--secundario);
+  color: var(--texto-2);
   margin-top: 8px;
   line-height: 1.45;
 }
-.config .plantillas__pista strong { color: var(--texto-acento); font-weight: 600; }
+.config .plantillas__pista strong { color: var(--texto); font-weight: 600; }
 
 .config .plantillas__vacio {
   font-size: 13px;
-  color: var(--secundario);
+  color: var(--texto-2);
   padding: 2px 0 2px;
 }
 
@@ -300,7 +303,7 @@
   margin-bottom: 16px;
   border-radius: 12px;
   background: var(--tinte);
-  color: var(--texto-acento);
+  color: var(--texto);
   font-size: 13px;
 }
 .config .plantillas__aviso svg { flex: none; color: var(--acento); }
@@ -329,8 +332,8 @@
 .config .barra-final .interior {
   max-width: 880px; margin: 0 auto; display: flex; align-items: center; gap: 16px;
 }
-.config .barra-final .resumen { font-size: 13.5px; color: var(--secundario); flex: 1; min-width: 0; }
-.config .barra-final .resumen b { color: var(--texto-acento); }
+.config .barra-final .resumen { font-size: 13.5px; color: var(--texto-2); flex: 1; min-width: 0; }
+.config .barra-final .resumen b { color: var(--texto); }
 .config .btn-guardar {
   border: none; background: var(--acento); color: #fff; border-radius: 999px;
   padding: 12px 30px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
