@@ -2137,10 +2137,14 @@ a  { color: var(--acento); }
   background: var(--superficie);
   color: var(--texto);
   border-radius: var(--radio-pill);
-  padding: 9px 16px;
+  /* Talla NORMAL de la escala (38px / letra 14). Medía 41, un valor entre la
+     grande y la normal que no usaba nadie más. */
+  min-height: 38px;
+  padding: 9px 18px;
   font: inherit;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
@@ -2458,10 +2462,14 @@ a  { color: var(--acento); }
   background: transparent;
   color: var(--texto);
   border-radius: var(--radio-xs);
-  padding: 8px 14px;
+  /* Talla NORMAL, la misma que su pareja `.etapa__clonar`: van uno al lado del
+     otro en la misma fila y tenían letras distintas, 13 y 14. */
+  min-height: 38px;
+  padding: 9px 18px;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
   text-decoration: none;
   cursor: pointer;
 }
@@ -3857,7 +3865,16 @@ a  { color: var(--acento); }
 
 /* El botón y su puntito de "se ha quedado viejo". */
 .dosier-menu { position: relative; display: inline-flex; }
-.dosier-boton { position: relative; padding: 7px 14px; font-size: 13px; }
+/* Talla NORMAL: es un botón de cabecera, no la acción principal de la pantalla.
+   Medía 44 —la talla grande, que hereda de `.boton`— con letra de 13, una
+   mezcla que no cuadraba con ninguna de las tres tallas. El `min-height` va
+   explícito porque el de `.boton` son 44 y aquí hay que bajarlo. */
+.dosier-boton {
+  position: relative;
+  min-height: 38px;
+  padding: 9px 18px;
+  font-size: 14px;
+}
 .dosier-boton[disabled] { opacity: .5; cursor: not-allowed; }
 
 .dosier-punto {
@@ -4167,13 +4184,15 @@ a  { color: var(--acento); }
      NO se pone `line-height: 1`, que es lo que pedía el atajo: hoy hereda
      `normal` y fijarlo cambiaría la altura. */
   font-family: inherit;
-  font-size: 13px;
+  /* Talla NORMAL: la altura ya era 38; la letra sube de 13 a 14 para igualar
+     al resto de acciones de panel. */
+  font-size: 14px;
   font-weight: 600;
-  /* Un <button> NO hereda el interlineado: el suyo de fábrica es `normal`. Se lo
-     forzaba el `font: inherit` del bloque de `.etapa__abrir`, y al quitar de allí
-     `.etapa__clonar` el texto se descolocó dentro de su caja. Se repone aquí, y
-     con `inherit` en vez de un número para que siga al de la página si cambia. */
-  line-height: inherit;
+  /* Un <button> NO hereda el interlineado: el suyo de fábrica es `normal`, y sin
+     decírselo el texto se descoloca dentro de la caja. Va el 1.2 de la escala, el
+     mismo que `.boton`, y con él la caja sale de 34,8 y manda el `min-height`. */
+  line-height: 1.2;
+  min-height: 38px;
   white-space: nowrap;
   cursor: pointer;
 }
