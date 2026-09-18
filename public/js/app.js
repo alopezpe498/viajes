@@ -294,9 +294,21 @@ document.addEventListener('click', (evento) => {
   // (El plegado "Más opciones" lo lleva el manejador genérico de abajo.)
 
   // --- "7 noches" calculado en vivo ---------------------------------------
+  //
+  // ESTOS TRES CAMPOS YA NO ESTÁN EN TODAS LAS PANTALLAS. En la de configuración
+  // las fechas las lleva el calendario y no hay `fecha_inicio` ni `fecha_fin`,
+  // así que el `addEventListener` de abajo reventaba con «Cannot read properties
+  // of null». Y una excepción sin recoger aquí no es un aviso en la consola: para
+  // la ejecución del fichero, y las 200 líneas que vienen después —los grupos
+  // exclusivos, los interruptores de sí/no, los paneles plegables, los vuelos y
+  // los hoteles— no llegaban a registrarse en esa pantalla. Hoy no se nota
+  // porque ninguna de esas piezas está ahí, pero lo siguiente que se añada al
+  // final de este fichero tampoco funcionaría, y sin decir por qué.
   const desde = document.getElementById('fecha_inicio');
   const hasta = document.getElementById('fecha_fin');
   const nota = document.getElementById('noches-nota');
+
+  if (!desde || !hasta || !nota) return;
 
   function pintarNoches() {
     if (!desde.value || !hasta.value) { nota.textContent = ''; return; }

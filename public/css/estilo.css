@@ -2128,7 +2128,7 @@ a  { color: var(--acento); }
    detrás de «⋯». «Antes de viajar» deja de ser un banner de cincuenta píxeles:
    lo que tenía que decir —«mírame, aún no lo has hecho»— lo dice un punto ámbar.
 */
-.ruta-cab { margin-bottom: 16px; }
+.ruta-hero { margin-bottom: 16px; }
 .ruta-cabecera__miga {
   font-size: var(--texto-base);
   color: var(--texto-2);
@@ -2139,20 +2139,20 @@ a  { color: var(--acento); }
 .ruta-cabecera__miga .miga__sep { margin: 0 5px; opacity: .45; }
 .ruta-cabecera__miga .miga__actual { color: var(--texto-2); font-weight: 600; }
 
-.ruta-cab__fila {
+.ruta-hero__fila {
   display: flex;
   align-items: center;
   gap: var(--esp-5);
   flex-wrap: wrap;
 }
-.ruta-cab__titulo {
+.ruta-hero__titulo {
   margin: 0;
   font-size: clamp(28px, 5vw, 38px);
   font-weight: 700;
   letter-spacing: -.02em;
   line-height: 1.05;
 }
-.ruta-cab__acciones {
+.ruta-hero__acciones {
   margin-left: auto;
   display: flex;
   gap: var(--esp-3);
@@ -2590,7 +2590,7 @@ a  { color: var(--acento); }
   }
   .ruta-punto i { font-size: var(--icono); }
   .ruta-casa { min-height: 48px; }
-  .ruta-cab__acciones { margin-left: 0; width: 100%; }
+  .ruta-hero__acciones { margin-left: 0; width: 100%; }
   /* Las acciones bajan a su propia línea en vez de apretarse contra el chip. */
   .etapa__acciones { margin-left: 0; width: 100%; }
   .etapa__dormir { max-width: 100%; }

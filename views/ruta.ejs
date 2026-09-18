@@ -46,13 +46,13 @@ const { viaje } = ruta;
         Ahora son píldoras del mismo tamaño. Las tres que se usan a la vista y el
         resto detrás de «⋯». «Antes de viajar» conserva lo único que lo hacía
         importante —avisar de que aún no se ha mirado— en un punto ámbar. %>
-    <header class="ruta-cab">
+    <header class="ruta-hero">
       <%- include('parciales/migas', { viaje }) %>
-      <div class="ruta-cab__fila">
-        <h1 class="ruta-cab__titulo">Mi ruta</h1>
+      <div class="ruta-hero__fila">
+        <h1 class="ruta-hero__titulo">Mi ruta</h1>
         <% if (viaje.ambito) { %><span class="chip-ambito"><%= viaje.ambito %></span><% } %>
 
-        <nav class="ruta-cab__acciones" aria-label="Accesos del viaje">
+        <nav class="ruta-hero__acciones" aria-label="Accesos del viaje">
           <a class="ruta-pildora" href="/viaje/<%= viaje.id %>/lienzo">
             <i class="ti ti-layout-board" aria-hidden="true"></i> Lienzo
           </a>
