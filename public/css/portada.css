@@ -317,7 +317,7 @@
   width: 100%;
   margin-top: 14px;
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 11px 13px;
   font-family: inherit;
   font-size: 15px;

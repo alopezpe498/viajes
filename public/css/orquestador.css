@@ -85,7 +85,7 @@
 .orq-fase__log {
   margin: 10px 0 0;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--fondo);
   color: var(--texto-2);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -106,7 +106,7 @@
   margin: 10px 0 0;
   padding: 10px 12px;
   list-style: none;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--fondo);
   color: var(--texto-2);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -147,7 +147,7 @@
 .orq-pasada {
   margin-top: 8px;
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
 }
 
@@ -211,7 +211,7 @@
 .orq-aviso {
   margin: 0 0 16px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: #E7F4EE;
   color: #245B43;
   font-size: 13px;
@@ -279,7 +279,7 @@
 .orq-seccion__sin {
   margin: 0 0 14px;
   padding: 11px 14px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--fondo);
   color: var(--texto-3);
   font-size: 13px;
@@ -324,7 +324,7 @@
   width: 92px;
   padding: 9px 12px;
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--tarjeta, #fff);
   font: inherit;
   font-size: 14px;
@@ -443,7 +443,7 @@
 .auto-aviso {
   margin: 0 0 18px;
   padding: 11px 14px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--tinte-suave);
   color: #14536B;
   font-size: 13px;
@@ -474,7 +474,7 @@
   width: 100%;
   padding: 11px 14px;
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--tarjeta, #fff);
   font: inherit;
   font-size: 14px;
@@ -596,7 +596,7 @@
   min-width: 0;
   padding: 9px 12px;
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--tarjeta, #fff);
   font: inherit;
   font-size: 14px;
@@ -736,7 +736,7 @@
 .orq-ayuda__ejemplo {
   margin-top: 14px;
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--fondo);
 }
 .orq-ayuda__ejemplo p { margin: 5px 0 0; font-size: var(--texto-lg); line-height: 1.55; }

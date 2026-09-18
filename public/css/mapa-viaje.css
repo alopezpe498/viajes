@@ -53,7 +53,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-volver {
   width: 34px; height: 34px; flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--tinte); color: var(--acento);
   text-decoration: none; font-size: 17px;
 }
@@ -220,7 +220,7 @@ html:has(.mapa-maestro) { height: 100%; }
    ========================================================================== */
 .mm-pin {
   display: flex; align-items: center; justify-content: center;
-  width: 29px; height: 29px; border-radius: 10px;
+  width: 29px; height: 29px; border-radius: var(--radio-xs);
   color: #fff; font-size: 14px;
   border: 2px solid #fff; box-shadow: 0 3px 10px rgba(18, 48, 62, .3);
 }

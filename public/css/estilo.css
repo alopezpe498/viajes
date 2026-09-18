@@ -88,6 +88,12 @@
      siguen a pelo hasta que se decida a cuál de estos se acercan. */
   --radio: 16px;
   --radio-sm: 14px;
+  /* Los dos tramos que faltaban: medidos, no elegidos. El de 10px lo usan
+     38 sitios —era el tercer radio más usado de la aplicación y no tenía
+     nombre— y el de 18px son las piezas grandes que van a propósito más
+     redondas que `--radio`: la tarjeta de viaje, el embarque, la bandeja. */
+  --radio-xs: 10px;
+  --radio-lg: 18px;
   --radio-pill: 999px;    /* lo usan las 9 hojas: botones, chips, píldoras */
   --radio-circulo: 50%;   /* botones redondos: volver, stepper, contador */
 
@@ -167,7 +173,7 @@ a  { color: var(--acento); }
 .embarque {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 18px;
+  border-radius: var(--radio-lg);
   overflow: hidden;
 }
 
@@ -569,7 +575,7 @@ a  { color: var(--acento); }
 .viaje-tarjeta {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 18px;
+  border-radius: var(--radio-lg);
   overflow: hidden;
   text-decoration: none;
   color: inherit;
@@ -777,7 +783,7 @@ a  { color: var(--acento); }
 .bloque {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 18px;
+  border-radius: var(--radio-lg);
   padding: 22px;
   margin-bottom: 18px;   /* el aire entre preguntas es parte del diseño */
 }
@@ -1724,7 +1730,7 @@ a  { color: var(--acento); }
 .mini__foto {
   flex: 0 0 auto;
   width: 56px; height: 56px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   object-fit: cover;
   background: var(--tinte);
 }
@@ -2034,7 +2040,7 @@ a  { color: var(--acento); }
 
 @media (min-width: 900px) {
   .mundo__cabecera { top: 20px; }
-  .bandeja { bottom: 20px; border-radius: 18px; border-bottom: 1px solid var(--borde); }
+  .bandeja { bottom: 20px; border-radius: var(--radio-lg); border-bottom: 1px solid var(--borde); }
   .bandeja { transform: translate(-50%, calc(100% + 30px)); }
   .bandeja--abierta { transform: translate(-50%, 0); }
   .bandeja__asa { display: none; }
@@ -2431,7 +2437,7 @@ a  { color: var(--acento); }
   border: 1.5px solid var(--borde);
   background: transparent;
   color: var(--texto);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 8px 14px;
   font: inherit;
   font-size: 13px;
@@ -2880,7 +2886,7 @@ a  { color: var(--acento); }
 .manual__campo select,
 .manual__campo input {
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 9px 11px;
   font-family: inherit;
   font-size: 14px;
@@ -3050,7 +3056,7 @@ a  { color: var(--acento); }
   font-size: 13px;
   color: var(--verde-tx);
   background: var(--verde-bg);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 10px 12px;
   margin: 0;
 }
@@ -3063,7 +3069,7 @@ a  { color: var(--acento); }
   line-height: 1.4;
   color: var(--ambar-tx);
   background: var(--prec-bg);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 9px 11px;
   margin: 0 0 10px;
 }
@@ -3098,7 +3104,7 @@ a  { color: var(--acento); }
 .item {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 8px 10px;
   font-size: 13px;
   margin-bottom: 6px;
@@ -3177,7 +3183,7 @@ a  { color: var(--acento); }
   gap: 5px;
   background: var(--peligro-bg);
   color: var(--peligro);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 600;
@@ -3224,7 +3230,7 @@ a  { color: var(--acento); }
   gap: 5px;
   background: var(--prec-bg);
   color: var(--ambar-tx);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 8px 10px;
   font-size: var(--texto-base);
   font-weight: 600;
@@ -3236,7 +3242,7 @@ a  { color: var(--acento); }
 /* --- Anadir a mano -------------------------------------------------------- */
 .manual-rapido {
   background: var(--fondo);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   padding: 8px;
   margin-bottom: 6px;
 }
@@ -3863,7 +3869,7 @@ a  { color: var(--acento); }
   gap: 6px;
   margin: 0 0 8px;
   padding: 7px 9px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 12px;
@@ -3955,7 +3961,7 @@ a  { color: var(--acento); }
   margin-bottom: 6px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   font-size: 14px;
 }
 .adjunto > i { color: var(--acento); font-size: 18px; flex: 0 0 auto; }
@@ -4297,7 +4303,7 @@ a  { color: var(--acento); }
   gap: 6px;
   margin: 0;
   padding: 6px 9px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 12px;
@@ -4345,7 +4351,7 @@ a  { color: var(--acento); }
   width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 13px;
@@ -4435,7 +4441,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 13px;
@@ -4587,7 +4593,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 13px;
@@ -4650,7 +4656,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 9px 11px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 14px;
@@ -4844,7 +4850,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 9px 11px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 14px;
@@ -5031,7 +5037,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: flex-end;
   flex-wrap: wrap;
   padding: 10px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--tinte);
 }
 .distancias__campo { display: grid; gap: 3px; flex: 1 1 180px; min-width: 0; }
@@ -5455,7 +5461,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 14px;
@@ -5608,7 +5614,7 @@ body.con-ventana { overflow: hidden; }
   gap: 9px;
   margin: 0 0 16px;
   padding: 11px 14px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--ambar-tx);
   font-size: 13px;
@@ -5702,7 +5708,7 @@ body.con-ventana { overflow: hidden; }
   gap: 8px;
   margin: 0 0 16px;
   padding: 10px 13px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--fondo);
   color: var(--texto-2);
   font-size: 13px;
@@ -6093,7 +6099,7 @@ body.con-antes { overflow: hidden; }
 .buscador-sitios__error {
   margin: 0 0 14px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--alerta-bg);
   color: var(--error-tx);
   font-size: 13px;
@@ -6164,7 +6170,7 @@ body.con-antes { overflow: hidden; }
   align-items: flex-start;
   gap: 10px;
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   cursor: pointer;
 }
 .propuesta:hover { background: rgba(0, 0, 0, .035); }
@@ -6274,7 +6280,7 @@ body.con-antes { overflow: hidden; }
 .reserva__campo textarea {
   padding: 8px 10px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 10px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   color: var(--texto);
   font: inherit;
