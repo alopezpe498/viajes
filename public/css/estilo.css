@@ -205,7 +205,7 @@ p  { margin: 0 0 var(--esp-5); }
 a  { color: var(--acento); }
 
 .secundario { color: var(--texto-2); font-size: var(--texto-base); }
-.aireado    { margin-top: 24px; }
+.aireado    { margin-top: var(--esp-9); }
 
 /* =============================================================================
    TARJETA DE EMBARQUE (cabecera del wizard)
@@ -229,7 +229,7 @@ a  { color: var(--acento); }
 .embarque__banda {
   background: var(--acento);
   color: #FFF;
-  padding: 11px 16px;
+  padding: var(--esp-4) var(--esp-7);
   display: flex;
   align-items: baseline;
   gap: var(--esp-5);
@@ -335,7 +335,7 @@ a  { color: var(--acento); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: var(--esp-1);
   padding: 6px 2px;
   border-radius: var(--radio-pill);
   text-decoration: none;
@@ -391,14 +391,14 @@ a  { color: var(--acento); }
 }
 
 .tarjeta__cuerpo {
-  padding: 13px 15px 15px;
+  padding: var(--esp-5) var(--esp-6) var(--esp-6);
   display: flex;
   gap: var(--esp-5);
   align-items: flex-start;
   flex: 1;
 }
 .tarjeta__texto  { flex: 1; min-width: 0; }
-.tarjeta__titulo { font-size: var(--texto-xl); font-weight: 600; margin-bottom: 7px; }
+.tarjeta__titulo { font-size: var(--texto-xl); font-weight: 600; margin-bottom: var(--esp-2); }
 
 /* Fila de metadatos: ★ nota · duración · precio */
 .metadatos {
@@ -460,7 +460,7 @@ a  { color: var(--acento); }
 .segmento--elegido {
   border: 2px solid var(--acento);
   background: #F2F9FC;
-  padding: 13px 15px;   /* compensa el borde extra para que no salte */
+  padding: var(--esp-5) var(--esp-6);   /* compensa el borde extra para que no salte */
 }
 
 .segmento__izq   { flex: 0 0 auto; }
@@ -473,7 +473,7 @@ a  { color: var(--acento); }
   letter-spacing: -.01em;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
 }
 .segmento__hora i { color: var(--texto-3); font-size: var(--texto-xl); }
 .segmento__nombre { font-size: var(--texto-xl); font-weight: 600; }
@@ -489,14 +489,14 @@ a  { color: var(--acento); }
   background: var(--superficie);
   color: var(--texto);
   border-radius: var(--radio-pill);
-  padding: 9px 16px;
+  padding: var(--esp-3) var(--esp-7);
   font-size: var(--texto-lg);
   font-family: inherit;
   cursor: pointer;
   min-height: 40px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
 }
 .chip i { font-size: var(--texto-xl); }
 .chip[aria-pressed="true"], .chip--activo {
@@ -515,7 +515,7 @@ a  { color: var(--acento); }
   justify-content: center;
   gap: var(--esp-3);
   min-height: 44px;
-  padding: 11px 22px;
+  padding: 10px 22px;
   border-radius: var(--radio-pill);
   font-size: var(--texto-xl);
   /* EL BOTÓN NO PUEDE MEDIR LO QUE LE DIGA LA CAJA DONDE CAIGA.
@@ -569,8 +569,8 @@ a  { color: var(--acento); }
 /* =============================================================================
    FORMULARIOS
    ============================================================================= */
-.campo { margin-bottom: 16px; }
-.campo label { display: block; font-size: var(--texto-lg); font-weight: 600; margin-bottom: 6px; }
+.campo { margin-bottom: var(--esp-7); }
+.campo label { display: block; font-size: var(--texto-lg); font-weight: 600; margin-bottom: var(--esp-2); }
 .campo input, .campo select {
   width: 100%;
   min-height: 44px;
@@ -587,7 +587,7 @@ a  { color: var(--acento); }
   outline-offset: -1px;
   border-color: var(--acento);
 }
-.campo .ayuda { font-size: var(--texto-sm); color: var(--texto-2); margin-top: 5px; }
+.campo .ayuda { font-size: var(--texto-sm); color: var(--texto-2); margin-top: var(--esp-1); }
 .fila-campos { display: grid; grid-template-columns: 1fr; gap: 0 var(--esp-7); }
 
 /* =============================================================================
@@ -596,9 +596,9 @@ a  { color: var(--acento); }
 .aviso {
   border-radius: var(--radio);
   padding: var(--esp-6) var(--esp-7);
-  margin-bottom: 10px;
+  margin-bottom: var(--esp-4);
   display: flex;
-  gap: 13px;
+  gap: var(--esp-5);
   align-items: flex-start;
 }
 .aviso i { font-size: var(--icono); flex: 0 0 auto; line-height: 1.2; }
@@ -616,7 +616,7 @@ a  { color: var(--acento); }
   display: inline-block;
   font-size: var(--texto-sm);
   font-weight: 600;
-  padding: 3px 12px;
+  padding: var(--esp-1) var(--esp-5);
   border-radius: var(--radio-pill);
   background: var(--fondo);
   border: 1px solid var(--borde);
@@ -655,7 +655,7 @@ a  { color: var(--acento); }
 .viaje-tarjeta__destino { font-size: var(--titulo-sm); font-weight: 700; letter-spacing: -.01em; }
 .viaje-tarjeta__fechas  { font-size: var(--texto-base); color: var(--texto-2); margin-top: 2px; }
 .viaje-tarjeta__pie {
-  margin-top: 12px;
+  margin-top: var(--esp-5);
   display: flex;
   align-items: center;
   gap: var(--esp-4);
@@ -679,18 +679,18 @@ a  { color: var(--acento); }
   text-align: center;
   color: var(--texto-2);
 }
-.proximamente i { font-size: var(--icono); color: var(--texto-3); display: block; margin-bottom: 8px; }
+.proximamente i { font-size: var(--icono); color: var(--texto-3); display: block; margin-bottom: var(--esp-3); }
 .proximamente strong { color: var(--texto); }
 
 .vacio { text-align: center; color: var(--texto-2); padding: 34px 16px; }
 .oculto { display: none !important; }
-.pila > * + * { margin-top: 10px; }
+.pila > * + * { margin-top: var(--esp-4); }
 
 .linea-resumen {
   display: flex;
   gap: var(--esp-5);
   align-items: baseline;
-  padding: 9px 0;
+  padding: var(--esp-3) 0;
   border-bottom: 1px solid var(--borde);
 }
 .linea-resumen:last-child { border-bottom: 0; }
@@ -737,14 +737,14 @@ a  { color: var(--acento); }
     border-radius: var(--radio);
     padding: var(--esp-7);
   }
-  .lateral h3 { font-size: var(--texto-lg); margin-bottom: 12px; }
-  .lateral__grupo { margin-bottom: 13px; }
+  .lateral h3 { font-size: var(--texto-lg); margin-bottom: var(--esp-5); }
+  .lateral__grupo { margin-bottom: var(--esp-5); }
   .lateral__etiqueta {
     font-size: var(--texto-xs);
     text-transform: uppercase;
     letter-spacing: .05em;
     color: var(--texto-2);
-    margin-bottom: 5px;
+    margin-bottom: var(--esp-1);
   }
   .lateral__item {
     font-size: var(--texto-base);
@@ -753,8 +753,8 @@ a  { color: var(--acento); }
   }
   .lateral__total {
     border-top: 1px solid var(--borde);
-    margin-top: 11px;
-    padding-top: 11px;
+    margin-top: var(--esp-4);
+    padding-top: var(--esp-4);
     font-size: var(--texto-lg);
     font-weight: 700;
     display: flex;
@@ -766,7 +766,7 @@ a  { color: var(--acento); }
     position: static;
     border: 1px solid var(--borde);
     border-radius: var(--radio);
-    margin-top: 24px;
+    margin-top: var(--esp-9);
     padding: 14px 18px;
     justify-content: flex-end;
   }
@@ -795,7 +795,7 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   /* Talla NORMAL de la escala. El peso se queda en el que herede: este botón es
      discreto a propósito y esa es su gracia. */
-  padding: 9px 18px;
+  padding: 8px 18px;
   font-size: var(--texto-lg);
   font-family: inherit;
   line-height: 1.2;
@@ -828,9 +828,9 @@ a  { color: var(--acento); }
   .buscando__avion { animation: none; transform: rotate(45deg); }
 }
 
-.buscando__titulo { font-size: var(--texto-2xl); font-weight: 650; margin-top: 16px; }
+.buscando__titulo { font-size: var(--texto-2xl); font-weight: 650; margin-top: var(--esp-7); }
 .buscando__nota   { font-size: var(--texto-lg); color: var(--texto-2); max-width: 420px; margin: 8px auto 0; }
-.buscando__pista  { margin-top: 14px; }
+.buscando__pista  { margin-top: var(--esp-6); }
 
 /* =============================================================================
    PANTALLA 1 · "CONFIGURA TU VIAJE"
@@ -850,7 +850,7 @@ a  { color: var(--acento); }
 .bloque__cabecera {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--esp-4);
   margin-bottom: 18px;
 }
 .bloque__cabecera i { font-size: var(--icono); color: var(--acento); }
@@ -864,7 +864,7 @@ a  { color: var(--acento); }
   gap: var(--esp-2);
   font-size: var(--texto-base);
   color: var(--alerta-tx);
-  margin-top: 6px;
+  margin-top: var(--esp-2);
 }
 .campo input[aria-invalid="true"] { border-color: var(--alerta-tx); }
 
@@ -909,11 +909,11 @@ a  { color: var(--acento); }
 
 /* --- Edades de los niños -------------------------------------------------- */
 .edades {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: var(--esp-6);
+  padding-top: var(--esp-6);
   border-top: 1px solid var(--borde);
 }
-.edades__titulo { font-size: var(--texto-base); font-weight: 600; color: var(--texto-2); margin-bottom: 10px; }
+.edades__titulo { font-size: var(--texto-base); font-weight: 600; color: var(--texto-2); margin-bottom: var(--esp-4); }
 .edades__lista { display: flex; flex-wrap: wrap; gap: var(--esp-4); }
 
 .edad { display: flex; flex-direction: column; gap: var(--esp-1); }
@@ -932,7 +932,7 @@ a  { color: var(--acento); }
 /* --- Chips grandes del tipo de viaje -------------------------------------- */
 .chips--grandes { gap: var(--esp-4); }
 .chip--grande {
-  padding: 13px 20px;
+  padding: var(--esp-5) var(--esp-8);
   min-height: 50px;
   font-size: var(--texto-xl);
 }
@@ -945,11 +945,11 @@ a  { color: var(--acento); }
 }
 
 /* --- Plegable "Más opciones" ---------------------------------------------- */
-.plegable { margin-bottom: 4px; }
+.plegable { margin-bottom: var(--esp-1); }
 .plegable__disparador {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   background: none;
   border: 0;
   padding: var(--esp-3) 0;
@@ -979,7 +979,7 @@ a  { color: var(--acento); }
    ============================================================================= */
 .hotel__titulo { display: flex; align-items: baseline; gap: var(--esp-3); flex-wrap: wrap; }
 .hotel__estrellas { color: #E8B21A; font-size: var(--texto-sm); letter-spacing: -1px; white-space: nowrap; }
-.hotel__insignias { display: flex; gap: var(--esp-2); flex-wrap: wrap; margin-top: 8px; }
+.hotel__insignias { display: flex; gap: var(--esp-2); flex-wrap: wrap; margin-top: var(--esp-3); }
 .hotel__insignias:empty { margin-top: 0; }
 
 /* Píldora azul, hermana de .pildora-verde ("Gratis" / "Mejor precio") */
@@ -998,7 +998,7 @@ a  { color: var(--acento); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: var(--esp-1);
   text-align: center;
 }
 .nota__badge {
@@ -1006,7 +1006,7 @@ a  { color: var(--acento); }
   color: #FFF;
   font-weight: 700;
   font-size: var(--texto-xl);
-  padding: 5px 9px;
+  padding: var(--esp-1) var(--esp-3);
   border-radius: 10px 10px 10px 2px;   /* guiño al badge de Booking */
   min-width: 40px;
 }
@@ -1015,7 +1015,7 @@ a  { color: var(--acento); }
 /* En móvil la tarjeta de hotel se apila para que quepa todo */
 @media (max-width: 599px) {
   .segmento { flex-wrap: wrap; }
-  .nota { order: 3; flex-direction: row; align-items: center; gap: 7px; }
+  .nota { order: 3; flex-direction: row; align-items: center; gap: var(--esp-2); }
   .segmento__der { order: 4; margin-left: auto; }
 }
 
@@ -1032,7 +1032,7 @@ a  { color: var(--acento); }
   grid-template-columns: auto auto auto auto 1fr;
   align-items: baseline;
   gap: var(--esp-1) var(--esp-5);
-  padding: 5px 0;
+  padding: var(--esp-1) 0;
 }
 .tramo + .tramo { border-top: 1px dashed var(--borde); }
 
@@ -1059,8 +1059,8 @@ a  { color: var(--acento); }
   align-items: center;
   gap: var(--esp-3);
   flex-wrap: wrap;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: var(--esp-3);
+  padding-top: var(--esp-3);
   border-top: 1px solid var(--borde);
 }
 .vuelo__aerolineas { font-size: var(--texto-base); font-weight: 600; color: var(--texto); }
@@ -1081,7 +1081,7 @@ a  { color: var(--acento); }
   margin: var(--esp-2) 0 0;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
 }
 .filtros-resumen i { font-size: var(--texto-lg); }
 
@@ -1093,8 +1093,8 @@ a  { color: var(--acento); }
 /* --- Grupos dentro del panel de filtros ----------------------------------- */
 .grupo-filtro {
   border-bottom: 1px solid var(--borde);
-  padding-bottom: 16px;
-  margin-bottom: 16px;
+  padding-bottom: var(--esp-7);
+  margin-bottom: var(--esp-7);
 }
 .grupo-filtro__titulo {
   font-size: var(--texto-xs);
@@ -1102,7 +1102,7 @@ a  { color: var(--acento); }
   text-transform: uppercase;
   letter-spacing: .06em;
   color: var(--texto-2);
-  margin-bottom: 12px;
+  margin-bottom: var(--esp-5);
 }
 
 /* Marca de "esto no vuelve a buscar, se nota ya" */
@@ -1112,8 +1112,8 @@ a  { color: var(--acento); }
   color: var(--acento);
   background: var(--tinte);
   border-radius: var(--radio-pill);
-  padding: 2px 9px;
-  margin-left: 8px;
+  padding: 2px 8px;
+  margin-left: var(--esp-3);
   white-space: nowrap;
 }
 .etiqueta-instantanea i { font-size: var(--texto-sm); vertical-align: -1px; }
@@ -1139,13 +1139,13 @@ a  { color: var(--acento); }
 .avisos-grupo__titulo i { font-size: var(--icono-sm); color: var(--acento); }
 
 /* Los avisos de un mismo grupo van pegaditos, sin el aire de una lista suelta. */
-.avisos-grupo .aviso + .aviso { margin-top: 8px; }
+.avisos-grupo .aviso + .aviso { margin-top: var(--esp-3); }
 
 .aviso__enlace {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 7px;
+  gap: var(--esp-1);
+  margin-top: var(--esp-2);
   font-size: var(--texto-base);
   font-weight: 600;
   color: inherit;          /* hereda el color de la severidad: se lee siempre */
@@ -1201,8 +1201,8 @@ a  { color: var(--acento); }
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 14px;
+  gap: var(--esp-2);
+  padding: var(--esp-3) var(--esp-6);
   border-radius: var(--radio-pill);
   background: var(--superficie);
   border: 1px solid var(--borde);
@@ -1213,13 +1213,13 @@ a  { color: var(--acento); }
   white-space: nowrap;
 }
 .pill i { font-size: var(--icono-sm); color: var(--acento); }
-.pill--volver { padding: 9px 11px; }
+.pill--volver { padding: var(--esp-3) var(--esp-4); }
 .pill--volver:hover { background: var(--tinte); }
 .pill--titulo strong { font-weight: 700; }
 .pill__cuenta {
   color: var(--texto-2);
   font-size: var(--texto-base);
-  padding-left: 7px;
+  padding-left: var(--esp-2);
   border-left: 1px solid var(--borde);
 }
 .pill--frescura { color: var(--texto-2); font-size: var(--texto-base); }
@@ -1231,7 +1231,7 @@ a  { color: var(--acento); }
   align-items: center;
   border: 0;
   background: none;
-  padding: 2px 3px;
+  padding: 2px 4px;
   cursor: pointer;
   color: var(--texto-3);
   border-radius: var(--radio-pill);
@@ -1247,7 +1247,7 @@ a  { color: var(--acento); }
   align-items: center;
   justify-content: center;
   width: 20px; height: 20px;
-  margin: 3px;
+  margin: var(--esp-1);
   border-radius: var(--radio-circulo);
   background: var(--superficie);
   border: 2px solid var(--borde-fuerte);
@@ -1360,7 +1360,7 @@ a  { color: var(--acento); }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-1);
-  padding: 3px 9px;
+  padding: var(--esp-1) var(--esp-3);
   border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .92);
   font-size: var(--texto-xs);
@@ -1372,7 +1372,7 @@ a  { color: var(--acento); }
 .tarjeta-punto__categoria i { font-size: var(--texto-base); color: var(--acento); }
 
 .tarjeta-punto__cuerpo {
-  padding: 11px 13px 13px;
+  padding: var(--esp-4) var(--esp-5) var(--esp-5);
   display: flex;
   flex-direction: column;
   gap: var(--esp-2);
@@ -1395,7 +1395,7 @@ a  { color: var(--acento); }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-1);
-  padding: 3px 9px;
+  padding: var(--esp-1) var(--esp-3);
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -1428,12 +1428,12 @@ a  { color: var(--acento); }
   display: flex;
   gap: var(--esp-3);
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: var(--esp-3);
 }
 .tarjeta-punto__acciones .boton {
   flex: 1;
   justify-content: center;
-  padding: 9px 10px;
+  padding: var(--esp-3) var(--esp-4);
   font-size: var(--texto-base);
 }
 
@@ -1483,17 +1483,17 @@ a  { color: var(--acento); }
 .velo__nota { font-size: var(--texto-lg); color: var(--texto-2); margin: 0 0 var(--esp-3); line-height: 1.5; }
 .velo__nota code {
   background: var(--fondo);
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: var(--radio-mini);
   font-size: var(--texto-base);
 }
-.velo__pista { font-size: var(--texto-base); margin-top: 10px; }
+.velo__pista { font-size: var(--texto-base); margin-top: var(--esp-4); }
 .velo__botones {
   display: flex;
   gap: var(--esp-4);
   justify-content: center;
   flex-wrap: wrap;
-  margin-top: 14px;
+  margin-top: var(--esp-6);
 }
 
 /* Aviso corto que aparece abajo y se va solo. */
@@ -1582,7 +1582,7 @@ a  { color: var(--acento); }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 8px 13px;
+  padding: var(--esp-3) var(--esp-5);
   border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .92);
   color: var(--texto);
@@ -1599,7 +1599,7 @@ a  { color: var(--acento); }
 .ficha__categoria {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   font-size: var(--texto-xs);
   font-weight: 700;
   letter-spacing: .07em;
@@ -1609,7 +1609,7 @@ a  { color: var(--acento); }
 .ficha__categoria i { font-size: var(--texto-lg); }
 
 .ficha__nombre {
-  margin: 5px 0 4px;
+  margin: var(--esp-1) 0 var(--esp-1);
   font-size: var(--titulo);
   font-weight: 800;
   line-height: 1.15;
@@ -1622,7 +1622,7 @@ a  { color: var(--acento); }
   position: relative;
   z-index: 2;
   align-self: flex-start;
-  margin-top: 14px;
+  margin-top: var(--esp-6);
 }
 
 /* --- Cuerpo --------------------------------------------------------------- */
@@ -1638,8 +1638,8 @@ a  { color: var(--acento); }
   align-items: center;
   gap: var(--esp-4);
   flex-wrap: wrap;
-  padding: 11px 14px;
-  margin-bottom: 16px;
+  padding: var(--esp-4) var(--esp-6);
+  margin-bottom: var(--esp-7);
   border-radius: var(--radio);
   background: var(--info-bg);
   color: var(--info-tx);
@@ -1673,7 +1673,7 @@ a  { color: var(--acento); }
   justify-content: center;
   gap: var(--esp-2);
   white-space: nowrap;
-  padding: 0 15px;
+  padding: 0 var(--esp-6);
   border: 0;
   border-radius: var(--radio-pill);
   background: none;
@@ -1702,7 +1702,7 @@ a  { color: var(--acento); }
   justify-content: center;
   min-width: 20px;
   height: 20px;
-  padding: 0 5px;
+  padding: 0 var(--esp-1);
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -1717,13 +1717,13 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   border-left: 4px solid var(--acento);
   border-radius: var(--radio);
-  padding: 15px 17px;
-  margin-bottom: 16px;
+  padding: var(--esp-6) var(--esp-7);
+  margin-bottom: var(--esp-7);
 }
 .caja__titulo {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   margin: 0 0 var(--esp-3);
   font-size: var(--texto-base);
   font-weight: 700;
@@ -1745,13 +1745,13 @@ a  { color: var(--acento); }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--esp-4);
-  margin-bottom: 16px;
+  margin-bottom: var(--esp-7);
 }
 .dato {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 13px 14px;
+  gap: var(--esp-1);
+  padding: var(--esp-5) var(--esp-6);
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
@@ -1779,7 +1779,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
-  margin-bottom: 8px;
+  margin-bottom: var(--esp-3);
   overflow: hidden;
 }
 .mini[open] { border-color: var(--borde-fuerte); }
@@ -1787,8 +1787,8 @@ a  { color: var(--acento); }
 .mini__cabecera {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 9px 12px;
+  gap: var(--esp-4);
+  padding: var(--esp-3) var(--esp-5);
   cursor: pointer;
   list-style: none;
 }
@@ -1831,7 +1831,7 @@ a  { color: var(--acento); }
 .mini[open] .mini__flecha { transform: rotate(180deg); }
 
 .mini__detalle {
-  padding: 2px 12px 13px 79px;   /* alineado con el texto, no con la foto */
+  padding: 2px 12px 12px 79px;   /* alineado con el texto, no con la foto */
   border-top: 1px solid var(--borde);
   margin-top: 2px;
 }
@@ -1845,7 +1845,7 @@ a  { color: var(--acento); }
 .mini__enlaces a {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   font-size: var(--texto-base);
   font-weight: 600;
   color: var(--acento);
@@ -1855,7 +1855,7 @@ a  { color: var(--acento); }
 .mini__enlaces i { font-size: var(--icono-xs); }
 
 @media (max-width: 480px) {
-  .mini__detalle { padding-left: 12px; }
+  .mini__detalle { padding-left: var(--esp-5); }
 }
 
 /* La tarjeta de excursión en modo solo lectura: mismo hueco, enlace en vez
@@ -1878,7 +1878,7 @@ a  { color: var(--acento); }
 
 /* Globo de Leaflet con el atajo a la ficha, vestido como el resto. */
 .leaflet-popup-content-wrapper { border-radius: var(--radio); }
-.leaflet-popup-content { margin: 11px 14px; font-size: var(--texto-lg); line-height: 1.4; }
+.leaflet-popup-content { margin: var(--esp-4) var(--esp-6); font-size: var(--texto-lg); line-height: 1.4; }
 .popup__enlace { color: var(--acento); font-weight: 600; text-decoration: none; }
 .popup__enlace:hover { text-decoration: underline; }
 
@@ -1916,7 +1916,7 @@ a  { color: var(--acento); }
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 9px;
+  gap: var(--esp-3);
   /* El mapa se sigue pudiendo arrastrar por los huecos entre las piezas. */
   pointer-events: none;
 }
@@ -1930,7 +1930,7 @@ a  { color: var(--acento); }
   background: rgba(255, 255, 255, .78);
   color: var(--texto-2);
   font-size: var(--texto-base);
-  padding: 7px 13px;
+  padding: var(--esp-2) var(--esp-5);
   box-shadow: none;
 }
 .pill--pista i { color: var(--texto-3); font-size: var(--icono-xs); }
@@ -1940,7 +1940,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 4px 5px 4px 14px;
+  padding: var(--esp-1) var(--esp-1) var(--esp-1) var(--esp-6);
   width: min(420px, 100%);
   border-radius: var(--radio-pill);
   background: var(--superficie);
@@ -1969,7 +1969,7 @@ a  { color: var(--acento); }
   flex: 0 0 auto;
   border: 0;
   border-radius: var(--radio-pill);
-  padding: 9px 17px;
+  padding: var(--esp-3) var(--esp-7);
   background: var(--acento);
   color: #fff;
   font-family: inherit;
@@ -2045,7 +2045,7 @@ a  { color: var(--acento); }
 }
 
 .bandeja__miga {
-  margin: 0 0 3px;
+  margin: 0 0 var(--esp-1);
   font-size: var(--texto-base);
   font-weight: 600;
   color: var(--texto-2);
@@ -2055,7 +2055,7 @@ a  { color: var(--acento); }
 .bandeja__titular {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--esp-3);
   flex-wrap: wrap;
 }
 .bandeja__nombre {
@@ -2068,7 +2068,7 @@ a  { color: var(--acento); }
 .chip-tipo {
   display: inline-flex;
   align-items: center;
-  padding: 3px 11px;
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -2077,7 +2077,7 @@ a  { color: var(--acento); }
 }
 
 .bandeja__texto {
-  margin: 9px 0 0;
+  margin: var(--esp-3) 0 0;
   font-size: var(--texto-lg);
   line-height: 1.55;
   color: var(--texto-2);
@@ -2085,13 +2085,13 @@ a  { color: var(--acento); }
 
 .bandeja__botones {
   display: flex;
-  gap: 9px;
-  margin-top: 16px;
+  gap: var(--esp-3);
+  margin-top: var(--esp-7);
 }
 .bandeja__botones .boton { flex: 1; justify-content: center; }
 
 /* Los tres puntitos de "Identificando el lugar…". */
-.puntitos { display: inline-flex; gap: 5px; }
+.puntitos { display: inline-flex; gap: var(--esp-1); }
 .puntitos span {
   width: 7px; height: 7px;
   border-radius: var(--radio-circulo);
@@ -2149,15 +2149,15 @@ a  { color: var(--acento); }
    detrás de «⋯». «Antes de viajar» deja de ser un banner de cincuenta píxeles:
    lo que tenía que decir —«mírame, aún no lo has hecho»— lo dice un punto ámbar.
 */
-.ruta-hero { margin-bottom: 16px; }
+.ruta-hero { margin-bottom: var(--esp-7); }
 .ruta-cabecera__miga {
   font-size: var(--texto-base);
   color: var(--texto-2);
-  margin-bottom: 10px;
+  margin-bottom: var(--esp-4);
 }
 .ruta-cabecera__miga a { color: inherit; text-decoration: none; }
 .ruta-cabecera__miga a:hover { color: var(--acento); text-decoration: underline; }
-.ruta-cabecera__miga .miga__sep { margin: 0 5px; opacity: .45; }
+.ruta-cabecera__miga .miga__sep { margin: 0 var(--esp-1); opacity: .45; }
 .ruta-cabecera__miga .miga__actual { color: var(--texto-2); font-weight: 600; }
 
 .ruta-hero__fila {
@@ -2184,7 +2184,7 @@ a  { color: var(--acento); }
 .ruta-pildora {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   border: 1.5px solid var(--borde);
   background: var(--superficie);
   color: var(--texto);
@@ -2192,7 +2192,7 @@ a  { color: var(--acento); }
   /* Talla NORMAL de la escala (38px / letra 14). Medía 41, un valor entre la
      grande y la normal que no usaba nadie más. */
   min-height: 38px;
-  padding: 9px 18px;
+  padding: 8px 18px;
   font: inherit;
   font-size: var(--texto-lg);
   font-weight: 600;
@@ -2221,7 +2221,7 @@ a  { color: var(--acento); }
 .ruta-mas { position: relative; }
 .ruta-mas__boton {
   list-style: none;
-  padding: 9px 14px;
+  padding: var(--esp-3) var(--esp-6);
   border-style: dashed;
   color: var(--texto-2);
 }
@@ -2310,7 +2310,7 @@ a  { color: var(--acento); }
     var(--ruta-hito) 100%
   );
 }
-.ruta-nodo { position: relative; margin-bottom: 14px; }
+.ruta-nodo { position: relative; margin-bottom: var(--esp-6); }
 .ruta-punto {
   position: absolute;
   left: -64px;
@@ -2358,7 +2358,7 @@ a  { color: var(--acento); }
 .ruta-tramo__medio {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   background: var(--superficie);
   border: 1.5px solid var(--borde);
   border-radius: var(--radio-pill);
@@ -2383,7 +2383,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
-  padding: 15px 18px;
+  padding: 14px 18px;
 }
 .etapa--arrastrando { opacity: .4; }
 .etapa--encima { border-color: var(--acento); box-shadow: 0 0 0 3px var(--tinte); }
@@ -2392,7 +2392,7 @@ a  { color: var(--acento); }
 .etapa__asa {
   color: var(--texto-3);
   cursor: grab;
-  padding: 3px 2px 0 0;
+  padding: 4px 2px 0 0;
   user-select: none;
   flex: none;
 }
@@ -2420,7 +2420,7 @@ a  { color: var(--acento); }
   border: 0;
   background: transparent;
   color: var(--texto-3);
-  padding: 3px 6px;
+  padding: var(--esp-1) var(--esp-2);
   border-radius: var(--radio-xs);
   cursor: pointer;
   flex: none;
@@ -2433,7 +2433,7 @@ a  { color: var(--acento); }
   gap: var(--esp-4);
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 13px;
+  margin-top: var(--esp-5);
 }
 .etapa__noches {
   display: inline-flex;
@@ -2517,7 +2517,7 @@ a  { color: var(--acento); }
   /* Talla NORMAL, la misma que su pareja `.etapa__clonar`: van uno al lado del
      otro en la misma fila y tenían letras distintas, 13 y 14. */
   min-height: 38px;
-  padding: 9px 18px;
+  padding: 8px 18px;
   font: inherit;
   font-size: var(--texto-lg);
   font-weight: 600;
@@ -2569,14 +2569,14 @@ a  { color: var(--acento); }
   gap: var(--esp-3);
   background: var(--fondo);
   border-radius: var(--radio-pill);
-  padding: 5px 6px 5px 14px;
+  padding: var(--esp-1) var(--esp-2) var(--esp-1) var(--esp-6);
   font-size: var(--texto-lg);
   font-weight: 600;
 }
 .ruta-pordecidir__ciudad button {
   border: 0;
   border-radius: var(--radio-pill);
-  padding: 5px 11px;
+  padding: var(--esp-1) var(--esp-4);
   font: inherit;
   font-size: var(--texto-base);
   font-weight: 700;
@@ -2649,7 +2649,7 @@ a  { color: var(--acento); }
   display: flex;
   gap: var(--esp-4);
   justify-content: flex-end;
-  margin-top: 20px;
+  margin-top: var(--esp-8);
 }
 
 .boton--peligro {
@@ -2670,8 +2670,8 @@ a  { color: var(--acento); }
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 11px;
+  gap: var(--esp-1);
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .18);
   color: #fff;
@@ -2719,7 +2719,7 @@ a  { color: var(--acento); }
   color: var(--prec-tx);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
 }
 .chip-ambito--pendiente i { font-size: var(--texto-lg); }
 
@@ -2745,7 +2745,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   gap: var(--esp-3);
-  padding: 11px 14px;
+  padding: var(--esp-4) var(--esp-6);
   cursor: pointer;
   list-style: none;
   font-size: var(--texto-lg);
@@ -2780,7 +2780,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: var(--esp-3);
   margin: 0 0 var(--esp-7);
-  padding: 11px 14px;
+  padding: var(--esp-4) var(--esp-6);
   background: var(--tinte);
   color: var(--tinte-texto);
   border-radius: var(--radio);
@@ -2792,7 +2792,7 @@ a  { color: var(--acento); }
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   padding: var(--esp-2) var(--esp-5);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-pill);
@@ -2811,7 +2811,7 @@ a  { color: var(--acento); }
   border-color: var(--acento);
   color: var(--tinte-texto);
 }
-.apuntar--ancho { width: 100%; justify-content: center; margin-top: 8px; }
+.apuntar--ancho { width: 100%; justify-content: center; margin-top: var(--esp-3); }
 
 /* Lo apuntado se ve de lejos: el tinte del tema y ya. */
 .mini--apuntada { border-color: var(--acento); background: var(--tinte); }
@@ -2827,10 +2827,10 @@ a  { color: var(--acento); }
   /* Todo lo que va DEBAJO de la tarjeta se alinea con su título y su
      descripción. Antes la fila de botones colgaba a ras del borde de la
      rejilla, con margen a la izquierda y pegada a la derecha. */
-  padding: 0 15px 15px;
+  padding: 0 var(--esp-6) var(--esp-6);
 }
 /* La tarjeta sale a sangre: su foto tiene que llegar a los bordes. */
-.excursion > .tarjeta { flex: 1; margin: 0 -15px; }
+.excursion > .tarjeta { flex: 1; margin: 0 -14px; }
 
 /* --- El hotel elegido, destacado ------------------------------------------ */
 .elegido {
@@ -2838,7 +2838,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--verde-tx);
   border-radius: var(--radio);
   padding: var(--esp-6) var(--esp-7);
-  margin-bottom: 16px;
+  margin-bottom: var(--esp-7);
 }
 .elegido__marca {
   display: flex;
@@ -2851,13 +2851,13 @@ a  { color: var(--acento); }
   color: var(--verde-tx);
 }
 .elegido__marca i { font-size: var(--icono-xs); }
-.elegido__nombre { font-size: var(--texto-xl); font-weight: 700; margin-top: 5px; }
+.elegido__nombre { font-size: var(--texto-xl); font-weight: 700; margin-top: var(--esp-1); }
 .elegido__pie {
   display: flex;
   align-items: center;
   gap: var(--esp-6);
   flex-wrap: wrap;
-  margin-top: 8px;
+  margin-top: var(--esp-3);
 }
 .elegido__precio { font-size: var(--texto-xl); font-weight: 700; color: var(--verde-tx); }
 .elegido__enlace {
@@ -2874,8 +2874,8 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
-  padding: 15px 17px;
-  margin-bottom: 12px;
+  padding: var(--esp-6) var(--esp-7);
+  margin-bottom: var(--esp-5);
 }
 .tramo-caja--resuelta { border-color: var(--verde-tx); }
 
@@ -2898,8 +2898,8 @@ a  { color: var(--acento); }
 .tramo-caja__estado {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 11px;
+  gap: var(--esp-1);
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -2922,7 +2922,7 @@ a  { color: var(--acento); }
 .tramo-caja__referencia { color: var(--texto-3); }
 
 .tramo-caja__resuelto {
-  margin-top: 10px;
+  margin-top: var(--esp-4);
   padding: var(--esp-4) var(--esp-5);
   background: var(--verde-bg);
   color: var(--verde-tx);
@@ -2936,14 +2936,14 @@ a  { color: var(--acento); }
   gap: var(--esp-3);
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 12px;
+  margin-top: var(--esp-5);
 }
 .tramo-caja__acciones .boton { padding: var(--esp-3) var(--esp-6); font-size: var(--texto-base); }
 
 /* --- El formulario de apuntar a mano -------------------------------------- */
 .manual {
-  margin-top: 12px;
-  padding: 13px 14px;
+  margin-top: var(--esp-5);
+  padding: var(--esp-5) var(--esp-6);
   background: var(--fondo);
   border-radius: var(--radio);
 }
@@ -2958,14 +2958,14 @@ a  { color: var(--acento); }
   font-size: var(--texto-sm);
   font-weight: 650;
   color: var(--texto-2);
-  margin-bottom: 10px;
+  margin-bottom: var(--esp-4);
 }
 .manual__campo--precio { flex: 0 0 130px; }
 .manual__campo select,
 .manual__campo input {
   border: 1px solid var(--borde);
   border-radius: var(--radio-xs);
-  padding: 9px 11px;
+  padding: var(--esp-3) var(--esp-4);
   font-family: inherit;
   font-size: var(--texto-lg);
   font-weight: 400;
@@ -2977,9 +2977,9 @@ a  { color: var(--acento); }
 .manual__botones { display: flex; gap: var(--esp-3); }
 .manual__botones .boton { padding: var(--esp-3) var(--esp-7); font-size: var(--texto-base); }
 
-.vuelos-tramo { margin-top: 12px; display: flex; flex-direction: column; gap: var(--esp-3); }
+.vuelos-tramo { margin-top: var(--esp-5); display: flex; flex-direction: column; gap: var(--esp-3); }
 .vuelos-tramo[hidden] { display: none; }
-.vuelos-tramo .rueda { vertical-align: -2px; margin-right: 6px; }
+.vuelos-tramo .rueda { vertical-align: -2px; margin-right: var(--esp-2); }
 
 /* --- Navegación entre etapas ---------------------------------------------- */
 .etapa-nav {
@@ -3023,7 +3023,7 @@ a  { color: var(--acento); }
    Se le quita altura a la cabecera para que las migas no añadan renglón: la
    pantalla tiene que seguir ocupando lo mismo. */
 .lienzo-migas { padding: 10px 18px 0; flex-shrink: 0; }
-.lienzo-migas + .lienzo-cabecera { padding-top: 4px; }
+.lienzo-migas + .lienzo-cabecera { padding-top: var(--esp-1); }
 
 .lienzo-cabecera {
   padding: 14px 18px 10px;
@@ -3045,7 +3045,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   color: var(--texto-2);
   border-radius: var(--radio-pill);
-  padding: 7px 16px;
+  padding: var(--esp-2) var(--esp-7);
   font-size: var(--texto-base);
   font-weight: 600;
   text-decoration: none;
@@ -3079,7 +3079,7 @@ a  { color: var(--acento); }
   align-items: flex-start;
   gap: var(--esp-4);
   margin: 0 18px 10px;
-  padding: 12px 15px;
+  padding: var(--esp-5) var(--esp-6);
   background: var(--tinte);
   color: var(--tinte-texto);
   border-radius: var(--radio);
@@ -3148,11 +3148,11 @@ a  { color: var(--acento); }
   color: var(--prec-tx);
   background: var(--prec-bg);
   border-radius: var(--radio-xs);
-  padding: 9px 11px;
+  padding: var(--esp-3) var(--esp-4);
   margin: 0 0 var(--esp-4);
 }
 
-.tipos { display: flex; gap: var(--esp-1); flex-wrap: wrap; margin-bottom: 12px; }
+.tipos { display: flex; gap: var(--esp-1); flex-wrap: wrap; margin-bottom: var(--esp-5); }
 .tipo-chip {
   display: inline-flex;
   align-items: center;
@@ -3176,12 +3176,12 @@ a  { color: var(--acento); }
 .tipo-chip i { font-size: var(--texto-base); }
 .tipo-chip--activo { background: var(--tinte); border-color: var(--acento); color: var(--acento); }
 
-.grupo { margin-bottom: 14px; }
+.grupo { margin-bottom: var(--esp-6); }
 .grupo__titulo {
   font-size: var(--texto-sm);
   font-weight: 700;
   color: var(--texto-2);
-  margin-bottom: 6px;
+  margin-bottom: var(--esp-2);
 }
 
 /* --- Las tarjetas --------------------------------------------------------- */
@@ -3191,7 +3191,7 @@ a  { color: var(--acento); }
   border-radius: var(--radio-xs);
   padding: var(--esp-3) var(--esp-4);
   font-size: var(--texto-base);
-  margin-bottom: 6px;
+  margin-bottom: var(--esp-2);
   cursor: grab;
   line-height: 1.35;
 }
@@ -3257,18 +3257,18 @@ a  { color: var(--acento); }
   font-size: var(--texto-xs);
   font-weight: 700;
   border-radius: var(--radio-pill);
-  padding: 2px 9px;
-  margin-top: 4px;
+  padding: 2px 8px;
+  margin-top: var(--esp-1);
 }
 
 .aviso-dia {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: var(--esp-1);
   background: var(--peligro-bg);
   color: var(--peligro);
   border-radius: var(--radio-xs);
-  padding: 7px 10px;
+  padding: var(--esp-2) var(--esp-4);
   font-size: var(--texto-sm);
   font-weight: 600;
   margin: var(--esp-3) var(--esp-4) 0;
@@ -3285,7 +3285,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: var(--esp-2);
 }
 .lienzo-franja__titulo {
   font-size: var(--texto-xs);
@@ -3311,14 +3311,14 @@ a  { color: var(--acento); }
 .fijo {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: var(--esp-1);
   background: var(--prec-bg);
   color: var(--prec-tx);
   border-radius: var(--radio-xs);
   padding: var(--esp-3) var(--esp-4);
   font-size: var(--texto-base);
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: var(--esp-2);
   line-height: 1.35;
 }
 .fijo i { font-size: var(--icono-xs); flex-shrink: 0; margin-top: 1px; }
@@ -3328,13 +3328,13 @@ a  { color: var(--acento); }
   background: var(--fondo);
   border-radius: var(--radio-xs);
   padding: var(--esp-3);
-  margin-bottom: 6px;
+  margin-bottom: var(--esp-2);
 }
 .manual-rapido__texto {
   width: 100%;
   border: 1px solid var(--borde);
   border-radius: var(--radio-xs);
-  padding: 7px 9px;
+  padding: var(--esp-2) var(--esp-3);
   font-family: inherit;
   font-size: var(--texto-base);
   color: var(--texto);
@@ -3343,12 +3343,12 @@ a  { color: var(--acento); }
 .manual-rapido__texto:focus,
 .manual-rapido__hora:focus { outline: none; border-color: var(--acento); }
 
-.manual-rapido__fila { display: flex; gap: 5px; margin-top: 6px; align-items: center; }
+.manual-rapido__fila { display: flex; gap: var(--esp-1); margin-top: var(--esp-2); align-items: center; }
 .manual-rapido__hora {
   width: 92px;
   border: 1px solid var(--borde);
   border-radius: var(--radio-xs);
-  padding: 6px 7px;
+  padding: var(--esp-2) var(--esp-2);
   font-family: inherit;
   font-size: var(--texto-sm);
   color: var(--texto);
@@ -3380,7 +3380,7 @@ a  { color: var(--acento); }
 }
 .lienzo-vacio > i { font-size: var(--icono-xl); color: var(--texto-3); }
 .lienzo-vacio p { margin: var(--esp-4) 0 0; }
-.lienzo-vacio .boton { margin-top: 16px; }
+.lienzo-vacio .boton { margin-top: var(--esp-7); }
 
 @media (max-width: 700px) {
   /* En movil la mochila se pone arriba: 250px de ancho fijo no caben. */
@@ -3408,7 +3408,7 @@ a  { color: var(--acento); }
 .colocado {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   padding: var(--esp-2) var(--esp-5);
   border-radius: var(--radio-pill);
   background: var(--verde-bg);
@@ -3420,7 +3420,7 @@ a  { color: var(--acento); }
 }
 .colocado i { font-size: var(--texto-lg); }
 .colocado:hover { text-decoration: underline; }
-.colocado--ancho { width: 100%; justify-content: center; margin-top: 6px; }
+.colocado--ancho { width: 100%; justify-content: center; margin-top: var(--esp-2); }
 
 .poner-en-dia {
   position: absolute;
@@ -3428,7 +3428,7 @@ a  { color: var(--acento); }
   right: 0;
   z-index: 20;
   display: flex;
-  gap: 5px;
+  gap: var(--esp-1);
   padding: var(--esp-3);
   background: var(--superficie);
   border: 1px solid var(--borde);
@@ -3447,7 +3447,7 @@ a  { color: var(--acento); }
 .poner-en-dia button {
   border: 0;
   border-radius: var(--radio-pill);
-  padding: 6px 13px;
+  padding: var(--esp-2) var(--esp-5);
   background: var(--acento);
   color: #fff;
   font-family: inherit;
@@ -3530,8 +3530,8 @@ a  { color: var(--acento); }
   top: 14px; right: 14px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 8px 13px;
+  gap: var(--esp-2);
+  padding: var(--esp-3) var(--esp-5);
   border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .92);
   color: var(--acento);
@@ -3607,7 +3607,7 @@ a  { color: var(--acento); }
   justify-content: center;
   min-width: 19px;
   height: 19px;
-  padding: 0 5px;
+  padding: 0 var(--esp-1);
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -3647,6 +3647,9 @@ a  { color: var(--acento); }
 /* Con la tarjeta estrecha, los botones aprietan un poco antes de partirse. */
 @media (max-width: 1400px) {
   .excursion__acciones .apuntar,
+  /* 9px y no el 8 de la escala, a propósito: es el umbral. Con 8, «Apuntado»
+     cabe junto a «Ver detalle» y «Me lo apunto» no, así que en la misma fila de
+     tarjetas unas iban en una línea y otras en dos según el texto. */
   .tarjeta-punto--ficha .tarjeta-punto__acciones .apuntar { padding: 6px 9px; }
 }
 
@@ -3673,7 +3676,7 @@ a  { color: var(--acento); }
    LA FICHA COMPLETA DE UNA EXCURSIÓN
    ========================================================================== */
 .ficha-excursion {
-  margin-top: 10px;
+  margin-top: var(--esp-4);
   padding: var(--esp-6) var(--esp-7);
   background: var(--superficie);
   border: 1px solid var(--borde);
@@ -3687,8 +3690,8 @@ a  { color: var(--acento); }
   display: flex;
   flex-wrap: wrap;
   gap: var(--esp-3) var(--esp-7);
-  padding-bottom: 12px;
-  margin-bottom: 12px;
+  padding-bottom: var(--esp-5);
+  margin-bottom: var(--esp-5);
   border-bottom: 1px solid var(--borde);
 }
 .ficha-dato { display: inline-flex; align-items: center; gap: var(--esp-2); font-size: var(--texto-base); }
@@ -3696,7 +3699,7 @@ a  { color: var(--acento); }
 .ficha-dato__etiqueta { color: var(--texto-2); }
 .ficha-dato__valor { font-weight: 600; }
 
-.ficha-excursion__bloque { margin-bottom: 14px; }
+.ficha-excursion__bloque { margin-bottom: var(--esp-6); }
 .ficha-excursion__bloque:last-of-type { margin-bottom: 0; }
 
 .ficha-excursion__titulo {
@@ -3713,8 +3716,8 @@ a  { color: var(--acento); }
 .ficha-excursion__parrafo { margin: 0 0 var(--esp-3); }
 .ficha-excursion__parrafo:last-child { margin-bottom: 0; }
 
-.ficha-excursion__lista { margin: 0; padding-left: 20px; }
-.ficha-excursion__lista li { margin-bottom: 3px; }
+.ficha-excursion__lista { margin: 0; padding-left: var(--esp-8); }
+.ficha-excursion__lista li { margin-bottom: var(--esp-1); }
 
 .ficha-excursion__columnas {
   display: grid;
@@ -3730,7 +3733,7 @@ a  { color: var(--acento); }
   grid-template-columns: max-content 1fr;
   gap: var(--esp-1) var(--esp-6);
   margin: var(--esp-6) 0 0;
-  padding-top: 12px;
+  padding-top: var(--esp-5);
   border-top: 1px solid var(--borde);
   font-size: var(--texto-base);
 }
@@ -3739,7 +3742,7 @@ a  { color: var(--acento); }
 
 .ficha-excursion__pie {
   margin: var(--esp-5) 0 0;
-  padding-top: 10px;
+  padding-top: var(--esp-4);
   border-top: 1px solid var(--borde);
   font-size: var(--texto-sm);
 }
@@ -3802,7 +3805,7 @@ a  { color: var(--acento); }
 
 /* Dentro de la etapa las acciones son botones de apuntar, no los del mapa. */
 .tarjeta-punto--ficha .colocado--ancho,
-.tarjeta-punto--ficha .apuntar--ancho { margin-top: 8px; }
+.tarjeta-punto--ficha .apuntar--ancho { margin-top: var(--esp-3); }
 
 /* La descripción no se recorta a dos líneas cuando hay sitio de sobra. */
 .tarjeta-punto--ficha .tarjeta-punto__texto {
@@ -3826,10 +3829,10 @@ a  { color: var(--acento); }
   font-size: var(--texto-lg);
   line-height: 1.55;
 }
-.ficha-sitio__detalle .ficha-excursion__titulo { margin-top: 12px; }
+.ficha-sitio__detalle .ficha-excursion__titulo { margin-top: var(--esp-5); }
 .ficha-sitio__detalle .ficha-excursion__titulo:first-child { margin-top: 0; }
-.ficha-sitio__detalle .mini__enlaces { margin-top: 12px; }
-.ficha-sitio__detalle .boton { margin-top: 12px; }
+.ficha-sitio__detalle .mini__enlaces { margin-top: var(--esp-5); }
+.ficha-sitio__detalle .boton { margin-top: var(--esp-5); }
 .ficha-sitio__detalle .ti-loader-2 { animation: girar 1s linear infinite; }
 
 /* =============================================================================
@@ -3873,8 +3876,8 @@ a  { color: var(--acento); }
 
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 12px 0 5px;
+  gap: var(--esp-2);
+  padding: 0 var(--esp-5) 0 var(--esp-1);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-pill);
   background: var(--superficie);
@@ -3942,7 +3945,7 @@ a  { color: var(--acento); }
 .dosier-boton {
   position: relative;
   min-height: 38px;
-  padding: 9px 18px;
+  padding: 8px 18px;
   font-size: var(--texto-lg);
 }
 .dosier-boton[disabled] { opacity: .5; cursor: not-allowed; }
@@ -3982,7 +3985,7 @@ a  { color: var(--acento); }
   align-items: flex-start;
   gap: var(--esp-2);
   margin: 0 0 var(--esp-3);
-  padding: 7px 9px;
+  padding: var(--esp-2) var(--esp-3);
   border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -4003,9 +4006,9 @@ a  { color: var(--acento); }
 
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--esp-3);
   width: 100%;
-  padding: 9px 10px;
+  padding: var(--esp-3) var(--esp-4);
   border: 0;
   border-radius: var(--radio-xs);
   background: none;
@@ -4031,7 +4034,7 @@ a  { color: var(--acento); }
    Discreto y plegado: en una tarjeta ya llena de datos, una zona de subida
    siempre abierta sería lo que más ocupa y lo que menos se usa.
    ========================================================================== */
-.adjuntos { margin-top: 10px; }
+.adjuntos { margin-top: var(--esp-4); }
 
 .adjuntos__disparador {
   /* Lo que pedía la regla inválida que había aquí: 13px / peso 600. Se pone bien
@@ -4042,7 +4045,7 @@ a  { color: var(--acento); }
 
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   padding: var(--esp-2) var(--esp-5);
   border: 1px solid var(--borde);
   border-radius: var(--radio-pill);
@@ -4065,7 +4068,7 @@ a  { color: var(--acento); }
   justify-content: center;
   min-width: 19px;
   height: 19px;
-  padding: 0 5px;
+  padding: 0 var(--esp-1);
   border-radius: var(--radio-pill);
   background: var(--acento);
   color: #fff;
@@ -4075,7 +4078,7 @@ a  { color: var(--acento); }
 .adjuntos__n--cero { background: var(--borde); color: var(--texto-3); }
 
 .adjuntos__cuerpo {
-  margin-top: 10px;
+  margin-top: var(--esp-4);
   padding: var(--esp-5);
   background: var(--fondo);
   border: 1px solid var(--borde);
@@ -4088,9 +4091,9 @@ a  { color: var(--acento); }
 .adjunto {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--esp-3);
   padding: var(--esp-3) var(--esp-4);
-  margin-bottom: 6px;
+  margin-bottom: var(--esp-2);
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio-xs);
@@ -4130,7 +4133,7 @@ a  { color: var(--acento); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: var(--esp-1);
   padding: var(--esp-7) var(--esp-5);
   border: 2px dashed var(--borde-fuerte);
   border-radius: var(--radio);
@@ -4168,9 +4171,9 @@ a  { color: var(--acento); }
 .clip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   flex: 0 0 auto;
-  padding: 8px 11px;
+  padding: var(--esp-3) var(--esp-4);
   border: 1px solid var(--borde);
   border-radius: var(--radio-pill);
   background: var(--superficie);
@@ -4210,8 +4213,8 @@ a  { color: var(--acento); }
    vista, con la etiqueta haciendo de encabezado de sección.
    ========================================================================== */
 .ficha-excursion__adjuntos {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: var(--esp-6);
+  padding-top: var(--esp-5);
   border-top: 1px solid var(--borde);
 }
 .ficha-excursion__adjuntos .adjuntos { margin-top: 0; }
@@ -4219,7 +4222,7 @@ a  { color: var(--acento); }
 .adjuntos__titulo {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   margin: 0 0 var(--esp-3);
   font-size: var(--texto-lg);
   font-weight: 700;
@@ -4243,7 +4246,7 @@ a  { color: var(--acento); }
 .etapa__clonar {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   flex: 0 0 auto;
   padding: var(--esp-3) var(--esp-5);
   border: 1px solid transparent;
@@ -4311,7 +4314,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-pill);
-  padding: 2px 9px;
+  padding: 2px 8px;
   /* Aquí había `font: 700 11px/1.6 inherit`, inválida —la familia no puede ser `inherit`
      dentro del atajo— y el navegador la tiraba entera. Se escribe bien. No se
      podía ver en ninguna pantalla por falta de datos; se comprobó inyectando
@@ -4331,7 +4334,7 @@ a  { color: var(--acento); }
 .etiqueta-distancia--candidata {
   opacity: .68;
   font-weight: 600;
-  padding: 1px 7px;
+  padding: 1px 6px;
   box-shadow: var(--sombra-sm);
   border-style: dashed;
 }
@@ -4358,9 +4361,9 @@ a  { color: var(--acento); }
 .ruta-traslados__aviso {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   margin: var(--esp-3) 0 0;
-  padding: 9px 13px;
+  padding: var(--esp-3) var(--esp-5);
   border-radius: var(--radio);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -4370,8 +4373,8 @@ a  { color: var(--acento); }
 
 /* El km/tiempo dentro del chip de un tramo de la ruta. */
 .chip-transporte__km {
-  margin-left: 6px;
-  padding-left: 8px;
+  margin-left: var(--esp-2);
+  padding-left: var(--esp-3);
   border-left: 1px solid currentColor;
   opacity: .75;
   font-weight: 600;
@@ -4386,8 +4389,8 @@ a  { color: var(--acento); }
    teléfono de un taxi se ve como lo que es: algo que se toca.
    =========================================================================== */
 .medios-tramo {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: var(--esp-6);
+  padding-top: var(--esp-6);
   border-top: 1px dashed var(--borde-fuerte);
   display: grid;
   gap: var(--esp-5);
@@ -4416,8 +4419,8 @@ a  { color: var(--acento); }
 .ficha-movilidad__tipo {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
+  gap: var(--esp-1);
+  padding: var(--esp-1) var(--esp-3);
   border-radius: var(--radio-pill);
   background: var(--info-bg);
   color: var(--info-tx);
@@ -4465,7 +4468,7 @@ a  { color: var(--acento); }
   align-items: flex-start;
   gap: var(--esp-2);
   margin: 0;
-  padding: 6px 9px;
+  padding: var(--esp-2) var(--esp-3);
   border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -4480,7 +4483,7 @@ a  { color: var(--acento); }
   flex-wrap: wrap;
   gap: var(--esp-3);
   margin-top: auto;
-  padding-top: 4px;
+  padding-top: var(--esp-1);
 }
 /* Mismo remedio que en las fichas de sitios: pueden encoger y pueden partirse,
    pero nunca se salen de la caja. */
@@ -4494,7 +4497,7 @@ a  { color: var(--acento); }
 .ficha-transporte__mios {
   display: grid;
   gap: var(--esp-3);
-  padding-top: 10px;
+  padding-top: var(--esp-4);
   border-top: 1px solid var(--borde-fuerte);
 }
 .ficha-transporte__campos {
@@ -4502,7 +4505,7 @@ a  { color: var(--acento); }
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--esp-3);
 }
-.ficha-transporte__mios label { display: grid; gap: 3px; min-width: 0; }
+.ficha-transporte__mios label { display: grid; gap: var(--esp-1); min-width: 0; }
 .ficha-transporte__mios label span {
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -4512,7 +4515,7 @@ a  { color: var(--acento); }
 }
 .ficha-transporte__mios input {
   width: 100%;
-  padding: 7px 10px;
+  padding: var(--esp-2) var(--esp-4);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-xs);
   background: var(--superficie);
@@ -4544,7 +4547,7 @@ a  { color: var(--acento); }
 .ficha-movilidad__dato {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   font-size: var(--texto-base);
   color: var(--texto-2);
   max-width: 100%;
@@ -4562,7 +4565,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 5px 12px;
+  padding: var(--esp-1) var(--esp-5);
   border-radius: var(--radio-pill);
   background: var(--verde-bg);
   color: var(--verde-tx);
@@ -4590,7 +4593,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--esp-4);
 }
-.ficha-manual__campos label { display: grid; gap: 3px; min-width: 0; }
+.ficha-manual__campos label { display: grid; gap: var(--esp-1); min-width: 0; }
 .ficha-manual__campos label.ancho { grid-column: 1 / -1; }
 .ficha-manual__campos label span {
   font-size: var(--texto-xs);
@@ -4633,7 +4636,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .item--traslado {
   border-left: 3px solid var(--acento);
   background: color-mix(in srgb, var(--superficie) 88%, var(--fondo));
-  padding: 5px 9px;
+  padding: var(--esp-1) var(--esp-3);
   font-size: var(--texto-sm);
   line-height: 1.3;
 }
@@ -4645,10 +4648,10 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: var(--esp-1);
-  margin-top: 3px;
+  margin-top: var(--esp-1);
 }
 .item__reloj input {
-  padding: 2px 5px;
+  padding: 2px 4px;
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-mini);
   background: var(--superficie);
@@ -4670,7 +4673,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
    =========================================================================== */
 
 /* --- La dirección, dentro de cualquier ficha ------------------------------ */
-.direccion { margin-top: 8px; }
+.direccion { margin-top: var(--esp-3); }
 
 .direccion__vista {
   display: flex;
@@ -4690,8 +4693,8 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .direccion__fallo {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 9px;
+  gap: var(--esp-1);
+  padding: 2px 8px;
   border-radius: var(--radio-pill);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -4711,7 +4714,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .direccion__aviso {
   color: var(--prec-tx);
   background: var(--prec-bg);
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: var(--radio-pill);
 }
 
@@ -4731,11 +4734,11 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .direccion__poner {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   border: 1px dashed var(--borde-fuerte);
   background: none;
   border-radius: var(--radio-pill);
-  padding: 4px 11px;
+  padding: var(--esp-1) var(--esp-4);
   font-family: inherit;
   font-size: var(--texto-sm);
   color: var(--texto-2);
@@ -4743,8 +4746,8 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 }
 .direccion__poner:hover { border-color: var(--acento); color: var(--acento); }
 
-.direccion__form { display: grid; gap: var(--esp-3); margin-top: 4px; }
-.direccion__campo { display: grid; gap: 3px; }
+.direccion__form { display: grid; gap: var(--esp-3); margin-top: var(--esp-1); }
+.direccion__campo { display: grid; gap: var(--esp-1); }
 .direccion__etiqueta {
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -4786,7 +4789,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   font-size: var(--texto-xl);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
 }
 .traslados__titulo i { color: var(--acento); }
 
@@ -4807,7 +4810,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   border: 1px solid var(--borde);
   border-radius: var(--radio);
 }
-.traslados__campo { display: grid; gap: 3px; flex: 1 1 200px; min-width: 0; }
+.traslados__campo { display: grid; gap: var(--esp-1); flex: 1 1 200px; min-width: 0; }
 .traslados__campo span {
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -4817,7 +4820,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 }
 .traslados__campo input {
   width: 100%;
-  padding: 9px 11px;
+  padding: var(--esp-3) var(--esp-4);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-xs);
   background: var(--superficie);
@@ -4826,7 +4829,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   color: var(--texto);
 }
 .traslados__campo input:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
-.traslados__flecha { color: var(--texto-3); padding-bottom: 10px; flex-shrink: 0; }
+.traslados__flecha { color: var(--texto-3); padding-bottom: var(--esp-4); flex-shrink: 0; }
 @media (max-width: 620px) {
   .traslados__flecha { display: none; }
   .traslados__buscador .boton { width: 100%; justify-content: center; }
@@ -4843,7 +4846,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: center;
   gap: var(--esp-4);
   flex-wrap: wrap;
-  padding: 9px 13px;
+  padding: var(--esp-3) var(--esp-5);
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
@@ -4939,7 +4942,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   left: 0;
   right: 0;
   z-index: 20;
-  margin-top: 4px;
+  margin-top: var(--esp-1);
   padding: var(--esp-2);
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
@@ -4953,7 +4956,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: center;
   gap: var(--esp-3);
   width: 100%;
-  padding: 7px 9px;
+  padding: var(--esp-2) var(--esp-3);
   border: 0;
   border-radius: var(--radio-xs);
   background: none;
@@ -4978,7 +4981,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 7px 9px;
+  padding: var(--esp-2) var(--esp-3);
   font-size: var(--texto-sm);
   color: var(--texto-2);
   line-height: 1.35;
@@ -5001,7 +5004,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   border: 1px solid var(--borde);
   border-radius: var(--radio);
 }
-.comer-buscador__campo { display: grid; gap: 3px; flex: 1 1 260px; min-width: 0; }
+.comer-buscador__campo { display: grid; gap: var(--esp-1); flex: 1 1 260px; min-width: 0; }
 .comer-buscador__campo span {
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -5011,7 +5014,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 }
 .comer-buscador__campo input {
   width: 100%;
-  padding: 9px 11px;
+  padding: var(--esp-3) var(--esp-4);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-xs);
   background: var(--superficie);
@@ -5046,7 +5049,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 
 .ficha-comer__datos { display: flex; flex-wrap: wrap; gap: var(--esp-2) var(--esp-5); align-items: baseline; }
 .ficha-comer__cocina {
-  padding: 2px 9px;
+  padding: 2px 8px;
   border-radius: var(--radio-pill);
   background: var(--info-bg);
   color: var(--info-tx);
@@ -5087,7 +5090,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 5px 12px;
+  padding: var(--esp-1) var(--esp-5);
   border-radius: var(--radio-pill);
   background: var(--verde-bg);
   color: var(--verde-tx);
@@ -5100,7 +5103,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .ficha-comer__enlace {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   font-size: var(--texto-base);
   color: var(--acento);
   text-decoration: none;
@@ -5113,7 +5116,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   flex-wrap: wrap;
   gap: var(--esp-3);
   margin-top: auto;
-  padding-top: 4px;
+  padding-top: var(--esp-1);
 }
 .ficha-comer__acciones .apuntar { flex: 1 1 auto; min-width: 0; justify-content: center; }
 .ficha-comer__acciones .apuntar--peligro { flex: 0 0 auto; }
@@ -5123,7 +5126,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .ficha-sitio__distancias,
 .ficha-excursion__distancias {
   border-top: 1px solid var(--borde);
-  padding-top: 8px;
+  padding-top: var(--esp-3);
   margin-top: 2px;
 }
 .ficha-comer__distancias > summary,
@@ -5152,7 +5155,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   place-items: center;
   min-width: 18px;
   height: 18px;
-  padding: 0 5px;
+  padding: 0 var(--esp-1);
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -5160,14 +5163,14 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   font-weight: 700;
 }
 
-.distancias { display: grid; gap: var(--esp-3); margin-top: 8px; }
+.distancias { display: grid; gap: var(--esp-3); margin-top: var(--esp-3); }
 .distancias__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--esp-1); }
 .distancia {
   display: flex;
   align-items: baseline;
   gap: var(--esp-3);
   flex-wrap: wrap;
-  padding: 6px 9px;
+  padding: var(--esp-2) var(--esp-3);
   border-radius: var(--radio-xs);
   background: color-mix(in srgb, var(--superficie) 60%, var(--fondo));
   font-size: var(--texto-base);
@@ -5203,7 +5206,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   border-radius: var(--radio-xs);
   background: var(--tinte);
 }
-.distancias__campo { display: grid; gap: 3px; flex: 1 1 180px; min-width: 0; }
+.distancias__campo { display: grid; gap: var(--esp-1); flex: 1 1 180px; min-width: 0; }
 .distancias__campo span {
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -5213,7 +5216,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 }
 .distancias__campo input {
   width: 100%;
-  padding: 7px 10px;
+  padding: var(--esp-2) var(--esp-4);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-xs);
   background: var(--superficie);
@@ -5229,7 +5232,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   display: flex;
   align-items: baseline;
   gap: var(--esp-2);
-  padding: 4px 9px 6px;
+  padding: var(--esp-1) var(--esp-3) var(--esp-2);
   border-bottom: 1px solid var(--borde);
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -5239,7 +5242,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 }
 .hueco__fuente {
   margin-left: auto;
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -5249,7 +5252,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   display: grid;
   gap: 1px;
   width: 100%;
-  padding: 7px 9px;
+  padding: var(--esp-2) var(--esp-3);
   border: 0;
   border-radius: var(--radio-xs);
   background: none;
@@ -5275,9 +5278,9 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .entrada {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--esp-3);
   margin: 2px 0 10px;
-  padding: 7px 10px;
+  padding: var(--esp-2) var(--esp-4);
   border: 1px dashed var(--borde-fuerte);
   border-radius: var(--radio);
   cursor: pointer;
@@ -5416,12 +5419,12 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .hueco__opcion--fina {
   font-size: var(--texto-sm);
   color: var(--texto-2);
-  padding: 5px 9px;
+  padding: var(--esp-1) var(--esp-3);
 }
 .hueco__opcion--fina i { font-size: var(--texto-lg); }
 
 .hueco__form { display: grid; gap: var(--esp-3); padding: var(--esp-1); }
-.hueco__form label { display: grid; gap: 3px; }
+.hueco__form label { display: grid; gap: var(--esp-1); }
 .hueco__form label span {
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -5431,7 +5434,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 }
 .hueco__form input {
   width: 100%;
-  padding: 6px 9px;
+  padding: var(--esp-2) var(--esp-3);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-xs);
   background: var(--superficie);
@@ -5467,7 +5470,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: baseline;
   gap: var(--esp-4);
   flex-wrap: wrap;
-  margin-bottom: 4px;
+  margin-bottom: var(--esp-1);
 }
 .seccion-cabecera__titulo {
   display: flex;
@@ -5521,15 +5524,15 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 /* --- El historial plegado (traslados y comer) ----------------------------- */
 .traslados__historial,
 .comer-historico {
-  margin-top: 10px;
+  margin-top: var(--esp-4);
   border-top: 1px solid var(--borde);
-  padding-top: 10px;
+  padding-top: var(--esp-4);
 }
 .traslados__historial > summary,
 .comer-historico > summary {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   cursor: pointer;
   font-size: var(--texto-sm);
   font-weight: 700;
@@ -5543,8 +5546,8 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .comer-historico > summary::-webkit-details-marker { display: none; }
 .traslados__historial > summary i,
 .comer-historico > summary i { color: var(--acento); font-size: var(--icono-xs); }
-.comer-historico[open] > summary { margin-bottom: 12px; }
-.traslados__historial[open] > summary { margin-bottom: 8px; }
+.comer-historico[open] > summary { margin-bottom: var(--esp-5); }
+.traslados__historial[open] > summary { margin-bottom: var(--esp-3); }
 
 /* --- Fijar un traslado ---------------------------------------------------- */
 .traslado__fijar {
@@ -5599,7 +5602,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   background: var(--superficie);
   box-shadow: var(--sombra-lg);
 }
-.ventana__cabecera { margin-bottom: 14px; }
+.ventana__cabecera { margin-bottom: var(--esp-6); }
 .ventana__titulo { margin: 0; font-size: var(--texto-2xl); }
 .ventana__sub {
   margin: var(--esp-1) 0 0;
@@ -5711,11 +5714,11 @@ body.con-ventana { overflow: hidden; }
 .antes__titulo {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--esp-3);
   margin: 0;
   font-size: var(--texto-2xl);
 }
-.antes__rango { margin: 3px 0 0; font-size: var(--texto-base); opacity: .82; }
+.antes__rango { margin: var(--esp-1) 0 0; font-size: var(--texto-base); opacity: .82; }
 .antes__cerrar {
   flex-shrink: 0;
   width: 32px;
@@ -5742,7 +5745,7 @@ body.con-ventana { overflow: hidden; }
 }
 .antes-pais {
   position: relative;
-  padding: 8px 15px 11px;
+  padding: var(--esp-3) var(--esp-6) var(--esp-4);
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
@@ -5759,7 +5762,7 @@ body.con-ventana { overflow: hidden; }
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-left: 6px;
+  margin-left: var(--esp-2);
   border-radius: var(--radio-pill);
   background: var(--prec-tx);
   vertical-align: middle;
@@ -5769,14 +5772,14 @@ body.con-ventana { overflow: hidden; }
 .antes__cuerpo { padding: 18px 20px 20px; overflow-y: auto; }
 .antes__cargando,
 .antes__vacio { margin: var(--esp-3) 0 var(--esp-6); color: var(--texto-2); font-size: var(--texto-lg); }
-.antes__cargando { display: flex; align-items: center; gap: 9px; }
+.antes__cargando { display: flex; align-items: center; gap: var(--esp-3); }
 
 .antes-caduca {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: var(--esp-3);
   margin: 0 0 var(--esp-7);
-  padding: 11px 14px;
+  padding: var(--esp-4) var(--esp-6);
   border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -5802,7 +5805,7 @@ body.con-ventana { overflow: hidden; }
 }
 
 .antes-dato {
-  padding: 13px 15px;
+  padding: var(--esp-5) var(--esp-6);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
   background: var(--fondo);
@@ -5810,7 +5813,7 @@ body.con-ventana { overflow: hidden; }
 .antes-dato__titulo {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   margin: 0 0 var(--esp-3);
   font-size: var(--texto-base);
   font-weight: 700;
@@ -5820,20 +5823,20 @@ body.con-ventana { overflow: hidden; }
 }
 .antes-dato__titulo i { color: var(--acento); font-size: var(--texto-xl); }
 .antes-dato__cuerpo { font-size: var(--texto-lg); line-height: 1.55; }
-.antes-dato__cuerpo p { margin: 0 0 7px; }
+.antes-dato__cuerpo p { margin: 0 0 var(--esp-2); }
 .antes-dato__cuerpo p:last-child { margin-bottom: 0; }
 .antes-dato__nota { color: var(--texto-2); font-size: var(--texto-base); }
 
 .antes-lista { margin: var(--esp-1) 0 var(--esp-3); padding-left: 18px; font-size: var(--texto-base); }
-.antes-lista li { margin-bottom: 3px; }
+.antes-lista li { margin-bottom: var(--esp-1); }
 
 /* La pastilla de sí/no: lo primero que se busca al mirar esto. */
 .antes-marca {
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
-  margin-bottom: 8px;
-  padding: 3px 10px;
+  margin-bottom: var(--esp-3);
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   font-size: var(--texto-sm);
   font-weight: 700;
@@ -5842,7 +5845,7 @@ body.con-ventana { overflow: hidden; }
 .antes-marca--no { background: var(--tinte); color: var(--acento); }
 
 .antes-festivos { margin: 0 0 var(--esp-3); padding: 0; list-style: none; font-size: var(--texto-lg); }
-.antes-festivos li { display: flex; gap: 9px; margin-bottom: 4px; }
+.antes-festivos li { display: flex; gap: var(--esp-3); margin-bottom: var(--esp-1); }
 .antes-festivos__dia {
   flex-shrink: 0;
   font-weight: 700;
@@ -5852,8 +5855,8 @@ body.con-ventana { overflow: hidden; }
 
 .antes-sev {
   display: inline-block;
-  margin-bottom: 8px;
-  padding: 3px 10px;
+  margin-bottom: var(--esp-3);
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   font-size: var(--texto-sm);
   font-weight: 700;
@@ -5870,7 +5873,7 @@ body.con-ventana { overflow: hidden; }
   align-items: flex-start;
   gap: var(--esp-3);
   margin: 0 0 var(--esp-7);
-  padding: 10px 13px;
+  padding: var(--esp-4) var(--esp-5);
   border-radius: var(--radio-xs);
   background: var(--fondo);
   color: var(--texto-2);
@@ -5883,7 +5886,7 @@ body.con-ventana { overflow: hidden; }
   justify-content: space-between;
   gap: var(--esp-5);
   flex-wrap: wrap;
-  padding-top: 14px;
+  padding-top: var(--esp-6);
   border-top: 1px solid var(--borde);
 }
 .antes-pie__fecha { color: var(--texto-3); font-size: var(--texto-sm); }
@@ -5962,7 +5965,7 @@ body.con-antes { overflow: hidden; }
 .globo-mapa__tipo {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   font-size: var(--texto-xs);
   font-weight: 700;
   text-transform: uppercase;
@@ -5975,7 +5978,7 @@ body.con-antes { overflow: hidden; }
 .globo-mapa__sin { font-size: var(--texto-sm); color: var(--texto-3); }
 
 /* Leaflet mete sus propios márgenes en el globo; aquí se ajustan al tema. */
-.mapa-etapa .leaflet-popup-content { margin: 11px 13px; }
+.mapa-etapa .leaflet-popup-content { margin: var(--esp-4) var(--esp-5); }
 .mapa-etapa .leaflet-popup-content-wrapper { border-radius: var(--radio); }
 
 /* --- "Antes de viajar", ya revisado --------------------------------------
@@ -5997,7 +6000,7 @@ body.con-antes { overflow: hidden; }
 .antes-check {
   display: flex;
   align-items: flex-start;
-  gap: 11px;
+  gap: var(--esp-4);
   cursor: pointer;
   font-size: var(--texto-lg);
 }
@@ -6033,7 +6036,7 @@ body.con-antes { overflow: hidden; }
   align-items: flex-start;
   gap: var(--esp-2);
   margin: var(--esp-3) 0 0;
-  padding: 7px 10px;
+  padding: var(--esp-2) var(--esp-4);
   border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -6109,7 +6112,7 @@ body.con-antes { overflow: hidden; }
 .datos-sitio dt {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--esp-1);
   margin-bottom: 2px;
   font-size: var(--texto-xs);
   font-weight: 700;
@@ -6130,7 +6133,7 @@ body.con-antes { overflow: hidden; }
   align-items: center;
   gap: var(--esp-2);
   margin: 2px 0 0;
-  padding-top: 8px;
+  padding-top: var(--esp-3);
   border-top: 1px solid var(--borde);
   color: var(--texto-3);
   font-size: var(--texto-sm);
@@ -6156,7 +6159,7 @@ body.con-antes { overflow: hidden; }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 0 14px;
+  padding: 0 var(--esp-6);
   border: 1px solid var(--borde);
   border-radius: var(--radio-pill);
   background: var(--tarjeta, #fff);
@@ -6229,7 +6232,7 @@ body.con-antes { overflow: hidden; }
 .buscador-sitios__campo input {
   flex: 1;
   min-width: 0;
-  padding: 11px 0;
+  padding: var(--esp-4) 0;
   border: 0;
   background: none;
   font: inherit;
@@ -6275,7 +6278,7 @@ body.con-antes { overflow: hidden; }
 .busqueda__texto {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   margin: 0;
   font-size: var(--texto-xl);
   font-weight: 700;
@@ -6284,7 +6287,7 @@ body.con-antes { overflow: hidden; }
 .busqueda__estado {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   color: var(--texto-2);
   font-size: var(--texto-base);
 }
@@ -6303,7 +6306,7 @@ body.con-antes { overflow: hidden; }
 .busqueda__nota {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--esp-2);
   margin: var(--esp-4) 0 0;
   color: var(--texto-2);
   font-size: var(--texto-base);
@@ -6316,19 +6319,19 @@ body.con-antes { overflow: hidden; }
   display: flex;
   align-items: flex-start;
   gap: var(--esp-4);
-  padding: 9px 10px;
+  padding: var(--esp-3) var(--esp-4);
   border-radius: var(--radio-xs);
   cursor: pointer;
 }
 .propuesta:hover { background: rgba(0, 0, 0, .035); }
-.propuesta input { margin-top: 3px; flex: none; }
+.propuesta input { margin-top: var(--esp-1); flex: none; }
 .propuesta__cuerpo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .propuesta__nombre { font-size: var(--texto-lg); }
 .propuesta__linea { color: var(--texto-2); font-size: var(--texto-base); line-height: 1.4; }
-.propuestas__pie { margin-top: 10px; }
+.propuestas__pie { margin-top: var(--esp-4); }
 
 /* Las fichas que salieron de una búsqueda van dentro de su tarjeta. */
-.busqueda .rejilla-fichas { margin-top: 14px; }
+.busqueda .rejilla-fichas { margin-top: var(--esp-6); }
 
 /* ---------------------------------------------------------------------------
    EL ALOJAMIENTO DE UNA PARADA, en Mi ruta
@@ -6365,7 +6368,7 @@ body.con-antes { overflow: hidden; }
    que se busca con prisa y por eso se pinta como una etiqueta y no como texto.
    --------------------------------------------------------------------------- */
 .reserva {
-  margin-top: 12px;
+  margin-top: var(--esp-5);
   padding: var(--esp-4) var(--esp-5);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
@@ -6384,7 +6387,7 @@ body.con-antes { overflow: hidden; }
 .reserva__etiqueta {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   color: var(--texto);
   font-size: var(--texto-lg);
 }
@@ -6392,7 +6395,7 @@ body.con-antes { overflow: hidden; }
 .reserva--si .reserva__etiqueta { color: var(--verde-tx); }
 
 .reserva__codigo-chip {
-  padding: 2px 9px;
+  padding: 2px 8px;
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -6404,7 +6407,7 @@ body.con-antes { overflow: hidden; }
 
 .reserva-fila__datos [data-copiar] { cursor: pointer; }
 
-.reserva__cuerpo { margin-top: 10px; display: grid; gap: var(--esp-4); }
+.reserva__cuerpo { margin-top: var(--esp-4); display: grid; gap: var(--esp-4); }
 
 .reserva__nota-guardada {
   margin: 0;
@@ -6472,10 +6475,10 @@ body.con-antes { overflow: hidden; }
 }
 
 .reserva-fila__cabecera {
-  margin: 0 0 3px;
+  margin: 0 0 var(--esp-1);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--esp-2);
   color: var(--texto-2);
   font-size: var(--texto-sm);
 }
@@ -6612,7 +6615,7 @@ body.con-antes { overflow: hidden; }
 .pre-concepto__nombre { font-weight: 600; }
 
 .pre-concepto__cuantas {
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -6672,7 +6675,7 @@ body.con-antes { overflow: hidden; }
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-right: 6px;
+  margin-right: var(--esp-2);
   border-radius: var(--radio-circulo);
   background: var(--verde-tx);
   vertical-align: middle;
@@ -6687,8 +6690,8 @@ body.con-antes { overflow: hidden; }
 
 /* --- Lo estimado ---------------------------------------------------------- */
 .pre-sello {
-  margin-left: 6px;
-  padding: 2px 9px;
+  margin-left: var(--esp-2);
+  padding: 2px 8px;
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -6745,7 +6748,7 @@ body.con-antes { overflow: hidden; }
 .pre-estimado__entrada input:focus { outline: none; }
 .pre-estimado__moneda { color: var(--texto-2); font-weight: 600; }
 
-.pre-estimado__por { color: var(--texto-2); font-size: var(--texto-2xl); padding-bottom: 6px; }
+.pre-estimado__por { color: var(--texto-2); font-size: var(--texto-2xl); padding-bottom: var(--esp-2); }
 
 .pre-estimado__factor {
   display: grid;
@@ -6770,13 +6773,13 @@ body.con-antes { overflow: hidden; }
   margin: var(--esp-5) 0 0;
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--esp-2);
   color: var(--tinte-texto);
   font-size: var(--texto-base);
 }
 
 .pre-estimado__acciones {
-  margin-top: 10px;
+  margin-top: var(--esp-4);
   display: flex;
   align-items: center;
   gap: var(--esp-4);
@@ -6840,7 +6843,7 @@ body.con-antes { overflow: hidden; }
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: baseline;
   gap: var(--esp-3);
-  padding: 7px 0;
+  padding: var(--esp-2) 0;
   border-bottom: 1px solid var(--borde);
   font-size: var(--texto-lg);
 }
@@ -6887,7 +6890,7 @@ body.con-antes { overflow: hidden; }
 
 /* --- Ahora en el destino -------------------------------------------------- */
 .clima-sello {
-  margin-left: 6px;
+  margin-left: var(--esp-2);
   padding: 2px 8px;
   border-radius: var(--radio-pill);
   background: var(--tinte);
@@ -7008,7 +7011,7 @@ body.con-antes { overflow: hidden; }
 
 /* El nombre del sitio al que vuelve la flecha del lienzo. En movil se esconde
    y queda solo la flecha: ahi el espacio de la cabecera es todo. */
-.pill--volver { gap: 7px; }
+.pill--volver { gap: var(--esp-2); }
 .pill--volver__texto { font-weight: 600; }
 
 @media (max-width: 700px) {
@@ -7061,14 +7064,14 @@ body.con-antes { overflow: hidden; }
 .pais-fila__nombre { font-weight: 650; font-size: var(--texto-xl); }
 
 .pais-fila__porque {
-  margin: 5px 0 0 28px;
+  margin: 4px 0 0 28px;
   color: var(--texto-2);
   font-size: var(--texto-base);
   line-height: 1.45;
 }
 
 .pais-fila__sello {
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: var(--radio-pill);
   background: var(--prec-bg);
   color: var(--prec-tx);
@@ -7097,7 +7100,7 @@ body.con-antes { overflow: hidden; }
 }
 
 .frontera-ruta__pais {
-  padding: 3px 10px;
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
@@ -7131,10 +7134,10 @@ body.con-antes { overflow: hidden; }
 .frontera__entre { color: var(--texto-2); font-weight: 400; font-size: var(--texto-base); }
 
 .frontera__doble {
-  margin: 0 0 5px;
+  margin: 0 0 var(--esp-1);
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--esp-2);
   color: var(--prec-tx);
   font-size: var(--texto-base);
   font-weight: 600;

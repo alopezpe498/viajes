@@ -89,7 +89,7 @@ html:has(.mapa-maestro) { height: 100%; }
    ========================================================================== */
 .mm-barra {
   top: 14px; left: 50%; transform: translateX(-50%);
-  border-radius: var(--radio-pill); padding: 5px;
+  border-radius: var(--radio-pill); padding: var(--esp-1);
   display: flex; gap: 2px;
 }
 .mm-barra button {
@@ -141,7 +141,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-selector button {
   border: 1px solid var(--borde-fuerte); background: rgba(255, 255, 255, .7);
   font: inherit; font-size: var(--texto-sm); font-weight: 600; color: var(--texto);
-  border-radius: var(--radio-xs); padding: 5px 10px; cursor: pointer;
+  border-radius: var(--radio-xs); padding: var(--esp-1) var(--esp-4); cursor: pointer;
 }
 .mm-selector button:hover { border-color: var(--acento); }
 .mm-selector button.on { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 700; }
@@ -179,7 +179,7 @@ html:has(.mapa-maestro) { height: 100%; }
 /* --- La lista ------------------------------------------------------------- */
 .mm-lista { flex: 1; overflow: auto; padding: var(--esp-2); }
 .mm-grupo {
-  margin: 10px 6px 3px; font-size: var(--texto-sm); font-weight: 700;
+  margin: var(--esp-4) var(--esp-2) var(--esp-1); font-size: var(--texto-sm); font-weight: 700;
   color: var(--texto-2); letter-spacing: .02em;
 }
 /* `flex-wrap` para que la etiqueta de «sin ubicar» se vaya a su propia línea en
@@ -187,7 +187,7 @@ html:has(.mapa-maestro) { height: 100%; }
    Colina de Wawel» salía en cuatro líneas de tres palabras. */
 .mm-item {
   display: flex; align-items: center; gap: var(--esp-4); flex-wrap: wrap;
-  padding: 8px 9px; border-radius: var(--radio); cursor: pointer;
+  padding: var(--esp-3) var(--esp-3); border-radius: var(--radio); cursor: pointer;
   border: 0; background: transparent; width: 100%; text-align: left; font: inherit;
 }
 .mm-item:hover { background: rgba(255, 255, 255, .95); }
@@ -245,7 +245,7 @@ html:has(.mapa-maestro) { height: 100%; }
 
 .mm-etq {
   background: var(--texto); color: #fff;
-  border-radius: var(--radio-pill); padding: 4px 11px;
+  border-radius: var(--radio-pill); padding: var(--esp-1) var(--esp-4);
   font-size: var(--texto-sm); font-weight: 700; white-space: nowrap;
   box-shadow: var(--sombra-mapa);
 }
@@ -266,7 +266,7 @@ html:has(.mapa-maestro) { height: 100%; }
    ========================================================================== */
 .mm-leyenda {
   right: 14px; bottom: 14px;
-  border-radius: var(--radio); padding: 8px 11px;
+  border-radius: var(--radio); padding: var(--esp-3) var(--esp-4);
   display: flex; flex-wrap: wrap; gap: var(--esp-1) var(--esp-5);
   max-width: 46vw;
 }
@@ -306,7 +306,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-medir {
   top: 62px; left: 50%; transform: translateX(-50%);
   border-radius: var(--radio);
-  padding: 5px;
+  padding: var(--esp-1);
   display: flex; flex-direction: column; gap: var(--esp-2);
   max-width: min(84vw, 360px);
 }
@@ -314,7 +314,7 @@ html:has(.mapa-maestro) { height: 100%; }
   border: 0; background: transparent; font: inherit;
   font-size: var(--texto-lg); font-weight: 600; color: var(--texto-2);
   padding: 0 var(--esp-6); border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
-  display: flex; align-items: center; justify-content: center; gap: 7px;
+  display: flex; align-items: center; justify-content: center; gap: var(--esp-2);
   /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
      segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
      papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
@@ -335,13 +335,13 @@ html:has(.mapa-maestro) { height: 100%; }
   border-top: 1px solid var(--borde);
 }
 .mm-medir__caja b { color: var(--texto); }
-.mm-medir__quien { display: block; margin-bottom: 4px; overflow-wrap: anywhere; }
+.mm-medir__quien { display: block; margin-bottom: var(--esp-1); overflow-wrap: anywhere; }
 .mm-medir__modos { display: flex; flex-wrap: wrap; gap: var(--esp-1) var(--esp-5); }
-.mm-medir__modo { display: inline-flex; align-items: center; gap: 5px; }
+.mm-medir__modo { display: inline-flex; align-items: center; gap: var(--esp-1); }
 .mm-medir__modo i { color: var(--acento); }
 /* El elegido por el umbral, marcado: es el que se enseñaría en una etiqueta. */
 .mm-medir__modo--elegido b { color: var(--acento); }
-.mm-medir__nota { display: block; margin-top: 6px; color: var(--texto-3); font-size: var(--texto-sm); }
+.mm-medir__nota { display: block; margin-top: var(--esp-2); color: var(--texto-3); font-size: var(--texto-sm); }
 .mm-medir__nota--mala { color: var(--alerta-tx); }
 
 /* El punto ya marcado, esperando al segundo clic. */

@@ -83,7 +83,7 @@
   padding: var(--esp-7) var(--esp-9) var(--esp-8);
 }
 
-.tour__puntos { display: flex; gap: 7px; }
+.tour__puntos { display: flex; gap: var(--esp-2); }
 .tour__puntos span {
   width: 7px;
   height: 7px;
@@ -96,7 +96,7 @@
 .tour__botones { display: flex; align-items: center; gap: var(--esp-4); }
 
 .tour__saltar {
-  padding: 9px 14px;
+  padding: var(--esp-3) var(--esp-6);
   border: 0;
   border-radius: var(--radio-pill);
   background: none;

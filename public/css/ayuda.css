@@ -86,8 +86,8 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
 .ay-cab {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px 12px 12px 15px;
+  gap: var(--esp-3);
+  padding: var(--esp-5) var(--esp-5) var(--esp-5) var(--esp-6);
   border-bottom: 1px solid var(--borde);
   background: var(--fondo);
 }
@@ -137,7 +137,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
 
 .ay-msg {
   max-width: 88%;
-  padding: 9px 12px;
+  padding: var(--esp-3) var(--esp-5);
   border-radius: var(--radio);
   white-space: pre-wrap;   /* los pasos vienen en líneas sueltas */
   overflow-wrap: anywhere; /* una URL larga no ensancha el panel */
@@ -190,7 +190,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
   color: var(--texto-2);
   font: inherit;
   font-size: var(--texto-base);
-  padding: 5px 10px;
+  padding: var(--esp-1) var(--esp-4);
   border-radius: var(--radio-pill);
   cursor: pointer;
   text-align: left;
@@ -199,7 +199,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
 .ay-idea:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
 
 /* Los tres puntos mientras piensa. */
-.ay-pensando { display: flex; gap: var(--esp-1); align-self: flex-start; padding: 12px 13px; }
+.ay-pensando { display: flex; gap: var(--esp-1); align-self: flex-start; padding: var(--esp-5) var(--esp-5); }
 .ay-pensando span {
   width: 6px; height: 6px; border-radius: var(--radio-circulo);
   background: var(--texto-3);
@@ -236,7 +236,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio);
-  padding: 8px 11px;
+  padding: var(--esp-3) var(--esp-4);
   resize: none;
   max-height: 96px;
   line-height: 1.4;

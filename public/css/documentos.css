@@ -32,7 +32,7 @@
   overflow-y: auto;
 }
 
-.docs-grupo + .docs-grupo { margin-top: 4px; }
+.docs-grupo + .docs-grupo { margin-top: var(--esp-1); }
 
 .docs-grupo__titulo {
   display: flex;
@@ -55,7 +55,7 @@
   background: var(--tinte);
   color: var(--tinte-texto);
   border-radius: var(--radio-pill);
-  padding: 1px 9px;
+  padding: 1px 8px;
   font-size: var(--texto-sm);
   font-weight: 700;
   letter-spacing: 0;
@@ -69,7 +69,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--esp-4);
-  padding: 9px 12px;
+  padding: var(--esp-3) var(--esp-5);
   border: none;
   background: none;
   border-radius: var(--radio);
@@ -179,8 +179,8 @@
 
 .correo__cabeceras {
   border-bottom: 1px solid var(--borde);
-  padding-bottom: 12px;
-  margin-bottom: 14px;
+  padding-bottom: var(--esp-5);
+  margin-bottom: var(--esp-6);
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--esp-1) var(--esp-5);
