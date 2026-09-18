@@ -211,6 +211,43 @@ function horaDeLlegada(viajeId) {
 // =============================================================================
 // LA FASE
 // =============================================================================
+/**
+ * QUIÉNES DUERMEN, CONTADO PARA QUIEN ELIGE EL ALOJAMIENTO.
+ *
+ * Esto era `${adultos} adulto(s) y ${n} niño(s)` y se perdían dos cosas por el
+ * camino, las dos preguntadas en la pantalla de configuración:
+ *
+ *   LAS EDADES. El código las tiene —`edadesNinos`— y al prompt le llegaba solo
+ *   cuántos eran. Un bebé y uno de catorce no piden el mismo alojamiento: uno
+ *   necesita cuna y el otro una cama de verdad, y el precio por noche tampoco es
+ *   el mismo. Las dos pasadas de esta fase preguntan con este texto, así que se
+ *   perdían en el rango de precio Y en la elección.
+ *
+ *   LA HABITACIÓN FAMILIAR. Se pregunta, es OBLIGATORIA con más de dos viajeros,
+ *   y no aparecía en ninguna otra línea del código: contestarla no cambiaba
+ *   nada. Ahora llega a quien elige.
+ *
+ * NO VA COMO FILTRO DE BOOKING, y es a propósito. Los códigos de `nflt` de
+ * `providers/booking.js` están comprobados uno a uno contra el panel real, con
+ * su fecha y su ciudad de prueba anotadas; ese fichero dice expresamente que
+ * prefiere no poner un interruptor que no hace nada. Inventarme un código para
+ * «habitación familiar» sería romper esa regla a ciegas. Llega a la decisión,
+ * que es donde puede usarse sin mentir. Si algún día se comprueba el código en
+ * el panel, se añade allí y esto se queda igual.
+ */
+function quienesDuermen(adultos, edadesNinos, auto) {
+  const partes = [`${adultos} adulto(s)`];
+
+  if (edadesNinos.length) {
+    partes.push(`${edadesNinos.length} niño(s) de ${edadesNinos.join(' y ')} años`);
+  }
+
+  const texto = partes.join(' y ');
+  return auto?.habitacionFamiliar === 'si'
+    ? `${texto}. Hace falta que quepan JUNTOS: habitación familiar, triple o un apartamento`
+    : texto;
+}
+
 export async function ejecutarFaseDormir(viaje, promptEntero) {
   const viajeId = viaje.id;
   const di = (t, origen = null) => anotar(viajeId, FASE, t, origen);
@@ -321,7 +358,7 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
             FECHA_ENTRADA: fechas.entrada,
             FECHA_SALIDA: fechas.salida,
             NIVEL: auto.nivelPrecio ?? 'medio',
-            VIAJEROS: `${adultos} adulto(s)` + (edadesNinos.length ? ` y ${edadesNinos.length} niño(s)` : ''),
+            VIAJEROS: quienesDuermen(adultos, edadesNinos, auto),
             TIPO: auto.tipoAlojamiento ?? 'indiferente',
           }),
           { maxTokens: 600, paso: `precio de ${ciudad}` }
@@ -569,7 +606,7 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
           rellenar(partes.elegir, {
             CIUDAD: ciudad,
             NOCHES: noches,
-            VIAJEROS: `${adultos} adulto(s)` + (edadesNinos.length ? ` y ${edadesNinos.length} niño(s)` : ''),
+            VIAJEROS: quienesDuermen(adultos, edadesNinos, auto),
             FILTROS: resumenDeFiltros(filtrosUsados),
             SALIDA_TEMPRANA: salidaTemprana
               ? `Sí: al terminar esta parada se sale a las ${salidaTemprana}, así que estar cerca de la estación suma.`

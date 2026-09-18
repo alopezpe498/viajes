@@ -93,12 +93,15 @@ const ESPERADO = [
   { clave: 'franjaVuelta', codigo: ['services/orquestador-ciudades.js'] },
 
   // --- LO QUE HOY NO LLEGA, reconocido y sin olvidar ------------------------
-  { clave: 'habitacionFamiliar', codigo: ['services/orquestador-dormir.js'],
-    pendiente: 'se pregunta —obligatoria con más de dos viajeros— y no la lee la búsqueda de Booking' },
+  // Ya no es pendiente: llega a quien elige el alojamiento, dentro de
+  // `quienesDuermen`. No va como filtro de Booking a propósito (ver allí).
+  { clave: 'habitacionFamiliar', codigo: ['services/orquestador-dormir.js'] },
   { clave: 'presupuesto', codigo: ['services/orquestador-dormir.js'],
     pendiente: 'solo se enseña; ninguna decisión lo mira' },
+  // Ya no es pendiente: las edades viajan enteras a las DOS pasadas de la fase,
+  // la del precio y la de elegir.
   { clave: 'edadesNinos_en_dormir', hueco: 'VIAJEROS', fases: ['dormir'],
-    pendiente: 'al prompt del hotel llega «N niño(s)» sin las edades: un bebé y uno de 14 no piden lo mismo' },
+    codigo: ['services/orquestador-dormir.js'] },
   { clave: 'nivelPrecio_en_excursiones', codigo: ['services/orquestador-excursiones.js'],
     pendiente: 'las excursiones se eligen sin mirar lo que cuestan' },
   { clave: 'intereses_en_dormir', hueco: 'INTERESES', fases: ['dormir'],
