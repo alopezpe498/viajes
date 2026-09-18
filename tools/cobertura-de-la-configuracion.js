@@ -96,8 +96,11 @@ const ESPERADO = [
   // Ya no es pendiente: llega a quien elige el alojamiento, dentro de
   // `quienesDuermen`. No va como filtro de Booking a propósito (ver allí).
   { clave: 'habitacionFamiliar', codigo: ['services/orquestador-dormir.js'] },
-  { clave: 'presupuesto', codigo: ['services/orquestador-dormir.js'],
-    pendiente: 'solo se enseña; ninguna decisión lo mira' },
+  // DECIDIDO: no se arregla, se deja de preguntar. El campo está oculto en la
+  // pantalla de configuración. Sigue en la base y las pantallas que lo enseñan
+  // lo enseñan; simplemente ya no se pide algo que no cambia nada. Si algún día
+  // se decide qué debe DECIDIR, vuelve la pregunta y vuelve aquí.
+  { clave: 'presupuesto', pendiente: 'OCULTO A PROPÓSITO: no decidía nada, así que se deja de preguntar' },
   // Ya no es pendiente: las edades viajan enteras a las DOS pasadas de la fase,
   // la del precio y la de elegir.
   { clave: 'edadesNinos_en_dormir', hueco: 'VIAJEROS', fases: ['dormir'],

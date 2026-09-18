@@ -322,16 +322,25 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
               <input type="hidden" name="ritmo" id="campo-ritmo" value="<%= ritmoActual %>">
             </div>
 
-            <div class="campo">
-              <label for="presupuesto">Presupuesto orientativo</label>
-              <div class="presupuesto">
-                <input type="text" id="presupuesto" name="presupuesto"
-                       placeholder="Sin límite definido" inputmode="numeric"
-                       value="<%= viaje.presupuesto || '' %>">
-                <span class="euro" aria-hidden="true">€</span>
-              </div>
-              <div class="nota">Total del viaje, para orientar propuestas</div>
-            </div>
+            <%# EL PRESUPUESTO, OCULTO Y NO BORRADO.
+
+                No decidía nada. Se preguntaba —«Total del viaje, para orientar
+                propuestas»— y ninguna fase lo miraba: ni el nivel de hotel, ni
+                el tope de los vuelos, ni las excursiones. Solo se enseñaba
+                después, en la pantalla de presupuesto y en el dosier.
+
+                Una pregunta que no cambia nada es peor que no preguntar: quien
+                la contesta cree que está orientando el viaje.
+
+                Va OCULTO y no borrado, y el `hidden` lleva el valor que hubiera.
+                Sin él, guardar la configuración enviaría el campo vacío y
+                borraría el presupuesto de los viajes que ya lo tienen escrito,
+                que es exactamente lo que no se ha pedido: se ha pedido dejar de
+                verlo. Las pantallas que lo enseñan siguen enseñándolo.
+
+                Si algún día se decide qué debe DECIDIR, se quita este comentario
+                y vuelve. %>
+            <input type="hidden" name="presupuesto" value="<%= viaje.presupuesto || '' %>">
           </div>
 
           <%#
