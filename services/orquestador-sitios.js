@@ -130,6 +130,136 @@ export function sesgoDeIntereses(prompt, auto) {
 }
 
 // =============================================================================
+// COMPLETAR UNA CIUDAD YA INVESTIGADA CON LO QUE PIDE ESTE PERFIL
+// =============================================================================
+/**
+ * LA HUELLA DE UN PERFIL, para no pagar dos veces por lo mismo.
+ *
+ * Ordenada y normalizada: «museos, gastronomia» y «Gastronomía, Museos» son el
+ * mismo perfil y no deben disparar dos complementos. El texto libre entra tal
+ * cual en minúsculas porque un matiz distinto SÍ es otro perfil: «comer bien» y
+ * «evitar el desierto» no piden lo mismo.
+ */
+function huellaDelPerfil(auto) {
+  const cats = [...(auto.categorias ?? [])].map((c) => String(c).toLowerCase().trim()).sort();
+  const texto = String(auto.intereses ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+  return [cats.join(','), texto].filter(Boolean).join('|');
+}
+
+/**
+ * COMPLETAR LO QUE ESTE PERFIL HABRÍA SACADO Y NO ESTÁ.
+ *
+ * EL AGUJERO (§1.1 del repaso). El catálogo de sitios se comparte entre viajes y
+ * el sesgo por intereses solo se aplica AL GENERAR. Una ciudad investigada por un
+ * viaje sin perfil se queda con esa lista para siempre, así que tus intereses no
+ * cambian nada en las ciudades que ya existen. Hoy son once y van a más.
+ *
+ * PERO LO QUE FALTA NO ES EL ORDEN, ES LA LISTA, y eso se midió antes de escribir
+ * esto. Misma ciudad, tres perfiles, la llamada de producción:
+ *
+ *     sin perfil   Acrópolis · Museo Acrópolis · Ágora · Museo Arqueológico · …
+ *     gastronomía  Acrópolis · Museo Acrópolis · Ágora · Museo Arqueológico · …
+ *     naturaleza   Acrópolis · Museo Acrópolis · Museo Arqueológico · Ágora · …
+ *
+ * La cabeza es la misma en los tres. Lo que cambia es la cola: con gastronomía
+ * aparecen el Mercado Central y el Barrio de Psirri, que NO están en la lista
+ * neutra. Así que no hay que reordenar nada —ni separar catálogo de viaje, ni
+ * guardar un orden por viaje, que era lo que el repaso proponía—: hay que añadir
+ * lo que falta.
+ *
+ * ENTRAN COMO SEGUNDO NIVEL, Y ES A PROPÓSITO. El Mercado Central es un
+ * imprescindible PARA TI, no para Atenas; meterlo arriba se lo impondría al
+ * siguiente viaje, que es el mismo error al revés. Y ya no hace falta que esté
+ * arriba: el prompt del lienzo tiene la regla 13, que ante dos cosas que compiten
+ * por el mismo hueco prefiere la que va con el perfil. Entra como opción y tu
+ * perfil decide.
+ *
+ * UNA VEZ POR CIUDAD Y PERFIL. La huella se apunta en `datos_extra`, así que el
+ * segundo viaje gastronómico a Atenas no vuelve a pagar la llamada.
+ *
+ * No lanza: si falla, la ciudad se queda como estaba. Completar es una mejora.
+ */
+export async function completarSegunElPerfil(punto, ciudad, auto, sesgo, di) {
+  const huella = huellaDelPerfil(auto);
+  if (!huella || !sesgo) return 0;
+
+  const extra = (() => {
+    try {
+      return punto.datos_extra ? JSON.parse(punto.datos_extra) : {};
+    } catch {
+      return {};
+    }
+  })();
+
+  const hechos = Array.isArray(extra.perfilesCompletados) ? extra.perfilesCompletados : [];
+  if (hechos.includes(huella)) {
+    di(`   ${ciudad}: ya se completó para este perfil. No lo repito.`);
+    return 0;
+  }
+
+  const yaEstan = todas('SELECT nombre FROM sitios_lugar WHERE punto_interes_id = ?', punto.id)
+    .map((x) => x.nombre);
+
+  let ficha;
+  try {
+    ficha = await investigarCiudadConIA(punto, ciudad, {
+      sesgo,
+      soloBloques: ['otros'],
+      yaEnElCatalogo: yaEstan,
+    });
+  } catch (err) {
+    di(`   ${ciudad}: no pude completar según el perfil (${err.message}).`);
+    return 0;
+  }
+
+  const nuevos = ficha.sitios ?? [];
+
+  // EL ORDEN CONTINÚA, NO EMPIEZA DE CERO. `investigarCiudadConIA` numera dentro
+  // de su tanda —1, 2, 3…— y esos números ya están usados en esta ciudad. Sin
+  // este desplazamiento, dos sitios distintos compartirían puesto y el reparto
+  // leería un orden que no significa nada.
+  const tope = una(
+    'SELECT COALESCE(MAX(orden), 0) AS n FROM sitios_lugar WHERE punto_interes_id = ?',
+    punto.id
+  ).n;
+
+  if (nuevos.length) {
+    guardarFichaProfunda(punto, {
+      ...ficha,
+      sitios: nuevos.map((s, i) => ({ ...s, orden: tope + i + 1, bloque: 'otros' })),
+    });
+  }
+
+  // LA MARCA SE PONE AUNQUE NO SALGA NINGUNO, y se relee el punto antes.
+  //
+  // Lo primero porque «para este perfil no hay nada más que añadir» es una
+  // respuesta válida, y volver a preguntarla en cada viaje sería pagar por saber
+  // lo mismo. Lo segundo porque `guardarFichaProfunda` acaba de reescribir
+  // `datos_extra` y el objeto que tengo aquí es de antes: escribir sobre él
+  // borraría lo que se acaba de guardar.
+  const ahora = una('SELECT datos_extra FROM puntos_interes WHERE id = ?', punto.id);
+  const base = (() => {
+    try {
+      return ahora?.datos_extra ? JSON.parse(ahora.datos_extra) : {};
+    } catch {
+      return {};
+    }
+  })();
+  ejecutar(
+    'UPDATE puntos_interes SET datos_extra = ? WHERE id = ?',
+    JSON.stringify({ ...base, perfilesCompletados: [...hechos, huella] }),
+    punto.id
+  );
+
+  di(
+    nuevos.length
+      ? `   ${ciudad}: completada con ${nuevos.length} sitio(s) que pide tu perfil, como segundo nivel.`
+      : `   ${ciudad}: para este perfil no hay nada más que añadir. Queda apuntado.`
+  );
+  return nuevos.length;
+}
+
+// =============================================================================
 // LA FASE
 // =============================================================================
 export async function ejecutarFaseSitios(viaje, prompt) {
@@ -294,6 +424,17 @@ export async function ejecutarFaseSitios(viaje, prompt) {
         } catch (err) {
           di(`   ${ciudad}: no pude repasar las fotos (${err.message}).`);
         }
+        // Y SE COMPLETA CON LO QUE PIDA EL PERFIL, si no se hizo ya.
+        //
+        // Va ANTES de puntuar y de fundir, para que lo que se añada pase por los
+        // mismos pasos que lo que ya estaba: si entrara después, los sitios
+        // nuevos se quedarían sin nota y sin comprobar si están dentro de otro.
+        try {
+          await completarSegunElPerfil(punto, ciudad, auto, sesgo, di);
+        } catch (err) {
+          di(`   ${ciudad}: no pude completar según el perfil (${err.message}).`);
+        }
+
         // Y SE PUNTÚAN, AUNQUE SEAN DE ANTES.
         //
         // AQUÍ ESTABA EL FALLO, y lo destapó el viaje de control 110: el
