@@ -332,7 +332,15 @@
 }
 
 @media (max-width: 640px) {
-  .config .plantillas__fila { flex-direction: column; align-items: stretch; }
+  /* `nowrap` en columna, y no es un detalle: con `wrap` el flex es de varias
+     líneas y cada línea mide lo que su hijo más ancho. El desplegable enseña el
+     nombre entero de la plantilla —hasta 86 caracteres, 659px— y el «estirar»
+     estiraba hasta ahí, no hasta la tarjeta: el desplegable y «Cargar» se
+     salían por la derecha en un móvil. `min-width: 0` para que el desplegable
+     acepte ser más estrecho que su opción más larga y la recorte. */
+  .config .plantillas__fila { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+  .config .plantillas select,
+  .config .plantillas input[type="text"] { min-width: 0; width: 100%; }
   .config .btn-plantilla { justify-content: center; }
   .config .btn-plantilla--icono { width: 100%; height: 40px; }
 }
