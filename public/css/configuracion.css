@@ -18,11 +18,12 @@
  * `--texto-acento` era `--texto`, `--secundario` era `--texto-2`, `--verde-f/-t`
  * eran `--verde-bg/-tx`. Todas fuera: se heredan de `:root` como el resto.
  *
- * LAS DOS DEL ÁMBAR NO ERAN UN DUPLICADO y por eso siguen, pero ya no viven
- * aquí: `var(--prec-bg)` y `var(--ambar-tx)` NO son `--prec-bg` (#FAEEDA) ni `--prec-tx`
- * (#854F0B). Son un ámbar distinto, y además el que usan estilo.css, portada.css
- * y orquestador.css. Así que tienen su propio token global, `--ambar-bg` y
- * `--ambar-tx`, con esos valores exactos: renombrar no es recolorear.
+ * EL ÁMBAR TUVO SU PROPIO TOKEN Y YA NO LO NECESITA. Esta hoja usaba un ámbar
+ * (#8A5A16) distinto del de precaución (#854F0B), así que se le dio `--ambar-tx`
+ * para no recolorear al renombrar. Medidos después uno contra otro, la
+ * diferencia era de 5, 11 y 11 sobre 255 —un 4%, que el ojo no separa— y tener
+ * dos marrones de aviso con dos nombres solo obligaba a elegir entre cosas
+ * iguales. Se funden en `--prec-tx`, que es el que más se usa.
  *
  * El aislamiento por `.config` se queda como estaba. Lo que se va es la paleta,
  * no el prefijo. */
@@ -72,7 +73,7 @@
   margin-left: auto; background: var(--verde-bg); color: var(--verde-tx);
   border-radius: var(--radio-pill); padding: var(--esp-1) var(--esp-6); font-size: var(--texto-base); font-weight: 600;
 }
-.config .cal-resumen .noches.vacio { background: var(--prec-bg); color: var(--ambar-tx); font-weight: 500; }
+.config .cal-resumen .noches.vacio { background: var(--prec-bg); color: var(--prec-tx); font-weight: 500; }
 
 .config .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .config .cal-nav button {
@@ -108,7 +109,7 @@
 .config .cal-error {
   display: flex; align-items: center; gap: var(--esp-3);
   margin-bottom: 14px; padding: var(--esp-4) var(--esp-7);
-  border-radius: var(--radio); background: var(--prec-bg); color: var(--ambar-tx);
+  border-radius: var(--radio); background: var(--prec-bg); color: var(--prec-tx);
   font-size: var(--texto-base);
 }
 

@@ -250,7 +250,7 @@
 .chip-billete i { font-size: var(--texto-base); }
 .chip-billete--etapas { background: var(--tinte); color: var(--acento); }
 .chip-billete--cuadra { background: var(--verde-bg); color: var(--verde-tx); }
-.chip-billete--faltan { background: var(--prec-bg); color: var(--ambar-tx); }
+.chip-billete--faltan { background: var(--prec-bg); color: var(--prec-tx); }
 
 /* --- El menu de tres puntos ----------------------------------------------- */
 .menu-btn {
@@ -275,6 +275,9 @@
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
+  /* Fuera de la escala a propósito: el menú de la portada cae sobre una franja de color, no sobre el fondo. No hay una segunda
+     pieza con esta misma necesidad, así que un token sería un nombre para un
+     solo uso. */
   box-shadow: 0 6px 20px rgba(18, 48, 62, .10);
   display: none;
   min-width: 160px;

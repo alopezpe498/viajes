@@ -37,6 +37,9 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  /* Fuera de la escala a propósito: la burbuja de ayuda flota fija en una esquina, encima de todo. No hay una segunda
+     pieza con esta misma necesidad, así que un token sería un nombre para un
+     solo uso. */
   box-shadow: 0 4px 14px rgba(18, 48, 62, .22);
   transition: background .15s, transform .15s, box-shadow .15s;
 }

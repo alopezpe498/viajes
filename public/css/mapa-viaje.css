@@ -222,7 +222,7 @@ html:has(.mapa-maestro) { height: 100%; }
   display: flex; align-items: center; justify-content: center;
   width: 29px; height: 29px; border-radius: var(--radio-xs);
   color: #fff; font-size: var(--texto-lg);
-  border: 2px solid #fff; box-shadow: 0 3px 10px rgba(18, 48, 62, .3);
+  border: 2px solid #fff; box-shadow: var(--sombra-mapa);
 }
 .mm-pin--num { border-radius: var(--radio-circulo); font-weight: 800; font-size: var(--texto-base); }
 .mm-pin--sel { outline: 3px solid var(--texto); outline-offset: 1.5px; }
@@ -241,7 +241,7 @@ html:has(.mapa-maestro) { height: 100%; }
   background: var(--texto); color: #fff;
   border-radius: var(--radio-pill); padding: 4px 11px;
   font-size: var(--texto-sm); font-weight: 700; white-space: nowrap;
-  box-shadow: 0 3px 10px rgba(18, 48, 62, .35);
+  box-shadow: var(--sombra-mapa);
 }
 /* La del paseo hotel↔parada: más discreta que la del traslado entre ciudades.
    Un vuelo de 176 € es una decisión; 800 metros andando es un dato de apoyo, y
@@ -336,7 +336,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-punto-medido {
   width: 14px; height: 14px; border-radius: var(--radio-circulo);
   background: var(--acento); border: 3px solid #fff;
-  box-shadow: 0 1px 6px rgba(18, 48, 62, .5);
+  box-shadow: var(--sombra-mapa);
 }
 
 @media (max-width: 640px) {
