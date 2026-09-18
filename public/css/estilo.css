@@ -2437,8 +2437,12 @@ a  { color: var(--acento); }
 }
 
 .etapa__acciones { margin-left: auto; display: flex; gap: 8px; }
-.etapa__abrir,
-.etapa__clonar {
+/* Solo `.etapa__abrir`, que es un <a> y sí usa esto. `.etapa__clonar` estaba
+   también en el reparto, pero se declara entero otra vez 1.600 líneas más
+   abajo y gana aquella: en pantalla es una píldora de 1px de borde, no este
+   rectángulo de 1,5px con las esquinas a 10. De aquí solo se llevaba el
+   tamaño y el peso de la letra, y eso ya está escrito en su propio bloque. */
+.etapa__abrir {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2459,8 +2463,6 @@ a  { color: var(--acento); }
   color: #fff;
 }
 .etapa__abrir:hover { background: var(--acento-hover); border-color: var(--acento-hover); }
-.etapa__clonar:hover { border-color: var(--acento); color: var(--acento); }
-.etapa__clonar i { font-size: 15px; }
 
 /* --- Ciudades por decidir --------------------------------------------------- */
 /*
@@ -4141,6 +4143,11 @@ a  { color: var(--acento); }
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
+  /* Un <button> NO hereda el interlineado: el suyo de fábrica es `normal`. Se lo
+     forzaba el `font: inherit` del bloque de `.etapa__abrir`, y al quitar de allí
+     `.etapa__clonar` el texto se descolocó dentro de su caja. Se repone aquí, y
+     con `inherit` en vez de un número para que siga al de la página si cambia. */
+  line-height: inherit;
   white-space: nowrap;
   cursor: pointer;
 }
