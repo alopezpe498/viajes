@@ -58,7 +58,7 @@
 
 .panel__lema {
   margin: 14px 0 0;
-  font-size: 14.5px;
+  font-size: var(--texto-lg);
   line-height: 1.5;
   opacity: .85;
 }
@@ -74,7 +74,7 @@
   border-radius: var(--radio-pill);
   padding: 13px 24px;
   font-family: inherit;
-  font-size: 14.5px;
+  font-size: var(--texto-lg);
   font-weight: 700;
   cursor: pointer;
 }
@@ -222,7 +222,7 @@
 .billete__nombre { font-size: 18px; font-weight: 700; margin: 0; }
 
 .billete__ciudades {
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
   color: var(--texto-2);
   margin: 3px 0 0;
   display: flex;
@@ -237,7 +237,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: var(--texto-sm);
   font-weight: 700;
   border-radius: var(--radio-pill);
   padding: 3px 10px;
@@ -284,7 +284,7 @@
   background: none;
   padding: 10px 14px;
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
   cursor: pointer;
   color: var(--texto);
 }

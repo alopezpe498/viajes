@@ -69,7 +69,7 @@
 .tour__texto {
   margin: 0;
   color: var(--texto-2);
-  font-size: 14.5px;
+  font-size: var(--texto-lg);
   line-height: 1.6;
 }
 
@@ -102,7 +102,7 @@
   background: none;
   color: var(--texto-2);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
   cursor: pointer;
 }
 .tour__saltar:hover { color: var(--acento); }

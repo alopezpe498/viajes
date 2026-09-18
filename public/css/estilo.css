@@ -2181,7 +2181,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
 }
 .ruta-estado:empty { display: none; }
 .ruta-estado__noches { font-weight: 700; white-space: nowrap; }
@@ -2261,7 +2261,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: center;
   min-height: 60px;
-  font-size: 14.5px;
+  font-size: var(--texto-lg);
   font-weight: 600;
   color: var(--texto-2);
 }
@@ -2275,7 +2275,7 @@ a  { color: var(--acento); }
   margin: 0 0 14px;
   padding: 6px 0 6px 8px;
   color: var(--texto-2);
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
 }
 .ruta-tramo__medio {
   display: inline-flex;
@@ -2486,7 +2486,7 @@ a  { color: var(--acento); }
   background: var(--fondo);
   border-radius: var(--radio-pill);
   padding: 5px 6px 5px 14px;
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
   font-weight: 600;
 }
 .ruta-pordecidir__ciudad button {
@@ -2494,7 +2494,7 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   padding: 5px 11px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--texto-base);
   font-weight: 700;
   cursor: pointer;
 }
@@ -3079,7 +3079,7 @@ a  { color: var(--acento); }
   border-radius: var(--radio-pill);
   padding: 4px 10px;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: var(--texto-sm);
   font-weight: 600;
   cursor: pointer;
 }
@@ -3226,7 +3226,7 @@ a  { color: var(--acento); }
   color: var(--ambar-tx);
   border-radius: 10px;
   padding: 8px 10px;
-  font-size: 12.5px;
+  font-size: var(--texto-base);
   font-weight: 600;
   margin-bottom: 6px;
   line-height: 1.35;
@@ -5890,7 +5890,7 @@ body.con-antes { overflow: hidden; }
   border-radius: 8px;
   background: var(--prec-bg);
   color: var(--ambar-tx);
-  font-size: 11.5px;
+  font-size: var(--texto-sm);
   line-height: 1.45;
 }
 .item__aviso i { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
@@ -5921,7 +5921,7 @@ body.con-antes { overflow: hidden; }
   overflow: hidden;
   white-space: nowrap;
   color: var(--texto-2);
-  font-size: 12.5px;
+  font-size: var(--texto-base);
   line-height: 1.35;
 }
 .datos-linea__pieza {
@@ -5986,7 +5986,7 @@ body.con-antes { overflow: hidden; }
   padding-top: 8px;
   border-top: 1px solid var(--borde);
   color: var(--texto-3);
-  font-size: 11.5px;
+  font-size: var(--texto-sm);
 }
 .datos-sitio__pie i { font-size: 13px; }
 /* Discreto, no alarmante: el dato sigue sirviendo, solo tiene sus semanas. */
@@ -6015,7 +6015,7 @@ body.con-antes { overflow: hidden; }
   background: var(--tarjeta, #fff);
   color: var(--texto-2);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
   font-weight: 600;
   cursor: pointer;
   transition: background .15s, color .15s, border-color .15s;
@@ -6038,7 +6038,7 @@ body.con-antes { overflow: hidden; }
   padding: 1px 6px;
   border-radius: var(--radio-pill);
   background: rgba(0, 0, 0, .07);
-  font-size: 11.5px;
+  font-size: var(--texto-sm);
   font-weight: 700;
 }
 .bloque-pestana--activa .bloque-pestana__n { background: rgba(255, 255, 255, .25); }
@@ -6088,7 +6088,7 @@ body.con-antes { overflow: hidden; }
 .buscador-sitios__pista {
   margin: 0 0 14px;
   color: var(--texto-3);
-  font-size: 12.5px;
+  font-size: var(--texto-base);
 }
 .buscador-sitios__error {
   margin: 0 0 14px;
@@ -6133,7 +6133,7 @@ body.con-antes { overflow: hidden; }
   align-items: center;
   gap: 7px;
   color: var(--texto-2);
-  font-size: 12.5px;
+  font-size: var(--texto-base);
 }
 .busqueda__borrar {
   display: inline-flex;
@@ -6153,7 +6153,7 @@ body.con-antes { overflow: hidden; }
   gap: 7px;
   margin: 10px 0 0;
   color: var(--texto-2);
-  font-size: 12.5px;
+  font-size: var(--texto-base);
   line-height: 1.45;
 }
 .busqueda__nota i { flex: none; color: var(--acento); font-size: 15px; }
@@ -6171,7 +6171,7 @@ body.con-antes { overflow: hidden; }
 .propuesta input { margin-top: 3px; flex: none; }
 .propuesta__cuerpo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .propuesta__nombre { font-size: 14px; }
-.propuesta__linea { color: var(--texto-2); font-size: 12.5px; line-height: 1.4; }
+.propuesta__linea { color: var(--texto-2); font-size: var(--texto-base); line-height: 1.4; }
 .propuestas__pie { margin-top: 10px; }
 
 /* Las fichas que salieron de una búsqueda van dentro de su tarjeta. */

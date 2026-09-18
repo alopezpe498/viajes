@@ -65,7 +65,7 @@ html:has(.mapa-maestro) { height: 100%; }
    `--acento` al pasar— para que se lean como lo mismo aunque aquí floten. */
 .mm-migas {
   display: block;
-  font-size: 11.5px;
+  font-size: var(--texto-sm);
   color: var(--texto-3);
   line-height: 1.3;
   margin-bottom: 1px;
@@ -144,14 +144,14 @@ html:has(.mapa-maestro) { height: 100%; }
 /* --- Los checks ----------------------------------------------------------- */
 .mm-capas { padding: 10px 14px; border-bottom: 1px solid var(--borde); }
 .mm-capas h3 {
-  font-size: 11.5px; font-weight: 700; color: var(--texto-2);
+  font-size: var(--texto-sm); font-weight: 700; color: var(--texto-2);
   margin: 0 0 6px; text-transform: none; letter-spacing: .01em;
 }
 .mm-capas__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 10px; }
 .mm-capa {
   display: flex; align-items: center; gap: 8px;
   padding: 4px 0; cursor: pointer; user-select: none;
-  font-size: 12.5px; font-weight: 600; color: var(--texto);
+  font-size: var(--texto-base); font-weight: 600; color: var(--texto);
 }
 .mm-capa.off { color: var(--texto-3); }
 /* Casillas de verdad, no divs: se pueden tabular y el lector de pantalla las
@@ -173,7 +173,7 @@ html:has(.mapa-maestro) { height: 100%; }
 /* --- La lista ------------------------------------------------------------- */
 .mm-lista { flex: 1; overflow: auto; padding: 6px; }
 .mm-grupo {
-  margin: 10px 6px 3px; font-size: 11.5px; font-weight: 700;
+  margin: 10px 6px 3px; font-size: var(--texto-sm); font-weight: 700;
   color: var(--texto-2); letter-spacing: .02em;
 }
 /* `flex-wrap` para que la etiqueta de «sin ubicar» se vaya a su propia línea en
@@ -196,9 +196,9 @@ html:has(.mapa-maestro) { height: 100%; }
    icono: el icono y el texto van SIEMPRE en la misma línea. */
 .mm-item__txt { flex: 1 1 0; min-width: 0; }
 .mm-item__txt b { font-size: 13px; font-weight: 600; display: block; }
-.mm-item__txt small { font-size: 11.5px; color: var(--texto-2); display: block; }
+.mm-item__txt small { font-size: var(--texto-sm); color: var(--texto-2); display: block; }
 .mm-item__hora {
-  margin-left: auto; font-size: 11.5px; font-weight: 700;
+  margin-left: auto; font-size: var(--texto-sm); font-weight: 700;
   color: var(--acento-hover); white-space: nowrap;
 }
 /* Lo que no se pudo situar. Se ve, se lee y se dice por qué; simplemente no
@@ -224,7 +224,7 @@ html:has(.mapa-maestro) { height: 100%; }
   color: #fff; font-size: 14px;
   border: 2px solid #fff; box-shadow: 0 3px 10px rgba(18, 48, 62, .3);
 }
-.mm-pin--num { border-radius: var(--radio-circulo); font-weight: 800; font-size: 12.5px; }
+.mm-pin--num { border-radius: var(--radio-circulo); font-weight: 800; font-size: var(--texto-base); }
 .mm-pin--sel { outline: 3px solid var(--texto); outline-offset: 1.5px; }
 
 .mm-pin-ciudad {
@@ -240,7 +240,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-etq {
   background: var(--texto); color: #fff;
   border-radius: var(--radio-pill); padding: 4px 11px;
-  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  font-size: var(--texto-sm); font-weight: 700; white-space: nowrap;
   box-shadow: 0 3px 10px rgba(18, 48, 62, .35);
 }
 /* La del paseo hotel↔parada: más discreta que la del traslado entre ciudades.
@@ -266,7 +266,7 @@ html:has(.mapa-maestro) { height: 100%; }
 }
 .mm-leyenda span {
   display: flex; align-items: center; gap: 6px;
-  font-size: 11.5px; font-weight: 600; color: var(--texto-2);
+  font-size: var(--texto-sm); font-weight: 600; color: var(--texto-2);
 }
 .mm-leyenda i.punto {
   width: 11px; height: 11px; border-radius: 4px; display: block; flex: 0 0 auto;
@@ -306,7 +306,7 @@ html:has(.mapa-maestro) { height: 100%; }
 }
 .mm-medir__boton {
   border: 0; background: transparent; font: inherit;
-  font-size: 12.5px; font-weight: 600; color: var(--texto-2);
+  font-size: var(--texto-base); font-weight: 600; color: var(--texto-2);
   padding: 6px 14px; border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; gap: 7px;
 }
@@ -317,7 +317,7 @@ html:has(.mapa-maestro) { height: 100%; }
 
 .mm-medir__caja {
   padding: 8px 12px 10px;
-  font-size: 12.5px;
+  font-size: var(--texto-base);
   line-height: 1.45;
   color: var(--texto-2);
   border-top: 1px solid var(--borde);
@@ -329,7 +329,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-medir__modo i { color: var(--acento); }
 /* El elegido por el umbral, marcado: es el que se enseñaría en una etiqueta. */
 .mm-medir__modo--elegido b { color: var(--acento); }
-.mm-medir__nota { display: block; margin-top: 6px; color: var(--texto-3); font-size: 11.5px; }
+.mm-medir__nota { display: block; margin-top: 6px; color: var(--texto-3); font-size: var(--texto-sm); }
 .mm-medir__nota--mala { color: var(--alerta-tx); }
 
 /* El punto ya marcado, esperando al segundo clic. */

@@ -58,12 +58,12 @@
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   background: var(--prec-bg); color: var(--prec-tx);
   border-radius: var(--radio-sm); padding: 10px 14px;
-  font-size: 13.5px; font-weight: 600; margin: 12px 0 0;
+  font-size: var(--texto-lg); font-weight: 600; margin: 12px 0 0;
 }
 .rt-rehacer {
   border: 0; background: var(--prec-tx); color: #fff;
   border-radius: var(--radio-pill); padding: 4px 12px;
-  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  font: inherit; font-size: var(--texto-base); font-weight: 700; cursor: pointer;
 }
 
 /* ============================================================================
@@ -125,7 +125,7 @@
 .rt-det[open] .rt-linea__flecha { transform: rotate(180deg); }
 
 .rt-linea__quien {
-  font-size: 11.5px; font-weight: 700; color: var(--acento);
+  font-size: var(--texto-sm); font-weight: 700; color: var(--acento);
   background: var(--tinte); border-radius: 6px; padding: 2px 8px;
   flex: 0 0 auto; white-space: nowrap;
 }
@@ -134,7 +134,7 @@
    continuación de su línea y no como un párrafo suelto. */
 .rt-porque {
   margin: 0 6px 13px 43px;
-  font-size: 13.5px; line-height: 1.55; color: var(--texto-2);
+  font-size: var(--texto-lg); line-height: 1.55; color: var(--texto-2);
   max-width: 72ch;
 }
 

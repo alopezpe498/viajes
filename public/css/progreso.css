@@ -69,7 +69,7 @@
   min-height: 38px;
   margin: 7px 0 0;
   color: var(--texto-2);
-  font-size: 13.5px;
+  font-size: var(--texto-lg);
   line-height: 1.45;
 }
 
