@@ -1673,7 +1673,7 @@ a  { color: var(--acento); }
   justify-content: center;
   gap: var(--esp-2);
   white-space: nowrap;
-  padding: 9px 15px;
+  padding: 0 15px;
   border: 0;
   border-radius: var(--radio-pill);
   background: none;
@@ -1682,6 +1682,12 @@ a  { color: var(--acento); }
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
 }
 .pestana:hover { color: var(--acento); }
 .pestana--activa {
@@ -3155,11 +3161,17 @@ a  { color: var(--acento); }
   background: var(--fondo);
   color: var(--texto-2);
   border-radius: var(--radio-pill);
-  padding: var(--esp-1) var(--esp-4);
+  padding: 0 var(--esp-4);
   font-family: inherit;
   font-size: var(--texto-sm);
   font-weight: 600;
   cursor: pointer;
+  /* Selector de estado, talla PEQUEÑA de la escala (28px / --texto-sm). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 28px;
+  line-height: 1.2;
 }
 .tipo-chip i { font-size: var(--texto-base); }
 .tipo-chip--activo { background: var(--tinte); border-color: var(--acento); color: var(--acento); }
@@ -3566,7 +3578,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: var(--esp-2);
   white-space: nowrap;
-  padding: var(--esp-3) var(--esp-6);
+  padding: 0 var(--esp-6);
   margin-bottom: -1px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -3576,6 +3588,12 @@ a  { color: var(--acento); }
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
 }
 .subpestana:hover { color: var(--acento); }
 .subpestana--activa {
@@ -3850,13 +3868,13 @@ a  { color: var(--acento); }
   /* Lo que pedía la regla inválida que había aquí: 13px / peso 600. Se pone bien
      escrito, así que este elemento cambia de aspecto —hacia lo que su
      autor quiso— después de años pintándose con lo que heredaba. */
-  font-size: var(--texto-base);
+  font-size: var(--texto-lg);
   font-weight: 600;
 
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 12px 5px 5px;
+  padding: 0 12px 0 5px;
   border: 1px solid var(--borde-fuerte);
   border-radius: var(--radio-pill);
   background: var(--superficie);
@@ -3867,6 +3885,12 @@ a  { color: var(--acento); }
      no prometa lo que no cumple. Quitarla no mueve un píxel: ya se ignoraba. */
   font-family: inherit;
   cursor: pointer;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
 }
 .interruptor:hover { border-color: var(--acento); }
 
@@ -6132,7 +6156,7 @@ body.con-antes { overflow: hidden; }
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
-  padding: 7px 14px;
+  padding: 0 14px;
   border: 1px solid var(--borde);
   border-radius: var(--radio-pill);
   background: var(--tarjeta, #fff);
@@ -6142,6 +6166,12 @@ body.con-antes { overflow: hidden; }
   font-weight: 600;
   cursor: pointer;
   transition: background .15s, color .15s, border-color .15s;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
 }
 /* El hover NO toca a la activa: su fondo ya es el acento, y pintarle el texto
    del mismo color la dejaba en blanco —el nombre desaparecía al pasar por

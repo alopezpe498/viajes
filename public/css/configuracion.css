@@ -145,8 +145,15 @@
 .config .chips { display: flex; flex-wrap: wrap; gap: var(--esp-4); }
 .config .chip {
   border: 1px solid var(--borde); background: var(--superficie); border-radius: var(--radio-pill);
-  padding: 9px 18px; font-size: var(--texto-lg); cursor: pointer; color: var(--texto);
+  padding: 0 18px; font-size: var(--texto-lg); cursor: pointer; color: var(--texto);
   display: flex; align-items: center; gap: 7px; font-family: inherit;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
+  font-weight: 600;
 }
 .config .chip:hover { border-color: var(--acento); }
 .config .chip.activo { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600; }
@@ -156,8 +163,15 @@
 .config .campo label { font-size: var(--texto-lg); font-weight: 600; display: block; margin-bottom: 10px; }
 .config .segmentos { display: flex; border: 1px solid var(--borde); border-radius: var(--radio-pill); overflow: hidden; }
 .config .segmentos button {
-  flex: 1; border: none; background: var(--superficie); padding: var(--esp-4) 0;
+  flex: 1; border: none; background: var(--superficie); padding: 0 0;
   font-size: var(--texto-lg); cursor: pointer; color: var(--texto); font-family: inherit;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
+  font-weight: 600;
 }
 .config .segmentos button + button { border-left: 1px solid var(--borde); }
 .config .segmentos button.activo { background: var(--acento); color: #fff; font-weight: 600; }

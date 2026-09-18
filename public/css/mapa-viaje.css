@@ -94,11 +94,17 @@ html:has(.mapa-maestro) { height: 100%; }
 }
 .mm-barra button {
   border: 0; background: transparent; font: inherit;
-  font-size: var(--texto-base); font-weight: 600; color: var(--texto-2);
-  padding: var(--esp-3) var(--esp-7); border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
+  font-size: var(--texto-lg); font-weight: 600; color: var(--texto-2);
+  padding: 0 var(--esp-7); border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
 }
 .mm-barra button:hover { color: var(--texto); }
-.mm-barra button.on { background: var(--acento); color: #fff; font-weight: 700; }
+.mm-barra button.on { background: var(--acento); color: #fff; }
 .mm-barra button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
 
 /* ============================================================================
@@ -306,9 +312,15 @@ html:has(.mapa-maestro) { height: 100%; }
 }
 .mm-medir__boton {
   border: 0; background: transparent; font: inherit;
-  font-size: var(--texto-base); font-weight: 600; color: var(--texto-2);
-  padding: var(--esp-2) var(--esp-6); border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
+  font-size: var(--texto-lg); font-weight: 600; color: var(--texto-2);
+  padding: 0 var(--esp-6); border-radius: var(--radio-pill); cursor: pointer; white-space: nowrap;
   display: flex; align-items: center; justify-content: center; gap: 7px;
+  /* Selector de estado, talla NORMAL de la escala (38px / --texto-lg). Los chips, pestañas y
+     segmentos iban en once aspectos distintos, de 24 a 40px, para el mismo
+     papel. Peso 600 en los dos estados: si el activo engorda, cambia de ancho
+     y la fila entera baila al pulsar. */
+  min-height: 38px;
+  line-height: 1.2;
 }
 .mm-medir__boton:hover { color: var(--texto); }
 /* Armado: se ve de lejos que el próximo clic en el mapa hace algo distinto. */
