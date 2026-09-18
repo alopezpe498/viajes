@@ -132,6 +132,6 @@
   .tour__marco { aspect-ratio: 1180 / 760; }
   .tour__cuerpo { padding: 16px 18px 4px; }
   .tour__pie { padding: 14px 18px 18px; }
-  .tour__titulo { font-size: 17px; }
+  .tour__titulo { font-size: var(--texto-xl); }
   .tour__texto { font-size: var(--texto-lg); }
 }

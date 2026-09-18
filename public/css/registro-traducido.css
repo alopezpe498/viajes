@@ -10,7 +10,7 @@
 
 .rt-titular {
   margin: 10px 0 0;
-  font-size: 15px; color: var(--texto-2); max-width: 70ch;
+  font-size: var(--texto-xl); color: var(--texto-2); max-width: 70ch;
 }
 
 /* ============================================================================
@@ -72,7 +72,7 @@
 .rt-bloque { margin: 26px 0 0; }
 .rt-bloque__titulo {
   display: flex; align-items: center; gap: 8px;
-  font-size: 17px; margin: 0; color: var(--texto);
+  font-size: var(--texto-xl); margin: 0; color: var(--texto);
 }
 .rt-bloque__titulo .ti { color: var(--acento); }
 .rt-bloque__pie {
@@ -119,7 +119,7 @@
 .rt-linea__txt small { font-size: var(--texto-sm); color: var(--texto-2); }
 
 .rt-linea__flecha {
-  color: var(--texto-3); font-size: 15px; flex: 0 0 auto;
+  color: var(--texto-3); font-size: var(--icono-xs); flex: 0 0 auto;
   transition: transform .18s ease;
 }
 .rt-det[open] .rt-linea__flecha { transform: rotate(180deg); }
@@ -142,7 +142,7 @@
    SIN TRADUCCIÓN TODAVÍA
    ========================================================================== */
 .rt-vacio { margin-top: 22px; text-align: left; }
-.rt-vacio h2 { margin: 0 0 8px; font-size: 17px; }
+.rt-vacio h2 { margin: 0 0 8px; font-size: var(--texto-xl); }
 .rt-vacio p { margin: 0 0 10px; color: var(--texto-2); font-size: var(--texto-lg); max-width: 62ch; }
 .rt-vacio__nota { font-size: var(--texto-base); color: var(--texto-3); }
 

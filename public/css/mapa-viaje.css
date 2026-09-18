@@ -55,7 +55,7 @@ html:has(.mapa-maestro) { height: 100%; }
   display: flex; align-items: center; justify-content: center;
   border-radius: var(--radio-xs);
   background: var(--tinte); color: var(--acento);
-  text-decoration: none; font-size: 17px;
+  text-decoration: none; font-size: var(--texto-xl);
 }
 .mm-volver:hover { background: var(--acento); color: #fff; }
 .mm-titulo__texto { min-width: 0; }
@@ -125,7 +125,7 @@ html:has(.mapa-maestro) { height: 100%; }
 .mm-plegar {
   top: 76px; left: 14px;
   width: 40px; height: 40px; border-radius: var(--radio);
-  font-size: 18px; cursor: pointer; color: var(--texto);
+  font-size: var(--texto-2xl); cursor: pointer; color: var(--texto);
   display: none; align-items: center; justify-content: center;
 }
 .mm-plegar.visible { display: flex; }
@@ -234,7 +234,7 @@ html:has(.mapa-maestro) { height: 100%; }
   border: 2.5px solid #fff; box-shadow: 0 4px 14px rgba(22, 104, 138, .4);
   font-weight: 800; line-height: 1.1;
 }
-.mm-pin-ciudad small { font-size: 9px; font-weight: 600; opacity: .85; }
+.mm-pin-ciudad small { font-size: var(--texto-xs); font-weight: 600; opacity: .85; }
 .mm-pin-ciudad.mm-pin--sel { outline: 3px solid var(--texto); outline-offset: 2px; }
 
 .mm-etq {

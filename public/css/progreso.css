@@ -39,7 +39,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 22px;
+  font-size: var(--titulo-sm);
   font-weight: 800;
   color: var(--texto);
 }
@@ -53,7 +53,7 @@
   gap: 9px;
   margin-top: 16px;
   color: var(--acento);
-  font-size: 15px;
+  font-size: var(--texto-xl);
   font-weight: 700;
 }
 .prog__giro {

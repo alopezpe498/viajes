@@ -44,10 +44,10 @@
   transform: rotate(-8deg);
   margin-bottom: 26px;
 }
-.panel__sello i { font-size: 26px; transform: rotate(8deg); }
+.panel__sello i { font-size: var(--icono-lg); transform: rotate(8deg); }
 
 .panel__titulo {
-  font-size: 38px;
+  font-size: var(--titulo-xl);
   font-weight: 800;
   line-height: 1.08;
   letter-spacing: -.02em;
@@ -84,7 +84,7 @@
   cursor: pointer;
 }
 .panel__nuevo:hover { background: var(--tinte); }
-.panel__nuevo i { font-size: 17px; }
+.panel__nuevo i { font-size: var(--icono-sm); }
 
 .panel__dato {
   margin: auto 0 0;
@@ -130,7 +130,7 @@
 }
 
 .principal__titulo {
-  font-size: 15px;
+  font-size: var(--texto-xl);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .08em;
@@ -206,8 +206,8 @@
   letter-spacing: .1em;
   color: var(--acento);
 }
-.talon__dia { font-size: 26px; font-weight: 800; line-height: 1; }
-.talon__sin { font-size: 22px; color: var(--texto-3); }
+.talon__dia { font-size: var(--titulo); font-weight: 800; line-height: 1; }
+.talon__sin { font-size: var(--titulo-sm); color: var(--texto-3); }
 
 /* Las muescas troqueladas del billete. */
 .billete::before,
@@ -224,7 +224,7 @@
 .billete::after { bottom: -9px; }
 
 .billete__cuerpo { padding: 16px 18px; flex: 1; min-width: 0; }
-.billete__nombre { font-size: 18px; font-weight: 700; margin: 0; }
+.billete__nombre { font-size: var(--texto-2xl); font-weight: 700; margin: 0; }
 
 .billete__ciudades {
   font-size: var(--texto-lg);
@@ -265,7 +265,7 @@
   cursor: pointer;
   line-height: 1;
 }
-.menu-btn i { font-size: 17px; }
+.menu-btn i { font-size: var(--icono-sm); }
 .menu-btn:hover { color: var(--texto); background: var(--fondo); }
 
 .menu {
@@ -315,7 +315,7 @@
   cursor: pointer;
 }
 .billete-nuevo:hover { border-color: var(--acento); color: var(--acento); }
-.billete-nuevo i { font-size: 17px; }
+.billete-nuevo i { font-size: var(--icono-sm); }
 
 /* El campo del modal de renombrar. */
 .modal__campo {
@@ -325,7 +325,7 @@
   border-radius: var(--radio-xs);
   padding: 11px 13px;
   font-family: inherit;
-  font-size: 15px;
+  font-size: var(--texto-xl);
   color: var(--texto);
   background: var(--fondo);
 }

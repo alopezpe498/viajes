@@ -31,7 +31,7 @@
   border: none;
   background: var(--acento);
   color: #fff;
-  font-size: 21px;
+  font-size: var(--titulo-sm);
 
   display: flex;
   align-items: center;
@@ -92,7 +92,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
 .ay-cab__titulo {
   margin: 0;
   flex: 1;
-  font-size: 15px;
+  font-size: var(--texto-xl);
   font-weight: 700;
   color: var(--texto);
   line-height: 1.25;
@@ -249,7 +249,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
   height: 36px;
   flex: 0 0 36px;
   border-radius: var(--radio-circulo);
-  font-size: 17px;
+  font-size: var(--texto-xl);
   display: flex;
   align-items: center;
   justify-content: center;

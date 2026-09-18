@@ -42,12 +42,12 @@
 .config .cabecera { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
 .config .btn-volver {
   width: 44px; height: 44px; border-radius: var(--radio-circulo); border: 1px solid var(--borde);
-  background: var(--superficie); color: var(--acento); font-size: 20px; cursor: pointer;
+  background: var(--superficie); color: var(--acento); font-size: var(--titulo-sm); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   text-decoration: none; flex: none;
 }
 .config .btn-volver:hover { background: var(--tinte); }
-.config .cabecera h1 { font-size: 26px; font-weight: 600; }
+.config .cabecera h1 { font-size: var(--titulo); font-weight: 600; }
 .config .cabecera p { color: var(--texto-2); font-size: var(--texto-lg); margin-top: 2px; }
 
 /* Tarjetas de sección */
@@ -123,7 +123,7 @@
 .config .contador { display: flex; align-items: center; gap: 14px; }
 .config .contador button {
   width: 36px; height: 36px; border-radius: var(--radio-circulo); border: 1px solid var(--borde);
-  background: var(--superficie); color: var(--acento); font-size: 18px; cursor: pointer;
+  background: var(--superficie); color: var(--acento); font-size: var(--icono-sm); cursor: pointer;
 }
 .config .contador button:hover:not(:disabled) { background: var(--tinte); }
 .config .contador button:disabled { color: #C3D2DA; cursor: default; }
