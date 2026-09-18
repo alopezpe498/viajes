@@ -57,7 +57,7 @@
 .rt-desfase {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   background: var(--prec-bg); color: var(--prec-tx);
-  border-radius: var(--radio-sm); padding: 10px 14px;
+  border-radius: var(--radio); padding: 10px 14px;
   font-size: var(--texto-lg); font-weight: 600; margin: 12px 0 0;
 }
 .rt-rehacer {
@@ -110,7 +110,7 @@
 .rt-det > summary:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
 
 .rt-linea__ic {
-  width: 26px; height: 26px; border-radius: 8px; flex: 0 0 auto;
+  width: 26px; height: 26px; border-radius: var(--radio-xs); flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
   background: var(--cf); color: var(--cc); font-size: 14px;
 }
@@ -126,7 +126,7 @@
 
 .rt-linea__quien {
   font-size: var(--texto-sm); font-weight: 700; color: var(--acento);
-  background: var(--tinte); border-radius: 6px; padding: 2px 8px;
+  background: var(--tinte); border-radius: var(--radio-mini); padding: 2px 8px;
   flex: 0 0 auto; white-space: nowrap;
 }
 

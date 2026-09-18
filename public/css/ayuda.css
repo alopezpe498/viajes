@@ -12,7 +12,7 @@
    --radio…), que es lo que hace que esto parezca de la casa y no un añadido.
 
    Medidas tomadas de los controles reales de la app, no inventadas: radio 14px
-   como `--radio-sm`, tipografía de 14-15px como las tarjetas, y el mismo azul
+   como `--radio`, tipografía de 14-15px como las tarjetas, y el mismo azul
    mar de acento.
    ========================================================================== */
 
@@ -114,7 +114,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
   font-size: 19px;
   line-height: 1;
   padding: 4px;
-  border-radius: 8px;
+  border-radius: var(--radio-xs);
   cursor: pointer;
 }
 .ay-cerrar:hover { color: var(--texto); background: var(--borde); }
@@ -135,7 +135,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
 .ay-msg {
   max-width: 88%;
   padding: 9px 12px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   white-space: pre-wrap;   /* los pasos vienen en líneas sueltas */
   overflow-wrap: anywhere; /* una URL larga no ensancha el panel */
 }
@@ -232,7 +232,7 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
   color: var(--texto);
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   padding: 8px 11px;
   resize: none;
   max-height: 96px;

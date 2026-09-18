@@ -86,8 +86,13 @@
   /* RADIOS. Había 25 valores distintos; estos cuatro cubren el 90 % de los
      usos. Los sueltos (18px del embarque, 22px del progreso, 6/8/9/10/12px)
      siguen a pelo hasta que se decida a cuál de estos se acercan. */
-  --radio: 16px;
-  --radio-sm: 14px;
+  /* LA ESCALA DE RADIOS: 6 · 10 · 14 · 18 · píldora, de cuatro en cuatro.
+     Antes había `--radio: 16px` y `--radio-sm: 14px`, dos tokens a 2px uno de
+     otro: una distinción que no se ve y que obligaba a elegir entre dos cosas
+     iguales. Se funden en el más usado —14px, con 55 usos frente a 32— y los
+     32 elementos que iban a 16 bajan dos píxeles. */
+  --radio-mini: 6px;
+  --radio: 14px;
   /* Los dos tramos que faltaban: medidos, no elegidos. El de 10px lo usan
      38 sitios —era el tercer radio más usado de la aplicación y no tenía
      nombre— y el de 18px son las piezas grandes que van a propósito más
@@ -532,7 +537,7 @@ a  { color: var(--acento); }
   color: var(--texto);
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .campo input:focus, .campo select:focus {
   outline: 2px solid var(--acento);
@@ -878,7 +883,7 @@ a  { color: var(--acento); }
   color: var(--texto);
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 
 /* --- Chips grandes del tipo de viaje -------------------------------------- */
@@ -1436,7 +1441,7 @@ a  { color: var(--acento); }
 .velo__nota code {
   background: var(--fondo);
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: var(--radio-mini);
   font-size: 13px;
 }
 .velo__pista { font-size: 13px; margin-top: 10px; }
@@ -1589,7 +1594,7 @@ a  { color: var(--acento); }
   flex-wrap: wrap;
   padding: 11px 14px;
   margin-bottom: 16px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--info-bg);
   color: var(--info-tx);
   font-size: 14px;
@@ -1659,7 +1664,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-left: 4px solid var(--acento);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   padding: 15px 17px;
   margin-bottom: 16px;
 }
@@ -1697,7 +1702,7 @@ a  { color: var(--acento); }
   padding: 13px 14px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .dato i { font-size: 19px; color: var(--acento); }
 .dato__valor { font-size: 18px; font-weight: 700; line-height: 1.25; }
@@ -1721,7 +1726,7 @@ a  { color: var(--acento); }
 .mini {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   margin-bottom: 8px;
   overflow: hidden;
 }
@@ -1820,7 +1825,7 @@ a  { color: var(--acento); }
 }
 
 /* Globo de Leaflet con el atajo a la ficha, vestido como el resto. */
-.leaflet-popup-content-wrapper { border-radius: var(--radio-sm); }
+.leaflet-popup-content-wrapper { border-radius: var(--radio); }
 .leaflet-popup-content { margin: 11px 14px; font-size: 14px; line-height: 1.4; }
 .popup__enlace { color: var(--acento); font-weight: 600; text-decoration: none; }
 .popup__enlace:hover { text-decoration: underline; }
@@ -1939,7 +1944,7 @@ a  { color: var(--acento); }
 .leaflet-control-zoom {
   border: 0 !important;
   box-shadow: var(--sombra-sm) !important;
-  border-radius: var(--radio-sm) !important;
+  border-radius: var(--radio) !important;
   overflow: hidden;
 }
 .leaflet-control-zoom a {
@@ -2178,7 +2183,7 @@ a  { color: var(--acento); }
   padding: 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   box-shadow: var(--sombra-md);
 }
 
@@ -2321,7 +2326,7 @@ a  { color: var(--acento); }
 .etapa {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   padding: 15px 18px;
 }
 .etapa--arrastrando { opacity: .4; }
@@ -2360,7 +2365,7 @@ a  { color: var(--acento); }
   background: transparent;
   color: var(--texto-3);
   padding: 3px 6px;
-  border-radius: 8px;
+  border-radius: var(--radio-xs);
   cursor: pointer;
   flex: none;
 }
@@ -2427,7 +2432,7 @@ a  { color: var(--acento); }
 .etapa__dormir-nota {
   background: var(--acento);
   color: #fff;
-  border-radius: 6px;
+  border-radius: var(--radio-mini);
   padding: 1px 6px;
   font-size: 12px;
   font-weight: 700;
@@ -2488,7 +2493,7 @@ a  { color: var(--acento); }
   padding: 12px 16px;
   background: var(--superficie);
   border: 1px dashed var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .ruta-pordecidir:empty { display: none; }
 .ruta-pordecidir__titulo {
@@ -2530,7 +2535,7 @@ a  { color: var(--acento); }
   font-size: 14px;
   background: var(--superficie);
   border: 1px dashed var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 
 /* --- Móvil ----------------------------------------------------------------- */
@@ -2550,7 +2555,7 @@ a  { color: var(--acento); }
   /* Las acciones bajan a su propia línea en vez de apretarse contra el chip. */
   .etapa__acciones { margin-left: 0; width: 100%; }
   .etapa__dormir { max-width: 100%; }
-  .ruta-estado { border-radius: var(--radio-sm); }
+  .ruta-estado { border-radius: var(--radio); }
   .ruta-mas__cuerpo { right: auto; left: 0; min-width: 0; width: 100%; }
 }
 
@@ -2672,7 +2677,7 @@ a  { color: var(--acento); }
 .notas {
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   margin: 16px 0;
   overflow: hidden;
 }
@@ -2718,7 +2723,7 @@ a  { color: var(--acento); }
   padding: 11px 14px;
   background: var(--tinte);
   color: var(--tinte-texto);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   font-size: 14px;
 }
 .etapa-resumen i { font-size: 17px; }
@@ -2861,7 +2866,7 @@ a  { color: var(--acento); }
   padding: 10px 12px;
   background: var(--verde-bg);
   color: var(--verde-tx);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   font-size: 14px;
 }
 .tramo-caja__resuelto .secundario { color: inherit; opacity: .85; }
@@ -2880,7 +2885,7 @@ a  { color: var(--acento); }
   margin-top: 12px;
   padding: 13px 14px;
   background: var(--fondo);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .manual[hidden] { display: none; }
 .manual__fila { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -3017,7 +3022,7 @@ a  { color: var(--acento); }
   padding: 12px 15px;
   background: var(--tinte);
   color: var(--tinte-texto);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   font-size: 14px;
   line-height: 1.5;
   flex-shrink: 0;
@@ -3173,7 +3178,7 @@ a  { color: var(--acento); }
   flex-shrink: 0;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   overflow: hidden;
 }
 .dia__cabecera { padding: 10px 12px 8px; border-bottom: 1px solid var(--borde); }
@@ -3208,7 +3213,7 @@ a  { color: var(--acento); }
 /* --- Las franjas ---------------------------------------------------------- */
 .lienzo-franja { padding: 8px 10px 6px; min-height: 58px; }
 .lienzo-franja + .lienzo-franja { border-top: 1px dashed var(--borde); }
-.lienzo-franja--sobre { background: var(--tinte); border-radius: 8px; }
+.lienzo-franja--sobre { background: var(--tinte); border-radius: var(--radio-xs); }
 
 .lienzo-franja__cabecera {
   display: flex;
@@ -3262,7 +3267,7 @@ a  { color: var(--acento); }
 .manual-rapido__texto {
   width: 100%;
   border: 1px solid var(--borde);
-  border-radius: 8px;
+  border-radius: var(--radio-xs);
   padding: 7px 9px;
   font-family: inherit;
   font-size: 13px;
@@ -3276,7 +3281,7 @@ a  { color: var(--acento); }
 .manual-rapido__hora {
   width: 92px;
   border: 1px solid var(--borde);
-  border-radius: 8px;
+  border-radius: var(--radio-xs);
   padding: 6px 7px;
   font-family: inherit;
   font-size: 12px;
@@ -3361,12 +3366,12 @@ a  { color: var(--acento); }
   padding: 8px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   box-shadow: var(--sombra-md);
 }
 .poner-en-dia select {
   border: 1px solid var(--borde);
-  border-radius: 8px;
+  border-radius: var(--radio-xs);
   padding: 6px 8px;
   font-family: inherit;
   font-size: 12px;
@@ -3601,7 +3606,7 @@ a  { color: var(--acento); }
   background: var(--superficie);
   border: 1px solid var(--borde);
   border-left: 3px solid var(--acento);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   font-size: 14px;
   line-height: 1.55;
 }
@@ -3788,6 +3793,12 @@ a  { color: var(--acento); }
 
 /* El interruptor, en pequeño. Sigue diciendo su estado en voz alta. */
 .interruptor {
+  /* Lo que pedía la regla inválida que había aquí: 13px / peso 600. Se pone bien
+     escrito, así que este elemento cambia de aspecto —hacia lo que su
+     autor quiso— después de años pintándose con lo que heredaba. */
+  font-size: 13px;
+  font-weight: 600;
+
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -3870,7 +3881,7 @@ a  { color: var(--acento); }
   padding: 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   box-shadow: var(--sombra-md);
   text-align: left;
 }
@@ -3897,13 +3908,19 @@ a  { color: var(--acento); }
 
 .dosier-desplegable__acciones button,
 .dosier-desplegable__acciones a {
+  /* Lo que pedía la regla inválida que había aquí: 14px / peso 600. Se pone bien
+     escrito, así que este elemento cambia de aspecto —hacia lo que su
+     autor quiso— después de años pintándose con lo que heredaba. */
+  font-size: 14px;
+  font-weight: 600;
+
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
   padding: 9px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radio-xs);
   background: none;
   color: var(--texto);
   /* Aquí había `font: 600 14px/1 inherit` — inválida: en el atajo `font` la familia no
@@ -3930,6 +3947,12 @@ a  { color: var(--acento); }
 .adjuntos { margin-top: 10px; }
 
 .adjuntos__disparador {
+  /* Lo que pedía la regla inválida que había aquí: 13px / peso 600. Se pone bien
+     escrito, así que este elemento cambia de aspecto —hacia lo que su
+     autor quiso— después de años pintándose con lo que heredaba. */
+  font-size: 13px;
+  font-weight: 600;
+
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -3969,7 +3992,7 @@ a  { color: var(--acento); }
   padding: 12px;
   background: var(--fondo);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 
 .adjuntos__lista { list-style: none; margin: 0; padding: 0; }
@@ -4021,7 +4044,7 @@ a  { color: var(--acento); }
   gap: 3px;
   padding: 16px 12px;
   border: 2px dashed var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
   color: var(--texto-2);
   font-size: 13px;
@@ -4242,7 +4265,7 @@ a  { color: var(--acento); }
   gap: 7px;
   margin: 8px 0 0;
   padding: 9px 13px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 13px;
@@ -4283,7 +4306,7 @@ a  { color: var(--acento); }
   padding: 14px 16px 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .ficha-transporte--elegida { border-color: var(--acento); background: var(--tinte); }
 
@@ -4416,7 +4439,7 @@ a  { color: var(--acento); }
   padding: 14px 16px 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .ficha-movilidad__cabecera { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ficha-movilidad__nombre { margin: 0; font-size: 15px; font-weight: 650; min-width: 0; }
@@ -4463,7 +4486,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 16px;
   background: var(--tinte);
   border: 1px solid var(--acento);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .ficha-manual__titulo { margin: 0; font-size: 15px; }
 .ficha-manual__campos {
@@ -4531,7 +4554,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .item__reloj input {
   padding: 2px 5px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 7px;
+  border-radius: var(--radio-mini);
   background: var(--superficie);
   font-family: inherit;
   font-size: 11px;
@@ -4603,7 +4626,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 2px 4px;
   color: var(--texto-3);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radio-mini);
   line-height: 1;
 }
 .direccion__editar:hover { color: var(--acento); background: var(--tinte); }
@@ -4686,7 +4709,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 14px 16px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .traslados__campo { display: grid; gap: 3px; flex: 1 1 200px; min-width: 0; }
 .traslados__campo span {
@@ -4727,7 +4750,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 9px 13px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 12px;
+  border-radius: var(--radio);
 }
 .traslado--calculando { border-style: dashed; }
 
@@ -4824,7 +4847,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 6px;
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
-  border-radius: 12px;
+  border-radius: var(--radio);
   box-shadow: var(--sombra-md);
   display: grid;
   gap: 4px;
@@ -4836,7 +4859,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 7px 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radio-xs);
   background: none;
   font-family: inherit;
   font-size: 13px;
@@ -4880,7 +4903,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 14px 16px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .comer-buscador__campo { display: grid; gap: 3px; flex: 1 1 260px; min-width: 0; }
 .comer-buscador__campo span {
@@ -4912,7 +4935,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 14px 16px 12px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
 }
 .ficha-comer--apuntada { border-color: var(--acento); background: var(--tinte); }
 
@@ -5049,7 +5072,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   gap: 8px;
   flex-wrap: wrap;
   padding: 6px 9px;
-  border-radius: 9px;
+  border-radius: var(--radio-xs);
   background: color-mix(in srgb, var(--superficie) 60%, var(--fondo));
   font-size: 13px;
 }
@@ -5096,7 +5119,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 9px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 13px;
@@ -5132,7 +5155,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 7px 9px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--radio-xs);
   background: none;
   font-family: inherit;
   text-align: left;
@@ -5160,7 +5183,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   margin: 2px 0 10px;
   padding: 7px 10px;
   border: 1px dashed var(--borde-fuerte);
-  border-radius: 12px;
+  border-radius: var(--radio);
   cursor: pointer;
   user-select: none;
   transition: border-color .12s, background .12s;
@@ -5242,7 +5265,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   height: 22px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radio-mini);
   background: none;
   color: var(--texto-3);
   cursor: pointer;
@@ -5282,7 +5305,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   height: 13px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radio-mini);
   background: none;
   color: var(--texto-3);
   cursor: pointer;
@@ -5314,7 +5337,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   width: 100%;
   padding: 6px 9px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 9px;
+  border-radius: var(--radio-xs);
   background: var(--superficie);
   font-family: inherit;
   font-size: 13px;
@@ -5685,7 +5708,7 @@ body.con-ventana { overflow: hidden; }
 .antes-dato {
   padding: 13px 15px;
   border: 1px solid var(--borde);
-  border-radius: 12px;
+  border-radius: var(--radio);
   background: var(--fondo);
 }
 .antes-dato__titulo {
@@ -5834,34 +5857,9 @@ body.con-antes { overflow: hidden; }
   font-size: 12px;
 }
 
-/* --- El marcador ---------------------------------------------------------
-   HTML y no una imagen: así lleva los iconos de Tabler y los colores del tema,
-   y el estado se cambia con una clase sin recargar nada. */
-.marca-mapa {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radio-pill);
-  border: 2px solid #fff;
-  background: var(--marca);
-  color: #fff;
-  font-size: 15px;
-  box-shadow: 0 2px 8px rgba(18, 48, 62, .3);
-}
-/* El hotel es la referencia contra la que se lee todo lo demás: se ve más. */
-.marca-mapa--hotel {
-  width: 38px;
-  height: 38px;
-  font-size: 19px;
-  border-width: 3px;
-  box-shadow: 0 3px 12px rgba(18, 48, 62, .38);
-}
-/* El número del recorrido de un día, cuando lo haya. */
-/* Aquí había `font: 700 14px/1 inherit`, inválida por lo mismo que las otras
-   siete: el navegador la tiraba entera. Se queda sin nada porque el bloque
-   `.marca-mapa` no lo usa nadie —cero referencias fuera del CSS—, así que ni
-   siquiera sabemos cómo se vería. Si algún día se usa, ahí está la decisión. */
+/* Aquí vivía `.marca-mapa`, un marcador de mapa de 30px con su variante de
+   hotel. Se retira: cero referencias en todo el repositorio. Los marcadores que
+   sí se pintan son `.marcador`, que es otra clase y está más abajo. */
 
 /* --- El globo ------------------------------------------------------------- */
 .globo-mapa { display: grid; gap: 4px; min-width: 170px; }
@@ -5882,7 +5880,7 @@ body.con-antes { overflow: hidden; }
 
 /* Leaflet mete sus propios márgenes en el globo; aquí se ajustan al tema. */
 .mapa-etapa .leaflet-popup-content { margin: 11px 13px; }
-.mapa-etapa .leaflet-popup-content-wrapper { border-radius: 12px; }
+.mapa-etapa .leaflet-popup-content-wrapper { border-radius: var(--radio); }
 
 /* --- "Antes de viajar", ya revisado --------------------------------------
    El botón deja de ser un aviso y pasa a ser una tarea hecha, con el mismo
@@ -5916,7 +5914,7 @@ body.con-antes { overflow: hidden; }
   height: 22px;
   margin-top: 1px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 6px;
+  border-radius: var(--radio-mini);
   background: var(--superficie);
   color: transparent;
   font-size: 14px;
@@ -5940,7 +5938,7 @@ body.con-antes { overflow: hidden; }
   gap: 6px;
   margin: 8px 0 0;
   padding: 7px 10px;
-  border-radius: 8px;
+  border-radius: var(--radio-xs);
   background: var(--prec-bg);
   color: var(--ambar-tx);
   font-size: var(--texto-sm);
@@ -6006,7 +6004,7 @@ body.con-antes { overflow: hidden; }
   margin: 12px 0 0;
   padding: 12px 14px;
   border: 1px solid var(--borde);
-  border-radius: 12px;
+  border-radius: var(--radio);
   background: var(--fondo);
   font-size: 13px;
 }
@@ -6157,7 +6155,7 @@ body.con-antes { overflow: hidden; }
   margin: 0 0 18px;
   padding: 14px;
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--fondo);
 }
 /* La que espera a que elijas se distingue: es la única que pide algo. */
@@ -6268,7 +6266,7 @@ body.con-antes { overflow: hidden; }
   margin-top: 12px;
   padding: 10px 12px;
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
 }
 
@@ -6358,7 +6356,7 @@ body.con-antes { overflow: hidden; }
   padding: 12px 14px;
   border: 1px solid var(--borde);
   border-left: 3px solid var(--acento);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
 }
 
@@ -6477,7 +6475,7 @@ body.con-antes { overflow: hidden; }
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 13px;
@@ -6491,7 +6489,7 @@ body.con-antes { overflow: hidden; }
 .pre-concepto {
   margin: 0 0 8px;
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
   overflow: hidden;
 }
@@ -6628,7 +6626,7 @@ body.con-antes { overflow: hidden; }
   gap: 4px;
   padding: 4px 10px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
 }
 
@@ -6779,7 +6777,7 @@ body.con-antes { overflow: hidden; }
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 13px;
@@ -6806,7 +6804,7 @@ body.con-antes { overflow: hidden; }
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 13px;
@@ -6842,7 +6840,7 @@ body.con-antes { overflow: hidden; }
   gap: 2px;
   padding: 8px 4px;
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
   text-align: center;
 }
@@ -6881,7 +6879,7 @@ body.con-antes { overflow: hidden; }
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 13px;
@@ -6925,7 +6923,7 @@ body.con-antes { overflow: hidden; }
   padding: 14px 16px;
   border: 1px solid var(--borde);
   border-left: 3px solid var(--acento);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
 }
 
@@ -6951,7 +6949,7 @@ body.con-antes { overflow: hidden; }
 .pais-fila {
   padding: 12px 14px;
   border: 1px solid var(--borde);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
 }
 
@@ -7012,7 +7010,7 @@ body.con-antes { overflow: hidden; }
   padding: 10px 12px;
   border: 1px solid var(--borde);
   border-left: 3px solid var(--acento);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   background: var(--superficie);
 }
 

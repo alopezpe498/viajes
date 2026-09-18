@@ -274,7 +274,7 @@
   z-index: 6;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 12px;
+  border-radius: var(--radio);
   box-shadow: 0 6px 20px rgba(18, 48, 62, .10);
   display: none;
   min-width: 160px;

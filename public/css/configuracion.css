@@ -108,7 +108,7 @@
 .config .cal-error {
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 14px; padding: 10px 16px;
-  border-radius: 12px; background: var(--prec-bg); color: var(--ambar-tx);
+  border-radius: var(--radio); background: var(--prec-bg); color: var(--ambar-tx);
   font-size: 13px;
 }
 
@@ -301,7 +301,7 @@
   gap: 9px;
   padding: 10px 16px;
   margin-bottom: 16px;
-  border-radius: 12px;
+  border-radius: var(--radio);
   background: var(--tinte);
   color: var(--texto);
   font-size: 13px;

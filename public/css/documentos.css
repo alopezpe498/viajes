@@ -72,7 +72,7 @@
   padding: 9px 12px;
   border: none;
   background: none;
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
@@ -206,7 +206,7 @@
   padding: 8px 12px;
   background: var(--info-bg);
   color: var(--info-tx);
-  border-radius: var(--radio-sm);
+  border-radius: var(--radio);
   font-size: var(--texto-base);
 }
 
