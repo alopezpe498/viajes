@@ -51,16 +51,21 @@
      Si algún día se decide que sobra un ámbar o sobra un rojo, se decide MIRANDO
      los dos juntos; hoy solo dejan de ser un hex suelto. */
 
-  /* Ámbar de aviso: el de la configuración, la portada y el orquestador. */
-  --ambar-bg: #FBEED6;  --ambar-tx: #8A5A16;
+  /* Ámbar de aviso: el de la configuración, la portada y el orquestador.
+     SU FONDO SE FUNDIÓ CON `--prec-bg`. Eran #FBEED6 y #FAEEDA: cuatro puntos de
+     diferencia en el azul y ninguno en el resto, que no lo distingue nadie. El
+     TEXTO sigue aparte porque ahí sí hay once puntos y se ve. */
+  --ambar-tx: #8A5A16;
   /* El tercer ámbar, más saturado: filete de «comer» y su icono. */
   --ambar-fuerte: #C98A2B;
 
   /* Rojo de acción destructiva: botón de peligro, quitar, exceso de noches. */
   --peligro: #C0563B;   --peligro-hover: #A8452C;  --peligro-bg: #F9E3DC;
 
-  /* Rojo de error: el de una fase que ha fallado. Más oscuro que el anterior. */
-  --error-tx: #8A2020;  --error-bg: #FDECEC;
+  /* Rojo de error: el de una fase que ha fallado. Más oscuro que el anterior.
+     SU FONDO SE FUNDIÓ CON `--alerta-bg`: eran #FDECEC y #FCEBEB, un punto de
+     diferencia en cada canal. El texto se queda: ahí hay veinticinco. */
+  --error-tx: #8A2020;
 
   /* Verde de «hecho» del orquestador, distinto del verde de las píldoras. */
   --verde-medio: #2E7D5B;
@@ -253,7 +258,7 @@ a  { color: var(--acento); }
   /* Círculo del color del papel para que la línea no le pase por encima:
      al rotar 45º un círculo sigue siendo un círculo, así que no se deforma. */
   background: var(--superficie);
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   padding: 2px;
 }
 
@@ -278,7 +283,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 3px;
   padding: 6px 2px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   text-decoration: none;
   color: var(--texto-3);
   font-size: 11px;
@@ -360,7 +365,7 @@ a  { color: var(--acento); }
   font-weight: 600;
   font-size: 12px;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
 }
 
 /* --- Círculo de marcar ---------------------------------------------------- */
@@ -369,7 +374,7 @@ a  { color: var(--acento); }
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   border: 2px solid var(--borde-fuerte);
   background: var(--superficie);
   cursor: pointer;
@@ -429,7 +434,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde-fuerte);
   background: var(--superficie);
   color: var(--texto);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 9px 16px;
   font-size: 14px;
   font-family: inherit;
@@ -457,7 +462,7 @@ a  { color: var(--acento); }
   gap: 8px;
   min-height: 44px;
   padding: 11px 22px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   font-size: 16px;
   font-family: inherit;
   font-weight: 600;
@@ -550,7 +555,7 @@ a  { color: var(--acento); }
   font-size: 12px;
   font-weight: 600;
   padding: 3px 12px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--fondo);
   border: 1px solid var(--borde);
   color: var(--texto-2);
@@ -725,7 +730,7 @@ a  { color: var(--acento); }
   background: transparent;
   border: 1px solid var(--borde-fuerte);
   color: var(--texto-2);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 7px 14px;
   font-size: 13px;
   font-family: inherit;
@@ -816,7 +821,7 @@ a  { color: var(--acento); }
 .stepper__boton {
   width: 44px;
   height: 44px;          /* área táctil cómoda de verdad */
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   border: 1px solid var(--borde-fuerte);
   background: var(--superficie);
   color: var(--acento);
@@ -919,7 +924,7 @@ a  { color: var(--acento); }
   font-weight: 600;
   font-size: 12px;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
 }
 
 /* Nota en badge azul con el nº de opiniones debajo */
@@ -1041,7 +1046,7 @@ a  { color: var(--acento); }
   font-weight: 500;
   color: var(--acento);
   background: var(--tinte);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 2px 9px;
   margin-left: 8px;
   white-space: nowrap;
@@ -1133,10 +1138,10 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 7px;
   padding: 9px 14px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--superficie);
   border: 1px solid var(--borde);
-  box-shadow: 0 2px 10px rgba(18, 48, 62, .10);
+  box-shadow: var(--sombra-sm);
   font-size: 14px;
   color: var(--texto);
   text-decoration: none;
@@ -1164,7 +1169,7 @@ a  { color: var(--acento); }
   padding: 2px 3px;
   cursor: pointer;
   color: var(--texto-3);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
 }
 .pill__accion i { font-size: 15px; color: inherit; }
 .pill__accion:hover { color: var(--acento); background: var(--tinte); }
@@ -1178,7 +1183,7 @@ a  { color: var(--acento); }
   justify-content: center;
   width: 20px; height: 20px;
   margin: 3px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--superficie);
   border: 2px solid var(--borde-fuerte);
   box-shadow: 0 1px 5px rgba(18, 48, 62, .28);
@@ -1197,7 +1202,7 @@ a  { color: var(--acento); }
   content: '';
   position: absolute;
   inset: -6px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   border: 2px dashed var(--acento);
   animation: marcador-gira 2.4s linear infinite;
 }
@@ -1291,7 +1296,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 4px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .92);
   font-size: 11px;
   font-weight: 650;
@@ -1326,7 +1331,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 4px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 12px;
@@ -1380,7 +1385,7 @@ a  { color: var(--acento); }
   width: 13px; height: 13px;
   border: 2px solid currentColor;
   border-right-color: transparent;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   display: inline-block;
   animation: rueda-gira .8s linear infinite;
 }
@@ -1436,7 +1441,7 @@ a  { color: var(--acento); }
   background: var(--texto);
   color: #fff;
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   font-size: 13px;
   box-shadow: 0 4px 16px rgba(18, 48, 62, .3);
 }
@@ -1510,7 +1515,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 6px;
   padding: 8px 13px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .92);
   color: var(--texto);
   text-decoration: none;
@@ -1587,7 +1592,7 @@ a  { color: var(--acento); }
   margin-bottom: 18px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -1602,7 +1607,7 @@ a  { color: var(--acento); }
   white-space: nowrap;
   padding: 9px 15px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-2);
   font-size: 14px;
@@ -1624,7 +1629,7 @@ a  { color: var(--acento); }
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 12px;
@@ -1863,10 +1868,10 @@ a  { color: var(--acento); }
   gap: 6px;
   padding: 4px 5px 4px 14px;
   width: min(420px, 100%);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--superficie);
   border: 1px solid var(--borde);
-  box-shadow: 0 2px 10px rgba(18, 48, 62, .10);
+  box-shadow: var(--sombra-sm);
 }
 .buscador:focus-within { border-color: var(--acento); }
 .buscador__lupa { font-size: 17px; color: var(--texto-3); flex: 0 0 auto; }
@@ -1889,7 +1894,7 @@ a  { color: var(--acento); }
 .buscador__boton {
   flex: 0 0 auto;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 9px 17px;
   background: var(--acento);
   color: #fff;
@@ -1955,7 +1960,7 @@ a  { color: var(--acento); }
 .bandeja__asa {
   width: 38px; height: 4px;
   margin: 0 auto 12px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--borde-fuerte);
 }
 
@@ -1990,7 +1995,7 @@ a  { color: var(--acento); }
   display: inline-flex;
   align-items: center;
   padding: 3px 11px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 12px;
@@ -2015,7 +2020,7 @@ a  { color: var(--acento); }
 .puntitos { display: inline-flex; gap: 5px; }
 .puntitos span {
   width: 7px; height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--acento);
   opacity: .35;
   animation: puntito 1.1s ease-in-out infinite;
@@ -2109,7 +2114,7 @@ a  { color: var(--acento); }
   border: 1.5px solid var(--borde);
   background: var(--superficie);
   color: var(--texto);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 9px 16px;
   font: inherit;
   font-size: 14px;
@@ -2128,7 +2133,7 @@ a  { color: var(--acento); }
 .ruta-pildora__pip {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--ruta-hito);
   flex: none;
 }
@@ -2170,7 +2175,7 @@ a  { color: var(--acento); }
   margin: 0 0 26px;
   background: var(--superficie);
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 10px 20px;
   display: flex;
   align-items: center;
@@ -2184,7 +2189,7 @@ a  { color: var(--acento); }
   flex: 1;
   min-width: 110px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--borde);
   overflow: hidden;
 }
@@ -2218,7 +2223,7 @@ a  { color: var(--acento); }
   top: 26px;
   bottom: 26px;
   width: 6px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: linear-gradient(
     180deg,
     var(--ruta-hito) 0%,
@@ -2234,7 +2239,7 @@ a  { color: var(--acento); }
   top: 4px;
   width: 60px;
   height: 60px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--superficie);
   border: 6px solid var(--acento);
   display: grid;
@@ -2278,7 +2283,7 @@ a  { color: var(--acento); }
   gap: 7px;
   background: var(--superficie);
   border: 1.5px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 6px 14px;
   font-weight: 600;
   color: var(--texto);
@@ -2356,7 +2361,7 @@ a  { color: var(--acento); }
   display: inline-flex;
   align-items: center;
   border: 1.5px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   overflow: hidden;
   flex: none;
 }
@@ -2389,7 +2394,7 @@ a  { color: var(--acento); }
   gap: 6px;
   background: var(--tinte);
   color: var(--tinte-texto);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 8px 14px;
   font-size: 13px;
   max-width: 280px;
@@ -2479,14 +2484,14 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 8px;
   background: var(--fondo);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 5px 6px 5px 14px;
   font-size: 13.5px;
   font-weight: 600;
 }
 .ruta-pordecidir__ciudad button {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 5px 11px;
   font: inherit;
   font-size: 12.5px;
@@ -2583,7 +2588,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 5px;
   padding: 4px 11px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .18);
   color: #fff;
   font-size: 12px;
@@ -2626,7 +2631,7 @@ a  { color: var(--acento); }
 }
 
 .chip-ambito--pendiente {
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   display: inline-flex;
   align-items: center;
@@ -2706,7 +2711,7 @@ a  { color: var(--acento); }
   gap: 5px;
   padding: 6px 12px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
   font-family: inherit;
@@ -2811,8 +2816,8 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 5px;
   padding: 4px 11px;
-  border-radius: 999px;
-  background: var(--ambar-bg);
+  border-radius: var(--radio-pill);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   font-size: 12px;
   font-weight: 700;
@@ -2955,7 +2960,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   background: var(--superficie);
   color: var(--texto-2);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 7px 16px;
   font-size: 13px;
   font-weight: 600;
@@ -2973,7 +2978,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   background: var(--superficie);
   color: var(--acento);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 8px 16px;
   font-family: inherit;
   font-size: 13px;
@@ -3057,7 +3062,7 @@ a  { color: var(--acento); }
   font-size: 12px;
   line-height: 1.4;
   color: var(--ambar-tx);
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   border-radius: 10px;
   padding: 9px 11px;
   margin: 0 0 10px;
@@ -3071,7 +3076,7 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde);
   background: var(--fondo);
   color: var(--texto-2);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 4px 10px;
   font-family: inherit;
   font-size: 11.5px;
@@ -3161,7 +3166,7 @@ a  { color: var(--acento); }
   width: fit-content;
   font-size: 11px;
   font-weight: 700;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 2px 9px;
   margin-top: 4px;
 }
@@ -3217,7 +3222,7 @@ a  { color: var(--acento); }
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   border-radius: 10px;
   padding: 8px 10px;
@@ -3262,7 +3267,7 @@ a  { color: var(--acento); }
 .manual-rapido__ok,
 .manual-rapido__no {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 6px 12px;
   font-family: inherit;
   font-size: 12px;
@@ -3315,7 +3320,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--verde-bg);
   color: var(--verde-tx);
   font-size: 12px;
@@ -3351,7 +3356,7 @@ a  { color: var(--acento); }
 }
 .poner-en-dia button {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 6px 13px;
   background: var(--acento);
   color: #fff;
@@ -3369,7 +3374,7 @@ a  { color: var(--acento); }
   z-index: 520;
   width: 38px; height: 38px;
   border: 1px solid var(--borde);
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--superficie);
   color: var(--texto-2);
   cursor: pointer;
@@ -3413,7 +3418,7 @@ a  { color: var(--acento); }
   height: 21px;
   padding: 0 6px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--acento);
   color: #fff;
   font-size: 12px;
@@ -3437,7 +3442,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 7px;
   padding: 8px 13px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: rgba(255, 255, 255, .92);
   color: var(--acento);
   text-decoration: none;
@@ -3507,7 +3512,7 @@ a  { color: var(--acento); }
   min-width: 19px;
   height: 19px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 11px;
@@ -3769,7 +3774,7 @@ a  { color: var(--acento); }
   gap: 7px;
   padding: 5px 12px 5px 5px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
   font: 600 13px/1 inherit;
@@ -3784,7 +3789,7 @@ a  { color: var(--acento); }
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   border: 2px solid var(--borde-fuerte);
   background: var(--superficie);
   color: transparent;
@@ -3809,7 +3814,7 @@ a  { color: var(--acento); }
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 16px;
@@ -3828,7 +3833,7 @@ a  { color: var(--acento); }
   right: 2px;
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--prec-tx);
   border: 2px solid var(--superficie);
   cursor: help;
@@ -3905,7 +3910,7 @@ a  { color: var(--acento); }
   gap: 7px;
   padding: 6px 12px;
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
   font: 600 13px/1 inherit;
@@ -3923,7 +3928,7 @@ a  { color: var(--acento); }
   min-width: 19px;
   height: 19px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--acento);
   color: #fff;
   font-size: 11px;
@@ -4024,7 +4029,7 @@ a  { color: var(--acento); }
   flex: 0 0 auto;
   padding: 8px 11px;
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--superficie);
   color: var(--texto-2);
   font: 600 13px/1 inherit;
@@ -4043,7 +4048,7 @@ a  { color: var(--acento); }
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--acento);
   color: #fff;
   font-size: 11px;
@@ -4094,7 +4099,7 @@ a  { color: var(--acento); }
   flex: 0 0 auto;
   padding: 8px 12px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-2);
   font: 600 13px/1 inherit;
@@ -4142,7 +4147,7 @@ a  { color: var(--acento); }
 .etiqueta-distancia {
   background: var(--superficie);
   border: 1px solid var(--borde-fuerte);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 2px 9px;
   font: 700 11px/1.6 inherit;
   color: var(--texto-2);
@@ -4244,7 +4249,7 @@ a  { color: var(--acento); }
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--info-bg);
   color: var(--info-tx);
   font-size: 11px;
@@ -4389,7 +4394,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--verde-bg);
   color: var(--verde-tx);
   font-size: 13px;
@@ -4518,8 +4523,8 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: center;
   gap: 5px;
   padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--ambar-bg);
+  border-radius: var(--radio-pill);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   font-size: 12px;
   font-weight: 600;
@@ -4538,7 +4543,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   color: var(--prec-tx);
   background: var(--prec-bg);
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
 }
 
 .direccion__editar {
@@ -4560,7 +4565,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   gap: 5px;
   border: 1px dashed var(--borde-fuerte);
   background: none;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 4px 11px;
   font-family: inherit;
   font-size: 12px;
@@ -4721,7 +4726,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   height: 18px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: none;
   color: transparent;
   cursor: pointer;
@@ -4873,7 +4878,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .ficha-comer__datos { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
 .ficha-comer__cocina {
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--info-bg);
   color: var(--info-tx);
   font-size: 11px;
@@ -4914,7 +4919,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--verde-bg);
   color: var(--verde-tx);
   font-size: 13px;
@@ -4979,7 +4984,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 11px;
@@ -5066,7 +5071,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
 .hueco__fuente {
   margin-left: auto;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 10px;
@@ -5134,7 +5139,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   place-items: center;
   width: 26px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   border: 1px solid var(--borde-fuerte);
   background: var(--superficie);
   color: var(--texto-3);
@@ -5379,7 +5384,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   height: 26px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-3);
   cursor: pointer;
@@ -5423,7 +5428,7 @@ a.ficha-movilidad__dato:hover { text-decoration: underline; }
   padding: 20px;
   border-radius: var(--radio);
   background: var(--superficie);
-  box-shadow: 0 20px 50px rgba(18, 48, 62, .28);
+  box-shadow: var(--sombra-lg);
 }
 .ventana__cabecera { margin-bottom: 14px; }
 .ventana__titulo { margin: 0; font-size: 18px; }
@@ -5466,7 +5471,7 @@ body.con-ventana { overflow: hidden; }
    ANTES DE VIAJAR
    -----------------------------------------------------------------------------
    La ficha práctica de cada país, en "Mi ruta". El botón lleva el ámbar de los
-   avisos de la casa (var(--ambar-bg) sobre var(--ambar-tx)) porque es exactamente eso: algo que
+   avisos de la casa (var(--prec-bg) sobre var(--ambar-tx)) porque es exactamente eso: algo que
    hay que mirar y que, si no se mira a tiempo, se convierte en un problema.
 
    Se llama `antes-*` y no `modal-*` a propósito: en esa pantalla ya vive un
@@ -5482,7 +5487,7 @@ body.con-ventana { overflow: hidden; }
   padding: 14px 18px;
   border: 1px solid #EBD5AE;
   border-radius: var(--radio);
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   font-family: inherit;
   font-size: 15px;
@@ -5531,7 +5536,7 @@ body.con-ventana { overflow: hidden; }
   justify-content: space-between;
   gap: 12px;
   padding: 18px 20px 14px;
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
 }
 .antes__titulo {
@@ -5548,7 +5553,7 @@ body.con-ventana { overflow: hidden; }
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: rgba(138, 90, 22, .12);
   color: inherit;
   font-size: 17px;
@@ -5586,7 +5591,7 @@ body.con-ventana { overflow: hidden; }
   width: 7px;
   height: 7px;
   margin-left: 6px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--ambar-tx);
   vertical-align: middle;
 }
@@ -5604,7 +5609,7 @@ body.con-ventana { overflow: hidden; }
   margin: 0 0 16px;
   padding: 11px 14px;
   border-radius: 10px;
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   font-size: 13px;
 }
@@ -5660,11 +5665,11 @@ body.con-ventana { overflow: hidden; }
   gap: 6px;
   margin-bottom: 8px;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   font-size: 12px;
   font-weight: 700;
 }
-.antes-marca--si { background: var(--ambar-bg); color: var(--ambar-tx); }
+.antes-marca--si { background: var(--prec-bg); color: var(--ambar-tx); }
 .antes-marca--no { background: var(--tinte); color: var(--acento); }
 
 .antes-festivos { margin: 0 0 8px; padding: 0; list-style: none; font-size: 14px; }
@@ -5680,13 +5685,13 @@ body.con-ventana { overflow: hidden; }
   display: inline-block;
   margin-bottom: 8px;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   font-size: 12px;
   font-weight: 700;
   background: var(--tinte);
   color: var(--acento);
 }
-.antes-sev--precaucion { background: var(--ambar-bg); color: var(--ambar-tx); }
+.antes-sev--precaucion { background: var(--prec-bg); color: var(--ambar-tx); }
 .antes-sev--alerta { background: var(--alerta-bg, #FBE0DC); color: var(--alerta-tx, #A33A28); }
 
 .antes-enlace { color: var(--acento); font-size: 13px; font-weight: 650; }
@@ -5721,7 +5726,7 @@ body.con-ventana { overflow: hidden; }
   gap: 6px;
   padding: 6px 12px;
   border: 1px solid var(--borde-fuerte);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-2);
   font-family: inherit;
@@ -5773,7 +5778,7 @@ body.con-antes { overflow: hidden; }
   place-items: center;
   width: 20px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--marca);
   color: #fff;
   font-size: 12px;
@@ -5787,7 +5792,7 @@ body.con-antes { overflow: hidden; }
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   border: 2px solid #fff;
   background: var(--marca);
   color: #fff;
@@ -5883,7 +5888,7 @@ body.con-antes { overflow: hidden; }
   margin: 8px 0 0;
   padding: 7px 10px;
   border-radius: 8px;
-  background: var(--ambar-bg);
+  background: var(--prec-bg);
   color: var(--ambar-tx);
   font-size: 11.5px;
   line-height: 1.45;
@@ -6006,7 +6011,7 @@ body.con-antes { overflow: hidden; }
   gap: 6px;
   padding: 7px 14px;
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tarjeta, #fff);
   color: var(--texto-2);
   font: inherit;
@@ -6031,7 +6036,7 @@ body.con-antes { overflow: hidden; }
 .bloque-pestana__n {
   min-width: 18px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: rgba(0, 0, 0, .07);
   font-size: 11.5px;
   font-weight: 700;
@@ -6064,7 +6069,7 @@ body.con-antes { overflow: hidden; }
   min-width: 0;
   padding: 0 14px;
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tarjeta, #fff);
 }
 .buscador-sitios__campo i { flex: none; color: var(--texto-3); }
@@ -6089,7 +6094,7 @@ body.con-antes { overflow: hidden; }
   margin: 0 0 14px;
   padding: 10px 14px;
   border-radius: 10px;
-  background: var(--error-bg);
+  background: var(--alerta-bg);
   color: var(--error-tx);
   font-size: 13px;
 }
@@ -6134,7 +6139,7 @@ body.con-antes { overflow: hidden; }
   display: inline-flex;
   padding: 4px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-3);
   cursor: pointer;
@@ -6185,7 +6190,7 @@ body.con-antes { overflow: hidden; }
   gap: 6px;
   max-width: 220px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--fondo);
   color: var(--texto-3);
   font-size: 12px;
@@ -6235,7 +6240,7 @@ body.con-antes { overflow: hidden; }
 
 .reserva__codigo-chip {
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -6455,7 +6460,7 @@ body.con-antes { overflow: hidden; }
 
 .pre-concepto__cuantas {
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 12px;
@@ -6504,7 +6509,7 @@ body.con-antes { overflow: hidden; }
 .pre-sin-precio {
   padding: 2px 8px;
   border: 1px dashed var(--borde-fuerte);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   color: var(--texto-3);
   font-size: 12px;
 }
@@ -6515,7 +6520,7 @@ body.con-antes { overflow: hidden; }
   width: 7px;
   height: 7px;
   margin-right: 6px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--verde-tx);
   vertical-align: middle;
 }
@@ -6531,7 +6536,7 @@ body.con-antes { overflow: hidden; }
 .pre-sello {
   margin-left: 6px;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 11px;
@@ -6731,7 +6736,7 @@ body.con-antes { overflow: hidden; }
 .clima-sello {
   margin-left: 6px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-size: 11px;
@@ -6911,7 +6916,7 @@ body.con-antes { overflow: hidden; }
 
 .pais-fila__sello {
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--prec-bg);
   color: var(--prec-tx);
   font-size: 11px;
@@ -6940,7 +6945,7 @@ body.con-antes { overflow: hidden; }
 
 .frontera-ruta__pais {
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   background: var(--tinte);
   color: var(--tinte-texto);
   font-weight: 600;

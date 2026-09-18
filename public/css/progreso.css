@@ -58,7 +58,7 @@
   height: 15px;
   border: 2.5px solid var(--tinte);
   border-top-color: var(--acento);
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   animation: prog-giro 0.8s linear infinite;
 }
 @keyframes prog-giro { to { transform: rotate(360deg); } }
@@ -78,7 +78,7 @@
 .prog__punto {
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: var(--borde);
   transition: background 0.3s, box-shadow 0.3s;
 }

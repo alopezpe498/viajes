@@ -37,7 +37,7 @@
 .panel__sello {
   width: 58px; height: 58px;
   border: 2.5px dashed rgba(255, 255, 255, .65);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -71,7 +71,7 @@
   background: #fff;
   color: var(--acento);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 13px 24px;
   font-family: inherit;
   font-size: 14.5px;
@@ -143,7 +143,7 @@
   height: 38px;
   flex: none;
   border: 1px solid var(--borde);
-  border-radius: 50%;
+  border-radius: var(--radio-circulo);
   background: #fff;
   color: var(--texto-3);
   transition: color .15s, border-color .15s, background .15s;
@@ -213,7 +213,7 @@
   width: 16px; height: 16px;
   background: var(--fondo);
   border: 1px solid var(--borde);
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
 }
 .billete::before { top: -9px; }
 .billete::after { bottom: -9px; }
@@ -239,13 +239,13 @@
   gap: 4px;
   font-size: 11.5px;
   font-weight: 700;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   padding: 3px 10px;
 }
 .chip-billete i { font-size: 13px; }
 .chip-billete--etapas { background: var(--tinte); color: var(--acento); }
 .chip-billete--cuadra { background: var(--verde-bg); color: var(--verde-tx); }
-.chip-billete--faltan { background: var(--ambar-bg); color: var(--ambar-tx); }
+.chip-billete--faltan { background: var(--prec-bg); color: var(--ambar-tx); }
 
 /* --- El menu de tres puntos ----------------------------------------------- */
 .menu-btn {
@@ -253,7 +253,7 @@
   top: 12px; right: 12px;
   z-index: 2;                 /* por encima del enlace que cubre el billete */
   width: 30px; height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radio-pill);
   border: 0;
   background: none;
   color: var(--texto-3);

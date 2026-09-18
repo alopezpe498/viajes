@@ -24,7 +24,7 @@
 .rt-buscador {
   display: flex; align-items: center; gap: 8px;
   background: var(--superficie); border: 1px solid var(--borde);
-  border-radius: 999px; padding: 8px 14px;
+  border-radius: var(--radio-pill); padding: 8px 14px;
   flex: 1 1 260px; max-width: 380px; color: var(--texto-2);
 }
 .rt-buscador:focus-within { border-color: var(--acento); }
@@ -37,7 +37,7 @@
 .rt-chip {
   display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--borde); background: var(--superficie);
-  border-radius: 999px; padding: 7px 13px;
+  border-radius: var(--radio-pill); padding: 7px 13px;
   font: inherit; font-size: 13px; font-weight: 600; color: var(--texto-2);
   cursor: pointer;
 }
@@ -62,7 +62,7 @@
 }
 .rt-rehacer {
   border: 0; background: var(--prec-tx); color: #fff;
-  border-radius: 999px; padding: 4px 12px;
+  border-radius: var(--radio-pill); padding: 4px 12px;
   font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
 }
 
