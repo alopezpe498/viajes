@@ -348,13 +348,18 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 6px 11px;
+  /* Talla PEQUEÑA de la escala, la de «Me lo apunto»: acción que vive pegada al
+     contenido. Medía 32 con peso normal; la talla pide 28 y peso 650. */
+  min-height: 28px;
+  padding: 5px 13px;
   border: 1px solid var(--borde);
   border-radius: var(--radio-pill);
   background: none;
   color: var(--texto-2);
   font: inherit;
   font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
   cursor: pointer;
 }
 .orq-parametro__restaurar:hover,

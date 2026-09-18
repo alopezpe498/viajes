@@ -336,7 +336,10 @@
 .config .barra-final .resumen b { color: var(--texto); }
 .config .btn-guardar {
   border: none; background: var(--acento); color: #fff; border-radius: var(--radio-pill);
-  padding: 12px 30px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+  /* Talla GRANDE: hace lo mismo que el «Guardar» de ajustes, que mide 44 con
+     letra de 16. Aquí medía 42 con letra de 15, por nada. */
+  min-height: 44px; line-height: 1.2;
+  padding: 11px 22px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit;
   flex: none;
 }
 .config .btn-guardar:hover:not(:disabled) { background: var(--acento-hover); }

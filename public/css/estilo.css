@@ -745,11 +745,14 @@ a  { color: var(--acento); }
   border: 1px solid var(--borde-fuerte);
   color: var(--texto-2);
   border-radius: var(--radio-pill);
-  padding: 7px 14px;
-  font-size: 13px;
+  /* Talla NORMAL de la escala. El peso se queda en el que herede: este botón es
+     discreto a propósito y esa es su gracia. */
+  padding: 9px 18px;
+  font-size: 14px;
   font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
-  min-height: 36px;
+  min-height: 38px;
 }
 .boton-discreto:hover { background: var(--superficie); color: var(--acento); border-color: var(--acento); }
 

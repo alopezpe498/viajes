@@ -72,10 +72,15 @@
   color: var(--acento);
   border: 0;
   border-radius: var(--radio-pill);
-  padding: 13px 24px;
+  /* Talla GRANDE de la escala, la misma que `.boton`: es la acción principal de
+     la portada y medía 43px con letra de 14 y peso 700, tres valores propios
+     que no usaba nadie más. */
+  min-height: 44px;
+  padding: 11px 22px;
   font-family: inherit;
-  font-size: var(--texto-lg);
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
   cursor: pointer;
 }
 .panel__nuevo:hover { background: var(--tinte); }
