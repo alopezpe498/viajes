@@ -788,6 +788,51 @@ function cierreDe(colocado) {
  * `rigido` decide los empates: entre dos cosas del mismo nivel se queda la que
  * tiene el horario que no se puede mover y se busca hueco para la otra.
  */
+/**
+ * DÓNDE SE DUERME EN ESTA PARADA, para el prompt del lienzo.
+ *
+ * EL PROMPT TRAÍA LA SECCIÓN ENTERA Y EL DATO NO LLEGABA:
+ *
+ *     DONDE SE DUERME EN ESTA PARADA
+ *     {{HOTEL}}
+ *
+ * …y el objeto de datos no tenía esa clave, así que `rellenar()` la dejaba VACÍA
+ * sin decir nada. Al modelo le llegaba el título y debajo un hueco, y repartía
+ * los días sin saber dónde duermes. Lo encontró la comprobación de cobertura.
+ *
+ * QUÉ SE LE CUENTA: el nombre y la ZONA, que es lo que sirve para repartir un
+ * día. La dirección exacta no añade nada —el modelo no calcula rutas, para eso
+ * está `seLlegaAlHueco`— y la zona sí: saber que se duerme en Ano Poli cambia
+ * por dónde conviene acabar la tarde.
+ *
+ * SIN HOTEL SE DICE QUE NO LO HAY, en vez de callarse. Un hueco mudo debajo de
+ * un título es justo lo que había antes.
+ *
+ * ESTA FUNCIÓN SE PERDIÓ UNA VEZ, y por eso está escrito aquí: al añadirla, la
+ * inserción no encontró su ancla y no se escribió. El fichero seguía compilando
+ * —una función que no existe no es un error de sintaxis— y la «comprobé»
+ * ejecutando una copia de su SQL a mano en vez de llamarla. El lienzo del
+ * siguiente viaje reventó entero con «dondeSeDuerme is not defined» y colocó
+ * CERO sitios en cuatro ciudades. Probar una réplica no es probar la función.
+ */
+function dondeSeDuerme(etapaId) {
+  const hotel = una(
+    "SELECT titulo, datos_extra FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1",
+    etapaId
+  );
+  if (!hotel) return 'Todavía no hay hotel elegido para esta parada.';
+
+  let extra = {};
+  try {
+    extra = hotel.datos_extra ? JSON.parse(hotel.datos_extra) : {};
+  } catch {
+    extra = {};
+  }
+
+  const zona = String(extra.zona ?? '').trim();
+  return zona ? `${hotel.titulo} — ${zona}` : String(hotel.titulo);
+}
+
 function importanciaDe(colocado) {
   if (esComida(colocado)) {
     return { nivel: 1, orden: 99, rigido: false, que: 'la comida' };
