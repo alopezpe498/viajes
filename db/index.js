@@ -434,6 +434,8 @@ export function migrarEsquema() {
   migracionMismoLugarYaVisto();
   migracionPaisDeCadaCandidata();
   migracionTrenCorto();
+  anadirColumnaSiFalta('puertas_probadas', 'coste_traslado', 'REAL');
+  migracionEurosPorHoraA20();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6670,6 +6672,29 @@ function migracionTrenCorto() {
     'Antelacion para un tren de menos de una hora de trayecto', 'min', orden + 1);
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: antelacion propia para los trenes cortos.');
+  return true;
+}
+
+/**
+ * `euros_por_hora_util` DE 30 A 20, MEDIDO.
+ *
+ * Con 30, en ocho viajes y cuatro destinos (Grecia, Singapur y Malasia, Japón,
+ * Balcanes) el precio no cambió la puerta elegida NI UNA VEZ: era un parámetro
+ * decorativo. Con 20 cambia en uno de ocho, uno con 797 € de diferencia y un 1,2%
+ * de margen: justo el criterio con el que se puso —desempatar lo ajustado sin
+ * tumbar lo claro—. Con 15 ya los movía casi todos. Solo si sigue el de fábrica.
+ */
+function migracionEurosPorHoraA20() {
+  const CLAVE = '2026-09-euros-por-hora-20';
+  if (yaAplicada(CLAVE)) return false;
+  db.prepare(
+    `UPDATE parametros_orquestador
+        SET valor = CASE WHEN valor = valor_fabrica THEN '20' ELSE valor END,
+            valor_fabrica = '20'
+      WHERE clave = 'euros_por_hora_util'`
+  ).run();
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: euros_por_hora_util pasa a 20 (medido: con 30 no decidía nada).');
   return true;
 }
 

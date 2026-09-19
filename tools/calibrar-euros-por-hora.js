@@ -37,7 +37,7 @@ if (!viajes.length) {
   process.exit(0);
 }
 
-const TASA_HOY = parametro('euros_por_hora_util', 30);
+const TASA_HOY = parametro('euros_por_hora_util', 20);
 const TASAS = [5, 10, 15, 20, 30, 50, 100];
 
 console.log(`# ¿CON QUÉ TASA HABRÍA GANADO OTRA PUERTA?\n`);

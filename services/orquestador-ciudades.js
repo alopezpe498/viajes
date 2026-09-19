@@ -64,6 +64,8 @@ import { paisesDelViaje, esMultipais } from '../services/paises.js';
 
 /** Cuántas puertas se prueban con vuelos de verdad. Cada una son dos búsquedas. */
 const MAX_PUERTAS = 3;
+/** …y en un viaje de varios países o de más de diez noches, una más. */
+const MAX_PUERTAS_VIAJE_GRANDE = 4;
 
 /** Cuántas opciones se piden a Kayak por búsqueda. No hacen falta más. */
 const VUELOS_POR_BUSQUEDA = 8;
@@ -571,11 +573,28 @@ function avisarSiLaVueltaEsDeMadrugada(viaje, horaSalida, ciudad, di) {
  * repite. Por debajo de ese umbral la diferencia no se nota y gana la ruta que
  * no obliga a desandar.
  */
-async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, promptPuerta, noches, minimoNoches }) {
-  const puertas = candidatas
-    .filter((c) => c.puerta)
-    .sort((a, b) => b.peso - a.peso)
-    .slice(0, MAX_PUERTAS);
+async function elegirPuertas({ viaje, candidatas, tiempos, tiemposParaOrdenar = null, auto, viajeId, promptPuerta, noches, minimoNoches }) {
+  // LAS PUERTAS QUE SE PRUEBAN. En los Balcanes eran tres —Dubrovnik, Split,
+  // Sarajevo— y Belgrado, empatada a puntos con Sarajevo, se quedó fuera por el
+  // orden de la lista: justo la entrada con la que la ruta salía en línea recta
+  // (Belgrado → Novi Sad → Sarajevo → Dubrovnik → Split). En un viaje grande se
+  // prueba una más, y con varios países va primero la mejor puerta de CADA país:
+  // si no, un país entero se queda sin posibilidad de ser entrada o salida.
+  const multipais = esMultipais(viaje);
+  const tope = multipais || noches > 10 ? MAX_PUERTAS_VIAJE_GRANDE : MAX_PUERTAS;
+  const porPeso = candidatas.filter((c) => c.puerta).sort((a, b) => b.peso - a.peso);
+  const puertas = [];
+  if (multipais) {
+    const vistos = new Set();
+    for (const c of porPeso) {
+      const pais = c.pais ? normalizarNombre(c.pais) : null;
+      if (!pais || vistos.has(pais)) continue;
+      vistos.add(pais);
+      puertas.push(c);
+    }
+  }
+  for (const c of porPeso) if (!puertas.includes(c)) puertas.push(c);
+  puertas.splice(tope);
 
   if (!puertas.length) {
     return { error: 'La IA no propuso ninguna ciudad con aeropuerto internacional.' };
@@ -714,7 +733,9 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         candidatas,
         noches,
         tiempos: tiemposVivos,
+        tiemposParaOrdenar,
         minimoNoches,
+        paises: esMultipais(viaje) ? paisesDelViaje(viaje) : [],
       });
 
       // Se puntúa con el que de verdad se va a usar con esta puerta, que es el
@@ -738,6 +759,43 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         misma: ida.ciudad === vuelta.ciudad,
       });
     }
+  }
+
+  // --- EL TIEMPO ENTRE CIUDADES TAMBIÉN SE PAGA -----------------------------
+  //
+  // «Lo que NO hace es medir el traslado real», decía la nota de desandar más
+  // abajo, «va con la tanda del motor de repartos». Es esta. La puntuación de
+  // cada puerta sumaba lo que dejan los vuelos y las noches y no restaba NADA
+  // por las horas de tren o de carretera entre paradas: en Japón, entrar y salir
+  // por Tokio obliga a volver desde Osaka en Shinkansen y, aun así, ganaba.
+  //
+  // Cada hora de traslado es día que no se pasa en ninguna ciudad, así que se
+  // cobra al peso medio de las ciudades de la ruta, en la misma moneda que las
+  // noches (horas × peso). Medido sobre las puertas guardadas de los cuatro
+  // viajes que las tienen: cambia UNA elección, Japón, a entrar por Osaka y
+  // salir por Tokio (3,7 h de traslado frente a 8,9). Las otras tres, igual.
+  const tablaDeTraslado = tiemposParaOrdenar ?? tiemposVivos;
+  const minutosDeTramo = (a, b) =>
+    tablaDeTraslado.find((t) => normalizarNombre(t.desde) === normalizarNombre(a) && normalizarNombre(t.hasta) === normalizarNombre(b))?.minutos ??
+    tablaDeTraslado.find((t) => normalizarNombre(t.desde) === normalizarNombre(b) && normalizarNombre(t.hasta) === normalizarNombre(a))?.minutos ??
+    null;
+  for (const c of combinaciones) {
+    const ruta = c.mejorReparto?.reparto ?? [];
+    let minutos = 0;
+    let sinDato = false;
+    for (let i = 0; i < ruta.length - 1; i += 1) {
+      if (normalizarNombre(ruta[i].ciudad) === normalizarNombre(ruta[i + 1].ciudad)) continue;
+      const m = minutosDeTramo(ruta[i].ciudad, ruta[i + 1].ciudad);
+      if (m == null) sinDato = true;
+      else minutos += Number(m) || 0;
+    }
+    // Con algún tramo sin dato no se cobra nada a esta puerta: cobrar solo lo
+    // conocido premiaría a la que tiene más huecos, igual que con el precio.
+    if (sinDato || !ruta.length) continue;
+    const pesoMedio = ruta.reduce((a, x) => a + (Number(x.peso) || 3), 0) / ruta.length;
+    c.horasTraslado = minutos / 60;
+    c.costeTraslado = c.horasTraslado * pesoMedio;
+    c.puntos -= c.costeTraslado;
   }
 
   // --- LO QUE CUESTA, QUE HASTA AHORA NO VALÍA NADA ------------------------
@@ -785,7 +843,7 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
   // En el 112 no cambió la puerta elegida —c2 ganaba con precio y sin él— pero sí
   // reordenó el resto, y eso es suerte, no diseño. Vuelve a como estaba: el
   // precio se compara con lo que los vuelos deciden, que es su sitio.
-  const tasa = Math.max(0, parametro('euros_por_hora_util', 30));
+  const tasa = Math.max(0, parametro('euros_por_hora_util', 20));
   const faltaAlgunPrecio = combinaciones.some((c) => c.precio == null);
 
   if (tasa > 0 && combinaciones.length && !faltaAlgunPrecio) {
@@ -898,10 +956,11 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         // LA PENALIZACIÓN, DICHA. Una resta que no se ve es una mano invisible:
         // quien lea el registro tiene que poder sumar los números y que le den.
         `${c.penalizacion ? ` − ${c.penalizacion.toFixed(1)} por volver a ${c.salida.ciudad}` : ''}` +
+        `${c.costeTraslado ? ` − ${c.costeTraslado.toFixed(1)} por ${comoTexto(Math.round(c.horasTraslado * 60))} de traslado entre ciudades` : ''}` +
         // Y EL PRECIO CON SU CUENTA AL LADO, POR LO MISMO. Un «− 12.3» a secas no
         // se puede discutir; «− 12.3 por 370 € a 30 €/h» sí, y además enseña la
         // tasa que lo ha producido, que es el número que se ajusta si no gusta.
-        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € a ${parametro('euros_por_hora_util', 30)} €/h` : ''}) · ` +
+        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € a ${parametro('euros_por_hora_util', 20)} €/h` : ''}) · ` +
         `${comoTexto(c.total)} de vuelo · ` +
         // EL PRECIO SE DICE SIEMPRE, PUNTÚE O NO. Cuando falta alguno el término
         // no se aplica a nadie, y entonces esta línea es lo único que deja ver
@@ -1056,8 +1115,8 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
       ejecutar(
         `INSERT INTO puertas_probadas
            (viaje_id, combinacion, entrada, salida, precio, minutos_vuelo, escalas,
-            util, noches_util, penalizacion, coste_precio, puntos, reparto, elegida)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            util, noches_util, penalizacion, coste_precio, puntos, reparto, elegida, coste_traslado)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         viajeId,
         c.id,
         c.entrada?.ciudad ?? null,
@@ -1071,7 +1130,8 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
         c.costeEnHoras ?? null,
         c.puntos ?? null,
         c.mejorReparto?.reparto?.map((x) => `${x.ciudad} ${x.noches}n`).join(' → ') ?? null,
-        c.id === elegida.id ? 1 : 0
+        c.id === elegida.id ? 1 : 0,
+        c.costeTraslado ?? null
       );
     }
   } catch (err) {
@@ -1246,7 +1306,28 @@ async function elegirPuertas({ viaje, candidatas, tiempos, auto, viajeId, prompt
  * primero las que más noches dan a la ciudad de más peso, y entre iguales, las
  * que menos carretera tienen.
  */
-export function repartosLegales({ entrada, salida, candidatas, noches, tiempos = [], minimoNoches = 1 }) {
+/** Dos nombres de país son el mismo si comparten una palabra significativa («Bosnia» y «Bosnia y Herzegovina»). */
+function mismoPais(a, b) {
+  const palabras = (t) => new Set(normalizarNombre(t).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4));
+  const pa = palabras(a);
+  return [...palabras(b)].some((w) => pa.has(w));
+}
+
+export function repartosLegales({
+  entrada,
+  salida,
+  candidatas,
+  noches,
+  tiempos = [],
+  minimoNoches = 1,
+  paises = [],
+  // LA TABLA PARA ORDENAR, que no es la de elegir. Con los huecos rellenos por la
+  // carretera medida, el ORDEN sale bien —Tokio → Kioto → Nara → Osaka y no
+  // Tokio → Nara → Kioto—; pero usarla también para ELEGIR las ciudades cambió
+  // el viaje entero (Japón pasaba a cinco paradas y 17 h de tren) porque mezcla
+  // dos problemas. Medido el 19/09: se elige como siempre y se ordena con esta.
+  tiemposParaOrdenar = null,
+}) {
   const clave = (x) => normalizarNombre(x ?? '');
   const buscar = (nombre) => candidatas.find((c) => clave(c.nombre) === clave(nombre)) ?? null;
 
@@ -1262,10 +1343,12 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
     (c) => clave(c.nombre) !== clave(entrada) && clave(c.nombre) !== clave(salida)
   );
 
-  const minutosEntre = (a, b) =>
-    tiempos.find((t) => clave(t.desde) === clave(a) && clave(t.hasta) === clave(b))?.minutos ??
-    tiempos.find((t) => clave(t.desde) === clave(b) && clave(t.hasta) === clave(a))?.minutos ??
+  const minutosEn = (tabla) => (a, b) =>
+    tabla.find((t) => clave(t.desde) === clave(a) && clave(t.hasta) === clave(b))?.minutos ??
+    tabla.find((t) => clave(t.desde) === clave(b) && clave(t.hasta) === clave(a))?.minutos ??
     null;
+  const minutosEntre = minutosEn(tiempos);
+  const minutosParaOrdenar = tiemposParaOrdenar ? minutosEn(tiemposParaOrdenar) : minutosEntre;
 
   /** El mejor orden de las de en medio: el que menos carretera suma. */
   const mejorOrden = (ciudades) => {
@@ -1276,16 +1359,26 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
         permutaciones([...xs.slice(0, i), ...xs.slice(i + 1)]).map((r) => [x, ...r])
       );
 
-    let mejor = null;
-    for (const orden of permutaciones(ciudades)) {
-      const cadena = [cEntrada, ...orden, cSalida];
+    // Se ORDENA con la tabla completa y se sigue PUNTUANDO con la de siempre, para
+    // que la elección entre conjuntos de ciudades no cambie.
+    const suma = (cadena, minutos) => {
       let total = 0;
       for (let i = 0; i < cadena.length - 1; i += 1) {
-        total += minutosEntre(cadena[i].nombre, cadena[i + 1].nombre) ?? 120;
+        total += minutos(cadena[i].nombre, cadena[i + 1].nombre) ?? 120;
       }
-      if (!mejor || total < mejor.minutos) mejor = { orden, minutos: total };
+      return total;
+    };
+    let mejor = null;
+    let minimoDeSiempre = Infinity;
+    for (const orden of permutaciones(ciudades)) {
+      const cadena = [cEntrada, ...orden, cSalida];
+      minimoDeSiempre = Math.min(minimoDeSiempre, suma(cadena, minutosEntre));
+      const paraOrdenar = suma(cadena, minutosParaOrdenar);
+      if (!mejor || paraOrdenar < mejor.paraOrdenar) mejor = { orden, paraOrdenar };
     }
-    return mejor;
+    // `minutos` es el de siempre —el mínimo con la tabla de siempre— porque es el
+    // que desempata entre conjuntos de ciudades, y eso no se quiere cambiar.
+    return { orden: mejor.orden, minutos: minimoDeSiempre };
   };
 
   /** Los subconjuntos de las de en medio, de menos ciudades a más. */
@@ -1422,8 +1515,23 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
     if (salidas.length) break;   // con los mínimos buenos ya basta
   }
 
-  salidas.sort((a, b) => b.alMasPesado - a.alMasPesado || a.minutos - b.minutos);
-  return salidas.slice(0, 6);
+  // UN VIAJE A TRES PAÍSES PISA LOS TRES.
+  //
+  // Nada lo exigía, y con los tiempos de traslado bien contados los Balcanes se
+  // quedaban sin Serbia («Sarajevo → Mostar → Dubrovnik → Plitvice → Split»):
+  // Belgrado queda lejos, y lejos cuesta. Si se pidieron tres países, un reparto
+  // que deja uno fuera no es ese viaje. Solo cuando las candidatas dicen su país
+  // y hay lista confirmada; y si NINGÚN reparto cubre todos, no se tira nada: un
+  // viaje con un país de menos es mejor que ningún viaje.
+  const paisDe = new Map(candidatas.map((c) => [clave(c.nombre), c.pais ?? null]));
+  const cubreLosPaises = (x) =>
+    paises.every((p) => x.reparto.some((r) => r.noches > 0 && paisDe.get(clave(r.ciudad)) && mismoPais(paisDe.get(clave(r.ciudad)), p)));
+  const sabemosPaises = paises.length > 1 && candidatas.some((c) => c.pais);
+  const completas = sabemosPaises ? salidas.filter(cubreLosPaises) : salidas;
+  const validas = completas.length ? completas : salidas;
+
+  validas.sort((a, b) => b.alMasPesado - a.alMasPesado || a.minutos - b.minutos);
+  return validas.slice(0, 6);
 }
 
 /**
@@ -1828,6 +1936,54 @@ function comoSeLeeLaFicha(f) {
  * una y quedan en el catálogo para siempre, así que el rato que cuestan aquí lo
  * ahorra después "Mi ruta", que las necesita para sus kilómetros.
  */
+/**
+ * LA MATRIZ DE TIEMPOS, SIN HUECOS, PARA ORDENAR LAS PARADAS.
+ *
+ * `repartosLegales` elige el orden de las paradas sumando minutos entre ellas, y
+ * un par que la IA no estimó contaba como 120 minutos. Eso es lo que hizo el
+ * zigzag de los Balcanes —Novi Sad → Split (8h 30min) y Dubrovnik → Belgrado
+ * (10 h por carretera) le costaban dos horas cada uno— y el retroceso de Japón:
+ * la IA dio Kioto ↔ Nara y Nara ↔ Osaka, no Tokio ↔ Nara, y empezar por Nara
+ * salía «barato».
+ *
+ * Los huecos se rellenan con la carretera MEDIDA —la misma que `tablaDeTiempos`
+ * calcula y guarda para el prompt, que se llama después: se calcula aquí antes y
+ * allí sale de la caché—. Solo si no hay forma de medir se queda sin dato, y
+ * entonces sigue el valor de reserva de `repartosLegales`.
+ */
+export async function completarTiempos(candidatas, tiemposIA, destinoId) {
+  const tiempos = [...(tiemposIA ?? [])];
+  const hay = (a, b) =>
+    tiempos.some(
+      (t) =>
+        (normalizarNombre(t.desde) === normalizarNombre(a) && normalizarNombre(t.hasta) === normalizarNombre(b)) ||
+        (normalizarNombre(t.desde) === normalizarNombre(b) && normalizarNombre(t.hasta) === normalizarNombre(a))
+    );
+  const nombres = candidatas.map((c) => c.nombre);
+  for (let i = 0; i < nombres.length; i += 1) {
+    for (let j = i + 1; j < nombres.length; j += 1) {
+      const [a, b] = [nombres[i], nombres[j]];
+      if (hay(a, b)) continue;
+      const pa = puntoDeCiudad(destinoId, a);
+      const pb = puntoDeCiudad(destinoId, b);
+      if (!pa || !pb) continue;
+      let carretera = distanciaGuardada(pa.id, pb.id);
+      if (!carretera) {
+        try {
+          await distanciaEntre(pa.id, pb.id);
+          carretera = distanciaGuardada(pa.id, pb.id);
+        } catch {
+          carretera = null;
+        }
+      }
+      if (carretera?.minutos_coche) {
+        tiempos.push({ desde: a, hasta: b, minutos: Number(carretera.minutos_coche), modo: 'carretera (medida)' });
+      }
+    }
+  }
+  return tiempos;
+}
+
 export async function tablaDeTiempos(candidatas, tiemposIA, destinoId) {
   const estimado = new Map();
   for (const t of tiemposIA) {
@@ -2327,12 +2483,20 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
 
   // --- PASO 2 -------------------------------------------------------------
   di('Buscando vuelos reales para decidir por dónde entrar y salir…');
+  // La matriz que ella misma estimó en el paso 1, con los huecos rellenos por la
+  // carretera medida: con huecos, el orden de las paradas salía al revés.
+  const tiemposCompletos = await completarTiempos(
+    candidatasDeRuta,
+    tiempos,
+    (viaje.destino ? destinoPorNombre(viaje.destino) : null)?.id ?? null
+  );
   const conVuelos = await elegirPuertas({
     viaje,
     candidatas: candidatasDeRuta,
-    // La matriz que ella misma estimó en el paso 1. Es lo que le permite ver
-    // que entrar por Varsovia obliga a subir a Gdansk y volver a bajar.
+    // Es lo que le permite ver que entrar por Varsovia obliga a subir a Gdansk
+    // y volver a bajar.
     tiempos,
+    tiemposParaOrdenar: tiemposCompletos,
     auto,
     viajeId,
     promptPuerta: partes.puerta,
