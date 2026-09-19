@@ -982,10 +982,12 @@ function naturalezaDe(colocado) {
   let horarios = null;
   let descripcion = null;
 
+  let deDia = false;
   if (quien?.de === 'sitio' && quien.deId) {
-    const sitio = una('SELECT descripcion, horarios FROM sitios_lugar WHERE id = ?', quien.deId);
+    const sitio = una('SELECT descripcion, horarios, categoria, nombre FROM sitios_lugar WHERE id = ?', quien.deId);
     horarios = sitio?.horarios ?? null;
     descripcion = sitio?.descripcion ?? null;
+    deDia = esDeLuzDelDia(sitio);
   } else if (quien?.candidato?.tipo === 'actividad' && quien.deId) {
     const act = una(
       'SELECT horarios, descripcion_larga FROM catalogo_actividades WHERE id = ?',
@@ -1011,8 +1013,32 @@ function naturalezaDe(colocado) {
     // nocturno de luces» lo lleva en el nombre; un pase de las 21:30 lo lleva en
     // el horario. Las dos son afirmaciones, no prosa.
     soloDeNoche: soloAUltimaHora(colocado.nombre, horarios),
+    deDia,
   };
 }
+
+/**
+ * LO QUE SOLO SE VE CON LUZ.
+ *
+ * Un parque, una playa o una isla suelen tener «abierto 24 horas», y con eso el
+ * relleno los metía en cualquier hueco hasta las 22:00: el Parque Topčider a
+ * las 20:00 y la Playa de Banje a las 20:00 de un abril en Dubrovnik (viaje
+ * 128). El horario no lo impide; la noche, sí. Los miradores no entran aquí: el
+ * atardecer es justo su hora.
+ */
+const NOMBRE_DE_LUZ = /^(playa|parque|jardin|monte|montana|isla|lago|bosque|cascadas?|reserva|sendero|valle|garganta|cueva)\b/;
+function esDeLuzDelDia(sitio) {
+  if (!sitio) return false;
+  if (sitio.categoria === 'naturaleza') return true;
+  const nombre = String(sitio.nombre ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return NOMBRE_DE_LUZ.test(nombre);
+}
+
+/** A partir de qué hora ya no empieza una visita de luz del día. */
+const ULTIMA_HORA_CON_LUZ = '19:00';
 
 /** Las franjas en las que algo puede estar, según lo que es. */
 function franjasQueAdmite(naturaleza) {
@@ -1035,6 +1061,7 @@ function horaLegitima(naturaleza, hora) {
   if (!hora) return false;
   if (naturaleza.sesiones?.length) return naturaleza.sesiones.includes(hora);
   if (naturaleza.soloDeNoche) return ['tarde', 'noche'].includes(franjaDesde(hora));
+  if (naturaleza.deDia && hora >= ULTIMA_HORA_CON_LUZ) return false;
   return true;
 }
 
@@ -1268,12 +1295,14 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
     if (esComida(c)) continue;
 
     const naturaleza = naturalezaDe(c);
-    if (!naturaleza.sesiones?.length && !naturaleza.soloDeNoche) continue;
+    if (!naturaleza.sesiones?.length && !naturaleza.soloDeNoche && !naturaleza.deDia) continue;
     if (horaLegitima(naturaleza, c.hora)) continue;
 
     const comoEs = naturaleza.sesiones?.length
       ? `solo tiene pases a las ${naturaleza.sesiones.join(' y ')}`
-      : 'es cosa de última hora';
+      : naturaleza.soloDeNoche
+        ? 'es cosa de última hora'
+        : 'solo se ve con luz del día';
 
     const r = recolocarConHora(viajeId, tablero, c);
     if (r.movido) {
@@ -1490,6 +1519,10 @@ export function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
       ORIGENES.ninguno
     );
 
+    // La comida del día de la excursión echada se va con ella. En Sarajevo
+    // (viaje 128) quedó «Comer · Travnik o Jajce (durante la excursión)» en un
+    // día sin excursión: este camino no pasaba por la limpieza del otro.
+    quitarLaComidaDeLaExcursion(viajeId, diasLibres, di);
     rellenarElDiaLiberado(viajeId, etapa, diasLibres, di);
   }
 
@@ -1613,7 +1646,7 @@ export function rellenarElDiaLiberado(viajeId, etapa, diasLibres, di) {
   di(
     entraron.length
       ? `   ${etapa.nombre_ciudad}: el día ${diasLibres.join(', ')} se rellena con ${entraron.join(', ')}.`
-      : `   ${etapa.nombre_ciudad}: el día ${diasLibres.join(', ')} se queda vacío — no hay nada del catálogo que quepa en él.`,
+      : `   ${etapa.nombre_ciudad}: en el día ${diasLibres.join(', ')} no entra nada más del catálogo.`,
     ORIGENES.ninguno
   );
 }
@@ -1829,6 +1862,17 @@ function enderezarLoQueNoCabeEnSuHorario(viajeId, lienzo, di) {
       // pierde el sitio sin que nadie lo haya decidido. Se queda donde está, con
       // su hora mala, y se DICE: sale en el registro, sale en los avisos del
       // viaje y sale en el repaso final.
+      //
+      // SALVO EL DE SEGUNDO NIVEL. La Iglesia de San Blas (viaje 128) se quedó a
+      // las 17:00 cerrando a las 12:00: puesta ahí no se visita, solo ocupa media
+      // hora y deja un aviso que nadie puede arreglar. Lo que de verdad se pierde
+      // sin que nadie lo decida es un imprescindible, y ese sigue quedándose.
+      if (/segundo nivel/.test(importanciaDe(c).que)) {
+        sacarDelPlan(c, di, `${comoEs}, y no encontré otro hueco en su horario`);
+        tablero = lienzoDeViaje(viajeId);
+        tocado = true;
+        continue;
+      }
       di(`   ${c.nombre}: ${comoEs}, y no encontré hueco. Lo dejo puesto y te lo digo.`);
       sinResolver.push({ dia: c.dia, nombre: c.nombre, comoEs });
     }
@@ -3354,6 +3398,7 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // UNA COMIDA AL DÍA, NO DOS. Va antes de los avisos: lo que se quite aquí no
   // tiene que salir después como un solape sin resolver.
   final = unaSolaComidaAlDia(viajeId, final, di);
+  final = comidaAHoraDeComer(viajeId, final, di);
 
   avisarSiElHotelNoSePisa(viajeId, final, di);
 
@@ -3494,6 +3539,48 @@ export function avisarDeExcursionesSinColocar(viaje, motivos, di) {
  * nada y no pasa nada.
  */
 /**
+ * LA COMIDA, A LA HORA DE COMER.
+ *
+ * El plan tiene una comida al día, y el reparto la dejaba donde caía: a las
+ * 20:00 el día de llegada a Belgrado o a las 17:30 en Sarajevo (viaje 128).
+ * Eso no es la comida, es la cena, y el día queda sin comer. Si está fuera de
+ * las 12:00–16:30 se busca un hueco dentro, de su duración o de una hora; si no
+ * lo hay, se queda donde estaba.
+ */
+const COMIDA_DESDE = '12:00';
+const COMIDA_HASTA = '16:30';
+function comidaAHoraDeComer(viajeId, lienzo, di) {
+  let tocado = false;
+  for (const c of lienzo.colocados.filter((x) => esComida(x) && x.hora)) {
+    if (c.hora >= COMIDA_DESDE && c.hora <= COMIDA_HASTA) continue;
+    const tablero = sinEl(lienzoDeViaje(viajeId), c.id);
+    const duraciones = [...new Set([Number(c.duracionMin) || 90, 60])];
+    let puesta = null;
+    for (const duracion of duraciones) {
+      for (const franja of ['manana', 'mediodia']) {
+        const h = horaLibreEn(tablero, { dia: c.dia, franja, duracion, noAntesDe: COMIDA_DESDE });
+        if (h && h >= COMIDA_DESDE && h <= COMIDA_HASTA) {
+          puesta = { hora: h, duracion };
+          break;
+        }
+      }
+      if (puesta) break;
+    }
+    if (!puesta) continue;
+    mover(c.id, { dia: c.dia, franja: franjaDesde(puesta.hora) ?? 'mediodia' });
+    retocar(c.id, { hora: puesta.hora, duracionMin: puesta.duracion });
+    di(
+      `   Día ${c.dia}: «${c.nombre}» estaba a las ${c.hora}; la paso a las ${puesta.hora}` +
+        (puesta.duracion !== (Number(c.duracionMin) || 90) ? ` (${puesta.duracion} min)` : '') +
+        ', que es hora de comer.',
+      ORIGENES.ninguno
+    );
+    tocado = true;
+  }
+  return tocado ? lienzoDeViaje(viajeId) : lienzo;
+}
+
+/**
  * EL ÚLTIMO REPASO: NINGÚN IMPRESCINDIBLE FUERA SI HAY UNO DE SEGUNDO NIVEL
  * OCUPANDO SU HUECO.
  *
@@ -3538,13 +3625,17 @@ function repescarLosImprescindiblesQueFaltan(viajeId, di) {
  * contando una mentira a la hora de comer. Se quita solo si ese día no queda
  * ninguna otra excursión; el relleno pone después una comida de verdad.
  */
+// «durante la excursión», pero también «a bordo o en el puerto al regreso» (el
+// crucero de las Elafitas) o «incluida en la excursión».
+const COMIDA_DE_EXCURSION = /excursi|a bordo|durante|incluid|al regreso|en ruta/i;
+
 function quitarLaComidaDeLaExcursion(viajeId, dias, di) {
   const lienzo = lienzoDeViaje(viajeId);
   for (const dia of dias) {
     const delDia = lienzo.colocados.filter((c) => c.dia === dia);
     if (delDia.some((c) => deQuienEs(c)?.candidato?.tipo === 'actividad')) continue;
     for (const c of delDia) {
-      if (!esComida(c) || !/excursi/i.test(String(c.nombre ?? ''))) continue;
+      if (!esComida(c) || !COMIDA_DE_EXCURSION.test(String(c.nombre ?? ''))) continue;
       quitar(c.id);
       di(`   Día ${dia}: quito «${c.nombre}», que era la comida de una excursión que ya no está.`, ORIGENES.ninguno);
     }
