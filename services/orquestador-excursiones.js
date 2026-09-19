@@ -666,6 +666,12 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         }
       }
 
+      // LO QUE SE DA POR VISTO, DICHO. Esta lista se llenaba y se tiraba, y así
+      // el Palacio de Diocleciano desapareció del viaje sin una sola línea.
+      if (cubiertos.length) {
+        di(`   ${ciudad}: se ven dentro de una excursión — ${cubiertos.join(' · ')}.`, ORIGENES.ninguno);
+      }
+
       // Cuentan las GUARDADAS, no las elegidas: el tope del viaje tiene que
       // hablar de lo que existe en la base, no de lo que se pensó.
       elegidasEnTotal += guardadas.length;
@@ -830,6 +836,21 @@ async function cubrirSitiosQueSonElMismoLugar(actividad, candidato, etapa, cubie
   /** A cuánto dejan de ser el mismo sitio. */
   const METROS = 300;
 
+  // SOLO POR LA COORDENADA, EL MISMO PUNTO Y NO «CERCA».
+  //
+  // Places sitúa una excursión en su PUNTO DE ENCUENTRO, y el punto de
+  // encuentro de un tour que sale del centro está al lado del monumento
+  // principal. A 188 m, «Paseo en barco por Split al atardecer» tapó el Palacio
+  // de Diocleciano; a 226 m, «Excursión a Travnik y Jajce» tapó Baščaršija; a
+  // 221 m, un tour de bares tapó la Gran Sinagoga de Budapest. Medido sobre
+  // todos los tapados de la base: los buenos solo por coordenada caen a 0 m
+  // (Akrotiri, el Túnel de Sarajevo); los malos, entre 100 y 300.
+  //
+  // Y ni en el mismo punto tapa una comida, un barco o una fiesta: el tour
+  // gastronómico de Salónica sale de la Torre Blanca y no la visita.
+  const METROS_SOLO_COORDENADA = 50;
+  const NO_ES_UNA_VISITA = /\b(gastronomic|comida|tapas|vino|cata|barco|crucero|kayak|fiesta|bares|pub|nocturn)/;
+
   const limpio = (t) =>
     String(t ?? '')
       .normalize('NFD')
@@ -894,7 +915,8 @@ async function cubrirSitiosQueSonElMismoLugar(actividad, candidato, etapa, cubie
         : null;
 
     // Dos caminos para decir «es el mismo sitio», y el de la coordenada manda.
-    const mismaCoordenada = metros != null && metros <= METROS;
+    const mismaCoordenada =
+      metros != null && metros <= METROS_SOLO_COORDENADA && !NO_ES_UNA_VISITA.test(titulo);
     const nombreEntero = new RegExp(`(^| )${nombre}( |$)`).test(titulo);
 
     if (!mismaCoordenada && !nombreEntero) continue;

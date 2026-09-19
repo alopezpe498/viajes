@@ -42,6 +42,7 @@ import {
 } from './lienzo.js';
 import { abreEl } from './horarios.js';
 import { esParaguasDeZona } from './contenidos.js';
+import { sinCubrir } from './cubiertos.js';
 
 /** "07:45" -> 465. */
 function enMinutos(hora) {
@@ -166,16 +167,17 @@ export function imprescindiblesDeParada(etapa) {
   // Los hermanos son TODO el catálogo de la ciudad, no solo los imprescindibles:
   // para saber si algo hace de paraguas hay que mirar todo lo que tiene debajo.
   const hermanos = todas(
-    `SELECT id, nombre, tiempo_visita, lat, lon FROM sitios_lugar
-      WHERE punto_interes_id = ? AND cubierto_por IS NULL AND bloque <> 'busqueda'`,
+    `SELECT s.id, s.nombre, s.tiempo_visita, s.lat, s.lon FROM sitios_lugar s
+      WHERE s.punto_interes_id = ? AND ${sinCubrir(etapa.id, { soloColocadas: true })} AND s.bloque <> 'busqueda'`,
     etapa.punto_interes_id
   );
 
   return todas(
-    `SELECT id, nombre, tiempo_visita, categoria, horarios, cierra_dias, lat, lon, es_zona
-       FROM sitios_lugar
-      WHERE punto_interes_id = ? AND bloque = 'imprescindibles' AND cubierto_por IS NULL
-      ORDER BY orden, id`,
+    `SELECT s.id, s.nombre, s.tiempo_visita, s.categoria, s.horarios, s.cierra_dias, s.lat, s.lon, s.es_zona
+       FROM sitios_lugar s
+      WHERE s.punto_interes_id = ? AND s.bloque = 'imprescindibles'
+        AND ${sinCubrir(etapa.id, { soloColocadas: true })}
+      ORDER BY s.orden, s.id`,
     etapa.punto_interes_id
   )
     // LA ZONA NO CUENTA COMO IMPRESCINDIBLE PENDIENTE.

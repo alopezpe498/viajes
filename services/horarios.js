@@ -1010,30 +1010,49 @@ const DE_REGRESO = [
 const CERCA = 120;
 
 export function horaDeInicioDeExcursion(...textos) {
-  const t = normalizar(textos.filter(Boolean).join(' · '));
+  // LA FICHA ACABA DONDE EMPIEZA LO DE LOS DEMÁS. Detrás de la descripción
+  // Civitatis pega «También te puede interesar» y las opiniones de los
+  // clientes, y ahí hay cifras de sobra: «1950 viajeros» salió como las 19:50.
+  let t = normalizar(textos.filter(Boolean).join(' · '));
+  for (const corte of ['tambien te puede interesar', 'opiniones de nuestros clientes']) {
+    const i = t.indexOf(corte);
+    if (i >= 0) t = t.slice(0, i);
+  }
   if (!t.trim()) return null;
 
-  // Las horas del texto, con su posición. Se exige minutos, am/pm o «h»: un
-  // número suelto no es una hora, y en estas descripciones hay muchos («2
-  // yacimientos», «siglo III»).
+  // Las horas del texto, con su posición. UNA HORA SE ESCRIBE COMO HORA: con
+  // sus minutos detrás de «:» o «.» (8:00, 7.45), con am/pm, o «a las 8».
+  //
+  // Antes el separador era opcional y valía «horas», y eso leía horas donde no
+  // las hay. Medido sobre las 67 fichas de la base, 15 de 20 horas eran falsas:
+  //
+  //     «1950 viajeros»                →  19:50
+  //     «Brsalje ul. 3, 20000 Dubrovnik» →  20:00   (el código postal)
+  //     «12 horas más tarde»           →  12:00   (la duración)
+  //     «10 horas después de la recogida» → 10:00, y la ficha decía «a las 7:45»
+  //
+  // Un precio con decimales (10.60 EUR) tampoco es una hora.
   const horas = [];
-  const re = /(\d{1,2})[:.]?(\d{2})?\s*(am|pm|h\b|horas\b)?/g;
+  const apuntar = (crudo, minutos, sufijo, en) => {
+    let h = Number(crudo);
+    if (!Number.isInteger(h) || h > 24) return;
+    const ampm = sufijo ? sufijo.replace(/[.\s]/g, '') : null;
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    if (h > 23) return;
+    const min = minutos === undefined ? 0 : Number(minutos);
+    if (min > 59) return;
+    horas.push({ texto: `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`, en });
+  };
+
+  const conMinutos = /(?<![\d.,])(\d{1,2})[:.](\d{2})(?![\d.,]\d)(?!\s*(?:€|eur|euros|km|%))\s*(am|pm|a\.\s?m\.|p\.\s?m\.)?/g;
+  const conAmPm = /(?<![\d.,:])(\d{1,2})\s*(am|pm|a\.\s?m\.|p\.\s?m\.)(?![a-z])/g;
+  const aLas = /\blas (\d{1,2})(?![\d:.,])(?!\s*(?:horas|hora|h\b|minutos|min\b|personas|plazas))/g;
   let m;
-  while ((m = re.exec(t)) !== null) {
-    const crudo = Number(m[1]);
-    if (!Number.isInteger(crudo) || crudo > 24) continue;
-    if (m[2] === undefined && !m[3]) continue;
-
-    let h = crudo;
-    if (m[3] === 'pm' && h < 12) h += 12;
-    if (m[3] === 'am' && h === 12) h = 0;
-    if (h > 23) continue;
-
-    const min = m[2] === undefined ? 0 : Number(m[2]);
-    if (min > 59) continue;
-
-    horas.push({ texto: `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`, en: m.index });
-  }
+  while ((m = conMinutos.exec(t)) !== null) apuntar(m[1], m[2], m[3], m.index);
+  while ((m = conAmPm.exec(t)) !== null) apuntar(m[1], undefined, m[2], m.index);
+  while ((m = aLas.exec(t)) !== null) apuntar(m[1], undefined, null, m.index + 4);
+  horas.sort((x, y) => x.en - y.en);
   if (!horas.length) return null;
 
   // Para cada palabra de salida, la primera hora que venga DETRÁS y cerca.

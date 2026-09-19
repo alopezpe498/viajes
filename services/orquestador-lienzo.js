@@ -73,6 +73,7 @@ import {
 } from '../services/orquestador.js';
 import { enMinutosDelDia } from '../services/orquestador-traslados.js';
 import { hayQueParar } from '../services/orquestador-parada.js';
+import { sinCubrir } from './cubiertos.js';
 import {
   horasDeSesion,
   soloAUltimaHora,
@@ -233,10 +234,10 @@ export function colocablesDeEtapa(etapa, lienzo, di = () => {}) {
   // --- Y los sitios generados, en el orden de sus bloques -----------------
   const sitios = etapa.punto_interes_id
     ? todas(
-        `SELECT * FROM sitios_lugar
-          WHERE punto_interes_id = ?
-            AND bloque IN ('imprescindibles', 'otros', 'ninos')
-            AND cubierto_por IS NULL
+        `SELECT s.* FROM sitios_lugar s
+          WHERE s.punto_interes_id = ?
+            AND s.bloque IN ('imprescindibles', 'otros', 'ninos')
+            AND ${sinCubrir(etapa.id)}
           ORDER BY CASE bloque
                      WHEN 'imprescindibles' THEN 1
                      WHEN 'ninos' THEN 2
@@ -905,6 +906,8 @@ function importanciaDe(colocado) {
       `SELECT s.bloque, s.orden FROM sitios_lugar s
          JOIN etapas e ON e.id = ? AND e.punto_interes_id = s.punto_interes_id
         WHERE s.cubierto_por = ? AND s.bloque = 'imprescindibles'
+          AND NOT EXISTS (SELECT 1 FROM sitios_lugar o
+                           WHERE o.id = s.cubierto_por AND o.punto_interes_id = s.punto_interes_id)
         ORDER BY s.orden LIMIT 1`,
       quien.candidato.etapa_id,
       quien.candidato.id
@@ -1535,9 +1538,9 @@ export function rellenarElDiaLiberado(viajeId, etapa, diasLibres, di) {
   // TODO lo del catálogo de esa ciudad, no solo los imprescindibles. Los
   // fundidos dentro de otro (`cubierto_por`) quedan fuera: ya se visitan.
   const delCatalogo = todas(
-    `SELECT id, nombre, tiempo_visita, bloque
-       FROM sitios_lugar
-      WHERE punto_interes_id = ? AND cubierto_por IS NULL AND bloque <> 'busqueda'
+    `SELECT s.id, s.nombre, s.tiempo_visita, s.bloque
+       FROM sitios_lugar s
+      WHERE s.punto_interes_id = ? AND ${sinCubrir(etapa.id, { soloColocadas: true })} AND s.bloque <> 'busqueda'
       ORDER BY CASE WHEN bloque = 'imprescindibles' THEN 0 ELSE 1 END, orden, id`,
     etapa.punto_interes_id
   );
