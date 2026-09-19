@@ -67,11 +67,11 @@
     <% } else { %>
       <%# ---------- Hecho: el catálogo de siempre ---------- %>
       <div class="chips aireado" id="filtros">
-        <button class="chip chip--activo" type="button" data-filtro="todas">Todas</button>
-        <button class="chip" type="button" data-filtro="gratis">
+        <button class="chip chip--activo" type="button" aria-pressed="true" data-filtro="todas">Todas</button>
+        <button class="chip" type="button" aria-pressed="false" data-filtro="gratis">
           <i class="ti ti-gift" aria-hidden="true"></i> Gratis
         </button>
-        <button class="chip" type="button" data-filtro="top">
+        <button class="chip" type="button" aria-pressed="false" data-filtro="top">
           <i class="ti ti-star" aria-hidden="true"></i> Mejor valoradas
         </button>
       </div>

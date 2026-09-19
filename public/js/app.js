@@ -123,8 +123,13 @@ document.addEventListener('click', (evento) => {
   if (!filtro) return;
 
   // Solo un filtro activo a la vez.
-  document.querySelectorAll('[data-filtro]').forEach((f) => f.classList.remove('chip--activo'));
+  // La clase pinta el elegido; `aria-pressed` se lo dice a quien no ve la pantalla.
+  document.querySelectorAll('[data-filtro]').forEach((f) => {
+    f.classList.remove('chip--activo');
+    f.setAttribute('aria-pressed', 'false');
+  });
   filtro.classList.add('chip--activo');
+  filtro.setAttribute('aria-pressed', 'true');
 
   const modo = filtro.dataset.filtro;
   document.querySelectorAll('#rejilla-actividades > [data-precio]').forEach((celda) => {

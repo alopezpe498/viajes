@@ -33,6 +33,10 @@ const comoJSON = (o) => JSON.stringify(o).replace(/</g, '\\u003c');
    Estética mediterránea de la aplicación, reducida a lo que hace falta aquí.
    Sin fuentes externas: la del sistema, que en un móvil siempre está.
    ========================================================================== */
+/* Los mismos valores que los tokens de la app (public/css/estilo.css), con
+   nombres cortos. Van copiados y no enlazados a propósito: el dosier se
+   descarga y se abre sin conexión, no puede pedir la hoja de la app. Que no se
+   separen lo vigila `node tools/paleta-del-dosier.js`. */
 :root{
   --acento:#1B7FA6; --acento-osc:#16688A; --tinte:#D3E8F0; --tinte-tx:#12303E;
   --fondo:#F4F8FA; --sup:#FFFFFF; --borde:#E2ECF1; --borde-f:#C7DAE3;
@@ -153,7 +157,7 @@ body{
 /* LA CHULETA DE TRASLADOS. Una línea por consulta y sin adornos: se mira de
    pie, en la calle, buscando un número. */
 .chuleta{
-  margin-top:16px;padding:12px 14px;border:1px dashed var(--bd,#DCE7EC);
+  margin-top:16px;padding:12px 14px;border:1px dashed var(--bd,var(--borde));
   border-radius:var(--radio);background:transparent;
 }
 .chuleta__titulo{
@@ -168,14 +172,14 @@ body{
 /* DÓNDE COMER: lo apuntado que no tiene día. Es lo que uno mira a las dos de
    la tarde sin plan, así que va con su dirección y su teléfono a mano. */
 .comer{
-  margin-top:16px;padding:12px 14px;border:1px dashed var(--bd,#DCE7EC);
+  margin-top:16px;padding:12px 14px;border:1px dashed var(--bd,var(--borde));
   border-radius:var(--radio);
 }
 .comer__titulo{
   font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
   color:var(--tx2);margin-bottom:8px;
 }
-.comer__sitio{padding:8px 0;border-top:1px solid var(--bd,#EDF3F5)}
+.comer__sitio{padding:8px 0;border-top:1px solid var(--bd,var(--fondo))}
 .comer__sitio:first-of-type{border-top:0}
 .comer__nombre{font-weight:700}
 .comer__datos{font-size:13px;color:var(--tx2)}
@@ -250,14 +254,14 @@ body{
 .seccion__titulo{margin:22px 0 12px;font-size:21px;font-weight:700}
 
 /* --- Antes de viajar --- */
-.pais{border:1px solid #DCE6EA;border-radius:12px;padding:14px 16px;margin-bottom:14px;background:#fff}
+.pais{border:1px solid var(--borde);border-radius:12px;padding:14px 16px;margin-bottom:14px;background:#fff}
 .pais__nombre{margin:0 0 2px;font-size:18px;font-weight:700;color:var(--acento)}
-.pais__fecha{margin:0 0 12px;font-size:12px;color:#6B8794}
+.pais__fecha{margin:0 0 12px;font-size:12px;color:var(--tx2)}
 .pais__bloque{margin-top:14px}
-.pais__bloque h4{margin:0 0 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#6B8794}
+.pais__bloque h4{margin:0 0 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--tx2)}
 .pais__dato{margin:0 0 9px;font-size:14px;line-height:1.5}
-.pais__dato strong{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.02em;color:#6B8794;font-weight:700}
-.pais__marca{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:#FBEED6;color:#8A5A16}
+.pais__dato strong{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.02em;color:var(--tx2);font-weight:700}
+.pais__marca{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;background:var(--amba-bg);color:var(--amba-tx)}
 .pais__marca--no{background:var(--tinte);color:var(--acento-osc)}
 .pais__lista{margin:4px 0 0;padding-left:18px;font-size:13px}
 .pais__festivo{display:flex;gap:8px;font-size:14px;margin-bottom:3px}

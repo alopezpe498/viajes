@@ -489,11 +489,15 @@ a  { color: var(--acento); }
   background: var(--superficie);
   color: var(--texto);
   border-radius: var(--radio-pill);
-  padding: var(--esp-3) var(--esp-7);
+  /* Selector de estado, talla NORMAL (38px / letra 14), como los chips de
+     configuración y las pestañas. Medía 40 y con peso normal. */
+  padding: 0 var(--esp-7);
   font-size: var(--texto-lg);
+  font-weight: 600;
+  line-height: 1.2;
   font-family: inherit;
   cursor: pointer;
-  min-height: 40px;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
   gap: var(--esp-2);
@@ -1433,8 +1437,11 @@ a  { color: var(--acento); }
 .tarjeta-punto__acciones .boton {
   flex: 1;
   justify-content: center;
-  padding: var(--esp-3) var(--esp-4);
-  font-size: var(--texto-base);
+  /* Talla NORMAL: acción dentro de una tarjeta. Encogía la letra a 13 pero
+     heredaba los 44 de alto de `.boton`, una mezcla de dos tallas. */
+  min-height: 38px;
+  padding: 0 var(--esp-4);
+  font-size: var(--texto-lg);
 }
 
 .boton--hecho {
@@ -1965,6 +1972,9 @@ a  { color: var(--acento); }
 /* La crucecita que Chrome le pone a los input[type=search] rompe la píldora. */
 .buscador__campo::-webkit-search-cancel-button { display: none; }
 
+/* Fuera de la escala a propósito: es la mitad derecha de un control compuesto.
+   Va DENTRO de la barra de búsqueda (42px con 4px de margen) y mide lo que el
+   hueco deja, 32, igual que el campo de al lado. Como un segmento, no un botón. */
 .buscador__boton {
   flex: 0 0 auto;
   border: 0;
@@ -2938,7 +2948,7 @@ a  { color: var(--acento); }
   align-items: center;
   margin-top: var(--esp-5);
 }
-.tramo-caja__acciones .boton { padding: var(--esp-3) var(--esp-6); font-size: var(--texto-base); }
+.tramo-caja__acciones .boton { min-height: 38px; padding: 0 var(--esp-6); font-size: var(--texto-lg); } /* talla NORMAL, como la de las tarjetas */
 
 /* --- El formulario de apuntar a mano -------------------------------------- */
 .manual {
