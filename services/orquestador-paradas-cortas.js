@@ -193,6 +193,7 @@ export function imprescindiblesDeParada(etapa) {
     // libre. Sin coordenada va null y la pregunta no se hace.
     punto: Number.isFinite(Number(s.lat)) ? { lat: Number(s.lat), lon: Number(s.lon) } : null,
     minutos: minutosDeVisita(s.tiempo_visita) ?? parametro('visita_por_defecto_min', 90),
+    categoria: s.categoria ?? null,
     cierraA: cierraALasMinutos(s),
     // El TEXTO del horario, no `cierra_dias`. Es la misma fuente que usan los
     // avisos del lienzo y por la misma razón: una lista guardada se queda vieja
@@ -596,6 +597,16 @@ const FRANJAS_DE_VISITA = FRANJAS.filter((f) => f.clave !== 'noche');
  *
  * Devuelve la lista de veredictos para poder probarla sin arrancar un viaje.
  */
+/**
+ * Lo que es una zona y no un edificio: se recorta, no se pierde. Por categoría
+ * o por cómo se llama —«Barrio de Akihabara» viene catalogado como «compras y
+ * mercados» y es un barrio—. Un acuario o un parque temático NO: son un
+ * edificio con su entrada y se visitan enteros o no se visitan.
+ */
+const CATEGORIAS_ZONA = new Set(['barrios y paseos', 'naturaleza']);
+const NOMBRE_DE_ZONA = /^(barrio|zona|distrito|casco|isla|bosque|playa|paseo|parque (?:natural|nacional|forestal)|monte|montaña)\b/i;
+const esZona = (x) => CATEGORIAS_ZONA.has(x.categoria) || NOMBRE_DE_ZONA.test(String(x.nombre ?? '').trim());
+
 export function revisarElReparto(viaje, di = () => {}) {
   ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'reparto'", viaje.id);
 
@@ -629,6 +640,12 @@ export function revisarElReparto(viaje, di = () => {}) {
   const veredictos = [];
 
   for (const etapa of etapas) {
+    // UNA PARADA DE CERO NOCHES NO SE JUZGA. Es la vuelta a la ciudad de entrada
+    // para coger el avión —Tokio al final de Japón, Budapest al de Hungría—: un
+    // día de traslado al aeropuerto, no una estancia. Juzgarla daba «Tokio (0
+    // noches): se quedó CORTA» por no caber en medio día lo que pedía una semana.
+    if (!Number(etapa.noches)) continue;
+
     // LOS DÍAS SE SACAN DEL LIENZO, NO DE `itinerario.etapa_id`.
     //
     // Esa columna puede venir vacía —en Grecia, las dos cosas del último día la
@@ -727,11 +744,26 @@ export function revisarElReparto(viaje, di = () => {}) {
         };
       });
 
+    // UNA ZONA NO SE QUEDA FUERA POR NO CABER ENTERA.
+    //
+    // Un barrio, un parque o una isla llevan duraciones de jornada —Mitte 240
+    // min, Akihabara 240, Lokrum 300, Ada Ciganlija 480— y no caben en ningún
+    // hueco, así que la parada salía «CORTA». Pero una zona se recorta: se pasea
+    // un rato y se sigue. De las cinco paradas «cortas» de los viajes del 19/09,
+    // cuatro lo eran solo por esto. Si con una visita normal SÍ cabe, no es falta
+    // de tiempo: se dice que se recortaría, y la parada no cuenta como corta.
+    for (const x of noLlegaron) {
+      if (x.por !== 'falta de tiempo') continue;
+      if (!esZona(x) || x.minutos <= tipica) continue;
+      if (huecoDeVerdad(lienzo, dias, tipica, null, FRANJAS, null, x.punto)) x.por = 'se recortaría';
+    }
+
     const porTiempo = noLlegaron.filter((x) => x.por === 'falta de tiempo');
     const porDistancia = noLlegaron.filter((x) => x.por === 'lo lejos que está');
     const porHorario = noLlegaron.filter((x) => x.por === 'su horario');
     const porDiaDeCierre = noLlegaron.filter((x) => x.por === 'su día de cierre');
     const conHueco = noLlegaron.filter((x) => x.donde);
+    const recortables = noLlegaron.filter((x) => x.por === 'se recortaría');
 
     // Y al revés: ¿queda sitio para una visita más? Solo importa si no falta
     // nada, porque una ciudad a la que le sobra tiempo Y le faltan cosas es una
@@ -753,6 +785,7 @@ export function revisarElReparto(viaje, di = () => {}) {
       porDiaDeCierre,
       porDistancia,
       conHueco,
+      recortables,
       sobra,
     });
   }
@@ -808,6 +841,12 @@ export function revisarElReparto(viaje, di = () => {}) {
         `del día. Habría cabido el día ${x.cabriaSinElMapa.dia} ` +
         `(${x.cabriaSinElMapa.etiqueta.toLowerCase()}, ${x.cabriaSinElMapa.hora}) si estuviera ` +
         'donde dice estar: comprueba su coordenada.'
+    );
+    conRecorte(
+      v.recortables,
+      (x) =>
+        `      · ${x.nombre} es una zona de ${x.minutos} min que no cabe entera, pero una ` +
+        `visita de ${tipica} min sí: se recortaría, no es falta de noches.`
     );
     conRecorte(
       v.conHueco,

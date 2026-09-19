@@ -431,6 +431,8 @@ export function migrarEsquema() {
   migracionSitiosLejos();
   migracionRitmoEnElVeredicto();
   migracionPrecioDeHotelPorNoche();
+  migracionMismoLugarYaVisto();
+  migracionPaisDeCadaCandidata();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6562,6 +6564,96 @@ function migracionPrecioDeHotelPorNoche() {
   }
   marcarAplicada(CLAVE);
   console.log(`[bd] Migracion: ${n} precios de hotel pasan de «por noche» a total de la estancia.`);
+  return true;
+}
+
+/**
+ * LOS SITIOS QUE GOOGLE DIJO QUE ERAN EL MISMO LUGAR, Y SE SIGUIERON COLOCANDO.
+ *
+ * `situarLosSitios` ahora marca el duplicado como cubierto por el otro. Los de
+ * antes se quedaron sin marcar —«Míralo: sobra uno de los dos», y nadie lo
+ * miraba— y como el catálogo de cada ciudad se comparte y no se regenera, se
+ * habrían quedado así para siempre. Los pares están escritos en el registro de
+ * cada viaje, y se les aplica la misma regla que al código nuevo: a 500 m o
+ * menos, y nunca un museo dentro de algo que no es un museo. Así el «Fushimi
+ * Momoyama» (a 3 km del Fushimi Inari, otro sitio que Google no encontró) se
+ * queda como está, y las ermitas de Marjan pasan a ser parte del parque.
+ */
+function migracionMismoLugarYaVisto() {
+  const CLAVE = '2026-09-mismo-lugar-ya-visto';
+  if (yaAplicada(CLAVE)) return false;
+  const rad = (g) => (g * Math.PI) / 180;
+  const metros = (a, b) => {
+    const dLa = rad(b.lat - a.lat);
+    const dLo = rad(b.lon - a.lon);
+    const h = Math.sin(dLa / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLo / 2) ** 2;
+    return 12742000 * Math.asin(Math.sqrt(h));
+  };
+  const lineas = db
+    .prepare("SELECT DISTINCT viaje_id, linea FROM orquestador_registro WHERE linea LIKE '%son EL MISMO LUGAR para Google%'")
+    .all();
+  const buscar = db.prepare(
+    `SELECT s.id, s.nombre, s.lat, s.lon, s.bloque, s.categoria, s.cubierto_por
+       FROM sitios_lugar s JOIN etapas e ON e.punto_interes_id = s.punto_interes_id
+      WHERE e.viaje_id = ? AND s.nombre = ? LIMIT 1`
+  );
+  let n = 0;
+  for (const { viaje_id: viajeId, linea } of lineas) {
+    const m = String(linea).match(/«(.+?)» y «(.+?)» son EL MISMO LUGAR/);
+    if (!m) continue;
+    const tapado = buscar.get(viajeId, m[1]);
+    const queda = buscar.get(viajeId, m[2]);
+    if (!tapado || !queda || tapado.cubierto_por || queda.cubierto_por || tapado.id === queda.id) continue;
+    if (tapado.lat == null || queda.lat == null) continue;
+    if (metros(tapado, queda) > 500) continue;
+    if (tapado.categoria === 'museos' && queda.categoria !== 'museos') continue;
+    db.prepare('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?').run(queda.id, tapado.id);
+    if (tapado.bloque === 'imprescindibles' && queda.bloque !== 'imprescindibles') {
+      db.prepare("UPDATE sitios_lugar SET bloque = 'imprescindibles' WHERE id = ?").run(queda.id);
+    }
+    n++;
+  }
+  marcarAplicada(CLAVE);
+  console.log(`[bd] Migracion: ${n} sitio(s) que eran el mismo lugar que otro pasan a ser parte de él.`);
+  return true;
+}
+
+/**
+ * CADA CANDIDATA DICE DE QUÉ PAÍS ES.
+ *
+ * En el viaje de Croacia, Bosnia y Serbia la IA propuso Kotor y escribió ella
+ * misma «ATENCIÓN: Kotor está en Montenegro… NO debe entrar en la ruta». Y
+ * entró igual en uno de los repartos que se puntuaron: el aviso iba en un texto
+ * libre que el código no lee. Con el país en su campo, el código descarta lo
+ * que no sea de la lista confirmada (solo en viajes de varios países).
+ *
+ * Se publica como siempre: la de fábrica se actualiza; la tuya solo si no la
+ * has tocado.
+ */
+function migracionPaisDeCadaCandidata() {
+  const CLAVE = '2026-09-pais-de-cada-candidata';
+  if (yaAplicada(CLAVE)) return false;
+  const ANCLA = '      "nombre": "nombre en español de la ciudad",\n';
+  const PUESTO = ANCLA + '      "pais": "el país al que pertenece, en español",\n';
+  const fila = db.prepare("SELECT prompt_actual, prompt_fabrica FROM prompts_orquestador WHERE fase = 'ciudades_y_noches'").get();
+  if (!fila || !fila.prompt_fabrica.includes(ANCLA) || fila.prompt_fabrica.includes('"pais":')) {
+    marcarAplicada(CLAVE);
+    console.log('[bd] Migracion: el prompt de candidatas no tiene el ancla esperada; no toco nada.');
+    return false;
+  }
+  const fabrica = fila.prompt_fabrica.replace(ANCLA, PUESTO);
+  db.prepare(
+    `UPDATE prompts_orquestador
+        SET prompt_actual = CASE WHEN prompt_actual = prompt_fabrica THEN ? ELSE prompt_actual END,
+            prompt_fabrica = ?
+      WHERE fase = 'ciudades_y_noches'`
+  ).run(fabrica, fabrica);
+  marcarAplicada(CLAVE);
+  const tuya = fila.prompt_actual === fila.prompt_fabrica;
+  console.log(
+    '[bd] Migracion: las candidatas dicen su país.' +
+      (tuya ? '' : ' Tu prompt de «ciudades y noches» está editado: pulsa «Restaurar de fábrica» para tenerlo.')
+  );
   return true;
 }
 

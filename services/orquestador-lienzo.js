@@ -276,8 +276,29 @@ export function colocablesDeEtapa(etapa, lienzo, di = () => {}) {
     })
   );
 
+  // LO YA VISTO EN ESTA CIUDAD, EN CUALQUIER PARADA DEL VIAJE.
+  //
+  // `apuntados` solo mira los candidatos de ESTA etapa. Cuando una ciudad sale
+  // dos veces —la vuelta a Tokio para coger el avión, después de seis noches
+  // allí—, las dos paradas comparten catálogo y la segunda no sabía lo que ya
+  // había puesto la primera: el Senso-ji salió el día 1 y el día 17. Se mira el
+  // viaje entero: lo colocado en cualquier parada no se vuelve a ofrecer.
+  const vistosEnElViaje = new Set(
+    todas("SELECT id, datos_extra FROM candidatos WHERE viaje_id = ? AND tipo = 'sitio'", etapa.viaje_id)
+      .filter((c) => yaColocados.has(c.id))
+      .map((c) => {
+        try {
+          return JSON.parse(c.datos_extra ?? '{}').deId ?? null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+  );
+
   const delCatalogo = sitios
     .filter((s) => !sinLosParaguas.has(s.id))
+    .filter((s) => !vistosEnElViaje.has(s.id))
     .filter((s) => {
       const cand = apuntados.get(s.id);
       return !cand || !yaColocados.has(cand);

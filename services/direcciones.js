@@ -618,6 +618,16 @@ export function fuenteQueSeUsara() {
  * Si Google no contesta no pasa nada grave: el sitio se queda sin dirección y
  * se puede escribir a mano. Lo que no se hace es dejarlo a medias en silencio.
  */
+/**
+ * Hasta dónde dos sitios con el mismo identificador de Google son el mismo
+ * lugar. Más lejos, es que Google no encontró el pequeño y contestó con el de
+ * al lado (Fushimi Momoyama → Fushimi Inari, a 3 km). Medido sobre los doce
+ * pares que dieron los viajes: a 500 m o menos son todos partes del otro (una
+ * ermita dentro de un parque, el bosque detrás de un santuario); desde 726 m ya
+ * aparecen dos mercados distintos.
+ */
+const METROS_MISMO_LUGAR = 500;
+
 export async function situarLosSitios(punto, di = () => {}) {
   const sitios = todas(
     `SELECT s.id, s.nombre, s.lat, s.lon
@@ -812,6 +822,58 @@ export async function situarLosSitios(punto, di = () => {}) {
     const seLoQuito = ocupante && miParecido >= 1 && suParecido < 1;
     const ocupado = ocupante && !seLoQuito ? ocupante.nombre : null;
 
+    // EL MISMO LUGAR NO SE VISITA DOS VECES.
+    //
+    // Antes esto se decía —«son EL MISMO LUGAR… sobra uno de los dos»— y se
+    // dejaba ahí: al duplicado se le quitaba la coordenada y seguía en el
+    // catálogo, así que el lienzo lo colocaba igual. En Kioto, el Fushimi Inari y
+    // el «Fushimi Momoyama» el mismo día; en Nara, el Parque y la «Granja de
+    // ciervos (zona de alimentación)»; en Split, Marjan y las «Ermitas de Marjan».
+    //
+    // Ahora el que se queda sin punto pasa a estar CUBIERTO por el que lo tiene,
+    // con la misma marca que usan las visitas que van dentro de otra
+    // (`cubierto_por`), y el lienzo ya no lo ofrece. Si el que se tapa era un
+    // imprescindible y el otro no, el que queda sube a imprescindible: el sitio es
+    // el mismo y su importancia no se pierde por cómo se llamó la segunda vez.
+    //
+    // Solo con identidad (`place_id`): una coordenada repetida puede ser el
+    // centroide de una zona con dos sitios distintos, y ahí no hay nada que fundir.
+    //
+    // Y SOLO SI ESTÁN CERCA DE VERDAD. El mismo identificador no siempre es el
+    // mismo sitio: a veces Google no encuentra uno pequeño y contesta con el
+    // famoso de al lado. El «Santuario Fushimi Momoyama» volvió con el
+    // identificador del Fushimi Inari, y está a 3 km: es otro lugar. Las ermitas
+    // de Marjan (a 250 m del parque) o la granja de ciervos (dentro del Parque de
+    // Nara) sí son parte del otro. Se miden las coordenadas que el sitio traía de
+    // antes contra el punto que devuelve Google; sin coordenadas propias no se
+    // funde nada: ante la duda, no se funde.
+    const metrosEntreLosDos =
+      s.lat != null && s.lon != null && enPlaces.lat != null
+        ? distanciaKm({ lat: Number(s.lat), lon: Number(s.lon) }, { lat: enPlaces.lat, lon: enPlaces.lng }) * 1000
+        : null;
+    let esElMismo = metrosEntreLosDos != null && metrosEntreLosDos <= METROS_MISMO_LUGAR;
+    if (mismoLugar && ocupante && esElMismo) {
+      const tapado = seLoQuito ? ocupante.id : s.id;
+      const queda = seLoQuito ? s.id : ocupante.id;
+      const filas = new Map(
+        todas('SELECT id, bloque, categoria, cubierto_por FROM sitios_lugar WHERE id IN (?, ?)', tapado, queda).map(
+          (x) => [x.id, x]
+        )
+      );
+      // UN MUSEO NO ES PARTE DE UNA CALLE. El «Museo del Peranakan» está en la
+      // calle Tun Tan Cheng Lock y Google contestó con la calle, pero pasear la
+      // calle no es entrar al museo: es otra visita, con su entrada y su horario.
+      const museoDentroDeOtraCosa =
+        filas.get(tapado)?.categoria === 'museos' && filas.get(queda)?.categoria !== 'museos';
+      if (museoDentroDeOtraCosa) esElMismo = false;
+      else if (!filas.get(queda)?.cubierto_por) {
+        ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', queda, tapado);
+        if (filas.get(tapado)?.bloque === 'imprescindibles' && filas.get(queda)?.bloque !== 'imprescindibles') {
+          ejecutar("UPDATE sitios_lugar SET bloque = 'imprescindibles' WHERE id = ?", queda);
+        }
+      }
+    }
+
     if (disparate) {
       descartados += 1;
       di(
@@ -831,9 +893,12 @@ export async function situarLosSitios(punto, di = () => {}) {
       // separar, y ahí no hay nada que fundir: falta un dato.
       di(
         mismoLugar
-          ? `   ✘ «${s.nombre}» y «${ocupado}» son EL MISMO LUGAR para Google ` +
-            `(mismo identificador). Están guardados dos veces con nombres distintos; ` +
-            'me quedo sin las coordenadas de este. Míralo: sobra uno de los dos.'
+          ? esElMismo
+            ? `   ✘ «${s.nombre}» y «${ocupado}» son EL MISMO LUGAR para Google ` +
+              `(mismo identificador): se queda como parte de «${ocupado}» y no se coloca aparte.`
+            : `   ✘ «${s.nombre}»: Google contesta con «${ocupado}»` +
+              (metrosEntreLosDos != null ? `, que está a ${(metrosEntreLosDos / 1000).toFixed(1)} km` : '') +
+              '. No lo ha encontrado: me quedo sin sus coordenadas, pero sigue siendo otro sitio.'
           : `   ✘ «${s.nombre}»: Google devuelve el MISMO punto que «${ocupado}»` +
             `${(enPlaces.tipos ?? []).length ? ` (${enPlaces.tipos.join(', ')})` : ''}. ` +
             'Eso es el centroide de la zona, no su sitio: me quedo sin sus coordenadas antes ' +

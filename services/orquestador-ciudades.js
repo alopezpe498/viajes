@@ -161,6 +161,7 @@ export function saneaCandidatas(respuesta, tope, multiplicadores = null) {
       const cuenta = puntosDeCiudad(puestas, multiplicadores);
       return {
         nombre: c.nombre.trim(),
+        pais: typeof c.pais === 'string' && c.pais.trim() ? c.pais.trim() : null,
         // La puntuación con perfil es la que decide. Un mínimo de 0,5 para que
         // una ciudad sin ninguna casilla siga existiendo y se pueda ordenar:
         // cero la sacaría de comparaciones que sí tienen que poder hacerse.
@@ -1382,7 +1383,16 @@ export function repartosLegales({ entrada, salida, candidatas, noches, tiempos =
         //
         // No suma noche ninguna —es la parada de paso en la que se coge el
         // avión— y por eso no toca ni `minimos`, ni `maximos`, ni el reparto.
-        if (irYVolver) {
+        // …PERO SOLO SI HACE FALTA VOLVER. Si la última parada ya es la ciudad de
+        // entrada —un viaje de una sola ciudad—, cerrar el bucle es añadirla otra
+        // vez: «Berlín 6n → Berlín 0n». Eso fue el viaje #118: un «traslado» de
+        // Berlín a Berlín en S-Bahn a las ocho de la mañana, el último día
+        // planificado aparte con los mismos sitios del primero (Brandeburgo y
+        // Checkpoint Charlie dos veces) y la revisión del reparto juzgando como
+        // «corta» una parada donde no se duerme.
+        const yaEstaAhi =
+          reparto.length && clave(reparto[reparto.length - 1].ciudad) === clave(cEntrada.nombre);
+        if (irYVolver && !yaEstaAhi) {
           reparto.push({
             ciudad: cEntrada.nombre,
             noches: 0,
@@ -2219,7 +2229,36 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     // distintas en 10 tiradas a 9).
     temperatura: temperaturaAlPuntuar(),
   });
-  const { ciudades, tiempos } = saneaCandidatas(r1, maxCiudades, multiplicadores);
+  const saneadas = saneaCandidatas(r1, maxCiudades, multiplicadores);
+  const { tiempos } = saneadas;
+  let { ciudades } = saneadas;
+
+  // LAS DE OTRO PAÍS, FUERA. Solo con varios países, que es cuando hay una
+  // lista confirmada contra la que comparar: en un viaje a Berlín el destino es
+  // una ciudad y compararlo con «Alemania» tiraría la propia Berlín.
+  //
+  // «Bosnia» contra «Bosnia y Herzegovina» tiene que valer, así que basta con
+  // que uno contenga al otro. Sin país en la respuesta no se descarta nada:
+  // ante la duda, se queda.
+  if (esMultipais(viaje)) {
+    // Por PALABRAS y no por texto entero: «Bosnia-Herzegovina», «Bosnia» y
+    // «Bosnia y Herzegovina» son el mismo país y comparten «bosnia».
+    const palabras = (t) =>
+      new Set(normalizarNombre(t).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4));
+    const legitimos = paisesDelViaje(viaje).map(palabras).filter((p) => p.size);
+    const esDeLaLista = (pais) => {
+      const suyas = palabras(pais);
+      return legitimos.some((l) => [...suyas].some((w) => l.has(w)));
+    };
+    const fuera = ciudades.filter((c) => c.pais && legitimos.length && !esDeLaLista(c.pais));
+    if (fuera.length) {
+      di(
+        `Fuera por no ser de los países del viaje: ` +
+          fuera.map((c) => `${c.nombre} (${c.pais})`).join(', ') + '.'
+      );
+      ciudades = ciudades.filter((c) => !fuera.includes(c));
+    }
+  }
   if (!ciudades.length) throw new Error('La IA no propuso ninguna ciudad.');
 
   di(
