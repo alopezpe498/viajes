@@ -39,8 +39,13 @@
  *
  * DOS AVISOS SOBRE LOS DATOS QUE DEVUELVE:
  *
- *  a) El precio es el TOTAL DE LA ESTANCIA para el numero de adultos pedido
- *     (Booking lo etiqueta "3 noches, 2 adultos"), no el precio por noche.
+ *  a) La tarjeta enseña el precio POR NOCHE, aunque la etiqueta diga "3 noches,
+ *     2 adultos". Se daba por hecho lo contrario y todo el presupuesto de
+ *     alojamiento salía dividido por las noches (Tokio: 25 €/noche en un 4★).
+ *     Comprobado el 19/09/2026 buscando el mismo hotel y la misma entrada con 1
+ *     y con 3 noches: el mismo importe (proporción 0,84-1,16). Así que aquí se
+ *     devuelven los dos: `precioPorNoche`, que es lo que se lee, y
+ *     `precioTotal` = por noche × noches, que es lo que espera todo lo demás.
  *  b) Si el perfil persistente tiene la sesion de Booking iniciada, los precios
  *     llevan los descuentos Genius de esa cuenta. Es decir: los resultados son
  *     PERSONALIZADOS, no un precio publico universal. Para un uso personal es
@@ -221,6 +226,12 @@ async function paso(nombre, fn) {
   try {
     return await fn();
   } catch (err) {
+    // «No hay alojamientos con esos filtros» y «Booking pidió verificación» NO son
+    // fallos de la receta. Envolverlos les quitaba la marca y los convertía en
+    // «probablemente el selector ha cambiado: revisa el código», que mandaba a
+    // mirar código por algo que eran los filtros; y quien los recibe tiene su
+    // propia rama para cada uno que así nunca se activaba.
+    if (err?.sinResultados || err?.porChallenge) throw err;
     throw new ErrorReceta(nombre, err);
   }
 }
@@ -474,6 +485,47 @@ function normalizarMoneda(simbolo) {
  * @param {object} [opciones.filtros] Filtros de busqueda (ver FILTROS_BOOKING)
  * @param {number} [opciones.maxResultados] 20 por defecto
  */
+/**
+ * EL PAÍS DE UN HOTEL, SEGÚN SU PROPIA URL: `booking.com/hotel/it/…` es Italia.
+ *
+ * Existe por Berga. Booking entendió «Berga» como Bergamo y devolvió dos hoteles
+ * junto al aeropuerto de Orio al Serio; el motor eligió uno «a 2,8 km del
+ * centro» —del de Bergamo— y nada comprobaba el país. La URL lo dice siempre y
+ * no depende de cómo pinte Booking la tarjeta. Devuelve el código en minúscula,
+ * o null si la URL no tiene esa forma (entonces no se descarta nada).
+ */
+export function paisDeHotel(url) {
+  const m = String(url ?? '').match(/booking\.com\/hotel\/([a-z]{2})\//i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Separa los hoteles que están en el país pedido de los que no. Sin país pedido, todos valen. */
+export function separarPorPais(hoteles, codigoPais) {
+  const quiero = String(codigoPais ?? '').trim().toLowerCase();
+  if (!/^[a-z]{2}$/.test(quiero)) return { dentro: hoteles, fuera: [] };
+  // Booking usa `gb` para el Reino Unido, que en ISO también es GB: no hace falta
+  // tabla de equivalencias. Si algún día sale un caso, va aquí.
+  const dentro = [];
+  const fuera = [];
+  for (const h of hoteles) {
+    const p = paisDeHotel(h.url);
+    (p && p !== quiero ? fuera : dentro).push(h);
+  }
+  return { dentro, fuera };
+}
+
+/**
+ * Lo que se le escribe a Booking en el buscador: la ciudad con su país detrás,
+ * «Berga, España». Con el nombre solo, un pueblo pequeño puede resolverse a otro
+ * sitio de nombre parecido y más conocido.
+ */
+export function destinoParaBooking(ciudad, pais) {
+  const c = String(ciudad ?? '').trim();
+  const p = String(pais ?? '').trim();
+  if (!p || c.toLowerCase().includes(p.toLowerCase())) return c;
+  return `${c}, ${p}`;
+}
+
 export async function buscarHoteles({
   destino,
   fechaEntrada,
@@ -693,17 +745,22 @@ export async function buscarHoteles({
     }
 
     // Normalizacion al contrato comun, recortando a lo pedido.
+    // Las noches de la BÚSQUEDA, que son las que multiplican el precio por noche.
+    // `entrada` y `salida` son Date (las devuelve `validarFecha`), las dos a mediodía.
+    const noches = Math.max(1, Math.round((salida - entrada) / 86400000) || 1);
+    const porNoches = (v) => (v == null ? null : Math.round(v * noches * 100) / 100);
     return crudos.slice(0, maxResultados).map((h) => {
       // El texto del precio manda: trae el numero Y la moneda, y las dos cosas
       // se leen con las mismas reglas.
       const precio = precioDeTexto(h.precioTexto);
       return {
       nombre: h.nombre,
-      precioTotal: precio?.importe ?? null,
+      precioPorNoche: precio?.importe ?? null,
+      precioTotal: porNoches(precio?.importe),
       // `enEuros` viene a null cuando el precio esta en moneda local: no se
       // convierte a ciegas ni se hace pasar por euros, que es lo que hacia
       // reventar el presupuesto del viaje de Asia.
-      precioEnEuros: precio?.enEuros ?? null,
+      precioEnEuros: porNoches(precio?.enEuros),
       moneda: precio?.moneda ?? normalizarMoneda(h.monedaCruda),
       valoracion: h.valoracion,
       numOpiniones: h.numOpiniones,

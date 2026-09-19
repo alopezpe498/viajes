@@ -997,7 +997,11 @@ export function densidadDelViaje(viajeId) {
     `Densidad del viaje: ${porNoche.toFixed(1)} h de visita por noche ` +
     `(${(minutosVisita / 60).toFixed(1)} h en ${noches} noches y ${paradas} parada(s), ` +
     `más ${(minutosTraslado / 60).toFixed(1)} h de traslado entre ellas). ` +
-    'Medido sobre otros viajes: con dos paradas salen 6,7-7,3 y con tres, 4,4. Solo es un dato.'
+    // Aquí se citaba «con dos paradas salen 6,7-7,3 y con tres, 4,4», de cuatro
+    // viajes cortos del 17/09. Los largos del 19/09 la desmienten —Hungría con 3
+    // paradas 6,0, Japón con 4 6,8, los Balcanes con 5 6,9— y leída en cada
+    // registro parecía una regla. Se deja el rango que sale de todos.
+    'En los viajes medidos sale entre 6 y 8 h por noche. Solo es un dato.'
   );
 }
 

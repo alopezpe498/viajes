@@ -1613,6 +1613,15 @@ function avisarDeSaltosQueNoCuadran(viajeId, etapas, di) {
     );
     if (!porTierra) continue;
 
+    // UN TREN MÁS RÁPIDO QUE EL COCHE NO ES UNA CIUDAD MAL SITUADA.
+    //
+    // Es lo que hace un tren: el Shinkansen de Osaka a Tokio tarda 2h 20min y la
+    // autopista 5h 52min; un S-Bahn cruza Berlín por debajo del atasco. En Japón
+    // el aviso saltó en los cuatro tramos y en los cuatro en falso, igual que en
+    // Belgrado → Novi Sad. Lo que sí es raro es lo contrario —un tren el doble de
+    // lento que el coche—, y eso se sigue avisando.
+    if (tramo.tipo === 'tren' && elegido < porCarretera) continue;
+
     const veces = Math.max(porCarretera / elegido, elegido / porCarretera);
     if (veces < factor) continue;
 

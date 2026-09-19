@@ -430,6 +430,7 @@ export function migrarEsquema() {
   migracionDesandarCuesta();
   migracionSitiosLejos();
   migracionRitmoEnElVeredicto();
+  migracionPrecioDeHotelPorNoche();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6507,6 +6508,60 @@ function migracionRitmoEnElVeredicto() {
     'visitas', orden + 1);
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el ritmo entra en el veredicto de «holgada».');
+  return true;
+}
+
+/**
+ * LOS PRECIOS DE HOTEL GUARDADOS ERAN POR NOCHE Y SE TRATABAN COMO TOTAL.
+ *
+ * La tarjeta de Booking enseña el precio por noche aunque la etiqueta diga «3
+ * noches, 2 adultos» (comprobado el 19/09/2026: el mismo hotel da el mismo
+ * importe buscado con 1 y con 3 noches). Se guardaba como total de la estancia,
+ * así que el presupuesto de alojamiento de TODOS los viajes salía dividido por
+ * sus noches: Japón contaba 560 € y eran unos 2.291.
+ *
+ * El proveedor ya devuelve el total bien. Esto corrige lo guardado: cada hotel
+ * de Booking se multiplica por las noches que dice SU PROPIA tarjeta (columna
+ * `duracion`, «N noches, …»), que son las de la búsqueda y no las de la etapa.
+ * El que no la tenga no se toca. Y se quita `precioDudoso`, que era este mismo
+ * fallo asomando: «25 €/noche es más de 3 veces más barato…».
+ */
+function migracionPrecioDeHotelPorNoche() {
+  const CLAVE = '2026-09-precio-de-hotel-por-noche';
+  if (yaAplicada(CLAVE)) return false;
+  const filas = db
+    .prepare(
+      `SELECT id, precio, duracion, datos_extra FROM candidatos
+        WHERE tipo = 'hotel' AND origen_datos = 'booking' AND precio IS NOT NULL`
+    )
+    .all();
+  const poner = db.prepare('UPDATE candidatos SET precio = ?, datos_extra = ? WHERE id = ?');
+  let n = 0;
+  db.exec('BEGIN');
+  try {
+    for (const f of filas) {
+      const m = String(f.duracion ?? '').match(/(\d+)\s*noches?/i);
+      if (!m) continue;
+      const noches = Number(m[1]);
+      if (!noches || noches < 1) continue;
+      let extra = f.datos_extra;
+      try {
+        const o = JSON.parse(f.datos_extra || '{}');
+        delete o.precioDudoso;
+        extra = JSON.stringify(o);
+      } catch {
+        /* datos_extra ilegible: se deja como estaba */
+      }
+      poner.run(Math.round(f.precio * noches * 100) / 100, extra, f.id);
+      n++;
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  marcarAplicada(CLAVE);
+  console.log(`[bd] Migracion: ${n} precios de hotel pasan de «por noche» a total de la estancia.`);
   return true;
 }
 

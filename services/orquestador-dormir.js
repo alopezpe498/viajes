@@ -31,7 +31,7 @@
  */
 import { todas, una, ejecutar } from '../db/index.js';
 import { consultarJSON, hayClaveIA, SIN_CLAVE } from '../lib/ia.js';
-import { buscarHoteles } from '../providers/booking.js';
+import { buscarHoteles, separarPorPais, destinoParaBooking } from '../providers/booking.js';
 import { ocupacionDe, aplicarFiltrosLocales } from '../services/proveedores.js';
 import { elegirHotel } from '../services/etapa.js';
 import { anotar, apuntarHueco, parametro, configAuto, ORIGENES } from '../services/orquestador.js';
@@ -476,7 +476,7 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
 
         try {
           hoteles = await buscarHoteles({
-            destino: ciudad,
+            destino: destinoParaBooking(ciudad, etapa.pais),
             fechaEntrada: fechas.entrada,
             fechaSalida: fechas.salida,
             adultos,
@@ -517,6 +517,19 @@ export async function ejecutarFaseDormir(viaje, promptEntero) {
         // devuelve sus «opciones recomendadas» —que no vienen ordenadas por
         // distancia— tiraba casi todo y el orquestador acababa subiendo el precio
         // para nada.
+        // EL PAÍS, antes que nada: un hotel en otro país no es un hotel peor, es
+        // un hotel de otro viaje. Pasó con Berga, que Booking leyó como Bergamo.
+        const { dentro, fuera } = separarPorPais(hoteles, etapa.codigo_pais);
+        if (fuera.length) {
+          di(
+            `   ${fuera.length} descartado(s) por estar en otro país ` +
+              `(${fuera.slice(0, 2).map((h) => h.nombre).join(', ')}${fuera.length > 2 ? '…' : ''}): ` +
+              `Booking ha entendido otra ciudad.`,
+            ORIGENES.ninguno
+          );
+        }
+        hoteles = dentro;
+
         const antes = hoteles.length;
         hoteles = aplicarFiltrosLocales(
           hoteles.map((h) => ({ ...h, extra: { distanciaCentro: h.distanciaCentro } })),

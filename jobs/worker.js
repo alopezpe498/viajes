@@ -14,7 +14,7 @@
 
 import { una, todas, db, ejecutar } from '../db/index.js';
 import { buscarActividades, destinoASlug, buscarFichaActividad } from '../providers/civitatis.js';
-import { buscarHoteles } from '../providers/booking.js';
+import { buscarHoteles, separarPorPais, destinoParaBooking } from '../providers/booking.js';
 import { buscarVuelosKayak } from '../providers/kayak.js';
 import {
   ocupacionDe,
@@ -369,8 +369,8 @@ async function ejecutarHoteles(trabajo) {
       `) · filtros: ${resumenFiltros(filtros)}`
   );
 
-  const hoteles = await buscarHoteles({
-    destino: ciudad,
+  const encontrados = await buscarHoteles({
+    destino: destinoParaBooking(ciudad, etapa?.pais),
     fechaEntrada: entrada,
     fechaSalida: salida,
     adultos,
@@ -378,6 +378,11 @@ async function ejecutarHoteles(trabajo) {
     filtros,
     maxResultados: MAX_HOTELES,
   });
+  // Los de otro país fuera: Booking puede entender otra ciudad de nombre parecido.
+  const { dentro: hoteles, fuera } = separarPorPais(encontrados, etapa?.codigo_pais);
+  if (fuera.length) {
+    console.log(`[worker] Trabajo #${trabajo.id}: ${fuera.length} hotel(es) descartado(s) por estar en otro país.`);
+  }
 
   if (!hoteles.length) {
     const conFiltros = resumenFiltros(filtros) !== 'sin filtros';

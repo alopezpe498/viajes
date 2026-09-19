@@ -175,7 +175,22 @@ const SIEMPRE = [
   // «Visible desde la Acrópolis. Interior solo en espectáculos», donde el
   // interior SÍ tiene restricción y darlo por siempre abierto sería mentir.
   'solo exteriores', 'solo exterior', 'visible desde el exterior', 'visible todo el dia',
+  // LO QUE ESCRIBE LA TRADUCCIÓN DE HORARIOS PARA UN SITIO AL AIRE LIBRE, visto en
+  // Berga: los cinco avisos que quedaron sin resolver eran «Espacio público
+  // abierto permanente», «Espacio abierto permanente» y «Libre (Centro de
+  // visitantes tiene horario específico)». Ninguno casaba y el lienzo pedía
+  // comprobar el horario de un lago. El «Libre» va aparte, más abajo, como tramo
+  // EXACTO: la palabra suelta aparece en «día libre» o «libre de humo».
+  'abierto permanente', 'abierto permanentemente', 'abierto de forma permanente',
+  'espacio abierto',
 ];
+
+/**
+ * «Libre» como tramo entero. El paréntesis de «Libre (Centro de visitantes…)» se
+ * separa como nota antes de llegar aquí, así que lo que queda es exactamente
+ * «libre»: eso, y solo eso, es un sitio sin horario.
+ */
+const SIEMPRE_EXACTO = /^\s*(?:libre|acceso libre|abierto)\s*$/;
 
 /** Las palabras que dan la vuelta al sentido de un tramo. */
 const CIERRE = ['cerrado', 'cierra', 'cierre', 'closed', 'except', 'excepto', 'salvo'];
@@ -675,7 +690,7 @@ export function horarioPorDias(texto, mes = null) {
       continue;
     }
 
-    if (!esDeCierre && SIEMPRE.some((p2) => tramo.includes(p2))) {
+    if (!esDeCierre && (SIEMPRE.some((p2) => tramo.includes(p2)) || SIEMPRE_EXACTO.test(tramo))) {
       // «SIEMPRE» ES UN HORARIO, NO UN HUECO.
       //
       // Si el tramo no da horas —«Abierto 24h», «Acceso libre»— el día se
