@@ -417,6 +417,7 @@ export const FASE_DE_PARAMETRO = {
   visita_por_defecto_min: 'lienzo',
   max_revisiones_lienzo: 'lienzo',
   holgada_tranquilo_veces: 'lienzo',
+  km_viaje_local: 'ciudades_y_noches',
   presentacion_vuelo_min: 'lienzo',
   presentacion_tren_min: 'lienzo',
   acceso_por_defecto_min: 'lienzo',

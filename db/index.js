@@ -436,6 +436,7 @@ export function migrarEsquema() {
   migracionTrenCorto();
   anadirColumnaSiFalta('puertas_probadas', 'coste_traslado', 'REAL');
   migracionEurosPorHoraA20();
+  migracionViajeLocal();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6695,6 +6696,21 @@ function migracionEurosPorHoraA20() {
   ).run();
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: euros_por_hora_util pasa a 20 (medido: con 30 no decidía nada).');
+  return true;
+}
+
+/** A partir de qué distancia de casa se buscan vuelos (Berga, a 100 km, los buscó). */
+function migracionViajeLocal() {
+  const CLAVE = '2026-09-viaje-local';
+  if (yaAplicada(CLAVE)) return false;
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (clave) DO NOTHING`
+  ).run('km_viaje_local', '250', '250',
+    'Si todo el viaje esta a menos de estos km de casa, no se buscan vuelos', 'km', orden + 1);
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: viaje local, sin vuelos.');
   return true;
 }
 

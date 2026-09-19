@@ -61,6 +61,40 @@ import {
 import { fichasDeTramo } from '../services/movilidad.js';
 import { distanciaEntre, distanciaGuardada } from '../services/distancias-ciudades.js';
 import { paisesDelViaje, esMultipais } from '../services/paises.js';
+import { sitioPorTexto } from '../services/geocodificar.js';
+
+/**
+ * ¿ES UN VIAJE LOCAL? Todas las candidatas a menos de `km_viaje_local` de casa.
+ *
+ * Existe por Berga: un pueblo a cien kilómetros de Barcelona. Se buscaron vuelos,
+ * «la IA no propuso ninguna ciudad con aeropuerto internacional», la puerta se
+ * eligió «a ojo» con un hueco en el registro, y las patas de ida y vuelta se
+ * crearon como VUELO. A un sitio así se va en coche o en tren.
+ *
+ * En línea recta y no por carretera: es la única medida que se tiene antes de
+ * que existan las etapas, y para decidir «¿hace falta avión?» basta. Si algo no
+ * se puede situar, NO es local: ante la duda, se buscan vuelos como siempre.
+ */
+async function viajeLocal(viaje, ciudades) {
+  const tope = parametro('km_viaje_local', 250);
+  if (!(tope > 0) || !ciudades.length) return null;
+  const casa = await sitioPorTexto(ciudadDeCasa(viaje));
+  if (!casa?.hay) return null;
+  const rad = (g) => (g * Math.PI) / 180;
+  const km = (a, b) => {
+    const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 +
+      Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(h));
+  };
+  let lejos = 0;
+  for (const c of ciudades) {
+    const sitio = await sitioPorTexto(c.pais ? `${c.nombre}, ${c.pais}` : c.nombre);
+    if (!sitio?.hay) return null;
+    lejos = Math.max(lejos, km(casa, sitio));
+    if (lejos > tope) return null;
+  }
+  return { km: Math.round(lejos) };
+}
 
 /** Cuántas puertas se prueban con vuelos de verdad. Cada una son dos búsquedas. */
 const MAX_PUERTAS = 3;
@@ -2482,7 +2516,15 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   const candidatasDeRuta = paraDormir.length ? paraDormir : ciudades;
 
   // --- PASO 2 -------------------------------------------------------------
-  di('Buscando vuelos reales para decidir por dónde entrar y salir…');
+  const local = await viajeLocal(viaje, candidatasDeRuta);
+  if (local) {
+    di(
+      `Viaje local: todo está a menos de ${local.km} km de ${ciudadDeCasa(viaje)}. ` +
+        'Se va por carretera o en tren: no busco vuelos.'
+    );
+  } else {
+    di('Buscando vuelos reales para decidir por dónde entrar y salir…');
+  }
   // La matriz que ella misma estimó en el paso 1, con los huecos rellenos por la
   // carretera medida: con huecos, el orden de las paradas salía al revés.
   const tiemposCompletos = await completarTiempos(
@@ -2490,7 +2532,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     tiempos,
     (viaje.destino ? destinoPorNombre(viaje.destino) : null)?.id ?? null
   );
-  const conVuelos = await elegirPuertas({
+  const conVuelos = local ? { local: true } : await elegirPuertas({
     viaje,
     candidatas: candidatasDeRuta,
     // Es lo que le permite ver que entrar por Varsovia obliga a subir a Gdansk
@@ -2514,7 +2556,25 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     throw new Error(conVuelos.error);
   }
 
-  if (conVuelos.error) {
+  if (conVuelos.local) {
+    // SIN AVIÓN NO HAY PUERTA QUE ELEGIR: se entra y se sale por la de más peso,
+    // y los repartos legales se calculan igual que con vuelos, sin hueco en el
+    // registro porque no falta nada.
+    const puerta = [...candidatasDeRuta].sort((a, b) => b.peso - a.peso)[0];
+    entrada = puerta.nombre;
+    salida = puerta.nombre;
+    conVuelos.repartos = repartosLegales({
+      entrada,
+      salida,
+      candidatas: candidatasDeRuta,
+      noches: nochesTotales,
+      tiempos,
+      tiemposParaOrdenar: tiemposCompletos,
+      minimoNoches,
+      paises: esMultipais(viaje) ? paisesDelViaje(viaje) : [],
+    });
+    horariosReales = 'Viaje local, sin vuelos: se sale de casa por la mañana y se vuelve por la tarde.';
+  } else if (conVuelos.error) {
     // HUECO, NO ERROR. Sin vuelos se sigue montando la ruta con el criterio de
     // la IA: un viaje con las ciudades puestas y los vuelos por buscar sirve;
     // uno sin nada, no.
@@ -2821,7 +2881,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   const enlazados = enlazarVuelosConTramos(viajeId);
   if (enlazados.length) {
     di(`Vuelos enlazados con sus tramos (${enlazados.map((e) => e.lado).join(' y ')}): quedan elegidos.`);
-  } else if (!conVuelos.error) {
+  } else if (!conVuelos.error && !conVuelos.local) {
     apuntarHueco(viajeId, FASE, 'Los vuelos se guardaron pero no pude engancharlos a sus tramos.');
   }
 
@@ -2865,6 +2925,18 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     di(`Descartadas y guardadas: ${descartadas.map((d) => d.nombre).join(', ')}.`);
   }
   di(`${creadas.length} etapas creadas, ${nochesTotales} noches repartidas.`);
+
+  // EN UN VIAJE LOCAL, LA IDA Y LA VUELTA NO SON UN VUELO. Se crean con el tipo
+  // de siempre —desde y hacia casa se vuela— y aquí se corrigen, sin tocar las
+  // que ya tengan algo elegido.
+  if (conVuelos.local) {
+    ejecutar(
+      `UPDATE transportes SET tipo = 'coche'
+        WHERE viaje_id = ? AND candidato_id IS NULL
+          AND (etapa_origen_id IS NULL OR etapa_destino_id IS NULL)`,
+      viajeId
+    );
+  }
 
   return { etapas: creadas.length, noches: nochesTotales, entrada, salida };
 }
