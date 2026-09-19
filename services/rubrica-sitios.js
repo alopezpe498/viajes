@@ -488,19 +488,32 @@ export async function puntuarLosSitios(punto, ciudad, di = () => {}) {
   )[0].n;
   if (!sinNota) return 0;
 
-  let r;
-  try {
-    r = await consultarJSON(encargoDeEvidencia(ciudad, sitios), {
-      maxTokens: 4000,
-      paso: `puntuar los sitios de ${ciudad}`,
-      temperatura: temperaturaAlPuntuar(),
-    });
-  } catch (err) {
-    di(`   ${ciudad}: no pude puntuar los sitios (${err.message}). Se quedan sin nota.`);
-    return 0;
+  // EN TANDAS, porque la ciudad entera de golpe no cabe en la respuesta.
+  //
+  // Tokio tenía 37 sitios —28 más 9 del perfil— y la respuesta, con la evidencia
+  // de cada casilla, pasaba de los 4.000 tokens: llegaba cortada, el JSON no se
+  // podía leer ni al repetirlo, y el lienzo de Tokio se montó sin notas. Cada
+  // casilla es un hecho del propio sitio, así que partir la lista no cambia qué
+  // se pregunta; solo que cada respuesta cabe. Si una tanda falla, las demás
+  // siguen: medio catálogo con nota es mejor que ninguno.
+  const TANDA = 15;
+  const porId = new Map();
+  let fallidas = 0;
+  for (let i = 0; i < sitios.length; i += TANDA) {
+    const tanda = sitios.slice(i, i + TANDA);
+    try {
+      const r = await consultarJSON(encargoDeEvidencia(ciudad, tanda), {
+        maxTokens: 4000,
+        paso: `puntuar los sitios de ${ciudad}`,
+        temperatura: temperaturaAlPuntuar(),
+      });
+      for (const x of Array.isArray(r?.sitios) ? r.sitios : []) porId.set(Number(x?.id), x);
+    } catch (err) {
+      fallidas += 1;
+      di(`   ${ciudad}: no pude puntuar ${tanda.length} sitio(s) (${err.message}). Se quedan sin nota.`);
+    }
   }
-
-  const porId = new Map((Array.isArray(r?.sitios) ? r.sitios : []).map((x) => [Number(x?.id), x]));
+  if (fallidas && fallidas * TANDA >= sitios.length) return 0;
   let puestos = 0;
 
   for (const s of sitios) {

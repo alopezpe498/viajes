@@ -383,6 +383,7 @@ export const FASE_DE_PARAMETRO = {
   antelacion_vuelo_internacional_min: 'general',
   antelacion_vuelo_europeo_min: 'general',
   antelacion_tren_min: 'general',
+  antelacion_tren_corto_min: 'general',
   // Lo usan la fase 1 (por qué puerta se entra) y la 2 (qué traslado se coge).
   umbral_empate_traslado_min: 'general',
   // Vale para el orquestador y para las fichas de sitios fuera de él.

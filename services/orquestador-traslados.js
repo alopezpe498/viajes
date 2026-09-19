@@ -139,6 +139,19 @@ export function cruzaFrontera(desde, hasta) {
 /**
  * @param {boolean} [internacional] Si el vuelo cruza frontera, pide más antelación.
  */
+/**
+ * UN TREN DE MENOS DE UNA HORA NO SE COGE CON MEDIA HORA DE ANTELACIÓN.
+ *
+ * Con los 30 minutos de siempre, Kioto → Osaka (29 de tren) salía «1h 49min
+ * puerta a puerta» y Belgrado → Novi Sad (36) «1h 56min»: más del triple del
+ * trayecto. Llegar a la estación con la maleta sí cuesta —eso sigue en el
+ * acceso—; lo que sobra es esperar media hora a un cercanías que pasa cada pocos
+ * minutos. Por debajo de una hora de trayecto se usa `antelacion_tren_corto_min`.
+ */
+function esTrenCorto(modo, minutosTrayecto) {
+  return modo === 'tren' && Number(minutosTrayecto) > 0 && Number(minutosTrayecto) < 60;
+}
+
 export function puertaAPuerta(modo, minutosTrayecto, params, posicionamiento = 0, internacional = false) {
   const esVuelo = modo === 'vuelo' || modo === 'avion';
   // Un coche de alquiler y un viaje compartido te llevan de puerta a puerta: no
@@ -189,7 +202,9 @@ export function puertaAPuerta(modo, minutosTrayecto, params, posicionamiento = 0
       ? params.margenCoche
       : modo === 'traslado'
         ? params.margenCompartido
-        : params.antelacionTren;
+        : esTrenCorto(modo, minutosTrayecto)
+          ? params.antelacionTrenCorto ?? params.antelacionTren
+          : params.antelacionTren;
 
   // Salir de una estación es inmediato; de un aeropuerto, no: hay que recoger
   // maleta y llegar al centro. Se usa el mismo acceso, que es el mismo trayecto
@@ -501,6 +516,7 @@ export function precioPorPersona(precio, ambito, personas) {
  * saltado. Con «88 €/persona (176 € los dos)» no hace falta.
  */
 function comoPrecio(o, personas) {
+  if (o.notaPrecio && o.precio != null) return `${Math.round(o.precio)} € de alquiler, ${o.notaPrecio}`;
   if (o.precioPersona == null) return 'precio no encontrado';
   const cada = Math.round(o.precioPersona);
 
@@ -1018,6 +1034,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     antelacionVuelo: parametro('antelacion_vuelo_europeo_min', 60),
     antelacionVueloInternacional: parametro('antelacion_vuelo_internacional_min', 120),
     antelacionTren: parametro('antelacion_tren_min', 30),
+    antelacionTrenCorto: parametro('antelacion_tren_corto_min', 10),
     margenCoche: parametro('margen_coche_min', 120),
     margenCompartido: parametro('margen_viaje_compartido_min', 45),
     umbral: parametro('umbral_empate_traslado_min', 30),
@@ -1153,18 +1170,31 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     //
     // Las terrestres ya vienen medidas de arriba —con ese número se decidió si
     // mirar vuelos—, así que aquí solo les falta el bloque a las de avión.
+    // UN COCHE DE ALQUILER QUE SE DEVUELVE EN OTRO PAÍS NO CUESTA UN DÍA DE ALQUILER.
+    //
+    // De Novi Sad a Split se eligió «Alquiler de coche, 12 €/persona» por la
+    // regla del ahorro grande: veinte veces más barato que el traslado privado.
+    // Ese precio es el de un día de alquiler; dejarlo en otro país cuesta además
+    // una tasa de devolución que suele ser de cientos de euros, y a veces ni se
+    // permite. Con frontera de por medio el precio del coche no se compara: se
+    // enseña como lo que es y no gana ninguna regla de dinero.
+    const conFrontera = cruzaFrontera(desde, hasta);
     const medidas = opciones.map((o, n) => {
       const ambito = o.precio == null ? null : ambitoDeLaOpcion(o);
+      const cocheDeIda = conFrontera && o.modo === 'coche';
       return {
         ...o,
         id: `op${n + 1}`,
         bloque:
           o.bloque ??
-          puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0, cruzaFrontera(desde, hasta)),
+          puertaAPuerta(o.modo, o.trayecto, params, o.posicionamiento ?? 0, conFrontera),
         // El ámbito viaja con la opción y el precio por cabeza va calculado: de
         // aquí para abajo se compara y se enseña SIEMPRE `precioPersona`.
         ambito,
-        precioPersona: precioPorPersona(o.precio, ambito, personas),
+        precioPersona: cocheDeIda ? null : precioPorPersona(o.precio, ambito, personas),
+        ...(cocheDeIda
+          ? { notaPrecio: 'sin la tasa por devolverlo en otro país, que suele ser de cientos de euros' }
+          : {}),
       };
     });
     medidas.sort((a, b) => a.bloque.total - b.bloque.total);

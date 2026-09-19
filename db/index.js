@@ -433,6 +433,7 @@ export function migrarEsquema() {
   migracionPrecioDeHotelPorNoche();
   migracionMismoLugarYaVisto();
   migracionPaisDeCadaCandidata();
+  migracionTrenCorto();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6654,6 +6655,21 @@ function migracionPaisDeCadaCandidata() {
     '[bd] Migracion: las candidatas dicen su país.' +
       (tuya ? '' : ' Tu prompt de «ciudades y noches» está editado: pulsa «Restaurar de fábrica» para tenerlo.')
   );
+  return true;
+}
+
+/** La antelación de un tren de menos de una hora (Kioto → Osaka salía en 1h 49min). */
+function migracionTrenCorto() {
+  const CLAVE = '2026-09-antelacion-tren-corto';
+  if (yaAplicada(CLAVE)) return false;
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (clave) DO NOTHING`
+  ).run('antelacion_tren_corto_min', '10', '10',
+    'Antelacion para un tren de menos de una hora de trayecto', 'min', orden + 1);
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: antelacion propia para los trenes cortos.');
   return true;
 }
 

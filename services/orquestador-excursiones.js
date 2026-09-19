@@ -312,7 +312,32 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
       // ninguna y el lienzo nunca colocó una excursión en ningún viaje.
       //
       // La etiqueta ahora es `ref` y el id sigue siendo el id.
+      // LO QUE UN MENOR NO PUEDE HACER, FUERA ANTES DE PREGUNTAR.
+      //
+      // En Japón, con un niño de 11 años, se eligió un «Tour en kart por Tokio»,
+      // que exige carné de conducir. La IA recibe las edades y aun así no lo
+      // descarta, así que va como regla y no como sugerencia: carné, bares,
+      // catas de alcohol, casino o «solo adultos», fuera si viaja un menor.
+      const menorDeEdad = edadesNinos.some((e) => Number(e) < 18);
+      const PARA_ADULTOS =
+        /\bkart|karting|conduce tu|al volante|self[- ]drive|pub ?crawl|ruta de (bares|pubs|tapas nocturna)|tour de (bares|pubs)|bar hopping|casino|solo adultos|adults only|\+ ?18|mayores de 18/i;
+      // La cata solo cuando ES la actividad: «Cata de sake en Kioto» fuera; «Excursión
+      // a Novi Sad… con cata de vinos» no, que es un día entero donde el niño va igual.
+      const CATA_COMO_ACTIVIDAD = /^\s*(cata|degustaci[oó]n) de/i;
+      const noParaNinos = menorDeEdad
+        ? disponibles.filter(
+            (a) => PARA_ADULTOS.test(`${a.titulo ?? ''} ${a.descripcion ?? ''}`) || CATA_COMO_ACTIVIDAD.test(a.titulo ?? '')
+          )
+        : [];
+      if (noParaNinos.length) {
+        di(
+          `   ✘ Fuera por viajar con un menor: ${noParaNinos.map((a) => `«${a.titulo}»`).join(', ')}.`,
+          ORIGENES.ninguno
+        );
+      }
+
       const candidatas = disponibles
+        .filter((a) => !noParaNinos.includes(a))
         .filter(
           (a) =>
             !yaPuestas.has(`actividad:${Number(a.id)}`) &&
