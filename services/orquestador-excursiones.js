@@ -336,8 +336,39 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         );
       }
 
+      // UNA EXCURSIÓN A OTRA PARADA DEL VIAJE ES UN DÍA TIRADO.
+      //
+      // En los Balcanes, desde Belgrado se eligió «Excursión a Novi Sad» —siete
+      // horas, el martes entero— y Novi Sad era la parada siguiente, con dos
+      // noches. Por eso el Museo Nacional de Serbia «no cabía» en tres noches: no
+      // era falta de tiempo, era un día gastado en ir a donde ya se iba a dormir.
+      // Pasó más veces: «Excursión a Mostar…» desde Split y «Excursión a Nara y
+      // Uji» desde Kioto, con Mostar y Nara como paradas; esas las acabó echando
+      // el lienzo, pero después de ocupar sitio. Si el título nombra otra parada
+      // del viaje, fuera antes de preguntar.
+      const otrasParadas = etapas
+        .filter((e) => e.id !== etapa.id && Number(e.noches) > 0)
+        .map((e) => e.nombre_ciudad)
+        .filter((n) => n && normalizarNombre(n) !== normalizarNombre(ciudad));
+      const palabrasDe = (t) => normalizarNombre(t).split(/[^a-z0-9ñ]+/).filter(Boolean);
+      const nombraLaParada = (titulo, parada) => {
+        const t = ` ${palabrasDe(titulo).join(' ')} `;
+        return t.includes(` ${palabrasDe(parada).join(' ')} `);
+      };
+      const aOtraParada = disponibles.filter((a) => otrasParadas.some((p) => nombraLaParada(a.titulo ?? '', p)));
+      if (aOtraParada.length) {
+        di(
+          `   ✘ Fuera por ir a otra parada del viaje: ` +
+            aOtraParada
+              .map((a) => `«${a.titulo}» (${otrasParadas.find((p) => nombraLaParada(a.titulo ?? '', p))} ya es parada)`)
+              .join(', ') + '.',
+          ORIGENES.ninguno
+        );
+      }
+
       const candidatas = disponibles
         .filter((a) => !noParaNinos.includes(a))
+        .filter((a) => !aOtraParada.includes(a))
         .filter(
           (a) =>
             !yaPuestas.has(`actividad:${Number(a.id)}`) &&

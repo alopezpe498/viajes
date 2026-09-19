@@ -183,7 +183,19 @@ const SIEMPRE = [
   // EXACTO: la palabra suelta aparece en «día libre» o «libre de humo».
   'abierto permanente', 'abierto permanentemente', 'abierto de forma permanente',
   'espacio abierto',
+  // Un barrio de tiendas: «Depende de cada tienda» (Naramachi, Japón). Las tiendas
+  // tendrán su horario; el barrio se pasea a cualquier hora.
+  'depende de cada tienda', 'depende de los comercios', 'depende de cada comercio',
+  'depende de cada establecimiento', 'depende de cada puesto',
 ];
+
+/**
+ * «DESDE EL AMANECER HASTA EL ATARDECER». No es siempre abierto —de noche está
+ * cerrado— pero sí un horario: el santuario Meiji lo dice así y el lienzo avisaba
+ * de que no sabía leerlo. Se toma el tramo prudente que vale todo el año, de 7:00
+ * a 17:00: en invierno amanece después de las siete y anochece antes de las seis.
+ */
+const DE_SOL_A_SOL = /(?:del|desde el)\s+amanecer\s+(?:al|hasta el)\s+atardecer|sunrise\s+(?:to|until)\s+sunset|de sol a sol/;
 
 /**
  * «Libre» como tramo entero. El paréntesis de «Libre (Centro de visitantes…)» se
@@ -687,6 +699,12 @@ export function horarioPorDias(texto, mes = null) {
       for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'cerrado', rangos: [] };
       huboCierre = true;
       cerradoDeclarado = true;
+      continue;
+    }
+
+    if (!esDeCierre && DE_SOL_A_SOL.test(tramo) && !rangos.length) {
+      for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'abierto', rangos: [[7 * 60, 17 * 60]] };
+      huboApertura = true;
       continue;
     }
 

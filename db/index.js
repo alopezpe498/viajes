@@ -437,6 +437,7 @@ export function migrarEsquema() {
   anadirColumnaSiFalta('puertas_probadas', 'coste_traslado', 'REAL');
   migracionEurosPorHoraA20();
   migracionViajeLocal();
+  anadirColumnaSiFalta('sitios_lugar', 'es_zona', 'INTEGER');
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en

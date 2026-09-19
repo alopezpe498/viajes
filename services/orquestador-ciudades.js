@@ -1987,6 +1987,31 @@ function comoSeLeeLaFicha(f) {
  */
 export async function completarTiempos(candidatas, tiemposIA, destinoId) {
   const tiempos = [...(tiemposIA ?? [])];
+  const resumen = { ia: tiempos.length, medidos: 0, estimados: 0, sinDato: 0 };
+
+  // CON EL CATÁLOGO RECIÉN CREADO LAS CIUDADES NO TIENEN PUNTO TODAVÍA.
+  //
+  // Los puntos se crean al final de la fase, después de elegir puertas, así que
+  // en un destino nuevo no había nada que medir: en los Balcanes esto rellenó
+  // cero tramos de diez, la ruta siguió en zigzag y ninguna puerta cobró su
+  // traslado. Sin punto, la ciudad se sitúa con el geocodificador y el tiempo se
+  // ESTIMA por distancia: línea recta × 1,3 —lo que suele alargar la carretera—
+  // a 70 km/h. No es un horario; es un orden de magnitud, y para ordenar paradas
+  // basta. Queda marcado como estimación.
+  const sitios = new Map();
+  const situar = async (c) => {
+    if (sitios.has(c.nombre)) return sitios.get(c.nombre);
+    const r = await sitioPorTexto(c.pais ? `${c.nombre}, ${c.pais}` : c.nombre).catch(() => null);
+    const v = r?.hay ? { lat: r.lat, lon: r.lon } : null;
+    sitios.set(c.nombre, v);
+    return v;
+  };
+  const rad = (g) => (g * Math.PI) / 180;
+  const kmEntre = (a, b) => {
+    const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 +
+      Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(h));
+  };
   const hay = (a, b) =>
     tiempos.some(
       (t) =>
@@ -1998,11 +2023,10 @@ export async function completarTiempos(candidatas, tiemposIA, destinoId) {
     for (let j = i + 1; j < nombres.length; j += 1) {
       const [a, b] = [nombres[i], nombres[j]];
       if (hay(a, b)) continue;
-      const pa = puntoDeCiudad(destinoId, a);
-      const pb = puntoDeCiudad(destinoId, b);
-      if (!pa || !pb) continue;
-      let carretera = distanciaGuardada(pa.id, pb.id);
-      if (!carretera) {
+      const pa = destinoId ? puntoDeCiudad(destinoId, a) : null;
+      const pb = destinoId ? puntoDeCiudad(destinoId, b) : null;
+      let carretera = pa && pb ? distanciaGuardada(pa.id, pb.id) : null;
+      if (!carretera && pa && pb) {
         try {
           await distanciaEntre(pa.id, pb.id);
           carretera = distanciaGuardada(pa.id, pb.id);
@@ -2012,9 +2036,23 @@ export async function completarTiempos(candidatas, tiemposIA, destinoId) {
       }
       if (carretera?.minutos_coche) {
         tiempos.push({ desde: a, hasta: b, minutos: Number(carretera.minutos_coche), modo: 'carretera (medida)' });
+        resumen.medidos += 1;
+        continue;
+      }
+      const [ca, cb] = [candidatas[i], candidatas[j]];
+      const [sa, sb] = [await situar(ca), await situar(cb)];
+      if (sa && sb) {
+        const km = kmEntre(sa, sb) * 1.3;
+        tiempos.push({ desde: a, hasta: b, minutos: Math.round((km / 70) * 60), modo: 'estimado por distancia' });
+        resumen.estimados += 1;
+      } else {
+        resumen.sinDato += 1;
       }
     }
   }
+  // El resumen va pegado a la lista para que quien la usa pueda decirlo en el
+  // registro: sin ese rastro, esto falló un día entero sin que se viera.
+  Object.defineProperty(tiempos, 'resumen', { value: resumen, enumerable: false });
   return tiempos;
 }
 
@@ -2431,6 +2469,38 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   // que uno contenga al otro. Sin país en la respuesta no se descarta nada:
   // ante la duda, se queda.
   if (esMultipais(viaje)) {
+    // EL PAÍS SE COMPRUEBA, NO SE CREE. La IA devolvió «Kotor = Croacia», y Kotor
+    // está en Montenegro: el filtro funcionaba, pero con un dato falso. Se busca
+    // el NOMBRE SOLO —«Kotor, Croacia» devolvía Kotoriba, un pueblo croata: la
+    // pista falsa arrastraba al geocodificador— y si Google devuelve esa misma
+    // ciudad, su país manda. Si no la encuentra así («Split» a secas no da nada),
+    // se prueba con cada país pedido, exigiendo que el nombre coincida. Y si nada
+    // se confirma, se queda el de la IA: ante la duda, no se descarta.
+    const legitimosParaBuscar = paisesDelViaje(viaje);
+    const esLaMisma = (hallada, buscada) => {
+      const ws = (t) => normalizarNombre(t).split(/[^a-z0-9ñ]+/).filter(Boolean);
+      const suyas = new Set(ws(hallada));
+      return ws(buscada).every((w) => suyas.has(w));
+    };
+    for (const c of ciudades) {
+      let comprobado = null;
+      const sola = await sitioPorTexto(c.nombre).catch(() => null);
+      if (sola?.hay && sola.pais && esLaMisma(sola.nombre, c.nombre)) comprobado = sola.pais;
+      else {
+        for (const p of legitimosParaBuscar) {
+          const r = await sitioPorTexto(`${c.nombre}, ${p}`).catch(() => null);
+          if (r?.hay && r.pais && esLaMisma(r.nombre, c.nombre)) {
+            comprobado = r.pais;
+            break;
+          }
+        }
+      }
+      if (comprobado && c.pais && normalizarNombre(comprobado) !== normalizarNombre(c.pais)) {
+        di(`${c.nombre}: la IA dijo «${c.pais}», pero está en ${comprobado}.`);
+      }
+      if (comprobado) c.pais = comprobado;
+    }
+
     // Por PALABRAS y no por texto entero: «Bosnia-Herzegovina», «Bosnia» y
     // «Bosnia y Herzegovina» son el mismo país y comparten «bosnia».
     const palabras = (t) =>
@@ -2532,6 +2602,17 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
     tiempos,
     (viaje.destino ? destinoPorNombre(viaje.destino) : null)?.id ?? null
   );
+  {
+    const r = tiemposCompletos.resumen;
+    if (r) {
+      di(
+        `Tabla de tiempos entre ciudades: ${r.ia} tramo(s) de la IA, ${r.medidos} medido(s) por carretera, ` +
+          `${r.estimados} estimado(s) por distancia` +
+          (r.sinDato ? `, ${r.sinDato} sin dato.` : '.'),
+        ORIGENES.estimacion
+      );
+    }
+  }
   const conVuelos = local ? { local: true } : await elegirPuertas({
     viaje,
     candidatas: candidatasDeRuta,
@@ -2679,10 +2760,35 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
         '\n\nDevuelve el JSON corregido y nada más.'
       : '';
 
-    respuesta = await consultarJSON(rellenar(partes.cierre, datosCierre) + extra, {
-      maxTokens: 4000,
-      paso: `ruta de ${datos.DESTINO}${intento > 1 ? ' (reintento)' : ''}`,
-    });
+    // CON REPARTOS LEGALES, LA IA NO ELIGE RUTA.
+    //
+    // Se le pedía que eligiera uno de los repartos que el código ya había dado
+    // por legales. Medido en los 16 viajes que los tenían: en 11 devolvió uno que
+    // no estaba en la lista y se usó el primero del código; en los otros 5
+    // eligió... el primero del código. Nunca cambió la decisión, costaba una
+    // llamada grande a Sonnet por viaje y dejaba en el registro una ruta
+    // imaginada que no era la que se montaba. Ahora se usa el primero directamente
+    // y el porqué se redacta sobre la ruta de verdad (`redactarLaRutaDeVerdad`).
+    // Sin repartos legales se le sigue pidiendo, que ahí sí hace falta.
+    respuesta = repartosLegales_.length
+      ? {
+          ruta: repartosLegales_[0].reparto.map((x) => ({ ciudad: x.ciudad, noches: x.noches, motivo: x.motivo ?? null })),
+          elegidaPorElCodigo: true,
+        }
+      : await consultarJSON(rellenar(partes.cierre, datosCierre) + extra, {
+          maxTokens: 4000,
+          paso: `ruta de ${datos.DESTINO}${intento > 1 ? ' (reintento)' : ''}`,
+        });
+    if (respuesta?.elegidaPorElCodigo) {
+      seUsoElFallback = true;
+      if (intento === 1) {
+        di(
+          `Ruta: la primera de los ${repartosLegales_.length} repartos legales, la que más noches deja a la ` +
+            'ciudad de más peso y la más corta de recorrer.',
+          ORIGENES.ninguno
+        );
+      }
+    }
 
     let propuesta = (Array.isArray(respuesta?.ruta) ? respuesta.ruta : []).map((p) => ({
       ciudad: typeof p?.ciudad === 'string' ? p.ciudad.trim() : null,
@@ -2900,7 +3006,11 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
       motivoDescarte:
         (Array.isArray(respuesta?.descartadas) ? respuesta.descartadas : []).find(
           (d) => normalizarNombre(d?.ciudad ?? '') === normalizarNombre(c.nombre)
-        )?.por_que ?? null,
+        )?.por_que ??
+        // Cuando la ruta la elige el código, el motivo es el suyo, y es verdad.
+        (respuesta?.elegidaPorElCodigo
+          ? 'No entra en el reparto que más noches deja a las ciudades de más peso.'
+          : null),
     }));
 
   ejecutar(

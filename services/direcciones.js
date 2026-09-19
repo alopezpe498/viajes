@@ -628,6 +628,33 @@ export function fuenteQueSeUsara() {
  */
 const METROS_MISMO_LUGAR = 500;
 
+/**
+ * ¿ES UNA ZONA Y NO UN EDIFICIO? Lo dice Google con los tipos del lugar.
+ *
+ * La revisión del reparto necesita saberlo —una zona se recorta, un museo no— y
+ * adivinarlo por el nombre falló: «Barrio de Akihabara» se reconocía y
+ * «Akihabara» a secas, catalogado como «compras», no. Google lo sabe:
+ *
+ *     Akihabara         colloquial_area          Museo Nac. de Tokio  museum
+ *     Isla de Lokrum    island, natural_feature  Acuario Kaiyukan     aquarium
+ *     Barrio de Mitte   sublocality              Calle Stradun        route
+ *
+ * Devuelve 1, 0 o null (sin tipos no se sabe). Un parque grande con museo dentro
+ * —el Expo '70— cuenta como zona: el parque manda.
+ */
+const TIPOS_DE_ZONA = new Set([
+  'colloquial_area', 'neighborhood', 'sublocality', 'sublocality_level_1', 'sublocality_level_2',
+  'island', 'archipelago', 'natural_feature', 'route', 'park', 'national_park', 'nature_preserve',
+  'hiking_area', 'beach',
+  // Un sitio que Google resuelve a una POBLACIÓN es un área, no un edificio:
+  // Shibuya, La Goulette, el lago Fertő. Sin esto salían como «edificio».
+  'locality',
+]);
+export function esZonaSegunGoogle(tipos) {
+  if (!Array.isArray(tipos) || !tipos.length) return null;
+  return tipos.some((t) => TIPOS_DE_ZONA.has(t)) ? 1 : 0;
+}
+
 export async function situarLosSitios(punto, di = () => {}) {
   const sitios = todas(
     `SELECT s.id, s.nombre, s.lat, s.lon
@@ -674,6 +701,10 @@ export async function situarLosSitios(punto, di = () => {}) {
 
   for (const s of sitios) {
     const enPlaces = await situarLugarConGoogle(consultaDe(s.nombre), null);
+    // Zona o edificio, apuntado aunque luego no se escriba la coordenada: es un
+    // dato del lugar, no del punto.
+    const zona = esZonaSegunGoogle(enPlaces?.tipos);
+    if (zona != null) ejecutar('UPDATE sitios_lugar SET es_zona = ? WHERE id = ?', zona, s.id);
     if (!enPlaces?.direccion) continue;
 
     // SIN ENCOLAR. La dirección ya viene con su punto, así que preguntar otra

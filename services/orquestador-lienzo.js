@@ -894,9 +894,32 @@ function importanciaDe(colocado) {
   // billete y dinero dentro, y esa no cede ante nada.
   if (quien?.candidato?.tipo === 'actividad') {
     const reservada = Number(quien.candidato.reservado) === 1;
-    return reservada
-      ? { nivel: 5, orden: 0, rigido: true, que: 'una excursión ya reservada' }
-      : { nivel: 2, orden: 50, rigido: true, que: 'una excursión opcional' };
+    if (reservada) return { nivel: 5, orden: 0, rigido: true, que: 'una excursión ya reservada' };
+
+    // SALVO QUE SEA LA PUERTA DE UN IMPRESCINDIBLE. En Japón el ferry a
+    // Miyajima —que es la única forma de llegar a Itsukushima— se expulsó
+    // frente a un sitio de segundo nivel, y con él se fue el imprescindible que
+    // cubría. Una excursión que cubre sitios (`cubierto_por`) pesa lo que el
+    // más importante de ellos.
+    const cubierto = una(
+      `SELECT s.bloque, s.orden FROM sitios_lugar s
+         JOIN etapas e ON e.id = ? AND e.punto_interes_id = s.punto_interes_id
+        WHERE s.cubierto_por = ? AND s.bloque = 'imprescindibles'
+        ORDER BY s.orden LIMIT 1`,
+      quien.candidato.etapa_id,
+      quien.candidato.id
+    );
+    if (cubierto) {
+      const puesto = Number(cubierto.orden) || 99;
+      const intocable = puesto <= parametro('puestos_intocables_del_sitio', 3);
+      return {
+        nivel: intocable ? 5 : 4,
+        orden: puesto,
+        rigido: true,
+        que: `una excursión que cubre el imprescindible #${puesto}`,
+      };
+    }
+    return { nivel: 2, orden: 50, rigido: true, que: 'una excursión opcional' };
   }
 
   return { nivel: 3, orden: 50, rigido: false, que: 'un bloque suelto' };

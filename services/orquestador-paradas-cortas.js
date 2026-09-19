@@ -172,7 +172,7 @@ export function imprescindiblesDeParada(etapa) {
   );
 
   return todas(
-    `SELECT id, nombre, tiempo_visita, categoria, horarios, cierra_dias, lat, lon
+    `SELECT id, nombre, tiempo_visita, categoria, horarios, cierra_dias, lat, lon, es_zona
        FROM sitios_lugar
       WHERE punto_interes_id = ? AND bloque = 'imprescindibles' AND cubierto_por IS NULL
       ORDER BY orden, id`,
@@ -194,6 +194,7 @@ export function imprescindiblesDeParada(etapa) {
     punto: Number.isFinite(Number(s.lat)) ? { lat: Number(s.lat), lon: Number(s.lon) } : null,
     minutos: minutosDeVisita(s.tiempo_visita) ?? parametro('visita_por_defecto_min', 90),
     categoria: s.categoria ?? null,
+    esZona: s.es_zona ?? null,
     cierraA: cierraALasMinutos(s),
     // El TEXTO del horario, no `cierra_dias`. Es la misma fuente que usan los
     // avisos del lienzo y por la misma razón: una lista guardada se queda vieja
@@ -605,7 +606,12 @@ const FRANJAS_DE_VISITA = FRANJAS.filter((f) => f.clave !== 'noche');
  */
 const CATEGORIAS_ZONA = new Set(['barrios y paseos', 'naturaleza']);
 const NOMBRE_DE_ZONA = /^(barrio|zona|distrito|casco|isla|bosque|playa|paseo|parque (?:natural|nacional|forestal)|monte|montaña)\b/i;
-const esZona = (x) => CATEGORIAS_ZONA.has(x.categoria) || NOMBRE_DE_ZONA.test(String(x.nombre ?? '').trim());
+// Lo que dice Google manda (ver `esZonaSegunGoogle`); la categoría y el nombre
+// solo cuentan cuando no se sabe, que es en los sitios situados antes de guardarlo.
+const esZona = (x) =>
+  x.esZona != null
+    ? x.esZona === 1
+    : CATEGORIAS_ZONA.has(x.categoria) || NOMBRE_DE_ZONA.test(String(x.nombre ?? '').trim());
 
 export function revisarElReparto(viaje, di = () => {}) {
   ejecutar("DELETE FROM avisos WHERE viaje_id = ? AND categoria = 'reparto'", viaje.id);
