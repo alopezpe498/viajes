@@ -1579,7 +1579,8 @@ router.post('/api/destinos/elegir', async (req, res) => {
       if (lectura.paises.length > 1 || !lectura.seguro) {
         // El texto del usuario se queda como ámbito del viaje; la lista
         // interpretada espera confirmación en su pantalla.
-        ejecutar('UPDATE viajes SET destino = ? WHERE id = ?', nombre, viaje.id);
+        ejecutar('UPDATE viajes SET destino = ?, nombre = ? WHERE id = ?',
+          nombre, nombreDelViaje(viaje, nombre, lectura.paises), viaje.id);
         guardarInterpretacion(viaje.id, lectura.paises);
         console.log(
           `[rutas] Viaje #${viaje.id}: «${nombre}» son ${lectura.paises.length} país(es); a confirmar.`
@@ -1806,7 +1807,8 @@ router.post('/api/viajes/:id/destino/interpretar', cargarViaje, async (req, res)
 
     // El texto del usuario se queda como ambito del viaje; la lista interpretada
     // espera confirmacion en su pantalla.
-    ejecutar('UPDATE viajes SET destino = ? WHERE id = ?', texto.slice(0, 200), viaje.id);
+    ejecutar('UPDATE viajes SET destino = ?, nombre = ? WHERE id = ?',
+      texto.slice(0, 200), nombreDelViaje(viaje, texto, lectura.paises), viaje.id);
     guardarInterpretacion(viaje.id, lectura.paises);
 
     console.log(
@@ -1843,6 +1845,27 @@ router.post('/api/viajes/:id/destino/interpretar', cargarViaje, async (req, res)
  * es una lista— y también entran los guiones, que es como mucha gente los
  * escribe.
  */
+/**
+ * EL NOMBRE DEL VIAJE, SI TODAVÍA NO TIENE UNO.
+ *
+ * Solo se pone sobre «Viaje sin nombre»: si lo has renombrado, se respeta. Lo
+ * usan los TRES sitios donde se fija el destino. Antes solo lo hacía el de un
+ * país, y los viajes de varios —que guardan el destino por otro camino, antes
+ * de confirmar la lista— se quedaban «Viaje sin nombre» para siempre.
+ *
+ * Con varios países el nombre sale de la lista interpretada y no del texto:
+ * lo escrito puede ser «Viaje por Bosnia, croacia y montenegro», y «Viaje a
+ * Viaje por…» no es un nombre.
+ */
+function nombreDelViaje(viaje, destino, paises = []) {
+  if (viaje.nombre && viaje.nombre !== 'Viaje sin nombre') return viaje.nombre;
+  const lista = paises.filter(Boolean);
+  const texto = lista.length > 1
+    ? `${lista.slice(0, -1).join(', ')} y ${lista[lista.length - 1]}`
+    : lista[0] || destino;
+  return texto ? `Viaje a ${String(texto).slice(0, 120)}` : viaje.nombre;
+}
+
 function pareceVariosPaises(texto) {
   const t = String(texto ?? '').trim();
   if (t.length < 6) return false;
@@ -1850,7 +1873,7 @@ function pareceVariosPaises(texto) {
 }
 
 async function elegirDestinoParaViaje(viaje, { nombre, tipo = 'pais', lat = null, lon = null }) {
-  const nombreViaje = viaje.nombre === 'Viaje sin nombre' ? `Viaje a ${nombre}` : viaje.nombre;
+  const nombreViaje = nombreDelViaje(viaje, nombre);
 
   // EL DESTINO DEL VIAJE SOLO SE PONE UNA VEZ.
   //
