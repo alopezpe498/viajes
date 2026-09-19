@@ -684,10 +684,26 @@ export function horarioPorDias(texto, mes = null) {
   // exclusiva?» sino «¿se declara este texto incompleto?».
   const esUnaNota = NO_ES_UNA_LISTA.some((p2) => t.includes(p2));
 
+  // EL RECINTO ABIERTO 24 H NO LO RECORTA UNA DE SUS PARTES.
+  //
+  // «Abierto 24 horas (Exteriores). Atracciones: Mar–Dom 11:00–19:00» salía
+  // 11:00–19:00 de martes a domingo: la frase de las atracciones pisaba la del
+  // recinto, y la Fortaleza de Kalemegdan, el #1 de Belgrado, se quedó fuera
+  // del viaje por no caber en ese horario. Lo mismo el parque Kasai Rinkai,
+  // cerrado los miércoles porque cierra su acuario, o Checkpoint Charlie a las
+  // horas de su museo.
+  //
+  // Así que una vez dicho que el sitio entero —sin nombrar días— abre siempre,
+  // lo que venga después sobre una parte no lo cierra ni lo acorta. Solo lo
+  // cierra un cierre del sitio entero («cerrado por obras»).
+  let abiertoSiempre = false;
+
   for (const tramo of tramos) {
     const esDeCierre = CIERRE.some((p2) => tramo.includes(p2));
     const dias = diasDelTramo(tramo);
     const rangos = rangosDelTramo(tramo);
+
+    if (abiertoSiempre && !(esDeCierre && CERRADO_DEL_TODO.test(tramo) && !dias.size)) continue;
 
     // CERRADO Y PUNTO: los siete días, y con confianza.
     //
@@ -720,6 +736,7 @@ export function horarioPorDias(texto, mes = null) {
       const deVerdad = rangos.length ? rangos : [[0, 24 * 60]];
       for (const d of TODOS_LOS_DIAS) porDia[d] = { estado: 'abierto', rangos: deVerdad };
       huboApertura = true;
+      if (!rangos.length && !dias.size) abiertoSiempre = true;
       continue;
     }
 
@@ -1093,14 +1110,24 @@ export function horaDeInicioDeExcursion(...textos) {
  */
 const RECOGIDA = [
   'recogida en el hotel', 'recogida y traslado al hotel', 'recogida en vuestro hotel',
-  'recogida en su hotel', 'recogida en tu hotel', 'os recogeremos en', 'te recogemos en',
+  'recogida en su hotel', 'recogida en tu hotel',
   'recogeros en vuestro hotel', 'recogeros en su hotel', 'recogerte en tu hotel',
-  'os recogemos en', 'recogida desde el hotel', 'pick up en el hotel',
+  'recogida desde el hotel', 'pick up en el hotel',
   'traslado desde el hotel', 'recogida en los hoteles',
+];
+
+// Y LA FORMA LIBRE: «pasaremos a recogeros por vuestro hotel», «recogida y
+// traslado de regreso al hotel». La lista no las cogía, y la excursión a Mostar
+// desde Sarajevo salía sin recogida. Al revés, «os recogeremos en» a secas
+// casaba con «os recogeremos en el punto de encuentro de Atenas»: sin la
+// palabra hotel detrás no es una recogida en el hotel.
+const RECOGIDA_LIBRE = [
+  /recog\w*\s+(?:\S+\s+){0,3}?(?:en|por|desde)\s+(?:el|vuestro|vuestros|tu|su|sus|los)\s+hotel/,
+  /recogida y traslado (?:de regreso )?al hotel/,
 ];
 
 export function hayRecogidaEnHotel(...textos) {
   const t = normalizar(textos.filter(Boolean).join(' · '));
   if (!t.trim()) return false;
-  return RECOGIDA.some((p) => t.includes(p));
+  return RECOGIDA.some((p) => t.includes(p)) || RECOGIDA_LIBRE.some((re) => re.test(t));
 }

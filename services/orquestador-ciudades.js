@@ -1287,8 +1287,26 @@ async function elegirPuertas({ viaje, candidatas, tiempos, tiemposParaOrdenar = 
         // Ahora el texto entra por la misma puerta que la ruta: si la ruta no
         // pasa el filtro, su redacción tampoco, y queda el texto de respaldo —que
         // lo escribe el código con el reparto real, unas líneas más arriba—.
+        // Y EL TEXTO NO PUEDE INVENTAR CUENTAS. En los Balcanes explicó la puerta
+        // con «(130+150=280 min, pasando por Mostar)» y citó una «c16» que no
+        // estaba en la lista. Las horas las calcula el código y ya están en el
+        // registro; si el texto trae sumas o combinaciones que no existen, se
+        // queda el de respaldo, que escribe el código con el reparto real.
+        const textoPuerta = typeof r?.por_que === 'string' ? r.por_que.trim() : '';
+        const idsDeVerdad = new Set(combinaciones.map((c) => String(c.id)));
+        const citaInventada = (textoPuerta.match(/\bc\d+\b/g) ?? []).some((id) => !idsDeVerdad.has(id));
+        const haceCuentas = /\d+\s*[+×x*]\s*\d+\s*=|=\s*\d+\s*min/.test(textoPuerta);
+        if (textoPuerta && (citaInventada || haceCuentas)) {
+          anotar(
+            viajeId,
+            'ciudades_y_noches',
+            `   La redacción de la puerta ${citaInventada ? 'citaba combinaciones que no existen' : 'hacía sus propias cuentas'}: ` +
+              'me quedo con el texto del cálculo.',
+            ORIGENES.ninguno
+          );
+        }
         if (rutaPrevista) {
-          if (typeof r?.por_que === 'string' && r.por_que.trim()) porQue = r.por_que.trim();
+          if (textoPuerta && !citaInventada && !haceCuentas) porQue = textoPuerta;
 
           anotar(
             viajeId,
@@ -1581,11 +1599,21 @@ export function repartosLegales({
  * descartada. Si no cuadra se pide una vez más, y si sigue sin cuadrar se guarda
  * una frase sin nombres: decir poco es mejor que decir algo falso.
  */
-async function redactarLaRutaDeVerdad(ruta, descartadas, di) {
+async function redactarLaRutaDeVerdad(ruta, descartadas, di, ciudades = []) {
   const enLaRuta = ruta.map((p) => p.ciudad);
+  // LA PREMISA TIENE QUE SER LA DE VERDAD. Esto se escribió cuando la ruta la
+  // proponía la IA y el código solo la corregía; ahora la elige el código
+  // siempre, y el «la propuesta inicial no valía» era falso en cada viaje.
   const generica =
-    'La propuesta inicial no respetaba los mínimos de noches, así que se aplicó el reparto ' +
-    'que más noches deja a la ciudad de mayor peso.';
+    'Entre los repartos que respetan las noches mínimas de cada ciudad, es el que más noches ' +
+    'deja a las ciudades de más peso y el más corto de recorrer.';
+  // Y EL PAÍS DE CADA UNA, ya comprobado: sin él escribió «a través de Serbia y
+  // Croacia» de una ruta que pasa por Sarajevo.
+  const paisDe = new Map(ciudades.map((c) => [normalizarNombre(c.nombre), c.pais ?? null]));
+  const conPais = (c) => {
+    const pais = paisDe.get(normalizarNombre(c));
+    return pais ? `${c} (${pais})` : c;
+  };
 
   if (!hayClaveIA()) return generica;
 
@@ -1595,19 +1623,21 @@ async function redactarLaRutaDeVerdad(ruta, descartadas, di) {
       const r = await consultarJSON(
         [
           'Esta es la ruta FINAL de un viaje, ya decidida:',
-          ...ruta.map((p) => `- ${p.ciudad}: ${p.noches} noche(s)`),
+          ...ruta.map((p) => `- ${conPais(p.ciudad)}: ${p.noches} noche(s)`),
           '',
           descartadas.length
             ? `Se quedaron fuera: ${descartadas.map((d) => d.nombre).join(', ')}.`
             : 'No se quedó fuera ninguna ciudad.',
           '',
-          'La primera propuesta no valía porque dejaba alguna ciudad por debajo del mínimo',
-          'de noches que se había declarado, así que se aplicó el reparto que más noches da',
-          'a la ciudad de mayor peso.',
+          'La ha elegido el cálculo entre los repartos que respetan las noches mínimas de',
+          'cada ciudad: el que más noches deja a las ciudades de más peso y el más corto de',
+          'recorrer.',
           '',
           'Escribe en DOS O TRES FRASES por qué esta ruta tiene sentido. Habla SOLO de las',
           'ciudades de la lista de arriba. No menciones ninguna otra ciudad como parada, y no',
-          'digas que una ciudad de la ruta se queda fuera.',
+          'digas que una ciudad de la ruta se queda fuera. Si nombras países, usa SOLO los que',
+          'van entre paréntesis, y cada ciudad con el suyo. No hagas cuentas de horas ni de',
+          'minutos.',
           '',
           'Devuelve SOLO: {"resumen":"..."}',
         ].join('\n'),
@@ -3028,7 +3058,7 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   );
   for (const p of ruta) if (p.motivo) di(`   ${p.ciudad}: ${p.motivo}`);
   const resumen = seUsoElFallback
-    ? await redactarLaRutaDeVerdad(ruta, descartadas, di)
+    ? await redactarLaRutaDeVerdad(ruta, descartadas, di, ciudades)
     : respuesta?.resumen;
   if (resumen) di(`Por qué esta ruta: ${resumen}`);
   if (descartadas.length) {

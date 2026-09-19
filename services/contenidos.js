@@ -32,6 +32,19 @@ import { parametro } from './orquestador.js';
 /** A cuánto puede estar un sitio de su recinto para creernos que está dentro. */
 const METROS_DE_MARGEN = 200;
 
+const sinTildes = (t) =>
+  String(t ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
+const RECORRIDO =
+  /^(murallas?|paseo|casco|barrio|calle|plaza|ciudad (vieja|medieval|antigua)|centro (historico|antiguo)|old town|muelle|puerto|riva|malecon|avenida|rambla)\b/;
+const EDIFICIO =
+  /^(museo|palacio|catedral|iglesia|basilica|monasterio|convento|castillo|galeria|sinagoga|mezquita|capilla|teatro)\b/;
+const esUnRecorrido = (nombre) => RECORRIDO.test(sinTildes(nombre));
+const esUnEdificio = (nombre) => EDIFICIO.test(sinTildes(nombre));
+
 /**
  * FUNDE LOS SITIOS QUE ESTÁN DENTRO DE OTROS, en una ciudad.
  *
@@ -102,6 +115,21 @@ export async function fundirSitiosContenidos(punto, ciudad, di = () => {}) {
         );
         continue;
       }
+    }
+
+    // UN RECORRIDO NO CONTIENE UN EDIFICIO CON SU PROPIA ENTRADA.
+    //
+    // «Palacio del Rector» y «Catedral de la Asunción» se fundieron dentro de
+    // «Murallas de Dubrovnik»: están dentro del recinto amurallado, sí, pero
+    // recorrer la muralla no es entrar en el palacio. Dubrovnik perdió su #3 y
+    // su #5. Lo mismo la Catedral de Novi Sad dentro de su casco histórico. Se
+    // mide contra las 24 fusiones de la base: estas cuatro son las que separa.
+    if (esUnRecorrido(fuera.nombre) && esUnEdificio(dentro.nombre)) {
+      di(
+        `   «${dentro.nombre}» está dentro de «${fuera.nombre}», pero tiene su propia ` +
+          'entrada: no los fundo.'
+      );
+      continue;
     }
 
     // El contenedor se queda con la visita, y en su descripción se dice qué

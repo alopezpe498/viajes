@@ -23,7 +23,7 @@ import {
   minutosMinimosEnLlegar,
   minutosQueSePerdonan,
 } from './distancias.js';
-import { abreEl, abiertoA, horarioPorDias } from './horarios.js';
+import { abreEl, abiertoA, horarioPorDias, hayRecogidaEnHotel } from './horarios.js';
 import { ciudadDeCasa } from './proveedores.js';
 import { parametro, parametroTexto } from './orquestador.js';
 
@@ -1681,6 +1681,22 @@ export function puntoDeTarjeta(c) {
   const clave = claveDeTarjeta(c);
   if (!clave?.id) return null;
 
+  // LA EXCURSIÓN QUE TE RECOGE EN EL HOTEL EMPIEZA Y ACABA EN EL HOTEL.
+  //
+  // Situada, una excursión cae en su destino. Para encadenarla con el resto del
+  // día eso es falso cuando pasan a buscarte: «Sales de Murallas de Dubrovnik a
+  // las 10:00 y hay 71 km hasta Excursión a Mostar y las cascadas de Kravice»,
+  // con la recogida a 1,8 km, y la revisión la echó por un trayecto que no
+  // existe.
+  //
+  // Y LA QUE VA LEJOS SALE DE LA CIUDAD aunque no te recojan: el punto de
+  // encuentro está en la ciudad, no en Mostar. El hotel es mejor aproximación
+  // que el destino, que está a cien kilómetros de todo lo demás del día.
+  if (clave.tipo === 'actividad') {
+    const salida = dondeEmpiezaLaExcursion(c.candidatoId, clave.id);
+    if (salida) return salida;
+  }
+
   if (clave.tipo === 'sitio' || clave.tipo === 'punto') {
     const tabla = clave.tipo === 'punto' ? 'puntos_interes' : 'sitios_lugar';
     const f = una(`SELECT lat, lon FROM ${tabla} WHERE id = ?`, clave.id);
@@ -1689,6 +1705,33 @@ export function puntoDeTarjeta(c) {
 
   const d = direccionDe(clave.tipo, clave.id);
   return d?.situada ? { lat: Number(d.punto.lat), lon: Number(d.punto.lng) } : null;
+}
+
+/** A partir de cuánto una excursión «va fuera» de su ciudad. */
+const KM_EXCURSION_FUERA = 15;
+
+function dondeEmpiezaLaExcursion(candidatoId, actividadId) {
+  const etapa = una(
+    `SELECT e.id, p.lat, p.lon FROM candidatos c
+       JOIN etapas e ON e.id = c.etapa_id
+       LEFT JOIN puntos_interes p ON p.id = e.punto_interes_id
+      WHERE c.id = ?`,
+    candidatoId
+  );
+  if (!etapa) return null;
+
+  const hotel = una("SELECT id FROM candidatos WHERE etapa_id = ? AND tipo = 'hotel' AND marcado = 1", etapa.id);
+  const dh = hotel ? direccionDe('hotel', hotel.id) : null;
+  const delHotel = dh?.situada ? { lat: Number(dh.punto.lat), lon: Number(dh.punto.lng) } : null;
+  const ciudad = Number.isFinite(Number(etapa.lat)) ? { lat: Number(etapa.lat), lon: Number(etapa.lon) } : null;
+
+  const ficha = una('SELECT incluye, descripcion_larga FROM catalogo_actividades WHERE id = ?', actividadId);
+  if (ficha && hayRecogidaEnHotel(ficha.incluye, ficha.descripcion_larga) && delHotel) return delHotel;
+
+  const d = direccionDe('actividad', actividadId);
+  const situada = d?.situada ? { lat: Number(d.punto.lat), lon: Number(d.punto.lng) } : null;
+  if (situada && ciudad && distanciaKm(situada, ciudad) > KM_EXCURSION_FUERA) return delHotel ?? ciudad;
+  return null;
 }
 
 /**

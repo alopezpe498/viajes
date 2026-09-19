@@ -44,6 +44,7 @@ import { distanciaKm } from '../services/distancias.js';
 import { fueraDeTemporada, mesesDelViaje } from '../services/temporadas.js';
 import { enFase } from '../services/fase-actual.js';
 import { enParada } from '../services/cronometro.js';
+import { sinCubrir } from './cubiertos.js';
 
 const FASE = 'excursiones';
 
@@ -534,7 +535,9 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         }
 
         // --- MISMA EXPERIENCIA EN OTRA PARADA ------------------------------
-        const gemela = yaEnElViaje.find((x) => seParecen(x.titulo, e.actividad.titulo));
+        const gemela = yaEnElViaje.find(
+          (x) => seParecen(x.titulo, e.actividad.titulo) || mismoDestino(x.titulo, e.actividad.titulo)
+        );
         if (gemela) {
           di(
             `   ✘ «${e.actividad.titulo}»: equivalente ya incluida en ${gemela.ciudad} ` +
@@ -624,7 +627,7 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
             String(nombre).trim()
           );
           if (sitio && candidato) {
-            ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, sitio.id);
+            ejecutar('UPDATE sitios_lugar SET cubierto_por_excursion = ? WHERE id = ?', candidato.id, sitio.id);
             cubiertos.push(`${sitio.nombre} (lo cubre «${e.actividad.titulo}»)`);
           } else {
             // ESTO NO PUEDE SEGUIR SIENDO MUDO. Este casado es por igualdad
@@ -791,6 +794,42 @@ export function seParecen(a, b) {
   return comunes / Math.min(x.size, y.size) >= 0.6;
 }
 
+/**
+ * ¿VAN LAS DOS AL MISMO SITIO?
+ *
+ * «Excursión a Mostar y las Cuatro Perlas de Herzegovina» desde Sarajevo y
+ * «Excursión a Mostar y las cascadas de Kravice» desde Dubrovnik entraron las
+ * dos: `seParecen` compara palabras y comparten una de tres. Pero el viaje es
+ * el mismo —un día en Mostar— y hacerlo dos veces es perder uno.
+ *
+ * Se mira el PRIMER destino de «Excursión a X…»: es el que da nombre al día.
+ * Medido sobre los 390 títulos del catálogo, las parejas que casa desde
+ * ciudades distintas son todas el mismo viaje: Meteora desde Tesalónica y desde
+ * Atenas, Hiroshima desde Kioto, Osaka y Nara, Mostar desde Sarajevo y desde
+ * Dubrovnik.
+ */
+export function destinoDeExcursion(titulo) {
+  const t = String(titulo ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/,/g, ' y ')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const m = t.match(
+    /^(?:excursion|visita|escapada|viaje)(?: privada| guiada| de (?:un )?dia(?: completo)?)* a (?:la |las |los |el |lo )?(.+)$/
+  );
+  if (!m) return null;
+  const primero = m[1].split(/ (?:y|e|con|desde|en|por) /)[0].trim();
+  return primero.length >= 4 ? primero : null;
+}
+
+function mismoDestino(a, b) {
+  const da = destinoDeExcursion(a);
+  return Boolean(da) && da === destinoDeExcursion(b);
+}
+
 export default { ejecutarFaseExcursiones, duracionEnMinutos, esLarga };
 
 /**
@@ -863,9 +902,11 @@ async function cubrirSitiosQueSonElMismoLugar(actividad, candidato, etapa, cubie
   if (!titulo) return;
   const ciudad = limpio(etapa.nombre_ciudad);
 
+  // Los que en ESTE viaje no tapa nada: lo que tapaba la excursión de otro viaje
+  // al mismo catálogo no cuenta aquí.
   const sitios = todas(
-    `SELECT id, nombre, lat, lon FROM sitios_lugar
-      WHERE punto_interes_id = ? AND cubierto_por IS NULL`,
+    `SELECT s.id, s.nombre, s.lat, s.lon FROM sitios_lugar s
+      WHERE s.punto_interes_id = ? AND ${sinCubrir(etapa.id)}`,
     etapa.punto_interes_id
   );
   if (!sitios.length) {
@@ -924,7 +965,7 @@ async function cubrirSitiosQueSonElMismoLugar(actividad, candidato, etapa, cubie
     // coordenada: es el «no los fundo» de siempre.
     if (nombreEntero && metros != null && metros > METROS) continue;
 
-    ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', candidato.id, s.id);
+    ejecutar('UPDATE sitios_lugar SET cubierto_por_excursion = ? WHERE id = ?', candidato.id, s.id);
     cubiertos.push(
       `${s.nombre} (es el mismo lugar que «${actividad.titulo}»` +
         (mismaCoordenada ? `, a ${Math.round(metros)} m` : ', que lo lleva en el nombre') +

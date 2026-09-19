@@ -905,9 +905,7 @@ function importanciaDe(colocado) {
     const cubierto = una(
       `SELECT s.bloque, s.orden FROM sitios_lugar s
          JOIN etapas e ON e.id = ? AND e.punto_interes_id = s.punto_interes_id
-        WHERE s.cubierto_por = ? AND s.bloque = 'imprescindibles'
-          AND NOT EXISTS (SELECT 1 FROM sitios_lugar o
-                           WHERE o.id = s.cubierto_por AND o.punto_interes_id = s.punto_interes_id)
+        WHERE s.cubierto_por_excursion = ? AND s.bloque = 'imprescindibles'
         ORDER BY s.orden LIMIT 1`,
       quien.candidato.etapa_id,
       quien.candidato.id
@@ -1627,7 +1625,12 @@ function colocarImprescindible(
   sitio,
   di,
   diasLibres = [],
-  { soloEsosDias = false, comoSeDice = 'entra en el día %d a las %h, en el hueco que deja la excursión' } = {}
+  {
+    soloEsosDias = false,
+    comoSeDice = 'entra en el día %d a las %h, en el hueco que deja la excursión',
+    cederSegundoNivel = false,
+    siNoCabe = 'sigue sin hueco en %c ni quitando la excursión',
+  } = {}
 ) {
   let candidato = una(
     `SELECT id FROM candidatos
@@ -1649,6 +1652,9 @@ function colocarImprescindible(
   // Liberar un día y no repescar lo que ese día impedía es quedarse a medias. Se
   // vuelve a apuntar —`alternarApuntado` crea el candidato cuando no lo hay— y
   // se coloca con la misma lógica de siempre.
+  // Si el candidato se crea aquí y al final no entra, se deshace: un sitio
+  // apuntado que no está en ningún día es una promesa que la pantalla enseña.
+  const loApunteYo = !candidato;
   if (!candidato) {
     const r = alternarApuntado(etapa.id, 'sitio', sitio.id);
     if (!r) {
@@ -1696,13 +1702,55 @@ function colocarImprescindible(
     if (esDiaDeViaje(lienzo, d.n)) continue;
     if (cierraEseDia(falso, d.fecha)) continue;
 
-    const hora = huecoValido(lienzo, {
+    let hora = huecoValido(lienzo, {
       dia: d.n,
       colocado: falso,
       naturaleza,
       cierre,
       duracion: sitio.minutos,
     });
+
+    // Y SI NO HAY HUECO, ¿LO HAY QUITANDO UNA VISITA DE SEGUNDO NIVEL?
+    //
+    // En Novi Sad, el domingo, el Museo de Vojvodina —imprescindible, abierto
+    // hasta las 18:00— se quedó fuera y el «Paseo del Danubio», de segundo
+    // nivel, ocupaba las 16:45. `apartarAlMasLigero` solo sabe mandar al otro a
+    // OTRO día, y si no cabe en ninguno no cede nada. Aquí sí cede: se prueba
+    // primero sin él, y solo si así el imprescindible entra, se va.
+    if (!hora && cederSegundoNivel) {
+      const cedibles = lienzo.colocados
+        .filter((c) => c.dia === d.n && !esComida(c))
+        .map((c) => ({ c, imp: importanciaDe(c) }))
+        .filter((x) => x.imp.nivel <= 3 && /segundo nivel/.test(x.imp.que))
+        .sort((x, y) => y.imp.orden - x.imp.orden);
+      // Se van quitando de menos a más peso hasta que cabe —tres como mucho: un
+      // imprescindible de tres horas necesita a veces dos visitas cortas—, y
+      // después se devuelve cada una que no hacía falta quitar.
+      const prueba = (ids) =>
+        huecoValido(
+          ids.reduce((t, id) => sinEl(t, id), lienzo),
+          { dia: d.n, colocado: falso, naturaleza, cierre, duracion: sitio.minutos }
+        );
+      const quitadas = [];
+      for (const { c } of cedibles) {
+        quitadas.push(c);
+        if (prueba(quitadas.map((q) => q.id))) break;
+      }
+      let cedidas = prueba(quitadas.map((q) => q.id)) ? [...quitadas] : [];
+      // Se devuelven empezando por la de MÁS peso: si sobra quitar alguna, que
+      // se quede la que más vale.
+      for (const q of [...cedidas].reverse()) {
+        const sinQ = cedidas.filter((x) => x !== q);
+        if (prueba(sinQ.map((x) => x.id))) cedidas = sinQ;
+      }
+      if (cedidas.length > 3) cedidas = [];
+      if (cedidas.length) {
+        hora = prueba(cedidas.map((x) => x.id));
+        for (const c of cedidas) {
+          sacarDelPlan(c, di, `cede su hueco del día ${d.n} a ${sitio.nombre}, que es imprescindible`);
+        }
+      }
+    }
     if (!hora) continue;
 
     colocar(viajeId, {
@@ -1716,8 +1764,9 @@ function colocarImprescindible(
     return true;
   }
 
+  if (loApunteYo) alternarApuntado(etapa.id, 'sitio', sitio.id);
   if (!soloEsosDias) {
-    di(`   ${sitio.nombre} sigue sin hueco en ${etapa.nombre_ciudad} ni quitando la excursión.`);
+    di(`   ${sitio.nombre} ${siNoCabe.replace('%c', etapa.nombre_ciudad)}.`);
   }
   return false;
 }
@@ -2550,8 +2599,9 @@ export function corregirAvisos(viajeId, lienzo, di, fuera, duracionComida, horaT
     // estaba tirando. El Castillo de Wawel se fue del viaje sin una línea.
     const imp = importanciaDe(c);
     const noSePodiaPerder = esDeLosQueNoSePuedenPerder(c);
+    const eraExcursion = deQuienEs(c)?.candidato?.tipo === 'actividad';
 
-    fuera.push(sacarDelPlan(c, di, motivo));
+    fuera.push({ ...sacarDelPlan(c, di, motivo), dia: c.dia, eraExcursion });
 
     if (noSePodiaPerder) {
       di(`   AVISO GRAVE · ${c.nombre} (${imp.que}) se queda FUERA del viaje: ${motivo}.`, ORIGENES.ninguno);
@@ -3248,6 +3298,21 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
 
   sinColocarEnTotal += sacados.length;
 
+  // LA EXCURSIÓN EXPULSADA DEJA SU DÍA, Y ESE DÍA SE RELLENA.
+  //
+  // En Dubrovnik (viaje 127) la revisión echó «Excursión a Mostar y las
+  // cascadas de Kravice» del día 9 y el día se quedó con las murallas por la
+  // mañana, una «Comer · Mostar, durante la excursión» a las 13:00 y la tarde
+  // vacía. El relleno solo se disparaba con la excursión que no llegó a
+  // colocarse, no con la que se colocó y luego se echó: el mismo cráter por la
+  // otra puerta.
+  rellenarLosDiasDeExcursionesEchadas(
+    viajeId,
+    sacados.filter((x) => x.eraExcursion).map((x) => x.dia),
+    di
+  );
+  final = lienzoDeViaje(viajeId);
+
   // ¿SE DUERME EN ALGÚN SITIO SIN VER EL MOTIVO?
   //
   // Va aquí, al final, y no en la fase 1: allí la promesa de «cabe» era una
@@ -3294,6 +3359,13 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
 
   contarLoDeLaAclimatacion(viajeId, final, di);
 
+  // LAS EXCURSIONES QUE NO ENTRARON, ANTES DE JUZGAR. Su relleno cambia los
+  // días —y ahora devuelve los sitios que tapaban—, así que el veredicto de las
+  // paradas tiene que leer el plan de después, no el de antes.
+  avisarDeExcursionesSinColocar(viaje, motivosDeFuera, di);
+
+  repescarLosImprescindiblesQueFaltan(viajeId, di);
+
   di('Comprobando si las paradas cortas dan para lo que se va a ver…');
   const noCaben = avisarDeParadasQueNoCaben(viaje, di);
   // Y la otra cara: paradas de peso que SÍ están en la ruta pero cuyos
@@ -3313,8 +3385,6 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
   // enseña marcada. Si al repartir los días no entra en ninguno, quien mire el
   // viaje verá una excursión apuntada que no está en el lienzo y no sabrá si es
   // que no cupo o que se perdió por el camino. Va a los avisos del viaje.
-  avisarDeExcursionesSinColocar(viaje, motivosDeFuera, di);
-
   // LO QUE SE QUEDÓ FUERA DE SU HORARIO CUENTA COMO PENDIENTE, igual que un
   // solape. Es un bloque puesto a una hora a la que el sitio está cerrado: si no
   // entra aquí, la fase se declara limpia teniéndolo dentro.
@@ -3423,6 +3493,89 @@ export function avisarDeExcursionesSinColocar(viaje, motivos, di) {
  * está, y `huecoValido` sigue mandando: si el día está lleno de verdad, no entra
  * nada y no pasa nada.
  */
+/**
+ * EL ÚLTIMO REPASO: NINGÚN IMPRESCINDIBLE FUERA SI HAY UNO DE SEGUNDO NIVEL
+ * OCUPANDO SU HUECO.
+ *
+ * Todo lo anterior coloca, corrige y rellena, y puede acabar con un
+ * imprescindible fuera y un sitio de segundo nivel en la hora en la que cabía.
+ * Aquí, por parada y en su orden, cada imprescindible que falte se intenta en
+ * un hueco libre y, si no lo hay, en el que deja una visita de segundo nivel.
+ * Nunca desplaza a otro imprescindible ni a una excursión.
+ */
+function repescarLosImprescindiblesQueFaltan(viajeId, di) {
+  const etapas = todas(
+    "SELECT * FROM etapas WHERE viaje_id = ? AND estado = 'confirmada' AND noches > 0 ORDER BY orden",
+    viajeId
+  );
+  const estaColocado = (sitioId) =>
+    Boolean(
+      una(
+        `SELECT 1 FROM itinerario i JOIN candidatos c ON c.id = i.candidato_id
+          WHERE i.viaje_id = ? AND c.tipo = 'sitio' AND c.datos_extra LIKE ?`,
+        viajeId,
+        `%"deId":${sitioId}%`
+      )
+    );
+
+  for (const etapa of etapas) {
+    const faltan = imprescindiblesDeParada(etapa).filter((x) => !estaColocado(x.id));
+    for (const x of faltan) {
+      colocarImprescindible(viajeId, lienzoDeViaje(viajeId), etapa, x, di, [], {
+        comoSeDice: 'entra en el día %d a las %h, en el último repaso',
+        cederSegundoNivel: true,
+        siNoCabe: 'sigue sin hueco en %c ni cediéndole una visita de segundo nivel',
+      });
+    }
+  }
+}
+
+/**
+ * LA COMIDA «DURANTE LA EXCURSIÓN» SIN EXCURSIÓN.
+ *
+ * El reparto pone la comida del día de la excursión dentro de ella —«Comer ·
+ * Mostar, durante la excursión»—. Si la excursión se va, esa comida se queda
+ * contando una mentira a la hora de comer. Se quita solo si ese día no queda
+ * ninguna otra excursión; el relleno pone después una comida de verdad.
+ */
+function quitarLaComidaDeLaExcursion(viajeId, dias, di) {
+  const lienzo = lienzoDeViaje(viajeId);
+  for (const dia of dias) {
+    const delDia = lienzo.colocados.filter((c) => c.dia === dia);
+    if (delDia.some((c) => deQuienEs(c)?.candidato?.tipo === 'actividad')) continue;
+    for (const c of delDia) {
+      if (!esComida(c) || !/excursi/i.test(String(c.nombre ?? ''))) continue;
+      quitar(c.id);
+      di(`   Día ${dia}: quito «${c.nombre}», que era la comida de una excursión que ya no está.`, ORIGENES.ninguno);
+    }
+  }
+}
+
+function rellenarLosDiasDeExcursionesEchadas(viajeId, dias, di) {
+  const unicos = [...new Set(dias.filter((d) => Number.isInteger(d)))];
+  if (!unicos.length) return;
+
+  quitarLaComidaDeLaExcursion(viajeId, unicos, di);
+
+  const lienzo = lienzoDeViaje(viajeId);
+  const porEtapa = new Map();
+  for (const n of unicos) {
+    const d = lienzo.dias.find((x) => x.n === n);
+    if (!d?.etapaId || esDiaDeViaje(lienzo, n)) continue;
+    porEtapa.set(d.etapaId, [...(porEtapa.get(d.etapaId) ?? []), n]);
+  }
+  for (const [etapaId, suyos] of porEtapa) {
+    const etapa = una('SELECT * FROM etapas WHERE id = ?', etapaId);
+    if (!etapa) continue;
+    di(
+      `   ${etapa.nombre_ciudad}: la excursión del día ${suyos.join(', ')} se ha ido, así que ` +
+        'vuelvo a mirar qué cabe en su hueco.',
+      ORIGENES.ninguno
+    );
+    rellenarElDiaLiberado(viajeId, etapa, suyos, di);
+  }
+}
+
 function rellenarLoQueDejoLaExcursionFantasma(viaje, sueltas, di) {
   const etapas = [...new Set(sueltas.map((x) => x.etapaId).filter(Boolean))];
 
@@ -3441,6 +3594,7 @@ function rellenarLoQueDejoLaExcursionFantasma(viaje, sueltas, di) {
         'vuelvo a mirar qué cabe en sus días.',
       ORIGENES.ninguno
     );
+    quitarLaComidaDeLaExcursion(viaje.id, dias, di);
     rellenarElDiaLiberado(viaje.id, etapa, dias, di);
   }
 }

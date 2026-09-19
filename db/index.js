@@ -438,6 +438,8 @@ export function migrarEsquema() {
   migracionEurosPorHoraA20();
   migracionViajeLocal();
   anadirColumnaSiFalta('sitios_lugar', 'es_zona', 'INTEGER');
+  anadirColumnaSiFalta('sitios_lugar', 'cubierto_por_excursion', 'INTEGER');
+  migracionSepararCubiertos();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
   // datos ya existente no aparecen hasta que la migracion las añade, asi que en
@@ -6712,6 +6714,75 @@ function migracionViajeLocal() {
     'Si todo el viaje esta a menos de estos km de casa, no se buscan vuelos', 'km', orden + 1);
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: viaje local, sin vuelos.');
+  return true;
+}
+
+/**
+ * `cubierto_por` GUARDABA DOS COSAS Y SE SEPARAN.
+ *
+ * El id de OTRO SITIO cuando uno se visita dentro del otro (catálogo, vale para
+ * todos los viajes) y el id del CANDIDATO de una excursión que lo incluye (de un
+ * viaje). Los números se cruzaban: «Barrio de Dorćol» apuntaba al 4238, que es
+ * el tour por los subterráneos de Belgrado… y también el sitio «Calle del
+ * Príncipe Miguel». Lo de las excursiones pasa a `cubierto_por_excursion`.
+ *
+ * Reparto de las filas que hay:
+ *   - el número es una excursión de esa ciudad → a la columna nueva (también
+ *     cuando además coincide con un sitio: los dos casos de la base lo son);
+ *   - es un sitio de la misma ciudad → se queda, es una fusión;
+ *   - no es ninguna de las dos → se suelta. Era una excursión ya borrada: la
+ *     Acrópolis de Atenas y el Santuario de Itsukushima seguían tapados por
+ *     candidatos que no existen.
+ *
+ * Y se deshacen las fusiones de un edificio dentro de un recorrido —el Palacio
+ * del Rector dentro de las murallas—, con la misma regla que ya aplica
+ * `contenidos.js` a las nuevas.
+ */
+function migracionSepararCubiertos() {
+  const CLAVE = '2026-09-separar-cubiertos';
+  if (yaAplicada(CLAVE)) return false;
+
+  const filas = db.prepare(
+    `SELECT s.id, s.nombre, s.cubierto_por AS cp,
+            EXISTS (SELECT 1 FROM candidatos c JOIN etapas e ON e.id = c.etapa_id
+                     WHERE c.id = s.cubierto_por AND c.tipo = 'actividad'
+                       AND e.punto_interes_id = s.punto_interes_id) AS esExcursion,
+            (SELECT o.nombre FROM sitios_lugar o
+              WHERE o.id = s.cubierto_por AND o.punto_interes_id = s.punto_interes_id) AS contenedor
+       FROM sitios_lugar s
+      WHERE s.cubierto_por IS NOT NULL`
+  ).all();
+
+  const sinTildes = (t) => String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const RECORRIDO =
+    /^(murallas?|paseo|casco|barrio|calle|plaza|ciudad (vieja|medieval|antigua)|centro (historico|antiguo)|old town|muelle|puerto|riva|malecon|avenida|rambla)\b/;
+  const EDIFICIO =
+    /^(museo|palacio|catedral|iglesia|basilica|monasterio|convento|castillo|galeria|sinagoga|mezquita|capilla|teatro)\b/;
+
+  const aExcursion = db.prepare('UPDATE sitios_lugar SET cubierto_por_excursion = cubierto_por, cubierto_por = NULL WHERE id = ?');
+  const soltar = db.prepare('UPDATE sitios_lugar SET cubierto_por = NULL WHERE id = ?');
+  const cuenta = { excursion: 0, fusion: 0, huerfana: 0, deshecha: 0 };
+
+  for (const f of filas) {
+    if (f.esExcursion) {
+      aExcursion.run(f.id);
+      cuenta.excursion += 1;
+    } else if (!f.contenedor) {
+      soltar.run(f.id);
+      cuenta.huerfana += 1;
+    } else if (RECORRIDO.test(sinTildes(f.contenedor)) && EDIFICIO.test(sinTildes(f.nombre))) {
+      soltar.run(f.id);
+      cuenta.deshecha += 1;
+    } else {
+      cuenta.fusion += 1;
+    }
+  }
+
+  marcarAplicada(CLAVE);
+  console.log(
+    `[bd] Migración: cubierto_por separado — ${cuenta.excursion} a excursión, ${cuenta.fusion} fusiones, ` +
+      `${cuenta.huerfana} huérfanas soltadas, ${cuenta.deshecha} fusiones de edificio en recorrido deshechas.`
+  );
   return true;
 }
 
