@@ -4301,6 +4301,8 @@ a  { color: var(--acento); }
    hace se lee en el `title`, que es donde va lo que no cabe en un botón. */
 .etapa__clonar i { font-size: var(--icono-sm); }
 .etapa__clonar { width: 38px; padding: 0; justify-content: center; }
+/* Y con aire: sin texto, pegado a «Abrir etapa» parecía parte del mismo botón. */
+.etapa__acciones .etapa__clonar { margin-left: var(--esp-3); }
 
 /* Las horas y el precio del vuelo ya elegido, en la tarjeta del tramo. Misma
    letra secundaria que el resto de datos de la caja; en dos líneas si no caben. */
