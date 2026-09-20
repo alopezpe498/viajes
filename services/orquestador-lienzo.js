@@ -1040,6 +1040,9 @@ function esDeLuzDelDia(sitio) {
 /** A partir de qué hora ya no empieza una visita de luz del día. */
 const ULTIMA_HORA_CON_LUZ = '19:00';
 
+/** A qué hora se acaba el día: nada puede seguir después. */
+const FIN_DEL_DIA = 23 * 60;
+
 /** Las franjas en las que algo puede estar, según lo que es. */
 function franjasQueAdmite(naturaleza) {
   // Con pases, la franja la deciden las horas y no al revés.
@@ -1295,14 +1298,24 @@ function enderezarHorasImposibles(viajeId, lienzo, di, sacar, idos) {
     if (esComida(c)) continue;
 
     const naturaleza = naturalezaDe(c);
-    if (!naturaleza.sesiones?.length && !naturaleza.soloDeNoche && !naturaleza.deDia) continue;
-    if (horaLegitima(naturaleza, c.hora)) continue;
+
+    // NADA ACABA DE MADRUGADA. El «Tour por el Belgrado comunista» —cuatro
+    // horas— se quedó a las 20:00 porque el reparto no le dio hora y el código
+    // prefiere un conflicto visible a un bloque escondido. Visible sí, pero
+    // acababa a medianoche: eso no es un plan, es un hueco mal tapado.
+    const acabaA = (enMinutos(c.hora) ?? 0) + (Number(c.duracionMin) || 0);
+    const acabaTarde = acabaA > FIN_DEL_DIA;
+
+    if (!acabaTarde && !naturaleza.sesiones?.length && !naturaleza.soloDeNoche && !naturaleza.deDia) continue;
+    if (!acabaTarde && horaLegitima(naturaleza, c.hora)) continue;
 
     const comoEs = naturaleza.sesiones?.length
       ? `solo tiene pases a las ${naturaleza.sesiones.join(' y ')}`
       : naturaleza.soloDeNoche
         ? 'es cosa de última hora'
-        : 'solo se ve con luz del día';
+        : naturaleza.deDia && !horaLegitima(naturaleza, c.hora)
+          ? 'solo se ve con luz del día'
+          : `acabaría a las ${comoHoraDeMinutos(acabaA)}`;
 
     const r = recolocarConHora(viajeId, tablero, c);
     if (r.movido) {
@@ -3638,14 +3651,23 @@ function repescarLosImprescindiblesQueFaltan(viajeId, di) {
  * Así que se quita la comida de ese día, diga lo que diga, y solo cuando al día
  * ya no le queda ninguna excursión. El relleno pone después una comida normal,
  * a la hora de comer.
+ *
+ * CON UNA EXCEPCIÓN, Y ES UN FALLO QUE YA SE COLÓ. Cuando la excursión no llegó
+ * a colocarse NUNCA, los días «liberados» son todos los de la parada, y en
+ * ellos la comida es la de siempre: en el viaje 130 se quitó la del día 1 de
+ * Belgrado, que no tenía nada que ver, y ese día se quedó sin comer. Ahí solo
+ * se quita la que se declara de la excursión en su propio texto.
  */
-function quitarLaComidaDeLaExcursion(viajeId, dias, di) {
+const COMIDA_DE_EXCURSION = /excursi|a bordo|durante|incluid|al regreso|en ruta/i;
+
+function quitarLaComidaDeLaExcursion(viajeId, dias, di, { soloSiLoDice = false } = {}) {
   const lienzo = lienzoDeViaje(viajeId);
   for (const dia of dias) {
     const delDia = lienzo.colocados.filter((c) => c.dia === dia);
     if (delDia.some((c) => deQuienEs(c)?.candidato?.tipo === 'actividad')) continue;
     for (const c of delDia) {
       if (!esComida(c)) continue;
+      if (soloSiLoDice && !COMIDA_DE_EXCURSION.test(String(c.nombre ?? ''))) continue;
       quitar(c.id);
       di(`   Día ${dia}: quito «${c.nombre}», la comida del día de una excursión que ya no está.`, ORIGENES.ninguno);
     }
@@ -3695,7 +3717,7 @@ function rellenarLoQueDejoLaExcursionFantasma(viaje, sueltas, di) {
         'vuelvo a mirar qué cabe en sus días.',
       ORIGENES.ninguno
     );
-    quitarLaComidaDeLaExcursion(viaje.id, dias, di);
+    quitarLaComidaDeLaExcursion(viaje.id, dias, di, { soloSiLoDice: true });
     rellenarElDiaLiberado(viaje.id, etapa, dias, di);
   }
 }
