@@ -49,10 +49,13 @@ const { viaje } = ruta;
     <header class="ruta-hero">
       <%- include('parciales/migas', { viaje }) %>
       <div class="ruta-hero__fila">
-        <%# EL DESTINO, EN EL TÍTULO Y NO EN UN CHIP.
+        <%# EL NOMBRE DEL VIAJE, EL MISMO CON EL QUE ESTÁ GUARDADO.
             «Mi ruta» con el destino al lado en letra pequeña se leía como una
-            etiqueta de más; el sitio al que vas es el título de la pantalla. %>
-        <h1 class="ruta-hero__titulo">Ruta<%= viaje.ambito ? `: ${viaje.ambito}` : '' %></h1>
+            etiqueta de más. Y el destino tampoco vale: es el texto tal y como
+            se tecleó —«Croacia bosnia y servia»—, mientras que en «Mis viajes»
+            ese viaje se llama «Viaje a Croacia, Bosnia y Herzegovina y Serbia».
+            Dos nombres para lo mismo según la pantalla. Manda el guardado. %>
+        <h1 class="ruta-hero__titulo"><%= viaje.nombre || (viaje.ambito ? `Ruta: ${viaje.ambito}` : 'Mi ruta') %></h1>
 
         <nav class="ruta-hero__acciones" aria-label="Accesos del viaje">
           <a class="ruta-pildora" href="/viaje/<%= viaje.id %>/lienzo">
