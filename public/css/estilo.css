@@ -2379,10 +2379,19 @@ a  { color: var(--acento); }
 }
 .ruta-tramo__medio:hover { border-color: var(--acento); }
 .ruta-tramo__medio i { font-size: var(--icono-xs); }
+/* EL COLOR DEL TRAMO SE VE DE UN VISTAZO, y antes solo lo decía el iconito.
+   Resuelto —el vuelo o el traslado ya elegido— en el verde de aceptación;
+   pendiente, en el mismo ámbar del aviso de «viaje sin ver». */
+.ruta-tramo--resuelto .ruta-tramo__medio {
+  border-color: var(--verde-tx);
+  background: var(--verde-bg);
+  color: var(--verde-tx);
+}
 .ruta-tramo--resuelto .ruta-tramo__medio i { color: var(--verde-tx); }
 .ruta-tramo--pendiente .ruta-tramo__medio {
   border-style: dashed;
   border-color: var(--prec-tx);
+  background: var(--prec-bg);
   color: var(--prec-tx);
 }
 .ruta-tramo--pendiente .ruta-tramo__medio i { color: var(--prec-tx); }
@@ -4288,7 +4297,20 @@ a  { color: var(--acento); }
   background: var(--superficie);
   color: var(--acento);
 }
-.etapa__clonar i { font-size: var(--icono-xs); }
+/* Sin texto: cuadrado, con el icono a la talla de una acción de panel. Lo que
+   hace se lee en el `title`, que es donde va lo que no cabe en un botón. */
+.etapa__clonar i { font-size: var(--icono-sm); }
+.etapa__clonar { width: 38px; padding: 0; justify-content: center; }
+
+/* Las horas y el precio del vuelo ya elegido, en la tarjeta del tramo. Misma
+   letra secundaria que el resto de datos de la caja; en dos líneas si no caben. */
+.tramo-caja__vuelo {
+  display: flex; flex-wrap: wrap; gap: var(--esp-1) var(--esp-5);
+  margin: var(--esp-2) 0 0;
+  font-size: var(--texto-base); color: var(--texto-2);
+}
+.tramo-caja__vuelo span { display: inline-flex; align-items: center; gap: var(--esp-1); }
+.tramo-caja__vuelo i { color: var(--acento); }
 
 /* Una parada de paso: se cruza para coger el avión, no se duerme en ella. */
 .etapa__valor { white-space: nowrap; }

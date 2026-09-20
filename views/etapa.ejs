@@ -104,9 +104,6 @@ const ICONO_TIPO = {
           <a class="boton-discreto" href="/viaje/<%= viaje.id %>/lienzo?etapa=<%= etapa.id %>">
             <i class="ti ti-layout-board" aria-hidden="true"></i> Ver el lienzo de esta etapa
           </a>
-          <a class="boton-discreto" href="/viaje/<%= viaje.id %>/ruta">
-            <i class="ti ti-arrow-left" aria-hidden="true"></i> Volver a la ruta
-          </a>
         </span>
       </div>
 
@@ -733,6 +730,29 @@ const ICONO_TIPO = {
                 <% if (t.medio.notaPropia) { %>
                   <p class="secundario" style="margin:2px 0 0"><%= t.medio.notaPropia %></p>
                 <% } %>
+              <% } %>
+              <%# EL VUELO, CON LO QUE SE PREGUNTA DE ÉL: a qué hora sale, a qué
+                  hora llega y cuánto cuesta. Es lo mismo que ya se enseña del
+                  hotel en su pestaña, y estaba guardado desde que se eligió. %>
+              <% if (t.vuelo && (t.vuelo.horaSalida || t.vuelo.precioPersona != null)) { %>
+                <p class="tramo-caja__vuelo">
+                  <% if (t.vuelo.horaSalida && t.vuelo.horaLlegada) { %>
+                    <span>
+                      <i class="ti ti-clock" aria-hidden="true"></i>
+                      <%= t.vuelo.horaSalida %> → <%= t.vuelo.horaLlegada %><%= t.vuelo.diasDespues ? ` (+${t.vuelo.diasDespues})` : '' %>
+                      <%= t.vuelo.duracion ? ` · ${t.vuelo.duracion}` : '' %>
+                      <%= t.vuelo.escalas === 0 ? ' · directo' : t.vuelo.escalas ? ` · ${t.vuelo.escalas} escala${t.vuelo.escalas > 1 ? 's' : ''}` : '' %>
+                    </span>
+                  <% } %>
+                  <% if (t.vuelo.precioPersona != null) { %>
+                    <span>
+                      <i class="ti ti-tag" aria-hidden="true"></i>
+                      <%= t.vuelo.precioPersona %> €/persona<%= t.vuelo.precio ? ` · ${t.vuelo.precio} € en total` : '' %>
+                    </span>
+                  <% } else if (t.vuelo.precio) { %>
+                    <span><i class="ti ti-tag" aria-hidden="true"></i> <%= t.vuelo.precio %> €</span>
+                  <% } %>
+                </p>
               <% } %>
               <% if (t.notas) { %><p class="secundario" style="margin:4px 0 0"><%= t.notas %></p><% } %>
               <% if (t.precioEstimado) { %>

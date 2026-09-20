@@ -718,7 +718,13 @@ export function describirTramo(t) {
     // Un tramo está resuelto si se eligió un vuelo, un medio, o se apuntó a mano.
     resuelto: Boolean(t.candidato_id || t.notas || medio),
     medio,
-    vuelo: vuelo ? { id: vuelo.id, titulo: vuelo.titulo, precio: vuelo.precio, moneda: vuelo.moneda } : null,
+    // EL VUELO, CON SUS HORAS Y SU PRECIO.
+    //
+    // La tarjeta enseñaba el título —«Air Serbia · ida (BEG)»— y nada más: para
+    // saber a qué hora sale y cuánto cuesta había que abrir el buscador de
+    // vuelos otra vez. Es el mismo dato que ya se enseña del hotel, y vive en
+    // `datos_extra` desde que se eligió.
+    vuelo: vuelo ? datosDelVuelo(vuelo) : null,
     notas: t.notas,
     precioEstimado: t.precio_estimado,
     distanciaKm: t.distancia_km,
@@ -729,6 +735,45 @@ export function describirTramo(t) {
     fechaVuelta: viaje?.fecha_fin ?? null,
     // Para el chip de la pantalla de ruta.
     resumen: resumenDeTramo(t, nombreOrigen, nombreDestino, donde, vuelo, casa, medio),
+  };
+}
+
+/**
+ * LO QUE SE ENSEÑA DE UN VUELO YA ELEGIDO: título, horas y precio.
+ *
+ * `datos_extra` guarda la tarjeta entera tal y como se vio al elegirla. De ahí
+ * salen la hora de salida y la de llegada del primer y del último trozo —con
+ * escalas, la salida es la del primero y la llegada la del último— y el precio
+ * por persona, que es como se compara en la pantalla de vuelos.
+ */
+function datosDelVuelo(vuelo) {
+  let extra = {};
+  try {
+    extra = vuelo.datos_extra ? JSON.parse(vuelo.datos_extra) : {};
+  } catch {
+    extra = {};
+  }
+  const trozos = Array.isArray(extra.tramos) ? extra.tramos : [];
+  const primero = trozos[0] ?? null;
+  const ultimo = trozos.at(-1) ?? null;
+  // Kayak escribe «9:55» y el resto de la pantalla escribe «09:55»: se iguala,
+  // que si no la columna de horas baila.
+  const hora = (h) => (h ? String(h).replace(/^(\d):/, '0$1:') : null);
+
+  return {
+    id: vuelo.id,
+    titulo: vuelo.titulo,
+    precio: vuelo.precio,
+    moneda: vuelo.moneda,
+    precioPersona: Number.isFinite(Number(extra.precioPorPersona)) ? Number(extra.precioPorPersona) : null,
+    horaSalida: hora(primero?.horaSalida),
+    horaLlegada: hora(ultimo?.horaLlegada),
+    // Los días de más, cuando se aterriza al día siguiente: «23:40 → 07:15 (+1)».
+    diasDespues: Number(ultimo?.diasDespues) || 0,
+    duracion: extra.minutosTotales
+      ? `${Math.floor(extra.minutosTotales / 60)}h ${String(extra.minutosTotales % 60).padStart(2, '0')}min`
+      : primero?.duracion ?? null,
+    escalas: Number.isFinite(Number(primero?.escalas)) ? Number(primero.escalas) : null,
   };
 }
 

@@ -419,6 +419,14 @@
     selector?.addEventListener('change', repintaBotones);
     repintaBotones();
 
+    // 1b. ELEGIR YA ES CARGAR. Antes había que elegir y además pulsar «Cargar»,
+    //     dos gestos para una sola intención. Ahora el cambio manda el
+    //     formulario, salvo que el servidor lo haya bloqueado por tener ruta.
+    selector?.addEventListener('change', () => {
+      if (!selector.value || bloqueadoDesdeElServidor) return;
+      document.getElementById('form-plantillas')?.submit();
+    });
+
     // 2. Borrar no se deshace, así que se pregunta. Con el nombre delante: un
     //    «¿seguro?» a secas no dice qué se va a llevar por delante.
     borrar?.addEventListener('click', (e) => {

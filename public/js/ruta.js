@@ -154,6 +154,16 @@
       </div>`;
   }
 
+  /**
+   * UNA PARADA DE LA LÍNEA.
+   *
+   * EL BOTÓN DE LA VUELTA, QUE ANTES SE LLAMABA «CLONAR». No duplica nada: pone
+   * esa ciudad otra vez al final de la ruta como parada de PASO —cero noches—
+   * porque el camino de vuelta al aeropuerto pasa por allí. «Clonar» es lo que
+   * hace el código por dentro, no lo que significa para quien mira su viaje, y
+   * nadie tiene por qué adivinarlo. Ahora es la flecha de volver, sin texto, y
+   * lo que hace se lee al posarse encima.
+   */
   function nodoEtapa(e, i) {
     const fechas = e.fechaInicio ? `${dia(e.fechaInicio)} → ${dia(e.fechaFin)}` : '— → —';
     const dePaso = e.noches <= 0;
@@ -200,8 +210,9 @@
               <a class="etapa__abrir" href="/etapa/${e.id}">Abrir etapa</a>
               <button class="etapa__clonar" type="button" data-accion="clonar"
                       data-id="${e.id}" data-nombre="${esc(e.nombre)}"
-                      title="Volver a pasar por ${esc(e.nombre)} al final de la ruta">
-                <i class="ti ti-copy" aria-hidden="true"></i> Clonar
+                      aria-label="Volver a pasar por ${esc(e.nombre)} a la vuelta"
+                      title="Añade ${esc(e.nombre)} al final de la ruta como parada de paso, solo para la vuelta">
+                <i class="ti ti-arrow-back-up" aria-hidden="true"></i>
               </button>
             </span>
           </div>

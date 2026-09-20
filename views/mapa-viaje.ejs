@@ -71,8 +71,12 @@ const MUTANT = '0.14.1';
         <span class="mm-migas__sep" aria-hidden="true">/</span>
         <span class="mm-migas__actual" aria-current="page">Mapa</span>
       </span>
-      <b><%= viaje.destino || viaje.nombre %> · <%= mapa.dias.length %> días</b>
-      <small><%= mapa.ciudades.map((c) => `${c.nombre} ${c.noches}n`).join(' → ') %></small>
+      <%# DÓNDE ESTOY, que es lo que hace falta saber mirando un mapa.
+          Aquí vivían el nombre del viaje y la lista de ciudades con sus noches,
+          y las dos cosas ya están en la pantalla de la ruta, de donde se viene.
+          Lo que no estaba en ninguna parte es en qué día y en qué ciudad se
+          está mirando el mapa: eso lo escribe el JS al cambiar de vista. %>
+      <b id="mm-donde"></b>
     </span>
   </div>
 

@@ -582,6 +582,35 @@
     }
   }
 
+  /**
+   * DÓNDE ESTOY: el día y la ciudad que se están mirando.
+   *
+   * En la vista del día, el mapa enseñaba ocho pines y el título decía el
+   * nombre del viaje: para saber si esos pines eran de Belgrado o de Split
+   * había que ir a buscar el día en la lista del panel. Ahora lo dice la
+   * cabecera, que es donde se mira.
+   */
+  function pintarDonde() {
+    const n = document.getElementById('mm-donde');
+    if (!n) return;
+
+    if (vista === 'dia') {
+      const d = D.dias.find((x) => x.n === dia);
+      n.textContent = d
+        ? `Día ${d.n}${d.ciudad ? ` · ${d.ciudad}` : ''}${d.fechaCorta ? ` · ${d.fechaCorta}` : ''}`
+        : `Día ${dia}`;
+      return;
+    }
+    if (vista === 'etapa') {
+      const c = ciudadDe(ciudad);
+      n.textContent = c
+        ? `${c.nombre} · ${c.noches} ${c.noches === 1 ? 'noche' : 'noches'}`
+        : 'Etapa';
+      return;
+    }
+    n.textContent = `Viaje completo · ${D.dias.length} días`;
+  }
+
   function pintarSelector() {
     const n = document.getElementById('mm-selector');
     n.innerHTML = '';
@@ -889,7 +918,15 @@
   });
 
   function refrescar() {
+    // Al cambiar de vista, lo que solo vive en una vista se va con ella: el
+    // «cómo llegar» es del día —fuera de él no hay «anterior»— y la medida se
+    // arma sobre el mapa que se estaba mirando.
+    cerrarComoLlegar();
+    mapa.closePopup();
+    pintarMedir();
+
     pintarVistas();
+    pintarDonde();
     pintarSelector();
     pintarCapas();
     pintarLeyenda();
@@ -967,6 +1004,21 @@
   }
 
   botonMedir.addEventListener('click', () => armarMedir(!midiendo));
+
+  /**
+   * LA MEDIDA SOLO DONDE SE PUEDE MEDIR.
+   *
+   * Se mide entre dos PUNTOS del plan, y en la vista de la ruta no hay ninguno:
+   * ahí solo se pintan ciudades, cuyo clic hace otra cosa. El botón salía igual,
+   * se armaba, cambiaba el cursor a la cruz y no pasaba nada al pinchar. Fuera
+   * de sus vistas no se enseña, y si estaba armado se desarma.
+   */
+  function pintarMedir() {
+    const caja = document.getElementById('mm-medir');
+    const vale = vista !== 'ruta';
+    if (!vale && midiendo) armarMedir(false);
+    if (caja) caja.style.display = vale ? '' : 'none';
+  }
 
   /** Segundo clic: se pregunta. El primero solo marca y espera. */
   async function medirHasta(item) {

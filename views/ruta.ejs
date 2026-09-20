@@ -49,8 +49,10 @@ const { viaje } = ruta;
     <header class="ruta-hero">
       <%- include('parciales/migas', { viaje }) %>
       <div class="ruta-hero__fila">
-        <h1 class="ruta-hero__titulo">Mi ruta</h1>
-        <% if (viaje.ambito) { %><span class="chip-ambito"><%= viaje.ambito %></span><% } %>
+        <%# EL DESTINO, EN EL TÍTULO Y NO EN UN CHIP.
+            «Mi ruta» con el destino al lado en letra pequeña se leía como una
+            etiqueta de más; el sitio al que vas es el título de la pantalla. %>
+        <h1 class="ruta-hero__titulo">Ruta<%= viaje.ambito ? `: ${viaje.ambito}` : '' %></h1>
 
         <nav class="ruta-hero__acciones" aria-label="Accesos del viaje">
           <a class="ruta-pildora" href="/viaje/<%= viaje.id %>/lienzo">

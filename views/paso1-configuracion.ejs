@@ -121,14 +121,13 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
                 <% }) %>
               </select>
 
-              <%# Con ruta ya montada no se carga: cambiar los viajeros invalidaría
-                  los vuelos y hoteles ya buscados, y esa limpieza la hace el
-                  guardado del paso 1, no esta ruta. %>
+              <%# ELEGIR ES CARGAR: el desplegable manda el formulario solo, y por
+                  eso ya no hay botón de «Cargar». El botón sigue en el HTML,
+                  escondido, porque es quien lleva el `disabled` del servidor
+                  cuando el viaje ya tiene ruta: cambiar los viajeros entonces
+                  invalidaría los vuelos y hoteles ya buscados. %>
               <button type="submit" class="btn-plantilla" form="form-plantillas"
-                      data-cargar <%= tieneRuta ? 'disabled' : '' %>>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="7 11 12 16 17 11"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
-                Cargar
-              </button>
+                      data-cargar hidden <%= tieneRuta ? 'disabled' : '' %>>Cargar</button>
 
               <button type="submit" class="btn-plantilla btn-plantilla--icono" form="form-plantillas"
                       formaction="/viajes/<%= viaje.id %>/plantillas/borrar"
@@ -154,7 +153,12 @@ const subtitulo = [viaje.destino, viaje.nombre].filter(Boolean).join(' · ')
             <label class="plantillas__etiqueta" for="nombre_plantilla">Guardar esta configuración como</label>
             <input type="text" id="nombre_plantilla" name="nombre_plantilla" maxlength="80"
                    autocomplete="off" placeholder="En pareja"
-                   value="<%= typeof nombrePlantilla !== 'undefined' ? nombrePlantilla : (plantillaCargada ? (plantillas.find(p => p.id === plantillaCargada)?.nombre ?? '') : '') %>">
+                   <%# EN BLANCO SIEMPRE. Venía con el nombre de la plantilla que se
+                       acababa de cargar, así que cada vez que se guardaba la
+                       configuración salía el «ya tienes una plantilla así,
+                       ¿la actualizo?» sin haber pedido guardar ninguna. Si se
+                       quiere sobrescribir, se escribe el nombre. %>
+                   value="<%= typeof nombrePlantilla !== 'undefined' ? nombrePlantilla : '' %>">
           </div>
           <div class="plantillas__pista">
             Se guarda al darle a <strong>Guardar</strong> abajo, junto con la configuración.
