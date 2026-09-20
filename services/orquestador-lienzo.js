@@ -2611,6 +2611,54 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
       intentos.push(`mover ${elOtro.nombre}`);
     }
 
+    // f) Y SI NADA SE MUEVE, LA COMIDA VA DETRÁS DE LA VISITA.
+    //
+    // EL CASO, viaje 133. El día 11 el Palacio de Diocleciano ocupa de 13:30 a
+    // 17:30 —cuatro horas, y es el #1 de Split— y la comida estaba puesta a las
+    // 14:30, dentro. No se podía recortar, ni adelantar (se llega a Split a
+    // mediodía), ni mover el palacio, así que el día acababa con «no he sabido
+    // resolverlo» y una comida pisada. Cuatro días del viaje acabaron así.
+    //
+    // Comer dentro de una visita no es comer. Si la visita larga se queda con la
+    // hora, la comida pasa a cuando esa visita termina: es una comida tardía,
+    // que es lo que le pasa a cualquiera que entra a un museo a las dos.
+    if (!esComida(elOtro)) {
+      const finDelOtro = (enMinutos(elOtro.hora) ?? 0) + (Number(elOtro.duracionMin) || 0);
+      const tras = comoHoraDeMinutos(finDelOtro);
+      // El hueco de después no tiene por qué ser de la misma franja ni de la
+      // misma duración: detrás de una visita de cuatro horas queda lo que queda,
+      // y una comida de 45 minutos sigue siendo comer.
+      const desdeFranja = CLAVES_FRANJA.indexOf(franjaDesde(tras) ?? menos.franja);
+      const duraciones = [...new Set([Number(menos.duracionMin) || duracionComida, 60, 45])];
+      // Manda la hora, no la duración: comer 45 minutos a las 14:00 es mejor que
+      // 90 a las ocho de la tarde. Por eso la franja va por fuera.
+      let puesta = null;
+      for (const franja of CLAVES_FRANJA.slice(Math.max(0, desdeFranja))) {
+        for (const duracion of duraciones) {
+          const libre = tras
+            ? horaLibreEn(sinEl(tablero, menos.id), { dia: menos.dia, franja, duracion, noAntesDe: tras })
+            : null;
+          if (libre && enMinutos(libre) <= COMIDA_LO_MAS_TARDE) {
+            puesta = { hora: libre, duracion };
+            break;
+          }
+        }
+        if (puesta) break;
+      }
+      if (puesta) {
+        mover(menos.id, { dia: menos.dia, franja: franjaDesde(puesta.hora) ?? menos.franja });
+        retocar(menos.id, { hora: puesta.hora, duracionMin: puesta.duracion });
+        di(
+          `   Día ${aviso.dia}: ${elOtro.nombre} se queda con la hora de comer, así que la ` +
+            `comida pasa a las ${puesta.hora}` +
+            (puesta.duracion !== (Number(menos.duracionMin) || duracionComida) ? ` (${puesta.duracion} min)` : '') +
+            ', detrás de la visita.'
+        );
+        return 1;
+      }
+      intentos.push('ponerla detrás de la visita');
+    }
+
     di(
       `   Día ${aviso.dia}: ${menos.nombre} choca con ${mas.nombre} y no he podido ` +
         `${intentos.join(' ni ')}. La comida no cambia de día: lo dejo dicho.`
@@ -3594,6 +3642,8 @@ export function avisarDeExcursionesSinColocar(viaje, motivos, di) {
  */
 const COMIDA_DESDE = '12:00';
 const COMIDA_HASTA = '16:30';
+/** Y lo más tarde que se acepta comer cuando una visita larga se queda la hora. */
+const COMIDA_LO_MAS_TARDE = 21 * 60;
 function comidaAHoraDeComer(viajeId, lienzo, di) {
   let tocado = false;
   for (const c of lienzo.colocados.filter((x) => esComida(x) && x.hora)) {
