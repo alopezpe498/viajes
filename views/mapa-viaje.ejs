@@ -157,6 +157,20 @@ const MUTANT = '0.14.1';
     </div>
   </div>
 
+  <%# --- LA FICHA DEL SITIO, SOLO PARA LEER ---
+      La misma caja que «Cómo llegar» y las mismas salidas: aspa, Escape o
+      clic fuera. Lo de dentro llega pintado del servidor. %>
+  <div class="mm-comollegar" id="mm-ficha" hidden>
+    <div class="mm-comollegar__caja mm-comollegar__caja--ficha">
+      <div class="mm-comollegar__cab">
+        <span class="mm-comollegar__titulo" id="mm-ficha-titulo"></span>
+        <button type="button" class="mm-cerrar" id="mm-ficha-cerrar"
+                title="Cerrar" aria-label="Cerrar">&times;</button>
+      </div>
+      <div class="mm-ficha__cuerpo" id="mm-ficha-cuerpo"></div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/<%= LEAFLET %>/leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@<%= MUTANT %>/dist/Leaflet.GoogleMutant.min.js"></script>
   <script src="/js/mapa-teselas.js"></script>

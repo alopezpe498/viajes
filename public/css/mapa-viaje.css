@@ -432,3 +432,32 @@ html:has(.mapa-maestro) { height: 100%; }
      entero en vez de apretarlos. */
   .mm-comollegar__fuera { margin-left: 0; width: 100%; }
 }
+
+/* La ficha de lectura: la misma caja que «Cómo llegar», pero con el texto
+   desplazable y un poco más estrecha, que es una ficha y no un mapa. */
+.mm-comollegar__caja--ficha { width: min(560px, 100%); height: min(680px, 86vh); }
+.mm-ficha__cuerpo { flex: 1; overflow: auto; padding: var(--esp-5) 14px; }
+
+.ficha-lectura__foto img {
+  width: 100%; max-height: 220px; object-fit: cover;
+  border-radius: var(--radio-xs);
+}
+.ficha-lectura__nombre { margin: var(--esp-4) 0 var(--esp-2); font-size: var(--texto-2xl); }
+.ficha-lectura__meta {
+  display: flex; flex-wrap: wrap; gap: var(--esp-1) var(--esp-5);
+  margin: 0 0 var(--esp-3); font-size: var(--texto-base); color: var(--texto-2);
+}
+.ficha-lectura__meta span, .ficha-lectura__dato { display: inline-flex; align-items: center; gap: var(--esp-1); }
+.ficha-lectura__meta i, .ficha-lectura__dato i, .ficha-lectura__enlaces i { color: var(--acento); }
+.ficha-lectura__texto { margin: 0 0 var(--esp-3); line-height: 1.5; color: var(--texto); }
+.ficha-lectura__dato { margin: 0 0 var(--esp-3); color: var(--texto-2); align-items: flex-start; }
+.ficha-lectura__dentro { margin: 0 0 var(--esp-3); color: var(--texto-2); }
+.ficha-lectura__dentro ul { margin: var(--esp-1) 0 0; padding-left: 18px; }
+.ficha-lectura__dentro li { margin-bottom: 2px; }
+.ficha-lectura__enlaces {
+  display: flex; flex-wrap: wrap; gap: var(--esp-2) var(--esp-5);
+  margin: var(--esp-4) 0 0; font-size: var(--texto-base); font-weight: 600;
+}
+.ficha-lectura__enlaces a { display: inline-flex; align-items: center; gap: var(--esp-1); color: var(--acento); text-decoration: none; }
+.ficha-lectura__enlaces a:hover { text-decoration: underline; }
+.ficha-lectura__pie { margin: var(--esp-4) 0 0; font-size: var(--texto-sm); color: var(--texto-3); }

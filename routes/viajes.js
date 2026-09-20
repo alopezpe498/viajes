@@ -62,6 +62,7 @@ import {
 import {
   cargarEtapa,
   queVerDeEtapa,
+  fichaDeLectura,
   alternarApuntado,
   hotelesDeEtapa,
   buscarHotelesDeEtapa,
@@ -3703,6 +3704,27 @@ router.get('/viaje/:viajeId/mapa', async (req, res) => {
     mapa,
     viaje: mapa.viaje,
     claveMapas: process.env.GOOGLE_MAPS_BROWSER_KEY || '',
+  });
+});
+
+/**
+ * LA FICHA DE UN SITIO, PARA LEERLA DESDE EL MAPA.
+ *
+ * Devuelve el trozo de HTML ya pintado, no los datos sueltos: la plantilla es
+ * la misma para todos y así el mapa no tiene que saber cómo se escribe una
+ * ficha. Es de LECTURA: no apunta, no coloca y no busca nada; enseña lo que hay
+ * guardado en ese momento. Lo demás se hace en la etapa, y a ella lleva el
+ * enlace del final.
+ */
+router.get('/api/fichas/:tipo/:id', (req, res) => {
+  const f = fichaDeLectura(req.params.tipo, Number(req.params.id));
+  if (!f) return res.status(404).send('<p class="ficha-lectura__pie">De eso no hay ficha guardada.</p>');
+  res.render('parciales/ficha-lectura', { f }, (err, html) => {
+    if (err) {
+      console.warn(`[fichas] no pude pintar la ficha ${req.params.tipo}/${req.params.id}: ${err.message}`);
+      return res.status(500).send('<p class="ficha-lectura__pie">No he podido pintar esta ficha.</p>');
+    }
+    res.type('html').send(html);
   });
 });
 

@@ -340,6 +340,10 @@ export async function mapaDeViaje(viajeId) {
       // concentración de Auschwitz»— y quien mire el mapa tiene derecho a saber
       // cuál es ese sitio, porque el nombre del pin dice otra cosa.
       situadaComo: d?.mensaje ?? null,
+      // DE QUÉ FICHA SALIÓ, para poder abrirla desde el mapa. Es la misma
+      // pareja (tabla, id) con la que se le busca la dirección; viaja al
+      // navegador solo para los que tienen ficha que leer.
+      dir: c.dir && (c.dir.tipo === 'sitio' || c.dir.tipo === 'punto') ? c.dir : null,
     });
   }
 

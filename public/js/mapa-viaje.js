@@ -816,22 +816,79 @@
     bicycling: 'en bici',
   };
 
-  /** El globo del punto pinchado, con su «Cómo llegar» si hay de dónde venir. */
+  /**
+   * El globo del punto pinchado, con lo que se puede hacer con él:
+   *
+   *   · ver su FICHA, si es un sitio del catálogo —los que la tienen—;
+   *   · ver CÓMO LLEGAR desde el punto anterior del día, si hay anterior.
+   *
+   * Sin ninguna de las dos no hay globo: un globo que solo repite el nombre que
+   * ya dice el tooltip es una ventana de más.
+   */
   function abrirGlobo(i, previo) {
-    if (!previo || !CLAVE_MAPAS) {
+    const conFicha = i.dir && (i.dir.tipo === 'sitio' || i.dir.tipo === 'punto');
+    const conRuta = Boolean(previo && CLAVE_MAPAS);
+    if (!conFicha && !conRuta) {
       mapa.closePopup();
       return;
     }
+
+    const botones = [];
+    if (conFicha) {
+      botones.push(
+        `<button type="button" class="mm-popup__ir" data-ficha="${esc(i.dir.tipo)}" ` +
+          `data-ficha-id="${esc(String(i.dir.id))}" data-nombre="${esc(i.nombre)}">` +
+          '<i class="ti ti-info-circle" aria-hidden="true"></i> Ver la ficha</button>'
+      );
+    }
+    if (conRuta) {
+      botones.push(
+        `<button type="button" class="mm-popup__ir" data-desde="${esc(previo.id)}" ` +
+          `data-hasta="${esc(i.id)}"><i class="ti ti-route" aria-hidden="true"></i> Cómo llegar` +
+          `</button><small class="mm-popup__desde">desde ${esc(previo.nombre)}</small>`
+      );
+    }
+
     L.popup({ className: 'mm-popup', autoPan: true, offset: [0, -10] })
       .setLatLng([i.lat, i.lon])
       .setContent(
-        `<b>${esc(i.nombre)}</b>${i.hora ? ` · ${esc(i.hora)}` : ''}` +
-          `<br><button type="button" class="mm-popup__ir" data-desde="${esc(previo.id)}" ` +
-          `data-hasta="${esc(i.id)}"><i class="ti ti-route" aria-hidden="true"></i> Cómo llegar` +
-          `</button><small class="mm-popup__desde">desde ${esc(previo.nombre)}</small>`
+        `<b>${esc(i.nombre)}</b>${i.hora ? ` · ${esc(i.hora)}` : ''}<br>${botones.join('')}`
       )
       .openOn(mapa);
   }
+
+  // ===========================================================================
+  // LA FICHA DEL SITIO, SOLO PARA LEER
+  // ---------------------------------------------------------------------------
+  // La pinta el servidor con la misma plantilla para todos y aquí solo se
+  // enseña. NO trae acciones a propósito: desde el mapa se mira, y lo que haya
+  // que tocar se toca en la etapa, a donde lleva su enlace.
+  // ===========================================================================
+  const panelFicha = document.getElementById('mm-ficha');
+  const tituloFicha = document.getElementById('mm-ficha-titulo');
+  const cuerpoFicha = document.getElementById('mm-ficha-cuerpo');
+
+  function cerrarFicha() {
+    if (!panelFicha) return;
+    panelFicha.hidden = true;
+    cuerpoFicha.innerHTML = '';
+  }
+
+  async function abrirFicha(tipo, id, nombre) {
+    if (!panelFicha) return;
+    tituloFicha.textContent = nombre ?? 'Ficha';
+    cuerpoFicha.innerHTML = '<p class="ficha-lectura__pie">Abriendo la ficha…</p>';
+    panelFicha.hidden = false;
+    try {
+      const r = await fetch(`/api/fichas/${encodeURIComponent(tipo)}/${encodeURIComponent(id)}`);
+      cuerpoFicha.innerHTML = await r.text();
+    } catch {
+      cuerpoFicha.innerHTML = '<p class="ficha-lectura__pie">No he podido abrir la ficha.</p>';
+    }
+  }
+
+  document.getElementById('mm-ficha-cerrar')?.addEventListener('click', cerrarFicha);
+  panelFicha?.addEventListener('click', (e) => { if (e.target === panelFicha) cerrarFicha(); });
 
   const panelIr = document.getElementById('mm-comollegar');
   const tituloIr = document.getElementById('mm-comollegar-titulo');
@@ -904,17 +961,28 @@
 
   document.getElementById('mm-comollegar-cerrar')?.addEventListener('click', cerrarComoLlegar);
   panelIr?.addEventListener('click', (e) => { if (e.target === panelIr) cerrarComoLlegar(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarComoLlegar(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    cerrarComoLlegar();
+    cerrarFicha();
+  });
 
   // El botón vive dentro del globo de Leaflet, que se crea y se destruye solo:
   // por eso se escucha en el mapa y no en el botón.
   mapa.on('popupopen', (e) => {
-    e.popup.getElement()?.querySelector('.mm-popup__ir')?.addEventListener('click', (ev) => {
-      const b = ev.currentTarget;
-      const desde = D.items.find((i) => i.id === b.dataset.desde);
-      const hasta = D.items.find((i) => i.id === b.dataset.hasta);
-      abrirComoLlegar(desde, hasta);
-    });
+    for (const b of e.popup.getElement()?.querySelectorAll('.mm-popup__ir') ?? []) {
+      b.addEventListener('click', (ev) => {
+        const q = ev.currentTarget.dataset;
+        if (q.ficha) {
+          abrirFicha(q.ficha, q.fichaId, q.nombre);
+          return;
+        }
+        abrirComoLlegar(
+          D.items.find((i) => i.id === q.desde),
+          D.items.find((i) => i.id === q.hasta)
+        );
+      });
+    }
   });
 
   function refrescar() {
@@ -922,6 +990,7 @@
     // «cómo llegar» es del día —fuera de él no hay «anterior»— y la medida se
     // arma sobre el mapa que se estaba mirando.
     cerrarComoLlegar();
+    cerrarFicha();
     mapa.closePopup();
     pintarMedir();
 

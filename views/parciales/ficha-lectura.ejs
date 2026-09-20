@@ -1,0 +1,90 @@
+<%
+/**
+ * LA FICHA DE UN SITIO, SOLO PARA LEER.
+ *
+ * La misma información que la ficha de la etapa —foto, qué es, horarios,
+ * precio, cuánto se tarda, el porqué, cómo moverse y lo que hay dentro— sin
+ * una sola acción: no apunta, no coloca, no amplía y no pide nada a nadie.
+ *
+ * POR QUÉ NO SE REUTILIZA `ficha-sitio.ejs`. Aquella es la de la etapa y vive
+ * de su contexto: espera la etapa, las colocaciones, los días y el catálogo
+ * entero para pintar sus botones. Traérselo todo al mapa para luego esconder
+ * los botones sería cargar media pantalla de la etapa para no usarla. Esta
+ * enseña lo que hay guardado y se acabó; si hace falta tocar algo, el enlace
+ * de abajo lleva a la etapa, que es donde se toca.
+ *
+ * Espera: f — lo que devuelve `fichaDeLectura()`.
+ */
+%>
+<article class="ficha-lectura">
+  <% if (f.imagen_url) { %>
+    <div class="ficha-lectura__foto"><img src="<%= f.imagen_url %>" alt="" loading="lazy"></div>
+  <% } %>
+
+  <h3 class="ficha-lectura__nombre"><%= f.nombre %></h3>
+
+  <p class="ficha-lectura__meta">
+    <% if (f.categoria) { %><span><i class="ti ti-tag" aria-hidden="true"></i> <%= f.categoria %></span><% } %>
+    <% if (f.ciudad) { %><span><i class="ti ti-map-pin" aria-hidden="true"></i> <%= f.ciudad %></span><% } %>
+    <% if (f.tiempoVisita) { %><span><i class="ti ti-hourglass" aria-hidden="true"></i> <%= f.tiempoVisita %></span><% } %>
+    <% if (f.precio) { %><span><i class="ti ti-coin" aria-hidden="true"></i> <%= f.precio %></span><% } %>
+  </p>
+
+  <% if (f.descripcion) { %><p class="ficha-lectura__texto"><%= f.descripcion %></p><% } %>
+
+  <% if (f.horarios) { %>
+    <p class="ficha-lectura__dato">
+      <i class="ti ti-clock" aria-hidden="true"></i>
+      <span><%= f.horarios %></span>
+    </p>
+  <% } %>
+
+  <% if (f.porQue) { %>
+    <p class="ficha-lectura__texto"><%= f.porQue %></p>
+  <% } %>
+
+  <% if (f.comoMoverse) { %>
+    <p class="ficha-lectura__dato">
+      <i class="ti ti-walk" aria-hidden="true"></i>
+      <span><%= f.comoMoverse %></span>
+    </p>
+  <% } %>
+
+  <% if (f.dentro && f.dentro.length) { %>
+    <div class="ficha-lectura__dentro">
+      <b>Dentro se ve</b>
+      <ul>
+        <% f.dentro.forEach((d) => { %>
+          <li><%= d.nombre %><%= d.descripcion ? ` — ${d.descripcion}` : '' %></li>
+        <% }) %>
+      </ul>
+    </div>
+  <% } %>
+
+  <%# Lo que no se pinta como texto: los enlaces de siempre y la salida a la
+      etapa, que es donde esta ficha sí tiene botones. %>
+  <p class="ficha-lectura__enlaces">
+    <% if (f.web) { %>
+      <a href="<%= f.web %>" target="_blank" rel="noopener noreferrer">
+        <i class="ti ti-world" aria-hidden="true"></i> Web oficial
+      </a>
+    <% } %>
+    <% if (f.wikipedia_url) { %>
+      <a href="<%= f.wikipedia_url %>" target="_blank" rel="noopener noreferrer">
+        <i class="ti ti-book" aria-hidden="true"></i> Wikipedia
+      </a>
+    <% } %>
+    <% if (f.telefono) { %>
+      <a href="tel:<%= f.telefono %>"><i class="ti ti-phone" aria-hidden="true"></i> <%= f.telefono %></a>
+    <% } %>
+    <% if (f.etapaId) { %>
+      <a href="/etapa/<%= f.etapaId %>?p=ver">
+        <i class="ti ti-external-link" aria-hidden="true"></i> Abrir en la etapa
+      </a>
+    <% } %>
+  </p>
+
+  <% if (f.datosEn) { %>
+    <p class="ficha-lectura__pie">Datos de Google, consultados el <%= f.datosEn %>.</p>
+  <% } %>
+</article>

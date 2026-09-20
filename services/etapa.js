@@ -1158,3 +1158,92 @@ export function prepararEtapa(etapaId, { forzar = false } = {}) {
 
   return estadoPreparacionEtapa(etapaId);
 }
+
+/**
+ * =============================================================================
+ * LA FICHA DE UN SITIO, PARA LEERLA DESDE EL MAPA
+ * =============================================================================
+ * Lo mismo que enseña la pestaña «Qué ver» de la etapa, sin nada que tocar:
+ * foto, qué es, horarios, precio, cuánto se tarda y el detalle que se generó al
+ * ampliarla. Con lo que haya GUARDADO en ese momento: esto no busca en Google,
+ * no amplía fichas y no escribe nada. Si falta un dato es que no se ha buscado,
+ * y ahí es donde hay que ir, a la etapa.
+ *
+ * Los dos orígenes son los mismos de `queVerDeEtapa`: un `punto_interes` de un
+ * destino de nivel ciudad, o un `sitios_lugar` de una ficha profunda.
+ */
+export function fichaDeLectura(tipo, id) {
+  const n = Number(id);
+  if (!Number.isInteger(n)) return null;
+
+  if (tipo === 'sitio') {
+    const s = una('SELECT * FROM sitios_lugar WHERE id = ?', n);
+    if (!s) return null;
+    const datos = datosDeSitio(s);
+    const punto = una('SELECT nombre FROM puntos_interes WHERE id = ?', s.punto_interes_id);
+    // La etapa donde se está visitando, si es que está en alguna: es el único
+    // enlace de la ficha, y sin él no se ofrece.
+    const etapa = una(
+      'SELECT id FROM etapas WHERE punto_interes_id = ? ORDER BY orden LIMIT 1',
+      s.punto_interes_id
+    );
+
+    return {
+      nombre: s.nombre,
+      ciudad: punto?.nombre ?? null,
+      categoria: s.categoria ?? null,
+      descripcion: s.descripcion ?? null,
+      imagen_url: s.imagen_url ?? null,
+      wikipedia_url: s.wikipedia_url ?? null,
+      horarios: datos?.horarios ?? null,
+      precio: datos?.precio ?? null,
+      tiempoVisita: datos?.tiempoVisita ?? null,
+      web: datos?.webUrl ?? null,
+      telefono: datos?.telefono ?? null,
+      datosEn: datos?.obtenidoEn ? String(datos.obtenidoEn).slice(0, 10) : null,
+      porQue: null,
+      comoMoverse: null,
+      dentro: [],
+      etapaId: etapa?.id ?? null,
+    };
+  }
+
+  if (tipo === 'punto') {
+    const p = una('SELECT * FROM puntos_interes WHERE id = ?', n);
+    if (!p) return null;
+
+    let extra = {};
+    try {
+      extra = p.datos_extra ? JSON.parse(p.datos_extra) : {};
+    } catch {
+      extra = {};
+    }
+    const etapa = una('SELECT id FROM etapas WHERE punto_interes_id = ? ORDER BY orden LIMIT 1', p.id);
+
+    return {
+      nombre: p.nombre,
+      ciudad: null,
+      categoria: null,
+      descripcion: p.descripcion_corta ?? p.por_que ?? null,
+      imagen_url: p.imagen_url ?? null,
+      wikipedia_url: p.wikipedia_url ?? null,
+      horarios: null,
+      precio: null,
+      tiempoVisita: null,
+      web: null,
+      telefono: null,
+      datosEn: null,
+      porQue: extra.parrafoPorQue ?? null,
+      comoMoverse: extra.comoMoverse ?? null,
+      // Los lugares de dentro son sus `sitios_lugar`, los mismos que la etapa
+      // enseña bajo la ficha ampliada.
+      dentro: todas(
+        'SELECT nombre, descripcion FROM sitios_lugar WHERE punto_interes_id = ? ORDER BY orden, id LIMIT 12',
+        p.id
+      ),
+      etapaId: etapa?.id ?? null,
+    };
+  }
+
+  return null;
+}
