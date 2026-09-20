@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manual de CreadorViajes</title>
+  <link rel="stylesheet" href="/manual/manual.css">
+</head>
+<body>
+<div class="man">
+
+  <!-- ====================== ÍNDICE ====================== -->
+  <nav class="man__indice" aria-label="Índice del manual">
+    <h2>Índice</h2>
+    <ol>
+      <li><a href="#como-funciona">Cómo funciona esto</a></li>
+      <li><a href="#mis-viajes">Mis viajes</a></li>
+      <li><a href="#configurar">Configurar el viaje</a>
+        <ul>
+          <li><a href="#plantillas">Plantillas</a></li>
+          <li><a href="#opcionales">Ajustes opcionales</a></li>
+        </ul>
+      </li>
+      <li><a href="#destino">El destino y los países</a></li>
+      <li><a href="#motor">El motor, fase a fase</a>
+        <ul>
+          <li><a href="#fase-ciudades">1 · Ciudades y noches</a></li>
+          <li><a href="#fase-traslados">2 · Traslados</a></li>
+          <li><a href="#fase-dormir">3 · Dónde dormir</a></li>
+          <li><a href="#fase-sitios">4 · Qué ver</a></li>
+          <li><a href="#fase-excursiones">5 · Excursiones</a></li>
+          <li><a href="#fase-lienzo">6 · El lienzo</a></li>
+          <li><a href="#motor-mandos">Lanzar, parar y repasar</a></li>
+        </ul>
+      </li>
+      <li><a href="#ruta">Mi ruta</a></li>
+      <li><a href="#etapa">La etapa</a>
+        <ul>
+          <li><a href="#etapa-ver">Qué ver</a></li>
+          <li><a href="#etapa-dormir">Dónde dormir</a></li>
+          <li><a href="#etapa-llegar">Cómo llegar</a></li>
+        </ul>
+      </li>
+      <li><a href="#lienzo">El lienzo</a></li>
+      <li><a href="#mapa">El mapa</a></li>
+      <li><a href="#antes">Antes de viajar</a></li>
+      <li><a href="#presupuesto">Presupuesto y reservas</a></li>
+      <li><a href="#documentos">Documentos y dosier</a></li>
+      <li><a href="#descubrir">Descubrir un destino</a></li>
+      <li><a href="#ajustes">Ajustes del motor</a></li>
+      <li><a href="#criterios">Cómo decide el motor</a></li>
+      <li><a href="#glosario">Glosario</a></li>
+      <li><a href="#problemas">Cuando algo sale mal</a></li>
+    </ol>
+  </nav>
+
+  <!-- ====================== CUERPO ====================== -->
+  <main class="man__cuerpo">
+
+    <header class="man__cab">
+      <h1>Manual de CreadorViajes</h1>
+      <p>
+        Todo lo que hace la web, pantalla por pantalla, y por qué decide lo que decide.
+        Las capturas están tomadas de un viaje real de catorce días por Croacia, Bosnia y Serbia.
+        Para llevártelo en papel o en PDF: <b>Archivo → Imprimir → Guardar como PDF</b>; el índice
+        de la izquierda desaparece al imprimir.
+      </p>
+    </header>
+
+    <!-- ============================================================= -->
+    <section id="como-funciona">
+      <h2>1. Cómo funciona esto</h2>
+
+      <p>
+        CreadorViajes monta un viaje entero: elige las ciudades y cuántas noches duerme en cada una,
+        busca los vuelos y los traslados, el hotel de cada parada, qué ver en cada ciudad y qué
+        excursiones merecen la pena, y por último reparte todo eso día a día en un plan con horas.
+      </p>
+
+      <p>Hay dos formas de usarlo, y se pueden mezclar:</p>
+      <ul>
+        <li>
+          <b>Automática.</b> Rellenas la configuración, marcas <em>Viaje automático</em> y el motor
+          lo monta solo en unos quince minutos. Es lo normal.
+        </li>
+        <li>
+          <b>A mano.</b> Añades ciudades, buscas los vuelos y los hoteles cuando quieras, apuntas
+          sitios y los colocas tú en los días. Todo lo que hace el motor se puede rehacer, cambiar
+          o deshacer después.
+        </li>
+      </ul>
+
+      <h3>El recorrido de un viaje</h3>
+      <ol>
+        <li><b>Mis viajes</b> — la portada, donde se crean y se abren.</li>
+        <li><b>Configurar</b> — fechas, viajeros, ritmo, gustos y filtros.</li>
+        <li><b>Destino y países</b> — a dónde vas, y si son varios países, cuáles.</li>
+        <li><b>El motor</b> — seis fases que montan el viaje, con su progreso a la vista.</li>
+        <li><b>Mi ruta</b> — la columna vertebral: paradas, noches, traslados y hoteles.</li>
+        <li><b>La etapa</b> — el detalle de cada ciudad: qué ver, dónde dormir, cómo llegar.</li>
+        <li><b>El lienzo</b> — el plan día a día, con horas, que se arrastra y se ajusta.</li>
+        <li><b>El mapa</b> — lo mismo sobre el terreno, para ver si el día tiene sentido.</li>
+        <li><b>Antes de viajar</b> — visados, fronteras y avisos de cada país.</li>
+        <li><b>Dosier</b> — todo junto para llevártelo.</li>
+      </ol>
+
+      <div class="nota">
+        <b>La regla de la casa</b>
+        Lo que no se sabe, se dice. Si un sitio no se pudo situar en el mapa, aparece en la lista
+        con la etiqueta «sin ubicar» en vez de un pin inventado; si no hay precio, se dice «precio
+        no encontrado» en vez de poner un cero. Cuando leas un dato en la pantalla, es un dato.
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="mis-viajes">
+      <h2>2. Mis viajes</h2>
+
+      <figure>
+        <img src="/manual/img/portada.png" alt="Portada con la lista de viajes">
+        <figcaption>La portada: cada viaje con su nombre, sus fechas y en qué punto está.</figcaption>
+      </figure>
+
+      <p>Desde aquí se hace todo lo de nivel viaje:</p>
+      <ul>
+        <li><b>Nuevo viaje</b> crea uno vacío y te lleva directo a la configuración.</li>
+        <li><b>Pinchar un viaje</b> te deja donde lo dejaste: si ya tiene paradas, en «Mi ruta»; si
+          tiene destino pero aún no hay ruta, en «Descubrir»; si no tiene ni fechas, en la
+          configuración.</li>
+        <li><b>Cambiar nombre</b> renombra el viaje. El nombre es el que se ve en todas partes,
+          también en el título de «Mi ruta».</li>
+        <li><b>Borrar viaje</b> pide que escribas el nombre para confirmar.</li>
+      </ul>
+
+      <div class="ojo">
+        <b>Qué se lleva por delante borrar un viaje</b>
+        Se borra el viaje y todo lo suyo (paradas, candidatos, lienzo, traslados, adjuntos) y
+        además <b>lo que quede huérfano del catálogo</b>: si esas ciudades no las visita ningún otro
+        viaje, se van también sus sitios y sus excursiones. Es a propósito —si no, repetir la misma
+        prueba salía de la caché y no volvía a buscar nada—, pero conviene saberlo: volver a crear
+        ese viaje vuelve a costar las búsquedas.
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="configurar">
+      <h2>3. Configurar el viaje</h2>
+
+      <figure>
+        <img src="/manual/img/configuracion.png" alt="Pantalla de configuración del viaje">
+        <figcaption>La configuración entera: plantillas, fechas, viajeros, origen, tipo de viaje y los ajustes opcionales.</figcaption>
+      </figure>
+
+      <h3>Los campos, uno a uno</h3>
+      <table>
+        <tr><th>Campo</th><th>Para qué se usa</th></tr>
+        <tr>
+          <td><b>¿Cuándo viajáis?</b></td>
+          <td>Ida y vuelta en el calendario. De ahí salen las noches del viaje, las fechas de cada
+            parada y el mes con el que se leen los horarios de temporada.</td>
+        </tr>
+        <tr>
+          <td><b>¿Quiénes vais?</b></td>
+          <td>Adultos y niños con su edad. Los niños cambian cosas de verdad: se filtran las
+            excursiones de solo adultos y se añade un bloque de sitios pensados para ellos.</td>
+        </tr>
+        <tr>
+          <td><b>¿Desde dónde salís?</b></td>
+          <td>Tu ciudad de origen. Es el punto de partida de los vuelos y lo que decide si el viaje
+            es «local» (si todo cae cerca de casa, no se buscan vuelos).</td>
+        </tr>
+        <tr>
+          <td><b>¿Qué tipo de viaje os apetece?</b></td>
+          <td>Cultural, gastronómico, naturaleza, mixto… Pesa al puntuar las ciudades candidatas y
+            al elegir qué ver.</td>
+        </tr>
+        <tr>
+          <td><b>Ritmo del viaje</b></td>
+          <td>Tranquilo, normal o intenso. Es cuántas cosas entran en un día: con ritmo intenso el
+            lienzo coloca casi el doble de visitas que con ritmo normal.</td>
+        </tr>
+        <tr>
+          <td><b>Revisión final del reparto</b></td>
+          <td>Al terminar, comprueba si alguna ciudad se quedó corta de días o si otra iba holgada
+            y lo dice en los avisos. No cambia nada del viaje.</td>
+        </tr>
+        <tr>
+          <td><b>Viaje automático (IA)</b></td>
+          <td>Al guardar, en vez de llevarte al mapa de ciudades se pone a montar el viaje en
+            segundo plano y te enseña el progreso.</td>
+        </tr>
+      </table>
+
+      <h3 id="plantillas">Plantillas</h3>
+      <p>
+        Una plantilla guarda <b>tus ajustes de siempre</b> —viajeros, ritmo, filtros de hotel y de
+        vuelo, gustos— sin destino ni fechas, para no volver a teclearlos en cada viaje.
+      </p>
+      <ul>
+        <li><b>Cargarla:</b> elígela en el desplegable y se carga sola.</li>
+        <li><b>Guardar una:</b> escribe un nombre en «Guardar esta configuración como» y dale a
+          <em>Guardar configuración</em>. Si el nombre ya existe, te pregunta si la actualizas.</li>
+        <li><b>Borrarla:</b> el icono de la papelera, con su confirmación.</li>
+      </ul>
+      <div class="ojo">
+        <b>Con ruta ya montada no se carga</b>
+        Si el viaje ya tiene paradas, el desplegable no aplica la plantilla: cambiar los viajeros a
+        mitad descuadraría los vuelos y los hoteles ya buscados. La pantalla lo dice.
+      </div>
+
+      <h3 id="opcionales">Ajustes opcionales</h3>
+      <p>Son los filtros con los que el motor busca. Todos tienen un valor por defecto razonable.</p>
+      <ul>
+        <li><b>Alojamiento:</b> nivel de precio (económico, medio, alto), zona (céntrico o donde
+          sea), tipo (hotel, apartamento…), nota mínima, estrellas, cancelación gratis, desayuno,
+          piscina, parking, wifi, habitación familiar y distancia máxima al centro.</li>
+        <li><b>Vuelos:</b> escalas (directos o no), franja de salida de ida y de vuelta, duración
+          máxima por trayecto y precio máximo por persona.</li>
+        <li><b>Qué os interesa:</b> las categorías que se usan al elegir qué ver —monumentos,
+          museos, naturaleza, miradores, barrios y paseos, gastronomía, compras y mercados—, más un
+          campo libre para gustos concretos.</li>
+      </ul>
+      <div class="nota">
+        <b>Los filtros se aflojan solos, y se avisa</b>
+        Si con tus filtros no sale ningún hotel, el motor los va relajando por orden (primero el
+        radio, luego el precio) y escribe en el registro qué aflojó. Nunca te deja sin hotel en
+        silencio.
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="destino">
+      <h2>4. El destino y los países</h2>
+
+      <figure>
+        <img src="/manual/img/elegir-destino.png" alt="Pantalla de elegir destino">
+        <figcaption>El destino se escribe en lenguaje normal: «Croacia bosnia y servia», «Japón con niño», «Sur de Italia».</figcaption>
+      </figure>
+
+      <p>
+        No hay una lista cerrada de destinos: escribes lo que quieres y la app lo interpreta. Si el
+        texto encierra <b>varios países</b>, te lleva a confirmarlos antes de seguir.
+      </p>
+
+      <figure>
+        <img src="/manual/img/paises.png" alt="Pantalla de confirmación de países">
+        <figcaption>Los países interpretados, para marcar los que entran de verdad.</figcaption>
+      </figure>
+
+      <p>Esto importa más de lo que parece, porque esa lista se usa después para:</p>
+      <ul>
+        <li>descartar ciudades que no son de ninguno de esos países —a la IA le pasa proponer
+          Kotor, que es de Montenegro, en un viaje de Croacia, Bosnia y Serbia—;</li>
+        <li>exigir que la ruta pise <b>todos</b> los países marcados;</li>
+        <li>preparar la pantalla de <a href="#antes">Antes de viajar</a> con sus fronteras.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="motor">
+      <h2>5. El motor, fase a fase</h2>
+
+      <p>
+        El motor —el «orquestador»— monta el viaje en seis fases. Unas dependen de otras y otras van
+        en paralelo: mientras busca hoteles, ya está mirando qué ver y qué excursiones hay.
+      </p>
+
+      <figure>
+        <img src="/manual/img/orquestador-progreso.png" alt="Pantalla de progreso del orquestador">
+        <figcaption>El progreso en vivo: cada fase con su estado y lo que va haciendo, contado en español.</figcaption>
+      </figure>
+
+      <h3 id="fase-ciudades">1 · Ciudades y noches</h3>
+      <p>La más importante, porque decide la forma del viaje. Hace esto, por orden:</p>
+      <ol>
+        <li><b>Propone ciudades candidatas</b> y las puntúa con una rúbrica: patrimonio de la
+          Unesco, conjunto histórico, hito de primer orden, museo de referencia, paisaje singular,
+          cocina o artesanía, puerta de región… Cada casilla suma, y tus gustos multiplican.</li>
+        <li><b>Comprueba el país de cada una</b> con Google, sin fiarse de lo que diga la IA, y
+          descarta las que no son de tu viaje.</li>
+        <li><b>Mide los tiempos entre ciudades.</b> Si el destino es nuevo y aún no están situadas,
+          las geocodifica y estima el tiempo por distancia; lo dice en el registro.</li>
+        <li><b>Busca vuelos reales</b> para varias puertas de entrada y salida posibles.</li>
+        <li><b>Puntúa cada combinación</b> en «horas útiles»: lo que te dejan los vuelos, más lo que
+          aportan las noches, menos las horas de traslado entre ciudades, menos lo que cuesta todo
+          —los vuelos y una estimación de los traslados—.</li>
+        <li><b>Reparte las noches</b> entre las ciudades elegidas respetando sus mínimos, y se queda
+          con el reparto que más noches deja a las ciudades de más peso y más corto de recorrer.</li>
+      </ol>
+
+      <h3 id="fase-traslados">2 · Traslados</h3>
+      <p>
+        Para cada salto entre paradas busca cómo se va de verdad: tren, autobús, ferry, coche de
+        alquiler, traslado privado y, si hay que volar, también vuelo interno. De cada opción anota
+        el tiempo <b>puerta a puerta</b> —incluyendo llegar a la estación y salir del aeropuerto— y
+        el precio por persona.
+      </p>
+      <p>Luego elige, con dos reglas que verás escritas en el registro:</p>
+      <ul>
+        <li><b>Empate por precio:</b> si dos opciones cuestan lo mismo, gana la más rápida.</li>
+        <li><b>Ahorro grande:</b> si una opción es mucho más barata, se queda con ella aunque
+          tarde más, siempre que el tiempo de más compense el dinero que ahorra. De Dubrovnik a
+          Sarajevo, el autobús de 22 € frente al privado de 110 € pierde 1 h 20 min y gana.</li>
+      </ul>
+
+      <h3 id="fase-dormir">3 · Dónde dormir</h3>
+      <p>
+        Busca en Booking con tus filtros, para las fechas exactas de esa parada. Antes de buscar
+        estima qué significa tu nivel de precio en esa ciudad («medio en Sarajevo ≈ 50-95 €/noche»),
+        y después elige explicando por qué. Si no sale nada, afloja y lo dice.
+      </p>
+
+      <h3 id="fase-sitios">4 · Qué ver</h3>
+      <p>
+        Construye el catálogo de cada ciudad en dos bloques —<b>imprescindibles</b> y <b>otros
+        sitios</b>, más uno de <b>niños</b> si viajan— y a cada sitio le busca en Google sus datos
+        reales: precio, horarios, cuánto se tarda en verlo, web y teléfono. También detecta lo que
+        es el mismo lugar dos veces y lo que se visita dentro de otra cosa.
+      </p>
+
+      <h3 id="fase-excursiones">5 · Excursiones</h3>
+      <p>
+        Busca en Civitatis las excursiones de cada parada y preselecciona las que caben. Descarta
+        las que van a otra parada del viaje (ir a Novi Sad desde Belgrado cuando Novi Sad ya es
+        parada), las que repiten una que ya entró en otra ciudad y las que están fuera de temporada.
+      </p>
+
+      <h3 id="fase-lienzo">6 · El lienzo</h3>
+      <p>
+        Reparte todo en días y horas, respetando horarios de apertura, días de cierre, el tiempo
+        que se tarda en ir de un sitio a otro y la llegada y la salida de cada ciudad. Después se
+        revisa a sí mismo dos veces: resuelve solapes, mueve lo que está fuera de horario, quita lo
+        que sobra y rellena lo que queda vacío.
+      </p>
+
+      <h3 id="motor-mandos">Lanzar, parar y repasar</h3>
+      <ul>
+        <li><b>Lanzarlo:</b> marcando «Viaje automático» en la configuración, o desde la pantalla
+          del orquestador del viaje.</li>
+        <li><b>Parar:</b> <em>Parar</em> lo deja terminar la fase en curso; <em>Abortar ya</em>
+          corta en seco. Después se puede <b>reanudar</b> y sigue por donde iba, sin repetir lo
+          hecho.</li>
+        <li><b>Ver qué hizo:</b> el registro se lee en español, fase por fase.</li>
+      </ul>
+
+      <figure>
+        <img src="/manual/img/orquestador-registro.png" alt="Registro del orquestador ya terminado">
+        <figcaption>Al terminar: el resumen de cada fase y «Lo que te dejo para repasar», que son los huecos que no supo resolver.</figcaption>
+      </figure>
+
+      <div class="nota">
+        <b>Los «huecos» no son errores</b>
+        Una fase puede acabar «con huecos»: encontró algo que no pudo resolver —un tramo sin precio,
+        una excursión que no cupo, una visita que se queda fuera de su horario— y en vez de
+        inventarse una solución te lo deja anotado.
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="ruta">
+      <h2>6. Mi ruta</h2>
+
+      <figure>
+        <img src="/manual/img/ruta.png" alt="Pantalla Mi ruta">
+        <figcaption>La columna vertebral del viaje: salida de casa, paradas con sus noches y, entre ellas, los traslados.</figcaption>
+      </figure>
+
+      <p>De arriba abajo:</p>
+      <ul>
+        <li><b>El título</b> es el nombre del viaje, el mismo con el que está guardado.</li>
+        <li><b>Las píldoras</b> llevan al Lienzo, al Mapa y a «Antes de viajar»; detrás de «⋯»
+          están presupuesto, reservas, documentos, dosier y los ajustes del motor.</li>
+        <li><b>La barra de noches</b> dice cuántas has repartido de las que dura el viaje y si
+          cuadra.</li>
+        <li><b>Cada parada</b> lleva su número, sus fechas, los botones <b>−</b> y <b>+</b> para
+          quitar o poner noches, el hotel elegido con su nota, y las acciones.</li>
+        <li><b>Entre parada y parada</b>, el traslado: <span style="color:#1E6B3C"><b>en verde</b></span>
+          cuando ya está resuelto y <span style="color:#854F0B"><b>en ámbar</b></span> cuando está
+          pendiente. Pinchándolo se va a la pestaña «Cómo llegar» de esa parada.</li>
+      </ul>
+
+      <h3>Las acciones de una parada</h3>
+      <ul>
+        <li><b>Abrir etapa</b> — el detalle de esa ciudad.</li>
+        <li><b>↩ (la flecha de volver)</b> — añade esa ciudad otra vez al final de la ruta como
+          <b>parada de paso</b>, con cero noches: es para cuando el camino de vuelta al aeropuerto
+          pasa por allí.</li>
+        <li><b>✕</b> — quita la parada de la ruta, preguntando antes.</li>
+        <li><b>Arrastrar</b> por el asa de la izquierda reordena las paradas.</li>
+      </ul>
+
+      <figure class="man__movil">
+        <img src="/manual/img/movil-ruta.png" alt="Mi ruta en el móvil">
+        <figcaption>La misma pantalla en el móvil: todo cabe en una columna.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="etapa">
+      <h2>7. La etapa</h2>
+
+      <p>
+        Es el detalle de una ciudad, con tres pestañas: <b>Qué ver</b>, <b>Dónde dormir</b> y
+        <b>Cómo llegar</b>. Arriba, sus fechas y un cuaderno de <b>notas de la etapa</b> para lo que
+        no encaja en ningún sitio.
+      </p>
+
+      <h3 id="etapa-ver">Qué ver</h3>
+      <figure>
+        <img src="/manual/img/etapa-que-ver.png" alt="Pestaña Qué ver de una etapa">
+        <figcaption>El catálogo de la ciudad, en fichas con foto, descripción y datos reales.</figcaption>
+      </figure>
+
+      <p>Dentro hay cuatro sub-pestañas: <b>Sitios</b>, <b>Excursiones</b>, <b>Comer</b> y
+        <b>Moverse</b>; y los sitios se agrupan en <b>Imprescindibles</b>, <b>Otros sitios</b> y
+        <b>Mis búsquedas</b> (lo que has buscado tú).</p>
+
+      <p>Cada ficha trae, cuando se sabe: precio de la entrada, horarios, cuánto se tarda en
+        verlo, web, teléfono y si <b>hace falta reservar con antelación</b>. Y estas acciones:</p>
+      <ul>
+        <li><b>Me lo apunto</b> — lo mete en la mochila del viaje. Lo apuntado es lo que el lienzo
+          puede colocar.</li>
+        <li><b>Ponerlo en un día</b> — lo coloca directamente en el día que elijas.</li>
+        <li><b>Ver detalle</b> — despliega el porqué, cómo moverse y lo que hay dentro.</li>
+        <li><b>Buscar detalles</b> — pide a Google los datos duros de ese sitio, si aún no los
+          tiene.</li>
+        <li><b>¿A cuánto está de…?</b> — mide el trayecto real hasta otro sitio o hasta el hotel.</li>
+        <li><b>A mano</b> — añade un sitio que no esté en el catálogo.</li>
+      </ul>
+      <div class="truco">
+        <b>Revisar reservas anticipadas</b>
+        El botón de arriba repasa de una vez qué visitas de esa ciudad hay que reservar con tiempo.
+        Es lo único que, leído tarde, ya no tiene arreglo.
+      </div>
+
+      <h3 id="etapa-dormir">Dónde dormir</h3>
+      <figure>
+        <img src="/manual/img/etapa-dormir.png" alt="Pestaña Dónde dormir de una etapa">
+        <figcaption>El hotel elegido y el resto de candidatos, con nota, precio por noche y distancia al centro.</figcaption>
+      </figure>
+      <p>
+        Puedes cambiar los filtros y volver a buscar, elegir otro hotel, apuntar el localizador de
+        la reserva y colgar el justificante. El precio que se ve es <b>por noche</b>; el total del
+        viaje sale en el presupuesto.
+      </p>
+
+      <h3 id="etapa-llegar">Cómo llegar</h3>
+      <figure>
+        <img src="/manual/img/etapa-llegar.png" alt="Pestaña Cómo llegar de una etapa">
+        <figcaption>Un tramo resuelto: el vuelo elegido con su hora de salida, la de llegada, la duración, las escalas y el precio.</figcaption>
+      </figure>
+      <p>Cada tramo de esa parada tiene su caja, con estado <b>Resuelto</b> o <b>Pendiente</b>, y
+        estas salidas:</p>
+      <ul>
+        <li><b>Buscar cómo llegar</b> — busca los medios que existen entre esas dos ciudades.</li>
+        <li><b>Buscar vuelo / Ver vuelos</b> — busca vuelos reales para ese tramo, con sus propios
+          filtros (que pueden ser distintos a los de la ida).</li>
+        <li><b>Añadir medio / Apuntar a mano</b> — para lo que ya tengas comprado o sepas tú.</li>
+        <li><b>Billetes y tarjetas de embarque</b> — adjuntos de ese tramo.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="lienzo">
+      <h2>8. El lienzo</h2>
+
+      <figure>
+        <img src="/manual/img/lienzo-detalle.png" alt="El lienzo con la mochila y los días">
+        <figcaption>La mochila a la izquierda y los días en columnas, cada uno con sus franjas.</figcaption>
+      </figure>
+
+      <p>Es el plan día a día. Dos zonas:</p>
+      <ul>
+        <li><b>La mochila</b> — lo que está apuntado pero aún no tiene día. Se arrastra a un día, o
+          de vuelta a la mochila.</li>
+        <li><b>Los días</b> — en columnas, cada uno con su fecha, su ciudad y cuatro franjas:
+          mañana (hasta 13 h), mediodía (13-16 h), tarde (16-20 h) y noche (desde 20 h).</li>
+      </ul>
+
+      <p>
+        Cada tarjeta lleva su <b>hora</b> y su <b>duración</b>, las dos editables ahí mismo. Los
+        bloques con fondo ámbar son <b>fijos</b>: la llegada del vuelo, el salto a la ciudad
+        siguiente, la vuelta a casa. No se mueven porque no dependen de ti.
+      </p>
+
+      <h3>Los avisos del lienzo</h3>
+      <table>
+        <tr><th>Aviso</th><th>Qué significa</th></tr>
+        <tr><td><b>Se solapan</b></td><td>Dos cosas ocupan la misma hora.</td></tr>
+        <tr><td><b>No se hacen en menos de…</b></td><td>No da tiempo a ir de una a la otra.</td></tr>
+        <tr><td><b>A esa hora está cerrado</b></td><td>La visita cae fuera del horario del sitio ese día.</td></tr>
+        <tr><td><b>No tiene dónde comer</b></td><td>Ese día tiene plan pero no hay hueco a la hora de comer.</td></tr>
+        <tr><td><b>Sin ubicar</b></td><td>No se pudo situar en el mapa; sigue en el plan, pero sin pin.</td></tr>
+      </table>
+
+      <p>
+        Arriba del todo, <b>Viaje listo</b> marca el viaje como terminado, y <b>Dosier</b> genera el
+        documento para llevártelo.
+      </p>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="mapa">
+      <h2>9. El mapa</h2>
+
+      <p>Cuatro vistas del mismo viaje. La cabecera dice siempre <b>dónde estás</b>.</p>
+
+      <figure>
+        <img src="/manual/img/mapa-dia.jpg" alt="El mapa en la vista de un día">
+        <figcaption>Vista <b>Día</b>: los puntos de ese día numerados por hora, el recorrido punteado y el hotel.</figcaption>
+      </figure>
+
+      <table>
+        <tr><th>Vista</th><th>Qué enseña</th></tr>
+        <tr><td><b>Día</b></td><td>Un día concreto, en orden, empezando y acabando en el hotel.</td></tr>
+        <tr><td><b>Etapa</b></td><td>Todo lo de una ciudad, con el orden de visita si lo enciendes.</td></tr>
+        <tr><td><b>Ruta</b></td><td>El viaje entero de ciudad a ciudad, con las líneas de traslado, su tiempo y su precio.</td></tr>
+        <tr><td><b>Ruta expandida</b></td><td>Lo anterior más todos los puntos de todas las ciudades.</td></tr>
+      </table>
+
+      <p>En el panel de la izquierda eliges el día o la ciudad, enciendes y apagas <b>capas</b>
+        (sitios, comidas, excursiones, hoteles, recorrido del día, ver tiempos) y tienes la lista de
+        todo lo que se está pintando, incluido lo que no se pudo situar.</p>
+
+      <div class="nota">
+        <b>Ver tiempos</b>
+        El recorrido del día se dibuja en línea recta y lo dice. Al encender «Ver tiempos» se
+        pregunta <b>una vez</b> por los tiempos reales de ese día y a partir de ahí salen de la
+        caché.
+      </div>
+
+      <h3>Qué puedes hacer pinchando un punto</h3>
+      <figure>
+        <img src="/manual/img/mapa-globo.jpg" alt="Globo de un punto con sus dos acciones">
+        <figcaption>El globo de un punto, con sus dos acciones.</figcaption>
+      </figure>
+
+      <h4>Ver la ficha</h4>
+      <figure>
+        <img src="/manual/img/mapa-ficha.jpg" alt="Ficha de lectura abierta desde el mapa">
+        <figcaption>La ficha del sitio, solo para leer: qué es, cuánto se tarda, precio, descripción, horarios y enlaces.</figcaption>
+      </figure>
+      <p>
+        Es la misma información que en la etapa, pero <b>sin acciones</b>: desde el mapa se mira.
+        Si quieres apuntarlo o colocarlo, el enlace <b>Abrir en la etapa</b> te lleva donde están
+        esos botones.
+      </p>
+
+      <h4>Cómo llegar</h4>
+      <figure>
+        <img src="/manual/img/mapa-comollegar.jpg" alt="Panel de cómo llegar con el recorrido">
+        <figcaption>El camino por las calles desde el punto anterior del día, dentro de la propia app.</figcaption>
+      </figure>
+      <ul>
+        <li>El <b>origen</b> es el punto anterior de ese día; para el primero de la mañana, el hotel.</li>
+        <li>Puedes cambiar el modo: <b>a pie</b>, <b>público</b>, <b>coche</b> o <b>bici</b>. Viene
+          marcado el que corresponde por la distancia (a pie hasta 2 km).</li>
+        <li><b>Abrir en Google Maps</b> abre el mismo trayecto en una pestaña nueva, y allí sí
+          puedes elegir entre rutas alternativas y darle a empezar el viaje.</li>
+      </ul>
+      <div class="ojo">
+        <b>Lo que el recuadro no hace</b>
+        No da la distancia ni el tiempo —esos ya los tienes en las etiquetas del recorrido— ni
+        navega paso a paso. Es una brújula: por dónde se va.
+      </div>
+
+      <h4>Medir</h4>
+      <p>
+        El botón <b>Medir</b> arma la medida: pinchas dos puntos y te dice a cuánto están, andando,
+        en transporte público y en coche. Solo aparece en las vistas donde hay puntos que medir.
+      </p>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="antes">
+      <h2>10. Antes de viajar</h2>
+
+      <figure>
+        <img src="/manual/img/antes-de-viajar.png" alt="Panel Antes de viajar">
+        <figcaption>Una pestaña por país, con los cruces de frontera de tu ruta concreta.</figcaption>
+      </figure>
+
+      <p>Reúne lo que hay que mirar antes de salir, para tu ruta concreta:</p>
+      <ul>
+        <li><b>Cruces de frontera</b>, uno a uno, con qué documento hace falta en cada uno y si hay
+          control de pasaportes.</li>
+        <li><b>Por país:</b> visado, documentación, moneda, sanidad, enchufes, avisos de Exteriores
+          y clima típico en tus fechas.</li>
+      </ul>
+      <p>
+        Mientras no marques <b>«Ya lo he revisado»</b>, «Mi ruta» sigue avisando con un punto ámbar.
+      </p>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="presupuesto">
+      <h2>11. Presupuesto y reservas</h2>
+
+      <figure>
+        <img src="/manual/img/presupuesto.png" alt="Pantalla de presupuesto">
+        <figcaption>Lo planificado (lo que ya está elegido) y lo estimado (lo que falta por elegir).</figcaption>
+      </figure>
+
+      <p>
+        El presupuesto separa <b>lo planificado</b> —vuelos, hoteles, traslados y excursiones ya
+        elegidos, con su precio real— de <b>lo estimado</b>, que sale de lo que le digas que gastas
+        por persona y día. Se recalcula cuando quieras.
+      </p>
+
+      <figure>
+        <img src="/manual/img/reservas.png" alt="Pantalla de mis reservas">
+        <figcaption>Mis reservas: qué está elegido y todavía sin reservar.</figcaption>
+      </figure>
+
+      <p>
+        <b>Mis reservas</b> es la lista de todo lo elegido con su estado: lo que ya tiene
+        localizador y lo que sigue «elegido y sin reservar». Es la pantalla de antes de pagar.
+      </p>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="documentos">
+      <h2>12. Documentos y dosier</h2>
+
+      <figure>
+        <img src="/manual/img/documentos.png" alt="Pantalla de documentos">
+        <figcaption>Todos los adjuntos del viaje reunidos: billetes, reservas y justificantes.</figcaption>
+      </figure>
+
+      <p>
+        Lo que cuelgues en cada vuelo, hotel o excursión aparece aquí junto. Se admiten PDF,
+        imágenes, correos <code>.eml</code> y texto, hasta 15 MB cada uno.
+      </p>
+
+      <h3>El dosier</h3>
+      <p>
+        Desde el lienzo, <b>Dosier → Generar</b> crea un documento con el viaje entero: portada,
+        día a día con horas, reservas, teléfonos, direcciones y lo de «Antes de viajar». Se puede
+        descargar y compartir, y está pensado para leerlo en el móvil durante el viaje, sin
+        conexión.
+      </p>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="descubrir">
+      <h2>13. Descubrir un destino</h2>
+
+      <figure>
+        <img src="/manual/img/descubrir.png" alt="Pantalla de descubrir un destino">
+        <figcaption>El catálogo de un destino: sus ciudades, con lo que se sabe de cada una.</figcaption>
+      </figure>
+
+      <p>
+        Es la enciclopedia del destino, independiente de un viaje concreto: las ciudades
+        investigadas, sus sitios y sus fichas. Desde aquí puedes <b>ampliar la ficha</b> de una
+        ciudad —el porqué, cómo moverse y los lugares de dentro— y mandar ciudades <b>a tu ruta</b>.
+      </p>
+      <div class="nota">
+        <b>El catálogo se comparte entre viajes</b>
+        Lo que se investiga una vez sirve para el siguiente viaje a esa misma ciudad. Por eso el
+        segundo viaje a un mismo sitio se monta mucho más rápido.
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="ajustes">
+      <h2>14. Ajustes del motor</h2>
+
+      <figure>
+        <img src="/manual/img/orquestador-ajustes.png" alt="Pantalla de ajustes del orquestador">
+        <figcaption>La cocina: claves, modelos, parámetros de cada fase y lo que se le pide a la IA.</figcaption>
+      </figure>
+
+      <h3>Instalación</h3>
+      <ul>
+        <li><b>Clave de la API de Anthropic</b> — sin ella el motor no puede pensar.</li>
+        <li><b>Clave de Google Maps (servidor)</b> — geocodificar y medir distancias.</li>
+        <li><b>Clave de Google Maps (navegador)</b> — las teselas del mapa y el «cómo llegar». Debe
+          estar restringida por dominio.</li>
+        <li><b>Modelos</b> — cuál se usa para las decisiones de criterio y cuál para lo rápido.</li>
+        <li><b>Ruta a Chrome</b> — el navegador con el que se hacen las búsquedas.</li>
+      </ul>
+      <p>Cada clave se puede <b>probar</b> desde la propia pantalla, que además avisa si una clave
+        de navegador no está restringida.</p>
+
+      <h3>Parámetros</h3>
+      <p>
+        Agrupados por fase. Cada uno lleva su explicación en lenguaje normal, su unidad y el valor
+        <b>de fábrica</b> al que puedes volver. Unos cuantos ejemplos de los que más se notan:
+      </p>
+      <table>
+        <tr><th>Parámetro</th><th>Qué cambia</th></tr>
+        <tr><td><b>euros_por_hora_util</b></td><td>Cuánto vale para ti una hora de viaje. Con él se compara el precio de los vuelos y de los traslados contra el tiempo.</td></tr>
+        <tr><td><b>euros_por_km_de_traslado</b></td><td>Lo que se supone que cuesta moverse entre paradas cuando todavía no se ha buscado ningún traslado. Sube si quieres penalizar más las rutas largas.</td></tr>
+        <tr><td><b>factor_ahorro_traslado</b> y <b>max_tiempo_extra_si_compensa_min</b></td><td>Cuánto más barata tiene que ser una opción para preferirla, y cuánto tiempo de más aceptas si el ahorro lo compensa.</td></tr>
+        <tr><td><b>puestos_intocables_del_sitio</b></td><td>Cuántos sitios de cabecera de cada ciudad son intocables para el lienzo.</td></tr>
+        <tr><td><b>duracion_comida_min</b> y <b>hora_maxima_inicio</b></td><td>Cuánto dura una comida y a qué hora deja de empezarse nada.</td></tr>
+        <tr><td><b>max_excursiones_largas_por_dia</b></td><td>Cuántas excursiones de jornada caben en un día.</td></tr>
+      </table>
+
+      <h3>Lo que se le pide a la IA</h3>
+      <p>
+        Cada fase tiene su instrucción, editable, con un botón para <b>restaurar la de fábrica</b>.
+        Tocar esto cambia el comportamiento del motor de raíz: es para afinar, no para el día a día.
+      </p>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="criterios">
+      <h2>15. Cómo decide el motor</h2>
+
+      <p>
+        Estas son las reglas que explican casi todo lo que verás en el registro. Ninguna es un
+        capricho: todas salieron de un viaje concreto que salió mal.
+      </p>
+
+      <h3>La ruta</h3>
+      <ul>
+        <li>La puerta de entrada y salida se elige por <b>horas útiles</b>, descontando el tiempo y
+          el dinero de los traslados internos.</li>
+        <li>Entre los repartos de noches válidos gana el que <b>más noches deja a las ciudades de
+          más peso</b> y el más corto de recorrer.</li>
+        <li>La ruta tiene que <b>pisar todos los países</b> marcados.</li>
+      </ul>
+
+      <h3>Los horarios</h3>
+      <ul>
+        <li>El horario se lee <b>del día concreto</b>: si un museo abre hasta las 20:00 los sábados,
+          el sábado cabe una visita más larga.</li>
+        <li>Un recinto abierto 24 h no lo recorta el horario de sus atracciones: la Fortaleza de
+          Kalemegdan es un parque abierto, aunque sus museos cierren a las 17:00.</li>
+        <li>Si no se puede leer con seguridad, se coloca igual y se avisa: <b>no se inventa un
+          cierre</b>, porque un cierre inventado echa del viaje algo que sí abría.</li>
+      </ul>
+
+      <h3>Las visitas</h3>
+      <ul>
+        <li>Lo que <b>solo se ve con luz</b> —parques, playas, islas, montes— no empieza a partir de
+          las 19:00.</li>
+        <li><b>Nada acaba después de las 23:00.</b></li>
+        <li>Una <b>zona</b> de medio día (un barrio, un parque natural) no deja la parada como corta:
+          se recorta y se dice.</li>
+        <li>La <b>comida</b> se pone a la hora de comer; si una visita larga se queda esa hora, la
+          comida pasa detrás de ella, aunque sea más corta.</li>
+      </ul>
+
+      <h3>Las excursiones</h3>
+      <ul>
+        <li>Una excursión solo da por visto un sitio si de verdad lo visita: lo dice la IA, lo lleva
+          en el título o está en el mismo punto exacto. Un free tour que pasa por delante de las
+          murallas no las incluye.</li>
+        <li>Si la excursión no entra en el plan, los sitios que tapaba <b>vuelven a contar</b>.</li>
+        <li>Una excursión de día completo <b>cede el sitio</b> si deja fuera uno de los tres
+          primeros de la ciudad o la mitad de sus imprescindibles.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="glosario">
+      <h2>16. Glosario</h2>
+      <table>
+        <tr><th>Palabra</th><th>Qué es</th></tr>
+        <tr><td><b>Parada</b> (o etapa)</td><td>Una ciudad del viaje, con sus noches y sus fechas.</td></tr>
+        <tr><td><b>Parada de paso</b></td><td>Una parada de cero noches: se pasa por ella, no se duerme.</td></tr>
+        <tr><td><b>Tramo</b></td><td>El salto entre dos paradas, o el vuelo de ida o de vuelta.</td></tr>
+        <tr><td><b>Puerta</b></td><td>La combinación de ciudad de entrada y ciudad de salida del viaje.</td></tr>
+        <tr><td><b>Reparto</b></td><td>Cómo se distribuyen las noches entre las paradas.</td></tr>
+        <tr><td><b>Imprescindible</b></td><td>Sitio del primer bloque de una ciudad: el motivo de ir.</td></tr>
+        <tr><td><b>Zona</b></td><td>Sitio que no se visita entero, se recorre: un barrio, un parque, una isla.</td></tr>
+        <tr><td><b>Candidato</b></td><td>Algo elegido para este viaje: un hotel, un vuelo, un sitio apuntado.</td></tr>
+        <tr><td><b>Mochila</b></td><td>Lo apuntado que todavía no tiene día en el lienzo.</td></tr>
+        <tr><td><b>Bloque fijo</b></td><td>Llegada, salida o salto entre ciudades: ocupa el día y no se mueve.</td></tr>
+        <tr><td><b>Hueco</b></td><td>Algo que una fase no pudo resolver y te deja anotado.</td></tr>
+        <tr><td><b>Catálogo</b></td><td>Lo que se sabe de un destino, compartido entre viajes.</td></tr>
+      </table>
+    </section>
+
+    <!-- ============================================================= -->
+    <section id="problemas">
+      <h2>17. Cuando algo sale mal</h2>
+
+      <h3>El mapa sale en blanco o sin calles</h3>
+      <p>
+        Es la clave de Google del navegador: o falta, o el dominio desde el que estás abriendo la
+        web no está autorizado en Google Cloud. Se ve en los ajustes del motor, que la prueban.
+      </p>
+
+      <h3>Una ciudad sale «corta»</h3>
+      <p>
+        Significa que sus imprescindibles no caben en los días que tiene. Puedes darle una noche más
+        desde «Mi ruta», quitarle alguna visita, o mirar en el registro por qué no cabían: a veces
+        no es falta de tiempo, sino un museo que cierra pronto.
+      </p>
+
+      <h3>Un sitio no aparece en el mapa</h3>
+      <p>
+        Sale en la lista del panel con la etiqueta «sin ubicar»: no se pudo situar con seguridad y
+        no se le inventa una posición. En su ficha puedes añadirle la dirección a mano.
+      </p>
+
+      <h3>El motor se ha quedado parado</h3>
+      <p>
+        En la pantalla del orquestador, <b>Reanudar</b> sigue por donde iba sin repetir lo hecho. Si
+        una fase falló del todo, se puede volver a lanzar solo esa fase.
+      </p>
+
+      <h3>Quiero rehacer una ciudad desde cero</h3>
+      <p>
+        Quítala de la ruta y vuelve a añadirla, o borra el viaje entero y regenéralo. Recuerda que
+        borrar el viaje se lleva también el catálogo de las ciudades que no use ningún otro viaje.
+      </p>
+    </section>
+
+    <p class="man__pie">
+      Manual de CreadorViajes · capturas tomadas de un viaje real de 14 días por Croacia, Bosnia y
+      Serbia · actualizado el 20 de septiembre de 2026.
+    </p>
+
+  </main>
+</div>
+</body>
+</html>

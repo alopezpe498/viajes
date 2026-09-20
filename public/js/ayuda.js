@@ -48,7 +48,10 @@
       <i class="ti ti-help ay-cab__icono" aria-hidden="true"></i>
       <h2 class="ay-cab__titulo">
         Ayuda
-        <span class="ay-cab__pie">Dudas sobre cómo se usa la web</span>
+        <span class="ay-cab__pie">
+          Dudas sobre cómo se usa la web ·
+          <a class="ay-manual" href="/manual/" target="_blank" rel="noopener">manual completo</a>
+        </span>
       </h2>
       <button class="ay-cerrar" type="button" aria-label="Cerrar la ayuda">
         <i class="ti ti-x" aria-hidden="true"></i>

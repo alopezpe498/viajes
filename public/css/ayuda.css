@@ -107,6 +107,10 @@ body.mapa-maestro .ay-panel   { right: auto; left: 14px; }
   font-weight: 400;
   color: var(--texto-2);
 }
+/* La salida al manual: aquí es donde uno viene cuando no sabe algo, así que
+   aquí es donde tiene que estar el enlace a la explicación larga. */
+.ay-manual { color: var(--acento); font-weight: 600; text-decoration: none; }
+.ay-manual:hover { text-decoration: underline; }
 
 .ay-cab__icono { color: var(--acento); font-size: var(--texto-2xl); }
 
