@@ -117,10 +117,37 @@ const MUTANT = '0.14.1';
   <div class="mm-comollegar" id="mm-comollegar" hidden>
     <div class="mm-comollegar__caja">
       <div class="mm-comollegar__cab">
-        <span id="mm-comollegar-titulo"></span>
+        <span class="mm-comollegar__titulo" id="mm-comollegar-titulo"></span>
         <button type="button" class="mm-cerrar" id="mm-comollegar-cerrar"
                 title="Cerrar" aria-label="Cerrar">&times;</button>
       </div>
+
+      <%# Los modos: el iframe enseña UNO cada vez y no trae pestañas propias,
+          así que las ponemos nosotras y se recarga con el modo elegido. %>
+      <div class="mm-comollegar__modos" id="mm-comollegar-modos" role="group"
+           aria-label="Cómo ir">
+        <button type="button" data-modo="walking" aria-pressed="false">
+          <i class="ti ti-walk" aria-hidden="true"></i> A pie
+        </button>
+        <button type="button" data-modo="transit" aria-pressed="false">
+          <i class="ti ti-bus" aria-hidden="true"></i> Público
+        </button>
+        <button type="button" data-modo="driving" aria-pressed="false">
+          <i class="ti ti-car" aria-hidden="true"></i> Coche
+        </button>
+        <button type="button" data-modo="bicycling" aria-pressed="false">
+          <i class="ti ti-bike" aria-hidden="true"></i> Bici
+        </button>
+
+        <%# Y la salida a Google Maps, que es donde SÍ se puede elegir entre
+            rutas alternativas y darle a «Iniciar». Aquí dentro no: la Embed API
+            devuelve una sola ruta y no deja tocarla. %>
+        <a class="mm-comollegar__fuera" id="mm-comollegar-fuera"
+           target="_blank" rel="noopener noreferrer">
+          <i class="ti ti-external-link" aria-hidden="true"></i> Abrir en Google Maps
+        </a>
+      </div>
+
       <iframe id="mm-comollegar-mapa" title="Cómo llegar" loading="lazy"
               referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
     </div>

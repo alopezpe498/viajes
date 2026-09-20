@@ -396,9 +396,39 @@ html:has(.mapa-maestro) { height: 100%; }
   padding: 12px 38px 10px 14px; border-bottom: 1px solid var(--borde);
   font-size: var(--texto-base); font-weight: 600; color: var(--texto);
 }
+.mm-comollegar__titulo { overflow-wrap: anywhere; }
+
+/* Los modos, con el mismo lenguaje que los chips del panel: el elegido en
+   acento, como la barra de vistas. El enlace de salida se va a la derecha
+   porque no es un modo más: se va de la app. */
+.mm-comollegar__modos {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-2);
+  padding: var(--esp-3) 14px; border-bottom: 1px solid var(--borde);
+}
+.mm-comollegar__modos button {
+  display: inline-flex; align-items: center; gap: var(--esp-1);
+  border: 1px solid var(--borde-fuerte); background: rgba(255, 255, 255, .7);
+  font: inherit; font-size: var(--texto-sm); font-weight: 600; color: var(--texto);
+  border-radius: var(--radio-xs); padding: var(--esp-1) var(--esp-4); cursor: pointer;
+}
+.mm-comollegar__modos button:hover { background: var(--tinte); }
+.mm-comollegar__modos button.on { background: var(--acento); border-color: var(--acento); color: #fff; }
+.mm-comollegar__modos button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+.mm-comollegar__fuera {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: var(--esp-1);
+  font-size: var(--texto-sm); font-weight: 600; color: var(--acento);
+  text-decoration: none;
+}
+.mm-comollegar__fuera:hover { text-decoration: underline; }
+
 .mm-comollegar iframe { flex: 1; width: 100%; border: 0; }
 
 @media (max-width: 640px) {
   .mm-comollegar { padding: var(--esp-3); }
   .mm-comollegar__caja { height: 82vh; }
+  /* En el móvil el enlace no cabe en la misma línea que los cuatro modos: baja
+     entero en vez de apretarlos. */
+  .mm-comollegar__fuera { margin-left: 0; width: 100%; }
 }

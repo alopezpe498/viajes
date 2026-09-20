@@ -779,6 +779,14 @@
    */
   const KM_A_PIE = 2;
 
+  /** Los cuatro modos, con el nombre que se enseña y el que entiende Google. */
+  const MODOS = {
+    walking: 'a pie',
+    transit: 'en transporte público',
+    driving: 'en coche',
+    bicycling: 'en bici',
+  };
+
   /** El globo del punto pinchado, con su «Cómo llegar» si hay de dónde venir. */
   function abrirGlobo(i, previo) {
     if (!previo || !CLAVE_MAPAS) {
@@ -799,18 +807,27 @@
   const panelIr = document.getElementById('mm-comollegar');
   const tituloIr = document.getElementById('mm-comollegar-titulo');
   const marcoIr = document.getElementById('mm-comollegar-mapa');
+  const modosIr = document.getElementById('mm-comollegar-modos');
+  const fueraIr = document.getElementById('mm-comollegar-fuera');
+
+  /** Lo que se está mirando ahora mismo, para poder cambiarle el modo. */
+  let tramoIr = null;
 
   function cerrarComoLlegar() {
     if (!panelIr) return;
     panelIr.hidden = true;
+    tramoIr = null;
     // Se vacía al cerrar: un iframe escondido sigue vivo, y este pide mapas.
     marcoIr.removeAttribute('src');
   }
 
-  function abrirComoLlegar(desde, hasta) {
-    if (!panelIr || !desde || !hasta || !CLAVE_MAPAS) return;
+  /** El modo que se propone: dentro de la ciudad, lo que se anda se anda. */
+  const modoDeSalida = (desde, hasta) => (km(desde, hasta) <= KM_A_PIE ? 'walking' : 'transit');
 
-    const modo = km(desde, hasta) <= KM_A_PIE ? 'walking' : 'transit';
+  function pintarComoLlegar() {
+    if (!tramoIr) return;
+    const { desde, hasta, modo } = tramoIr;
+
     const url = new URL('https://www.google.com/maps/embed/v1/directions');
     url.searchParams.set('key', CLAVE_MAPAS);
     // COORDENADAS Y NO NOMBRES. El nombre lo vuelve a buscar Google y puede
@@ -821,11 +838,40 @@
     url.searchParams.set('mode', modo);
     url.searchParams.set('language', 'es');
 
-    tituloIr.textContent =
-      `${desde.nombre} → ${hasta.nombre} · ${modo === 'walking' ? 'a pie' : 'en transporte público'}`;
+    tituloIr.textContent = `${desde.nombre} → ${hasta.nombre} · ${MODOS[modo]}`;
     marcoIr.src = url.toString();
+
+    // LA SALIDA A GOOGLE MAPS, con el mismo tramo y el mismo modo. Es una Maps
+    // URL —otra pieza, no la del iframe— y ahí sí salen las rutas alternativas
+    // y el botón de empezar el viaje.
+    const fuera = new URL('https://www.google.com/maps/dir/');
+    fuera.searchParams.set('api', '1');
+    fuera.searchParams.set('origin', `${desde.lat},${desde.lon}`);
+    fuera.searchParams.set('destination', `${hasta.lat},${hasta.lon}`);
+    fuera.searchParams.set('travelmode', modo);
+    fueraIr.href = fuera.toString();
+    fueraIr.title = `Abrir ${desde.nombre} → ${hasta.nombre} en Google Maps`;
+
+    for (const b of modosIr.querySelectorAll('button[data-modo]')) {
+      const suyo = b.dataset.modo === modo;
+      b.classList.toggle('on', suyo);
+      b.setAttribute('aria-pressed', suyo ? 'true' : 'false');
+    }
+  }
+
+  function abrirComoLlegar(desde, hasta) {
+    if (!panelIr || !desde || !hasta || !CLAVE_MAPAS) return;
+    tramoIr = { desde, hasta, modo: modoDeSalida(desde, hasta) };
+    pintarComoLlegar();
     panelIr.hidden = false;
   }
+
+  modosIr?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-modo]');
+    if (!b || !tramoIr) return;
+    tramoIr.modo = b.dataset.modo;
+    pintarComoLlegar();
+  });
 
   document.getElementById('mm-comollegar-cerrar')?.addEventListener('click', cerrarComoLlegar);
   panelIr?.addEventListener('click', (e) => { if (e.target === panelIr) cerrarComoLlegar(); });
