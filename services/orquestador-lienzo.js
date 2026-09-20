@@ -1434,14 +1434,24 @@ export function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
   let tocado = false;
 
   for (const etapa of etapas) {
-    // A QUIÉN PROTEGE ESTA REGLA.
+    // A QUIÉN PROTEGE ESTA REGLA, Y CUÁNTO.
     //
     // Nació para los tres primeros de la ciudad, y con eso en el viaje 129 una
     // excursión de diez horas a los monasterios de Žiča y Studenica se quedó el
     // único día completo de Belgrado y dejó fuera el Museo Nacional de Serbia,
-    // que es el #4. Ahora también cede cuando deja fuera DOS o más
-    // imprescindibles, aunque ninguno sea de los tres primeros: uno solo de
-    // segunda fila no vale un día entero de excursión, dos sí.
+    // que es el #4. Se amplió entonces a «dos o más imprescindibles», y con eso
+    // se pasó de frenada: en el viaje 134 cedieron CUATRO excursiones de jornada
+    // —Žiča, Travnik, Hvar y Mostar— y un viaje por Dalmacia sin Hvar ni Mostar
+    // ya no es mejor viaje, es otro.
+    //
+    // El corte, medido sobre ese viaje: cede si lo que deja fuera es uno de los
+    // tres primeros —el motivo de estar en esa ciudad— o AL MENOS LA MITAD de
+    // los imprescindibles de la parada. Con eso, en el 134:
+    //
+    //   Belgrado  Catedral de San Sava (#2)                 -> cede Žiča
+    //   Sarajevo  Túnel (#2), y 6 de 8 fuera                -> cede Travnik
+    //   Split     Museo de Arte Croata (#4), 1 de 7         -> SE QUEDA Hvar
+    //   Dubrovnik Lokrum (#5) y el mercado (#7), 2 de 7     -> SE QUEDA Mostar
     const suyos = imprescindiblesDeParada(etapa);
     const primeros = new Set(
       suyos.slice(0, parametro('puestos_intocables_del_sitio', 3)).map((x) => x.id)
@@ -1460,7 +1470,8 @@ export function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
 
     const sinColocar = suyos.filter((x) => !estaColocado(x.id));
     if (!sinColocar.length) continue;
-    if (sinColocar.length < 2 && !sinColocar.some((x) => primeros.has(x.id))) continue;
+    const esLoPrimero = sinColocar.some((x) => primeros.has(x.id));
+    if (!esLoPrimero && sinColocar.length < Math.ceil(suyos.length / 2)) continue;
 
     // ¿Hay una excursión opcional de día completo comiéndose un día de aquí?
     const diasDeLaEtapa = lienzo.dias.filter((d) => d.etapaId === etapa.id).map((d) => d.n);

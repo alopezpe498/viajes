@@ -1536,6 +1536,22 @@ function avisosContraFijos(dias, colocados, fijos) {
  * comida cae en un aeropuerto o en un tren, y pedirla en el lienzo sería pedir
  * algo que no existe.
  */
+function esRestaurantePuestoAComer(c) {
+  const h = enMinutos(c.hora);
+  if (h == null || h < 12 * 60 || h > 17 * 60) return false;
+  if (!c.candidatoId) return false;
+  const cand = una('SELECT datos_extra FROM candidatos WHERE id = ?', c.candidatoId);
+  let deId = null;
+  try {
+    deId = JSON.parse(cand?.datos_extra ?? '{}')?.deId ?? null;
+  } catch {
+    deId = null;
+  }
+  if (!deId) return false;
+  const sitio = una('SELECT categoria FROM sitios_lugar WHERE id = ?', deId);
+  return /gastronom/i.test(String(sitio?.categoria ?? ''));
+}
+
 function avisosDeComida(dias, colocados, fijos) {
   const avisos = [];
   const MEDIODIA = { desde: 13 * 60, hasta: 15 * 60 };
@@ -1544,8 +1560,21 @@ function avisosDeComida(dias, colocados, fijos) {
     const delDia = colocados.filter((c) => c.dia === d.n);
     if (!delDia.length) continue;                       // día vacío: nada que decir
 
+    // UN RESTAURANTE A LA HORA DE COMER ES LA COMIDA DE ESE DÍA.
+    //
+    // Y hay que decirlo aquí porque ya se dice en el otro lado: cuando el plan
+    // trae una taberna del catálogo al mediodía, `unaSolaComidaAlDia` quita el
+    // bloque «Comer» para no tener dos veces de comer. Este aviso solo miraba el
+    // bloque, así que el día 9 del viaje 134 —Konoba Fetivi a las 16:31— acabó
+    // con «tiene plan pero no tiene dónde comer» después de que el propio motor
+    // hubiera decidido que sí lo tenía. Dos reglas, dos respuestas, el mismo día.
+    //
+    // Misma ventana que allí: de 12:00 a 17:00 se come.
     const hayComida = delDia.some(
-      (c) => /^comer\b/i.test(String(c.nombre ?? '')) || c.tipo === 'comer'
+      (c) =>
+        /^comer\b/i.test(String(c.nombre ?? '')) ||
+        c.tipo === 'comer' ||
+        esRestaurantePuestoAComer(c)
     );
     if (hayComida) continue;
 
