@@ -726,13 +726,30 @@ function filtrarNoVerificados(ciudad, punto, sitios, sospechosos) {
   if (!sospechosos.length) return [];
 
   const deOtraCiudad = sospechosos.filter((x) => x.motivo.startsWith('la dirección'));
+  const sinNoticias = sospechosos.filter((x) => !x.motivo.startsWith('la dirección'));
   const confirmados = sitios.length - sospechosos.length;
 
-  if (!confirmados && sitios.length >= TANDA_PARA_DUDAR && deOtraCiudad.length !== sospechosos.length) {
+  // LA SALVAGUARDA ERA DE TODO O NADA, Y ASÍ NO SALTA CASI NUNCA.
+  //
+  // Protegía solo cuando la búsqueda no encontraba NI UNO. En Sofía (viaje 140)
+  // encontró 7 de 19 y borró los otros 12: la Catedral de Alejandro Nevski, la
+  // Basílica de Santa Sofía, el Museo Nacional de Historia, la Sinagoga, San
+  // Jorge y el Monasterio de Rila. Doce monumentos que llevan ahí siglos no
+  // desaparecen a la vez; lo que pasó es que una tanda entera de la búsqueda
+  // volvió vacía —son tandas de doce— y el filtro leyó el silencio como una
+  // respuesta.
+  //
+  // Así que la vara es la PROPORCIÓN: si más de la mitad de lo buscado se queda
+  // sin noticias, el que ha fallado es el buscador. Lo que sí se sigue
+  // borrando, pase lo que pase, es lo que la búsqueda coloca en OTRA CIUDAD:
+  // eso no es silencio, es una respuesta.
+  const demasiados = sinNoticias.length > sitios.length / 2;
+
+  if (sinNoticias.length && sitios.length >= TANDA_PARA_DUDAR && (demasiados || !confirmados)) {
     console.warn(
-      `[datos-sitios] ${ciudad}: la búsqueda no encontró nada de ninguno de los ` +
-        `${sitios.length} sitios. No descarto ninguno: esto es una búsqueda fallida, ` +
-        'no una lista inventada.'
+      `[datos-sitios] ${ciudad}: la búsqueda se quedó sin noticias de ` +
+        `${sinNoticias.length} de ${sitios.length} sitios. No los descarto: eso es una ` +
+        'búsqueda fallida, no una lista inventada.'
     );
     return deOtraCiudad.length ? borrarSitios(ciudad, punto, deOtraCiudad) : [];
   }
