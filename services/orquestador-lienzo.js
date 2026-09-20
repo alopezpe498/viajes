@@ -3664,10 +3664,15 @@ function quitarLaComidaDeLaExcursion(viajeId, dias, di, { soloSiLoDice = false }
   const lienzo = lienzoDeViaje(viajeId);
   for (const dia of dias) {
     const delDia = lienzo.colocados.filter((c) => c.dia === dia);
-    if (delDia.some((c) => deQuienEs(c)?.candidato?.tipo === 'actividad')) continue;
+    // ¿Le queda alguna excursión a ese día? Si le queda, la comida de dentro de
+    // una excursión solo se quita si el TEXTO dice que era de la que se ha ido:
+    // en el viaje 131, Sarajevo perdió la excursión a Travnik, le quedó el tour
+    // nocturno y «Comer · Travnik o Jajce (durante la excursión)» sobrevivió
+    // porque este guardia miraba si quedaba alguna, no cuál.
+    const leQuedaOtra = delDia.some((c) => deQuienEs(c)?.candidato?.tipo === 'actividad');
     for (const c of delDia) {
       if (!esComida(c)) continue;
-      if (soloSiLoDice && !COMIDA_DE_EXCURSION.test(String(c.nombre ?? ''))) continue;
+      if ((soloSiLoDice || leQuedaOtra) && !COMIDA_DE_EXCURSION.test(String(c.nombre ?? ''))) continue;
       quitar(c.id);
       di(`   Día ${dia}: quito «${c.nombre}», la comida del día de una excursión que ya no está.`, ORIGENES.ninguno);
     }
