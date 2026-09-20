@@ -256,6 +256,16 @@ const NO_ES_UNA_LISTA = [
 /** Sin acentos, en minúsculas y con los guiones raros vueltos guion normal. */
 function normalizar(texto) {
   return String(texto ?? '')
+    // EL SALTO DE LÍNEA SEPARA, Y SE BORRABA ANTES DE MIRARLO.
+    //
+    // `tramosDe` corta por «;», por «|» y por el salto de línea… pero esto lo
+    // convertía en un espacio DOS PASOS ANTES, así que ese corte no se usó
+    // nunca. «Mar-Dom: 9:00 - 20:00 ⏎ Lun: Cerrado» acababa en un solo tramo que
+    // abre y cierra a la vez: los siete días cerrados, la regla de oro lo
+    // convertía en «no lo sé» y el sitio salía con «no he podido leer su horario
+    // con seguridad». Tres avisos así en el viaje 135, y es de los formatos más
+    // comunes que escribe la IA.
+    .replace(/[\r\n]+/g, '; ')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -504,7 +514,41 @@ function tramosDe(t) {
     return trozos;
   };
 
-  return [...sinParentesis.split(/[;|\n]+|\.(?!\d)/).flatMap(porComas), ...notas]
+  // Y UNA ETIQUETA NUEVA TAMBIÉN EMPIEZA OTRO HORARIO, AUNQUE NO HAYA SIGNO.
+  //
+  // «Parque: Abierto 24 horas Monumentos: Mar-Dom 10:00-17:00» viene así, sin
+  // punto ni punto y coma entre las dos partes, y se leía como una sola: el
+  // parque perdía su «24 horas» y la Fortaleza de Kalemegdan —el #1 de
+  // Belgrado— se quedaba con el horario de sus monumentos y fuera del viaje.
+  //
+  // Se corta antes de «palabra:» cuando por la izquierda YA se ha dicho un
+  // horario (hay cifras, un «cerrado» o un «24 horas») y la palabra no es un
+  // día: los días con dos puntos son el formato normal y los parte el corte de
+  // la coma, no este.
+  // La etiqueta es un día solo si lo es ENTERA: «Monumentos» empieza por «mon»,
+  // que es el lunes inglés, y por eso el corte no saltaba en Kalemegdan.
+  const NOMBRES_DE_DIA = new Set([
+    'lun', 'lunes', 'mar', 'martes', 'mie', 'miercoles', 'jue', 'jueves', 'vie', 'viernes',
+    'sab', 'sabado', 'dom', 'domingo', 'mon', 'monday', 'tue', 'tuesday', 'wed', 'wednesday',
+    'thu', 'thursday', 'fri', 'friday', 'sat', 'saturday', 'sun', 'sunday', 'diario', 'todos',
+  ]);
+  const CORTE_DE_ETIQUETA = /(?<=[\d\p{L}])\s+(?=([\p{L}]{3,15})\s*:\s)/gu;
+
+  const porEtiquetas = (texto) => {
+    const trozos = [];
+    let desde = 0;
+    for (const m of [...texto.matchAll(CORTE_DE_ETIQUETA)]) {
+      const izquierda = texto.slice(desde, m.index);
+      if (!/\d|cerrad|closed/.test(izquierda)) continue;
+      if (NOMBRES_DE_DIA.has(m[1])) continue;
+      trozos.push(izquierda);
+      desde = m.index;
+    }
+    trozos.push(texto.slice(desde));
+    return trozos;
+  };
+
+  return [...sinParentesis.split(/[;|\n]+|\.(?!\d)/).flatMap(porComas).flatMap(porEtiquetas), ...notas]
     .map((x) => x.trim())
     .filter(Boolean);
 }
