@@ -2542,7 +2542,9 @@ export async function ejecutarFaseCiudades(viaje, promptEntero) {
   const multiplicadores = multiplicadoresDe({ categorias: auto.categorias, ajustes });
 
   const r1 = await consultarJSON(rellenar(partes.candidatas, datos), {
-    maxTokens: 4000,
+    // Ocho candidatas con su evidencia casilla a casilla: es de las largas, y
+    // el techo no se paga.
+    maxTokens: 8000,
     paso: `candidatas de ${datos.DESTINO}`,
     // AQUÍ YA NO SE PIDE NINGÚN NÚMERO DE MÉRITO: se piden casillas con su
     // evidencia, y la cuenta la hace `rubrica-ciudades.js`. La temperatura sigue

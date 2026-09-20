@@ -200,7 +200,9 @@ function promptDeDestino(destino, tipo = 'pais') {
 export async function investigarDestinoConIA(nombreDestino, tipo = 'pais') {
   const respuesta = await consultarJSON(promptDeDestino(nombreDestino, tipo), {
     paso: `investigar «${nombreDestino}»`,
-    maxTokens: 8000,
+    // La lista de ciudades de un país entero, con su evidencia: la segunda
+    // respuesta más larga. Mismo motivo que arriba, el techo no se paga.
+    maxTokens: 12000,
   });
 
   const cabecera = respuesta?.destino ?? {};
@@ -861,7 +863,16 @@ function avisarDeNombresMezclados(sitios, ciudad) {
 async function pedirUnBloque(punto, nombreDestino, bloque, opciones) {
   const respuesta = await consultarJSON(promptDeCiudad(punto, nombreDestino, bloque, opciones), {
     paso: `investigar «${punto.nombre}» · ${bloque}`,
-    maxTokens: 6000,
+    // EL TECHO NO SE PAGA, Y ESTE SE QUEDÓ CORTO.
+    //
+    // Se cobran los tokens que la respuesta GENERA, no el máximo que se le
+    // permita: 6.000 y 12.000 cuestan lo mismo si la respuesta ocupa 5.800. Con
+    // 6.000, en el viaje 139 se cortaron a media frase Bucarest y Sofía —un
+    // párrafo largo más diez sitios con su descripción— y las dos ciudades se
+    // quedaron sin catálogo. Esta es la respuesta más larga que pide el
+    // programa; el corte se sigue detectando por si acaso, pero de salida ya
+    // cabe.
+    maxTokens: 12000,
     // ESTA LLAMADA PUNTÚA, aunque no lo parezca. Pide los sitios «ordenados de
     // más a menos imprescindible», y de ese ORDEN sale el nivel del motor: los
     // tres primeros del bloque `imprescindibles` son la categoría intocable

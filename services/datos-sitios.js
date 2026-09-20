@@ -278,7 +278,9 @@ async function unaTanda(ciudad, nombres) {
   const r = await consultarJSON(prompt(ciudad, nombres, resultado.texto), {
     // Treinta sitios con cinco campos cada uno no caben en cuatro mil tokens, y
     // una respuesta cortada por el límite se pierde entera: no es JSON válido.
-    maxTokens: 8000,
+    // Y como el techo no se paga —se cobra lo que la respuesta genera—, se pone
+    // con holgura en vez de al filo.
+    maxTokens: 12000,
     paso: `ordenar los datos de los sitios de ${ciudad}`,
     // SACAR UN PRECIO DE UN TEXTO ES MECÁNICA, Y LA MECÁNICA NO SE PIENSA.
     //

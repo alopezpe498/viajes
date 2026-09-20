@@ -3214,7 +3214,9 @@ export async function ejecutarFaseLienzo(viaje, prompt) {
     let plan = null;
     try {
       const r = await consultarJSON(rellenar(prompt, datos), {
-        maxTokens: 4000,
+        // El plan de una parada entera —tres o cuatro días con sus bloques y el
+        // motivo de cada día— iba justo en 4.000. El techo no se paga.
+        maxTokens: 8000,
         paso: `repartir los días de ${ciudad}`,
       });
       plan = Array.isArray(r?.dias) ? r : null;

@@ -1207,7 +1207,7 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     // permite. Con frontera de por medio el precio del coche no se compara: se
     // enseña como lo que es y no gana ninguna regla de dinero.
     const conFrontera = cruzaFrontera(desde, hasta);
-    const medidas = opciones.map((o, n) => {
+    let medidas = opciones.map((o, n) => {
       const ambito = o.precio == null ? null : ambitoDeLaOpcion(o);
       const cocheDeIda = conFrontera && o.modo === 'coche';
       return {
@@ -1226,6 +1226,45 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
       };
     });
     medidas.sort((a, b) => a.bloque.total - b.bloque.total);
+
+    // LO IMPOSIBLE NO COMPITE.
+    //
+    // EL CASO, viaje 139. Para Sighișoara → Sofía —600 km y una frontera— la IA
+    // propuso «Ferry Turnu Măgurele-Nikopol, 1h 50min puerta a puerta, 5 €».
+    // Ese ferry cruza el Danubio: es un trozo del camino, no el camino. Se
+    // quedó dentro, se usó de referencia para comparar precios y tiempos, y la
+    // elección acabó siendo un autobús de 16h 20min al que nadie pudo comparar
+    // con nada sensato.
+    //
+    // La referencia ya estaba calculada dos pantallas más arriba: lo que tarda
+    // esa ruta por carretera. Una opción POR TIERRA que diga tardar menos de la
+    // mitad que el coche no es una ganga, es otro trayecto. Se descarta y se
+    // dice cuál era.
+    //
+    // NO SE APLICA AL AVIÓN NI AL TREN. El avión es legítimamente mucho más
+    // rápido, y un tren también puede serlo —el Shinkansen tarda 2h 20min donde
+    // la autopista tarda 5h 52min—: es la misma excepción que ya hace el aviso
+    // de «los kilómetros no cuadran».
+    const referencia = minutosEstimados(desde.nombre_ciudad, hasta.nombre_ciudad);
+    if (referencia != null) {
+      const imposible = (o) => {
+        if (/avi|vuelo|tren/i.test(`${o.modo ?? ''} ${o.nombre ?? ''}`)) return false;
+        const suyo = Number(o.bloque?.total);
+        return Number.isFinite(suyo) && suyo > 0 && suyo < referencia * 0.5;
+      };
+      const fuera = medidas.filter(imposible);
+      if (fuera.length && fuera.length < medidas.length) {
+        for (const o of fuera) {
+          di(
+            `   ✘ «${o.nombre}» dice tardar ${comoTexto(o.bloque.total)} puerta a puerta cuando ` +
+              `la ruta real son ${comoTexto(referencia)}: eso no lleva de ${desde.nombre_ciudad} a ` +
+              `${hasta.nombre_ciudad}. No la cuento.`,
+            ORIGENES.ninguno
+          );
+        }
+        medidas = medidas.filter((o) => !imposible(o));
+      }
+    }
 
     // Duraciones y precios salen del catálogo de tramos, que se llenó con el
     // Modo IA de Google. Lo que pone el código encima son los márgenes de
