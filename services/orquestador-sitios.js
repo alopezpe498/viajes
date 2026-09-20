@@ -481,9 +481,41 @@ export async function ejecutarFaseSitios(viaje, prompt) {
           sesgo,
         });
       } catch (err) {
-        apuntarHueco(viajeId, FASE, `${ciudad}: no se pudieron generar los sitios (${err.message}).`);
-        di(`${ciudad}: la generación falló (${err.message}). Sigo con la siguiente parada.`);
-        return { hecha: false };
+        // UNA CIUDAD SIN CATÁLOGO NO ES UN HUECO MÁS: ES UNA PARADA VACÍA.
+        //
+        // En el viaje 139 esto falló en Bucarest y en Sofía —la respuesta de la
+        // IA se cortaba por el tope de tokens— y el viaje siguió su curso: el
+        // lienzo montó tres días de Bucarest y tres de Sofía con la comida y
+        // poco más, porque no había nada que colocar. El hueco quedaba escrito
+        // en la fase, donde no lo lee nadie hasta que ya está hecho el plan.
+        //
+        // Así que se intenta OTRA VEZ, que es gratis comparado con perder la
+        // ciudad, y si tampoco sale se dice con un aviso grave del viaje.
+        di(`${ciudad}: la generación falló (${err.message}). Lo intento una vez más.`);
+        try {
+          const destino = punto.destino_id
+            ? una('SELECT nombre FROM destinos WHERE id = ?', punto.destino_id)
+            : destinoPorNombre(viaje.destino ?? '');
+          ficha = await investigarCiudadConIA(punto, destino?.nombre ?? ciudad, { edadesNinos, sesgo });
+          di(`${ciudad}: a la segunda sí. Sigo.`);
+        } catch (err2) {
+          apuntarHueco(viajeId, FASE, `${ciudad}: no se pudieron generar los sitios (${err2.message}).`);
+          di(
+            `AVISO GRAVE · ${ciudad} se queda SIN NADA QUE VER: la generación falló dos veces ` +
+              `(${err2.message}). Sus días saldrán vacíos; entra en la etapa y vuelve a pedirlos.`,
+            ORIGENES.ninguno
+          );
+          ejecutar(
+            `INSERT INTO avisos (viaje_id, categoria, severidad, titulo, texto)
+             VALUES (?, 'sitios', 'alerta', ?, ?)`,
+            viajeId,
+            `${ciudad} se quedó sin catálogo de sitios`,
+            'La generación de «qué ver» falló dos veces en esta parada, así que sus días del lienzo ' +
+              'salen casi vacíos. Abre la etapa y vuelve a pedir los sitios: al hacerlo se generan ' +
+              'solos, y después puedes montar sus días desde el lienzo.'
+          );
+          return { hecha: false };
+        }
       }
 
       // --- 2) Wikipedia: foto y enlace --------------------------------------
