@@ -391,6 +391,7 @@ export const FASE_DE_PARAMETRO = {
 
   minimo_noches_por_ciudad: 'ciudades_y_noches',
   max_ciudades_candidatas: 'ciudades_y_noches',
+  euros_por_km_de_traslado: 'ciudades_y_noches',
 
   factor_precio_traslado: 'traslados',
   hora_minima_tren: 'traslados',
@@ -398,6 +399,7 @@ export const FASE_DE_PARAMETRO = {
   max_penalizacion_horario_min: 'traslados',
   factor_ahorro_traslado: 'traslados',
   max_tiempo_extra_ahorro_min: 'traslados',
+  max_tiempo_extra_si_compensa_min: 'traslados',
   acceso_aeropuerto_min: 'traslados',
   acceso_estacion_min: 'traslados',
   margen_coche_min: 'traslados',

@@ -813,16 +813,26 @@ async function elegirPuertas({ viaje, candidatas, tiempos, tiemposParaOrdenar = 
     tablaDeTraslado.find((t) => normalizarNombre(t.desde) === normalizarNombre(a) && normalizarNombre(t.hasta) === normalizarNombre(b))?.minutos ??
     tablaDeTraslado.find((t) => normalizarNombre(t.desde) === normalizarNombre(b) && normalizarNombre(t.hasta) === normalizarNombre(a))?.minutos ??
     null;
+  const tramoEntre = (a, b) =>
+    tablaDeTraslado.find((t) => normalizarNombre(t.desde) === normalizarNombre(a) && normalizarNombre(t.hasta) === normalizarNombre(b)) ??
+    tablaDeTraslado.find((t) => normalizarNombre(t.desde) === normalizarNombre(b) && normalizarNombre(t.hasta) === normalizarNombre(a)) ??
+    null;
   for (const c of combinaciones) {
     const ruta = c.mejorReparto?.reparto ?? [];
     let minutos = 0;
+    let km = 0;
     let sinDato = false;
+    let sinKm = false;
     for (let i = 0; i < ruta.length - 1; i += 1) {
       if (normalizarNombre(ruta[i].ciudad) === normalizarNombre(ruta[i + 1].ciudad)) continue;
       const m = minutosDeTramo(ruta[i].ciudad, ruta[i + 1].ciudad);
       if (m == null) sinDato = true;
       else minutos += Number(m) || 0;
+      const suKm = Number(tramoEntre(ruta[i].ciudad, ruta[i + 1].ciudad)?.km);
+      if (Number.isFinite(suKm) && suKm > 0) km += suKm;
+      else sinKm = true;
     }
+    if (ruta.length && !sinKm) c.kmTraslado = Math.round(km);
     // Con algún tramo sin dato no se cobra nada a esta puerta: cobrar solo lo
     // conocido premiaría a la que tiene más huecos, igual que con el precio.
     if (sinDato || !ruta.length) continue;
@@ -877,12 +887,38 @@ async function elegirPuertas({ viaje, candidatas, tiempos, tiemposParaOrdenar = 
   // En el 112 no cambió la puerta elegida —c2 ganaba con precio y sin él— pero sí
   // reordenó el resto, y eso es suerte, no diseño. Vuelve a como estaba: el
   // precio se compara con lo que los vuelos deciden, que es su sitio.
+  // Y LOS EUROS DE LOS SALTOS DE DENTRO, QUE TAMPOCO VALÍAN NADA.
+  //
+  // El término de arriba cobra las HORAS de traslado; este, lo que cuestan. En
+  // el viaje 131 ganó entrar por Belgrado y bajar EN AVIÓN a Dubrovnik para
+  // volver luego al interior: rápido —por eso el término de las horas no lo
+  // veía— y 445 € por persona en saltos, contra los 191 € de la ruta en línea
+  // recta de la tirada anterior. Cuando se elige la puerta no hay ningún
+  // traslado buscado todavía, así que se estima por distancia: los kilómetros
+  // del tramo, que la tabla de tiempos ya trae, por `euros_por_km_de_traslado`.
+  //
+  // O TODAS O NINGUNA, igual que con el precio del vuelo: si a una combinación
+  // le faltan los kilómetros de algún tramo, no se le cobra a nadie.
+  const porKm = Math.max(0, parametro('euros_por_km_de_traslado', 0.5));
+  const faltaAlgunKm = combinaciones.some((c) => c.kmTraslado == null);
+  if (porKm > 0 && !faltaAlgunKm) {
+    for (const c of combinaciones) c.eurosTraslado = Math.round(c.kmTraslado * porKm);
+  } else if (faltaAlgunKm) {
+    anotar(
+      viajeId,
+      'ciudades_y_noches',
+      '   No sé los kilómetros de todos los tramos, así que lo que cuestan los traslados ' +
+        'no puntúa en ninguna puerta.',
+      ORIGENES.ninguno
+    );
+  }
+
   const tasa = Math.max(0, parametro('euros_por_hora_util', 20));
   const faltaAlgunPrecio = combinaciones.some((c) => c.precio == null);
 
   if (tasa > 0 && combinaciones.length && !faltaAlgunPrecio) {
     for (const c of combinaciones) {
-      c.costeEnHoras = c.precio / tasa;
+      c.costeEnHoras = (c.precio + (c.eurosTraslado ?? 0)) / tasa;
       c.puntos -= c.costeEnHoras;
     }
   } else if (faltaAlgunPrecio) {
@@ -994,7 +1030,9 @@ async function elegirPuertas({ viaje, candidatas, tiempos, tiemposParaOrdenar = 
         // Y EL PRECIO CON SU CUENTA AL LADO, POR LO MISMO. Un «− 12.3» a secas no
         // se puede discutir; «− 12.3 por 370 € a 30 €/h» sí, y además enseña la
         // tasa que lo ha producido, que es el número que se ajusta si no gusta.
-        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € a ${parametro('euros_por_hora_util', 20)} €/h` : ''}) · ` +
+        `${c.costeEnHoras ? ` − ${c.costeEnHoras.toFixed(1)} por ${c.precio} € de vuelo${
+          c.eurosTraslado ? ` y ${c.eurosTraslado} € de traslados (${c.kmTraslado} km estimados)` : ''
+        } a ${parametro('euros_por_hora_util', 20)} €/h` : ''}) · ` +
         `${comoTexto(c.total)} de vuelo · ` +
         // EL PRECIO SE DICE SIEMPRE, PUNTÚE O NO. Cuando falta alguno el término
         // no se aplica a nadie, y entonces esta línea es lo único que deja ver
@@ -2048,6 +2086,20 @@ export async function completarTiempos(candidatas, tiemposIA, destinoId) {
         (normalizarNombre(t.desde) === normalizarNombre(a) && normalizarNombre(t.hasta) === normalizarNombre(b)) ||
         (normalizarNombre(t.desde) === normalizarNombre(b) && normalizarNombre(t.hasta) === normalizarNombre(a))
     );
+  // LOS KILÓMETROS DE LOS TRAMOS QUE DIO LA IA. Ella da minutos, no distancia, y
+  // el coste del traslado se cobra por kilómetro. Se sitúan las dos ciudades y
+  // se mide, que es un hecho; si alguna no se puede situar, el tramo se queda
+  // sin kilómetros y quien puntúe decidirá qué hacer con eso.
+  const porNombre = new Map(candidatas.map((c) => [normalizarNombre(c.nombre), c]));
+  for (const t of tiempos) {
+    if (Number.isFinite(Number(t.km))) continue;
+    const ca = porNombre.get(normalizarNombre(t.desde));
+    const cb = porNombre.get(normalizarNombre(t.hasta));
+    if (!ca || !cb) continue;
+    const [sa, sb] = [await situar(ca), await situar(cb)];
+    if (sa && sb) t.km = Math.round(kmEntre(sa, sb) * 1.3);
+  }
+
   const nombres = candidatas.map((c) => c.nombre);
   for (let i = 0; i < nombres.length; i += 1) {
     for (let j = i + 1; j < nombres.length; j += 1) {
@@ -2065,7 +2117,13 @@ export async function completarTiempos(candidatas, tiemposIA, destinoId) {
         }
       }
       if (carretera?.minutos_coche) {
-        tiempos.push({ desde: a, hasta: b, minutos: Number(carretera.minutos_coche), modo: 'carretera (medida)' });
+        tiempos.push({
+          desde: a,
+          hasta: b,
+          minutos: Number(carretera.minutos_coche),
+          km: Number(carretera.km) || null,
+          modo: 'carretera (medida)',
+        });
         resumen.medidos += 1;
         continue;
       }
@@ -2073,7 +2131,13 @@ export async function completarTiempos(candidatas, tiemposIA, destinoId) {
       const [sa, sb] = [await situar(ca), await situar(cb)];
       if (sa && sb) {
         const km = kmEntre(sa, sb) * 1.3;
-        tiempos.push({ desde: a, hasta: b, minutos: Math.round((km / 70) * 60), modo: 'estimado por distancia' });
+        tiempos.push({
+          desde: a,
+          hasta: b,
+          minutos: Math.round((km / 70) * 60),
+          km: Math.round(km),
+          modo: 'estimado por distancia',
+        });
         resumen.estimados += 1;
       } else {
         resumen.sinDato += 1;

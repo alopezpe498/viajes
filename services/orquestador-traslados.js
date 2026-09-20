@@ -931,6 +931,31 @@ export function reglaDelAhorroGrande(medidas, params) {
  * más rápida que tiene precio. La lista de las que cumplen es lo que se le pone
  * delante a la IA.
  */
+/**
+ * ¿COMPENSA PERDER ESE TIEMPO POR ESE DINERO?
+ *
+ * EL CASO QUE LO ORIGINA, viaje 131. De Dubrovnik a Sarajevo el autobús cuesta
+ * 22 €/persona y el traslado privado 110 €: cinco veces más barato y pierde
+ * 1h 20min. El tope era 1h 15min, así que se descartó POR CINCO MINUTOS y el
+ * viaje se fue a 445 € de saltos internos.
+ *
+ * Un tope fijo no sabe cuánto se ahorra. Ahora hay dos caminos:
+ *
+ *   · pierde poco (`max_tiempo_extra_ahorro_min`): vale sin mirar el dinero;
+ *   · pierde más, pero lo que ahorras VALE MÁS que ese tiempo, medido con
+ *     `euros_por_hora_util`, que es la misma vara con la que se eligen las
+ *     puertas. Con 20 €/h, 1h 20min cuestan 26,70 € y el autobús ahorra 88.
+ *
+ * Y con un techo, `max_tiempo_extra_si_compensa_min`: por mucho que ahorre,
+ * nadie mete un autobús de nueve horas en un viaje de trece noches.
+ */
+function compensaElTiempo(x, params) {
+  if (x.pierde <= params.maxExtraAhorro) return true;
+  if (x.pierde > (params.maxExtraSiCompensa ?? params.maxExtraAhorro)) return false;
+  const ahorro = x.ganadora.precioPersona - x.barata.precioPersona;
+  return ahorro >= (x.pierde / 60) * (params.eurosPorHora ?? 20);
+}
+
 export function ahorrosQueCumplen(medidas, params) {
   // SIEMPRE `precioPersona`. Comparar `precio` a secas es mezclar el billete de
   // uno con la reserva de los dos (ver `precioPorPersona`).
@@ -950,7 +975,7 @@ export function ahorrosQueCumplen(medidas, params) {
       veces: ganadora.precioPersona / barata.precioPersona,
       pierde: barata.bloque.total - ganadora.bloque.total,
     }))
-    .filter((x) => x.veces >= params.factorAhorro && x.pierde <= params.maxExtraAhorro)
+    .filter((x) => x.veces >= params.factorAhorro && compensaElTiempo(x, params))
     .sort((a, b) => b.veces - a.veces);
 }
 
@@ -981,7 +1006,8 @@ export function porQueNoHayAhorroGrande(medidas, params) {
     `«${ganadora.nombre}» (${ganadora.aproximado ? '≈ ' : ''}${Math.round(ganadora.precioPersona)} €/persona). ` +
     `La más cerca: «${cerca.nombre}» ` +
     `(${cerca.veces.toFixed(1)} veces más barata, hacen falta ${params.factorAhorro}; ` +
-    `pierde ${comoTexto(Math.max(0, cerca.pierde))}, el tope son ${comoTexto(params.maxExtraAhorro)})` +
+    `pierde ${comoTexto(Math.max(0, cerca.pierde))}, y ni entra en ${comoTexto(params.maxExtraAhorro)} ` +
+    `ni lo que ahorra compensa ese tiempo a ${params.eurosPorHora ?? 20} €/h)` +
     // La proporción se enseña también cuando la regla NO salta, así que aquí
     // vale la misma advertencia: un número convertido no es un precio visto.
     (ganadora.aproximado || cerca.aproximado ? ' — proporción aproximada: hay precios convertidos.' : '') +
@@ -1041,6 +1067,8 @@ export async function ejecutarFaseTraslados(viaje, prompt) {
     factorPrecio: parametro('factor_precio_traslado', 3),
     factorAhorro: parametro('factor_ahorro_traslado', 4),
     maxExtraAhorro: parametro('max_tiempo_extra_ahorro_min', 75),
+    maxExtraSiCompensa: parametro('max_tiempo_extra_si_compensa_min', 180),
+    eurosPorHora: parametro('euros_por_hora_util', 20),
     maxPenalizacionHorario: parametro('max_penalizacion_horario_min', 90),
   };
   const auto = configAuto(viaje);

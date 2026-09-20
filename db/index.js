@@ -439,6 +439,8 @@ export function migrarEsquema() {
   migracionViajeLocal();
   anadirColumnaSiFalta('sitios_lugar', 'es_zona', 'INTEGER');
   anadirColumnaSiFalta('sitios_lugar', 'cubierto_por_excursion', 'INTEGER');
+  migracionCosteDeTrasladoEnLaPuerta();
+  migracionAhorroQueCompensa();
   migracionSepararCubiertos();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
@@ -6783,6 +6785,61 @@ function migracionSepararCubiertos() {
     `[bd] Migración: cubierto_por separado — ${cuenta.excursion} a excursión, ${cuenta.fusion} fusiones, ` +
       `${cuenta.huerfana} huérfanas soltadas, ${cuenta.deshecha} fusiones de edificio en recorrido deshechas.`
   );
+  return true;
+}
+
+/**
+ * LO QUE CUESTA MOVERSE ENTRE PARADAS, AL ELEGIR LA PUERTA.
+ *
+ * La puntuación de la puerta cobraba las HORAS de traslado y el precio de los
+ * VUELOS, y no cobraba nada por lo que cuesta el traslado entre ciudades: no se
+ * sabe todavía, porque los traslados se buscan en la fase siguiente. Así, en el
+ * viaje 131 ganó entrar por Belgrado y bajar en avión a Dubrovnik para volver
+ * luego al interior: 445 € por persona en saltos, frente a los 191 € de la
+ * ruta en línea recta de la tirada anterior.
+ *
+ * Ahora se estima por distancia —los kilómetros de cada tramo, que la tabla de
+ * tiempos ya calcula— a un precio por kilómetro declarado. El número sale de lo
+ * medido en los saltos ya elegidos de la base: 0,05 €/km en tren y autobús,
+ * 0,70-1,90 cuando acaba siendo un traslado privado; mediana de los terrestres,
+ * 0,70; de todos, 0,60. Se deja en 0,50, que es el punto intermedio, y se puede
+ * cambiar en la pantalla del orquestador.
+ */
+function migracionCosteDeTrasladoEnLaPuerta() {
+  const CLAVE = '2026-09-coste-traslado-puerta';
+  if (yaAplicada(CLAVE)) return false;
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (clave) DO NOTHING`
+  ).run('euros_por_km_de_traslado', '0.5', '0.5',
+    'Lo que se estima que cuesta, por persona y kilometro, el traslado entre dos paradas al puntuar las puertas',
+    'euros/km', orden + 1);
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el coste del traslado entre ciudades cuenta al elegir la puerta.');
+  return true;
+}
+
+/**
+ * EL AUTOBÚS QUE SE PERDIÓ POR CINCO MINUTOS.
+ *
+ * La regla del ahorro grande tenía un tope fijo de tiempo extra y no miraba
+ * cuánto se ahorraba: de Dubrovnik a Sarajevo, 22 €/persona contra 110 €, fuera
+ * por 1h 20min frente a un tope de 1h 15min. Este parámetro es hasta dónde se
+ * acepta perder tiempo cuando el ahorro compensa esas horas.
+ */
+function migracionAhorroQueCompensa() {
+  const CLAVE = '2026-09-ahorro-que-compensa';
+  if (yaAplicada(CLAVE)) return false;
+  const orden = db.prepare('SELECT COALESCE(MAX(orden), 0) AS n FROM parametros_orquestador').get().n;
+  db.prepare(
+    `INSERT INTO parametros_orquestador (clave, valor, valor_fabrica, descripcion, unidad, orden)
+     VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (clave) DO NOTHING`
+  ).run('max_tiempo_extra_si_compensa_min', '180', '180',
+    'Tiempo extra maximo que se acepta de una opcion mas barata cuando el ahorro compensa ese tiempo',
+    'minutos', orden + 1);
+  marcarAplicada(CLAVE);
+  console.log('[bd] Migracion: el ahorro que compensa el tiempo, con su techo.');
   return true;
 }
 
