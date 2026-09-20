@@ -441,6 +441,7 @@ export function migrarEsquema() {
   anadirColumnaSiFalta('sitios_lugar', 'cubierto_por_excursion', 'INTEGER');
   migracionCosteDeTrasladoEnLaPuerta();
   migracionAhorroQueCompensa();
+  migracionRestaurantesFueraDeImprescindibles();
   migracionSepararCubiertos();
 
   // Estos tres van al final a proposito: cuelgan de columnas que en una base de
@@ -6840,6 +6841,34 @@ function migracionAhorroQueCompensa() {
     'minutos', orden + 1);
   marcarAplicada(CLAVE);
   console.log('[bd] Migracion: el ahorro que compensa el tiempo, con su techo.');
+  return true;
+}
+
+/**
+ * LOS RESTAURANTES SUELTOS, FUERA DEL PRIMER BLOQUE.
+ *
+ * Misma regla que `esUnEstablecimientoDeComer` en `descubrir.js`, aplicada a lo
+ * que ya está guardado: un local concreto de comer no es el motivo de ir a una
+ * ciudad, y en el primer bloque manda sobre el plan. Los mercados y los barrios
+ * de comer no se tocan.
+ */
+function migracionRestaurantesFueraDeImprescindibles() {
+  const CLAVE = '2026-09-restaurantes-no-imprescindibles';
+  if (yaAplicada(CLAVE)) return false;
+  const re =
+    /^(restaurante|restaurant|bar|caf[eé]|cafeter[ií]a|taberna|tasca|kafana|konoba|osteria|trattoria|pizzer[ií]a|dulcer[ií]a|pasteler[ií]a|helader[ií]a|cervecer[ií]a|bodega|bistr[oó]|mes[oó]n|braser[ií]a|asador|chiringuito)\b/i;
+  const filas = db
+    .prepare("SELECT id, nombre FROM sitios_lugar WHERE bloque = 'imprescindibles' AND categoria = 'gastronomía'")
+    .all();
+  const bajar = db.prepare("UPDATE sitios_lugar SET bloque = 'otros' WHERE id = ?");
+  let n = 0;
+  for (const f of filas) {
+    if (!re.test(String(f.nombre ?? '').trim())) continue;
+    bajar.run(f.id);
+    n += 1;
+  }
+  marcarAplicada(CLAVE);
+  console.log(`[bd] Migracion: ${n} sitio(s) de comer salen de imprescindibles.`);
   return true;
 }
 

@@ -1007,6 +1007,26 @@ export async function investigarCiudadConIA(
  * OJO: se conserva lo que ya hubiera en datos_extra (el tituloWikipedia que
  * guardó la investigación del destino), no se pisa entero.
  */
+/**
+ * UN RESTAURANTE NO ES UN IMPRESCINDIBLE DE LA CIUDAD.
+ *
+ * La IA los cuela en el primer bloque —«Restaurante Nishta» del #7 de
+ * Dubrovnik, «Restaurante Miód Malina» del #8 de Cracovia— y desde ahí mandan:
+ * cuentan en el veredicto de la parada, el lienzo los protege como esenciales y
+ * en el viaje 132 uno de ellos llegó a contar para echar del plan la excursión
+ * a Mostar. Comer ya tiene su sitio en el día, y una ciudad no se visita por un
+ * local concreto.
+ *
+ * Un MERCADO o un BARRIO de comer sí se quedan donde estén: Jalan Alor,
+ * Markthalle Neun, Ladadika o el Maxwell Food Centre son sitios, no una mesa.
+ */
+const ESTABLECIMIENTO_DE_COMER =
+  /^(restaurante|restaurant|bar|caf[eé]|cafeter[ií]a|taberna|tasca|kafana|konoba|osteria|trattoria|pizzer[ií]a|dulcer[ií]a|pasteler[ií]a|helader[ií]a|cervecer[ií]a|bodega|bistr[oó]|mes[oó]n|braser[ií]a|asador|chiringuito)\b/i;
+
+export function esUnEstablecimientoDeComer(nombre, categoria) {
+  return categoria === 'gastronomía' && ESTABLECIMIENTO_DE_COMER.test(String(nombre ?? '').trim());
+}
+
 export function guardarFichaProfunda(punto, ficha) {
   const insertar = db.prepare(
     `INSERT INTO sitios_lugar
@@ -1052,6 +1072,14 @@ export function guardarFichaProfunda(punto, ficha) {
     );
 
     for (const s of ficha.sitios) {
+      const bloque = s.bloque ?? 'imprescindibles';
+      const suyo =
+        bloque === 'imprescindibles' && esUnEstablecimientoDeComer(s.nombre, s.categoria)
+          ? 'otros'
+          : bloque;
+      if (suyo !== bloque) {
+        console.log(`[descubrir] «${s.nombre}» es un sitio de comer: va a «otros», no a imprescindibles.`);
+      }
       insertar.run(
         punto.id,
         s.nombre,
@@ -1062,7 +1090,7 @@ export function guardarFichaProfunda(punto, ficha) {
         s.lat,
         s.lon,
         s.orden,
-        s.bloque ?? 'imprescindibles',
+        suyo,
         s.categoria ?? null
       );
     }

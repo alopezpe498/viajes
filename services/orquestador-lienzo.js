@@ -702,7 +702,7 @@ export function unaSolaComidaAlDia(viajeId, lienzo, di) {
 
         // Sin horario legible se vuelve a lo grueso, que es lo que había.
         const abre = aperturaDe(c, d.fecha);
-        const cierra = cierreDe(c);
+        const cierra = cierreDe(c, d.fecha);
         const dura = Number(c.duracionMin) || 0;
         if (abre != null && empieza < abre) return false;
         if (cierra != null && empieza + dura > cierra) return false;
@@ -780,12 +780,31 @@ function comoHoraDeMinutos(m) {
  * cosas distintas escritas en el mismo campo, y la hora de cada pase ya es toda
  * la restricción que hace falta.
  */
-function cierreDe(colocado) {
+function cierreDe(colocado, fecha = null) {
   const quien = deQuienEs(colocado);
   if (quien?.de !== 'sitio' || !quien.deId) return null;
   const sitio = una('SELECT horarios FROM sitios_lugar WHERE id = ?', quien.deId);
   if (!sitio) return null;
   if (horasDeSesion(sitio.horarios)?.length) return null;
+
+  // EL CIERRE DE ESE DÍA, NO EL MÁS TEMPRANO DE LA SEMANA.
+  //
+  // `cierraALasMinutos` contesta con el cierre más temprano de todos los días,
+  // que es lo prudente cuando no se sabe de qué día se habla. Pero aquí sí se
+  // sabe: la apertura ya se mira por el día (`aperturaDe`) y el cierre no, y de
+  // ahí salían dos fallos repetidos. El Museo Nacional de Serbia abre «Mar, Mié,
+  // Vie, Dom 10:00-18:00; Jue, Sáb 12:00-20:00» y se le aplicaban las 18:00
+  // también el sábado: con tres horas de visita no cabía y se fue del viaje con
+  // AVISO GRAVE en tres tiradas seguidas. Lo mismo el Museo de Vojvodina, con el
+  // aviso de que cierra a las 18:00 un martes que abre hasta las 19:00.
+  //
+  // Sin fecha se sigue contestando lo prudente de siempre.
+  if (fecha) {
+    const dia = new Date(`${fecha}T12:00:00`).getDay();
+    const mes = Number(String(fecha).slice(5, 7));
+    const rangos = horarioPorDias(sitio.horarios, mes).porDia[dia]?.rangos ?? [];
+    if (rangos.length) return Math.max(...rangos.map(([, fin]) => Math.min(fin, 24 * 60)));
+  }
   return cierraALasMinutos(sitio);
 }
 
@@ -1129,9 +1148,13 @@ function diaDeLaSemana(fecha) {
 function huecoValido(tablero, { dia, colocado, naturaleza, cierre, duracion, noAntesDe = null }) {
   // NI ANTES DE QUE ABRA. El suelo del hueco es el más tardío de los dos: lo que
   // pida quien llama y la hora a la que el sitio abre ese día.
-  const abre = comoHoraDeMinutos(aperturaDe(colocado, tablero.dias?.find((d) => d.n === dia)?.fecha));
+  const fechaDelDia = tablero.dias?.find((d) => d.n === dia)?.fecha ?? null;
+  const abre = comoHoraDeMinutos(aperturaDe(colocado, fechaDelDia));
   const suelo = [noAntesDe, abre].filter(Boolean).sort().pop() ?? null;
   noAntesDe = suelo;
+  // Y EL CIERRE, TAMBIÉN EL DE ESE DÍA. Quien llama lo calculó sin saber a qué
+  // día iba a caer; aquí ya se sabe.
+  cierre = cierreDe(colocado, fechaDelDia) ?? cierre;
   // EL DÍA DE ACLIMATACIÓN NO ADMITE NADA CON HORA COMPRADA.
   //
   // El medio día lo impone ya `horaLibreEn`, que acorta el día. Lo que no puede
@@ -1861,7 +1884,7 @@ function enderezarLoQueNoCabeEnSuHorario(viajeId, lienzo, di) {
 
     const dia = tablero.dias.find((d) => d.n === c.dia);
     const abre = aperturaDe(c, dia?.fecha);
-    const cierra = cierreDe(c);
+    const cierra = cierreDe(c, dia?.fecha);
     const empieza = enMinutos(c.hora);
     const dura = Number(c.duracionMin) || 0;
     if (empieza == null || !dura) continue;
@@ -2549,7 +2572,7 @@ function resolverChoque(viajeId, lienzo, aviso, porId, di, sacar) {
         franja: franjaDesde(desde) ?? segundo.franja,
         duracion: dura,
         noAntesDe: desde,
-        cierraA: cierreDe(segundo),
+        cierraA: cierreDe(segundo, dia?.fecha),
       });
       // Solo vale si de verdad queda ANTES de donde estaba y del bloque que le
       // pisaba: adelantarlo a la misma hora no arregla nada.

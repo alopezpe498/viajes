@@ -473,10 +473,38 @@ function tramosDe(t) {
   // Mié: 9-14» es UNA lista de días y partirla se cargaría sus horas. Solo corta
   // la coma que lleva detrás otro día CON SUS DOS PUNTOS, que es la firma de
   // «aquí empieza otro horario».
+  // Y EN UNA LISTA DE DÍAS, EL ÚLTIMO TAMBIÉN LLEVA LOS DOS PUNTOS.
+  //
+  // Esa era la parte que faltaba, y costó un imprescindible en tres viajes
+  // seguidos. El Museo Nacional de Serbia abre así:
+  //
+  //     «Mar, Mié, Vie, Dom: 10:00–18:00; Jue, Sáb: 12:00–20:00»
+  //
+  // La coma de «Vie, Dom:» tiene detrás un día con dos puntos, así que cortaba:
+  // martes, miércoles y viernes se quedaban SIN HORAS —abiertos pero sin rango—
+  // y solo domingo y sábado tenían horario. Con eso el museo no cabía en ningún
+  // día y se iba del viaje con aviso grave.
+  //
+  // Lo que distingue una lista de dos horarios es lo que hay ANTES de la coma:
+  // si ahí no se ha dicho ninguna hora ni ningún «cerrado», lo de antes son
+  // nombres de días y la coma es de la lista.
   const CORTE_DE_COMA =
-    /,(?=\s*(?:lun|mar|mie|jue|vie|sab|dom|mon|tue|wed|thu|fri|sat|sun)[a-z]*\s*(?:[-–a]\s*[a-z]+)?\s*:)/;
+    /,(?=\s*(?:lun|mar|mie|jue|vie|sab|dom|mon|tue|wed|thu|fri|sat|sun)[a-z]*\s*(?:[-–a]\s*[a-z]+)?\s*:)/g;
 
-  return [...sinParentesis.split(new RegExp(`[;|\\n]+|\\.(?!\\d)|${CORTE_DE_COMA.source}`)), ...notas]
+  const porComas = (texto) => {
+    const trozos = [];
+    let desde = 0;
+    for (const m of [...texto.matchAll(CORTE_DE_COMA)]) {
+      const izquierda = texto.slice(desde, m.index);
+      if (!/\d|cerrad|closed/.test(izquierda)) continue;
+      trozos.push(izquierda);
+      desde = m.index + 1;
+    }
+    trozos.push(texto.slice(desde));
+    return trozos;
+  };
+
+  return [...sinParentesis.split(/[;|\n]+|\.(?!\d)/).flatMap(porComas), ...notas]
     .map((x) => x.trim())
     .filter(Boolean);
 }
