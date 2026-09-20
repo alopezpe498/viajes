@@ -621,11 +621,34 @@ export async function ejecutarFaseExcursiones(viaje, prompt) {
         );
         for (const nombre of Array.isArray(e.cubre_sitios) ? e.cubre_sitios : []) {
           const sitio = una(
-            `SELECT id, nombre FROM sitios_lugar
+            `SELECT id, nombre, bloque, orden FROM sitios_lugar
               WHERE punto_interes_id = ? AND lower(nombre) = lower(?)`,
             etapa.punto_interes_id,
             String(nombre).trim()
           );
+
+          // LO PRIMERO DE LA CIUDAD NO SE DA POR VISTO SOLO PORQUE LA IA LO DIGA.
+          //
+          // En el viaje 129 el «Free tour por el Dubrovnik histórico» declaró
+          // cubrir las Murallas de Dubrovnik —el #1, y un billete aparte de 35 €
+          // que ningún free tour incluye—, y Dubrovnik se quedó sin ellas. Para
+          // los tres primeros de cada ciudad se exige que la excursión las lleve
+          // en el TÍTULO, que es comprobable; para el resto sigue valiendo la
+          // palabra de la IA. Tenerlo dos veces se ve y se quita; perderlo, no.
+          if (
+            sitio &&
+            sitio.bloque === 'imprescindibles' &&
+            Number(sitio.orden) <= parametro('puestos_intocables_del_sitio', 3) &&
+            !nombraAlSitio(e.actividad.titulo, sitio.nombre)
+          ) {
+            di(
+              `   «${e.actividad.titulo}» dice cubrir «${sitio.nombre}», que es de lo primero ` +
+                `de ${ciudad} y no aparece en su título: lo dejo como visita aparte.`,
+              ORIGENES.ninguno
+            );
+            continue;
+          }
+
           if (sitio && candidato) {
             ejecutar('UPDATE sitios_lugar SET cubierto_por_excursion = ? WHERE id = ?', candidato.id, sitio.id);
             cubiertos.push(`${sitio.nombre} (lo cubre «${e.actividad.titulo}»)`);
@@ -823,6 +846,19 @@ export function destinoDeExcursion(titulo) {
   if (!m) return null;
   const primero = m[1].split(/ (?:y|e|con|desde|en|por) /)[0].trim();
   return primero.length >= 4 ? primero : null;
+}
+
+/** ¿El título de la excursión lleva el nombre del sitio, entero? */
+function nombraAlSitio(titulo, nombre) {
+  const limpio = (t) =>
+    String(t ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const n = limpio(nombre);
+  return n.length >= 4 && new RegExp(`(^| )${n}( |$)`).test(limpio(titulo));
 }
 
 function mismoDestino(a, b) {

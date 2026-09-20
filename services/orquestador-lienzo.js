@@ -1398,9 +1398,17 @@ export function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
   let tocado = false;
 
   for (const etapa of etapas) {
-    const suyos = imprescindiblesDeParada(etapa).slice(
-      0,
-      parametro('puestos_intocables_del_sitio', 3)
+    // A QUIÉN PROTEGE ESTA REGLA.
+    //
+    // Nació para los tres primeros de la ciudad, y con eso en el viaje 129 una
+    // excursión de diez horas a los monasterios de Žiča y Studenica se quedó el
+    // único día completo de Belgrado y dejó fuera el Museo Nacional de Serbia,
+    // que es el #4. Ahora también cede cuando deja fuera DOS o más
+    // imprescindibles, aunque ninguno sea de los tres primeros: uno solo de
+    // segunda fila no vale un día entero de excursión, dos sí.
+    const suyos = imprescindiblesDeParada(etapa);
+    const primeros = new Set(
+      suyos.slice(0, parametro('puestos_intocables_del_sitio', 3)).map((x) => x.id)
     );
     if (!suyos.length) continue;
 
@@ -1416,6 +1424,7 @@ export function liberarLoQueSeComeLaExcursion(viajeId, viaje, lienzo, di) {
 
     const sinColocar = suyos.filter((x) => !estaColocado(x.id));
     if (!sinColocar.length) continue;
+    if (sinColocar.length < 2 && !sinColocar.some((x) => primeros.has(x.id))) continue;
 
     // ¿Hay una excursión opcional de día completo comiéndose un día de aquí?
     const diasDeLaEtapa = lienzo.dias.filter((d) => d.etapaId === etapa.id).map((d) => d.n);
@@ -3618,26 +3627,27 @@ function repescarLosImprescindiblesQueFaltan(viajeId, di) {
 }
 
 /**
- * LA COMIDA «DURANTE LA EXCURSIÓN» SIN EXCURSIÓN.
+ * LA COMIDA DEL DÍA DE LA EXCURSIÓN, SIN EXCURSIÓN.
  *
- * El reparto pone la comida del día de la excursión dentro de ella —«Comer ·
- * Mostar, durante la excursión»—. Si la excursión se va, esa comida se queda
- * contando una mentira a la hora de comer. Se quita solo si ese día no queda
- * ninguna otra excursión; el relleno pone después una comida de verdad.
+ * El reparto pone la comida del día de la excursión dentro de ella: «Comer ·
+ * Mostar, durante la excursión», «Comer · A bordo o en el puerto al regreso»,
+ * «Comer · Hvar (en la isla)». Si la excursión se va, esa comida cuenta una
+ * mentira a la hora de comer, y reconocerla por el texto no funciona: cada vez
+ * se escribe distinto, y por eso «Hvar (en la isla)» se escapó en el viaje 129.
+ *
+ * Así que se quita la comida de ese día, diga lo que diga, y solo cuando al día
+ * ya no le queda ninguna excursión. El relleno pone después una comida normal,
+ * a la hora de comer.
  */
-// «durante la excursión», pero también «a bordo o en el puerto al regreso» (el
-// crucero de las Elafitas) o «incluida en la excursión».
-const COMIDA_DE_EXCURSION = /excursi|a bordo|durante|incluid|al regreso|en ruta/i;
-
 function quitarLaComidaDeLaExcursion(viajeId, dias, di) {
   const lienzo = lienzoDeViaje(viajeId);
   for (const dia of dias) {
     const delDia = lienzo.colocados.filter((c) => c.dia === dia);
     if (delDia.some((c) => deQuienEs(c)?.candidato?.tipo === 'actividad')) continue;
     for (const c of delDia) {
-      if (!esComida(c) || !COMIDA_DE_EXCURSION.test(String(c.nombre ?? ''))) continue;
+      if (!esComida(c)) continue;
       quitar(c.id);
-      di(`   Día ${dia}: quito «${c.nombre}», que era la comida de una excursión que ya no está.`, ORIGENES.ninguno);
+      di(`   Día ${dia}: quito «${c.nombre}», la comida del día de una excursión que ya no está.`, ORIGENES.ninguno);
     }
   }
 }
