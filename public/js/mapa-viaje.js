@@ -176,6 +176,10 @@
     contexto: 'mapa maestro del viaje',
   });
 
+  // La clave del NAVEGADOR, la misma que pinta las teselas. La de servidor no
+  // viaja aquí y no tiene por qué: el iframe lo carga el navegador.
+  const CLAVE_MAPAS = div.dataset.claveMapas ?? '';
+
   let capa = L.layerGroup().addTo(mapa);
 
   const esc = (t) => {
@@ -488,6 +492,18 @@
         }
       }
 
+      // De dónde se viene para llegar a cada punto del día: el anterior por
+      // hora y, para el primero, el hotel — que es donde empieza el día de
+      // verdad, como ya dice el recorrido de aquí arriba.
+      const hotelDelDia = vista === 'dia' ? vis.find((x) => x.tipo === 'hotel') : null;
+      const vengoDe = (i) => {
+        if (vista !== 'dia' || !i.hora) return null;
+        const k = delDia.indexOf(i);
+        if (k < 0) return null;
+        const previo = k > 0 ? delDia[k - 1] : hotelDelDia;
+        return previo && previo.id !== i.id && previo.lat != null ? previo : null;
+      };
+
       for (const i of vis) {
         let numero = null;
         if (vista === 'dia' && i.hora) numero = delDia.indexOf(i) + 1;
@@ -502,7 +518,21 @@
           // Con la medida armada, el clic es para medir y no para abrir la
           // ficha: dos cosas distintas en el mismo gesto se distinguen por el
           // modo, que además se ve en el cursor y en el botón.
-          .on('click', () => { if (!clicMidiendo(i)) seleccionar(i.id, true); });
+          // EL GLOBO CON EL «CÓMO LLEGAR», SOLO DONDE SIGNIFICA ALGO.
+          //
+          // En la vista del día, y solo si hay un punto ANTERIOR del que venir:
+          // al primero de la mañana se llega desde el hotel, y si no hay ni
+          // hotel no hay origen y no se ofrece.
+          //
+          // Y VA SUELTO EN EL MAPA, NO COLGADO DEL PIN. Colgado de él se abría y
+          // se cerraba en el mismo clic: seleccionar repinta la capa entera, el
+          // marcador se destruye y su globo con él. Un globo del mapa sobrevive
+          // al repintado porque no es de la capa.
+          .on('click', () => {
+            if (clicMidiendo(i)) return;
+            seleccionar(i.id, true);
+            abrirGlobo(i, vengoDe(i));
+          });
         puntos.push([i.lat, i.lon]);
       }
     }
@@ -729,6 +759,88 @@
         ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }
+
+  // ===========================================================================
+  // CÓMO LLEGAR: EL CAMINO POR LAS CALLES, DENTRO DE LA APP
+  // ===========================================================================
+  /**
+   * Un iframe de la Maps Embed API en modo «directions» entre el punto anterior
+   * del día y el que se ha pinchado.
+   *
+   * QUÉ ES Y QUÉ NO ES. Es una brújula: por dónde se va. El tiempo y la
+   * distancia NO salen de aquí —el iframe no deja leerlos por código— y no
+   * hacen falta: los da Routes y ya están en las etiquetas de los tramos con
+   * «Ver tiempos». Tampoco es navegación paso a paso; eso es la app de Maps.
+   *
+   * EL MODO, POR LA DISTANCIA EN RECTA. Dentro de una ciudad, lo que se hace
+   * andando se anda: hasta dos kilómetros, a pie; más lejos, transporte
+   * público. Es la misma vara que usa el resto de la pantalla para hablar de
+   * tramos, y se dice en el título para que nadie tenga que adivinarlo.
+   */
+  const KM_A_PIE = 2;
+
+  /** El globo del punto pinchado, con su «Cómo llegar» si hay de dónde venir. */
+  function abrirGlobo(i, previo) {
+    if (!previo || !CLAVE_MAPAS) {
+      mapa.closePopup();
+      return;
+    }
+    L.popup({ className: 'mm-popup', autoPan: true, offset: [0, -10] })
+      .setLatLng([i.lat, i.lon])
+      .setContent(
+        `<b>${esc(i.nombre)}</b>${i.hora ? ` · ${esc(i.hora)}` : ''}` +
+          `<br><button type="button" class="mm-popup__ir" data-desde="${esc(previo.id)}" ` +
+          `data-hasta="${esc(i.id)}"><i class="ti ti-route" aria-hidden="true"></i> Cómo llegar` +
+          `</button><small class="mm-popup__desde">desde ${esc(previo.nombre)}</small>`
+      )
+      .openOn(mapa);
+  }
+
+  const panelIr = document.getElementById('mm-comollegar');
+  const tituloIr = document.getElementById('mm-comollegar-titulo');
+  const marcoIr = document.getElementById('mm-comollegar-mapa');
+
+  function cerrarComoLlegar() {
+    if (!panelIr) return;
+    panelIr.hidden = true;
+    // Se vacía al cerrar: un iframe escondido sigue vivo, y este pide mapas.
+    marcoIr.removeAttribute('src');
+  }
+
+  function abrirComoLlegar(desde, hasta) {
+    if (!panelIr || !desde || !hasta || !CLAVE_MAPAS) return;
+
+    const modo = km(desde, hasta) <= KM_A_PIE ? 'walking' : 'transit';
+    const url = new URL('https://www.google.com/maps/embed/v1/directions');
+    url.searchParams.set('key', CLAVE_MAPAS);
+    // COORDENADAS Y NO NOMBRES. El nombre lo vuelve a buscar Google y puede
+    // acabar en otro sitio; la coordenada es la que ya se guardó y es la que se
+    // está pintando en el mapa.
+    url.searchParams.set('origin', `${desde.lat},${desde.lon}`);
+    url.searchParams.set('destination', `${hasta.lat},${hasta.lon}`);
+    url.searchParams.set('mode', modo);
+    url.searchParams.set('language', 'es');
+
+    tituloIr.textContent =
+      `${desde.nombre} → ${hasta.nombre} · ${modo === 'walking' ? 'a pie' : 'en transporte público'}`;
+    marcoIr.src = url.toString();
+    panelIr.hidden = false;
+  }
+
+  document.getElementById('mm-comollegar-cerrar')?.addEventListener('click', cerrarComoLlegar);
+  panelIr?.addEventListener('click', (e) => { if (e.target === panelIr) cerrarComoLlegar(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarComoLlegar(); });
+
+  // El botón vive dentro del globo de Leaflet, que se crea y se destruye solo:
+  // por eso se escucha en el mapa y no en el botón.
+  mapa.on('popupopen', (e) => {
+    e.popup.getElement()?.querySelector('.mm-popup__ir')?.addEventListener('click', (ev) => {
+      const b = ev.currentTarget;
+      const desde = D.items.find((i) => i.id === b.dataset.desde);
+      const hasta = D.items.find((i) => i.id === b.dataset.hasta);
+      abrirComoLlegar(desde, hasta);
+    });
+  });
 
   function refrescar() {
     pintarVistas();

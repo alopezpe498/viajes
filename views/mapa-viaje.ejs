@@ -109,6 +109,23 @@ const MUTANT = '0.14.1';
   <%# --- La leyenda, discreta --- %>
   <div class="mm-flota mm-leyenda" id="mm-leyenda"></div>
 
+  <%# --- CÓMO LLEGAR: el camino por las calles, sin salir de la app ---
+      Un iframe de la Maps Embed API en modo «directions», con la clave del
+      NAVEGADOR (la misma del mapa). El tiempo y la distancia no salen de aquí:
+      esos ya los da Routes y están en las etiquetas de los tramos. Esto es la
+      brújula: por dónde se va. %>
+  <div class="mm-comollegar" id="mm-comollegar" hidden>
+    <div class="mm-comollegar__caja">
+      <div class="mm-comollegar__cab">
+        <span id="mm-comollegar-titulo"></span>
+        <button type="button" class="mm-cerrar" id="mm-comollegar-cerrar"
+                title="Cerrar" aria-label="Cerrar">&times;</button>
+      </div>
+      <iframe id="mm-comollegar-mapa" title="Cómo llegar" loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/<%= LEAFLET %>/leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@<%= MUTANT %>/dist/Leaflet.GoogleMutant.min.js"></script>
   <script src="/js/mapa-teselas.js"></script>
