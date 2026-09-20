@@ -1596,6 +1596,20 @@ function avisosDeComida(dias, colocados, fijos) {
     // Si la ventana libre no toca la hora de comer, no se pide comida.
     if (empieza >= MEDIODIA.hasta || acaba <= MEDIODIA.desde) continue;
 
+    // NI SE PIDE EL DÍA DE UNA EXCURSIÓN QUE SE COME LA HORA DE COMER.
+    //
+    // El día 11 del viaje 136 es «Excursión a Mostar y las cascadas de Kravice»,
+    // de 06:25 a 17:25: en ese día no hay dónde comer en la ciudad porque no se
+    // está en la ciudad, y la comida va dentro de la excursión. Es el mismo
+    // motivo por el que tampoco se pide el día del vuelo.
+    const deExcursion = delDia.some((c) => {
+      if (c.tipo !== 'actividad') return false;
+      const h = enMinutos(c.hora);
+      if (h == null) return false;
+      return h < MEDIODIA.hasta && h + (Number(c.duracionMin) || 0) > MEDIODIA.desde;
+    });
+    if (deExcursion) continue;
+
     avisos.push({
       dia: d.n,
       tipo: 'sin-comida',
