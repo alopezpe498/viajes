@@ -67,6 +67,36 @@ export async function fundirSitiosContenidos(punto, ciudad, di = () => {}) {
   );
   if (sitios.length < 2) return 0;
 
+  // LO QUE SE LLAMA «X (ALGO)» ES UNA PARTE DE X, Y ESO NO HACE FALTA
+  // PREGUNTARLO.
+  //
+  // EL CASO, viaje 141: el catálogo de Sinaia trajo «Castillo de Peleș», «Castillo
+  // de Peleș (Museo Interior)» y «Castillo de Peleș (Mirador del Jardín)». Son el
+  // mismo castillo, pero Google situó el principal a 2,4 km de los otros dos, así
+  // que la fusión de abajo —que exige que las coordenadas lo respalden— se negó
+  // con razón: lo que estaba mal era la coordenada. Las tres tarjetas se pelearon
+  // por el mismo hueco y la que se cayó fue la principal, el #1 de la ciudad: el
+  // plan acabó con el mirador y el museo del castillo, pero sin el castillo.
+  //
+  // Aquí la coordenada no pinta nada. Si en la misma ciudad hay «X» y «X (algo)»,
+  // el paréntesis es una parte de X: se funde por el nombre y sin preguntar a
+  // nadie. Medido sobre toda la base, esta regla casa exactamente dos fichas, que
+  // son las dos del castillo.
+  let porNombre = 0;
+  const clave = (t) =>
+    String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const porClave = new Map(sitios.map((s) => [clave(s.nombre), s]));
+  for (const s of sitios) {
+    const m = String(s.nombre).match(/^(.+?)\s*\([^()]+\)\s*$/);
+    if (!m) continue;
+    const padre = porClave.get(clave(m[1]));
+    if (!padre || padre.id === s.id) continue;
+
+    ejecutar('UPDATE sitios_lugar SET cubierto_por = ? WHERE id = ?', padre.id, s.id);
+    di(`   «${s.nombre}» es una parte de «${padre.nombre}»: una sola visita.`);
+    porNombre += 1;
+  }
+
   let pares = [];
   try {
     const r = await consultarJSON(
@@ -157,7 +187,7 @@ export async function fundirSitiosContenidos(punto, ciudad, di = () => {}) {
 
   avisarDeLosQueSonElMismoSitio(sitios, di);
 
-  return fundidos;
+  return fundidos + porNombre;
 }
 
 /**
